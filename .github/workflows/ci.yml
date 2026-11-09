@@ -99,4 +99,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: arxai/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # auth-session-browser drives the real /login flow in Chromium.
+      - name: Install Chromium for the browser session test
+        run: pnpm --filter @workspace/scripts exec playwright install --with-deps chromium
       - run: pnpm run ci:integration

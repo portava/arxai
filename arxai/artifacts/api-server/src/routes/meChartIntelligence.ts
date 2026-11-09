@@ -10,6 +10,7 @@ import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence
 import { enrichStateWithUserBrokerQuote } from "../lib/data/chart/userBrokerAlignment.js";
 import { applyRenderEvidence, recordRenderEvidence } from "../lib/data/chart/renderEvidence.js";
 import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { currentFeedScopeBridge } from "../lib/data/feedScope.js";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -75,7 +76,7 @@ const RenderEvidenceBody = z.object({
   timeRoundTripOk: z.boolean().nullable(),
 }).strict();
 
-router.post("/me/chart/render-evidence", requireUser, (req, res): void => {
+router.post("/me/chart/render-evidence", requireUser, async (req, res): Promise<void> => {
   const parsed = RenderEvidenceBody.safeParse(req.body);
   const timeframe = parsed.success ? normalizeChartTimeframe(parsed.data.timeframe) : null;
   const userId = req.authUser?.id;
@@ -83,7 +84,8 @@ router.post("/me/chart/render-evidence", requireUser, (req, res): void => {
     res.status(400).json({ ok: false, error: "INVALID_RENDER_EVIDENCE" });
     return;
   }
-  recordRenderEvidence(userId, { ...parsed.data, timeframe });
+  // Bind to the series this reader is served (their feed-scope bridge).
+  recordRenderEvidence(userId, { ...parsed.data, timeframe }, await currentFeedScopeBridge());
   res.json({ ok: true });
 });
 

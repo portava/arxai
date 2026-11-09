@@ -149,8 +149,10 @@ export function capConfidence(
   if (resolved === null) {
     return {
       ...conf,
-      severity: "unknown",
-      statusLabel: "Checking…",
+      // A known limitation (delayed / stale / partial) stays stated while the
+      // confirmation is pending; only a raw "clean" is withheld.
+      severity: conf.severity === "clean" ? "unknown" : conf.severity,
+      statusLabel: conf.severity === "clean" ? "Checking…" : conf.statusLabel,
       aiUsable: false,
       message:
         conf.severity === "clean"

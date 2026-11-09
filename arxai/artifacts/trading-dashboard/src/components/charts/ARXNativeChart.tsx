@@ -1,5 +1,5 @@
 import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
-import { reportRenderEvidence, RENDER_EVIDENCE_REFRESH_MS } from "@/lib/chart-engine/renderEvidenceReporter";
+import { reportRenderEvidence, RENDER_EVIDENCE_FIRST_MEASURE_MS, RENDER_EVIDENCE_REFRESH_MS } from "@/lib/chart-engine/renderEvidenceReporter";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
@@ -1014,12 +1014,19 @@ export function ARXNativeChart({
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
   // Measure what the engine drew against these source bars after it paints, and
   // keep that evidence fresh while the chart is open (renderEvidenceReporter.ts).
+  // Nothing is scheduled until an engine holds bars (the deferred init owns the
+  // first frame), and one timeout chain at a time re-measures while it is open.
   useEffect(() => {
+    if (!adapterRef.current || mergedEngineCandles.length === 0) return;
     const target = { symbol: resolvedSymbol, timeframe, source: historySource };
-    const measure = () => reportRenderEvidence(adapterRef.current, target);
-    const frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(measure) : null;
-    const refresh = setInterval(measure, RENDER_EVIDENCE_REFRESH_MS);
-    return () => { if (frame != null) cancelAnimationFrame(frame); clearInterval(refresh); };
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const measure = () => {
+      reportRenderEvidence(adapterRef.current, target);
+      timer = setTimeout(measure, RENDER_EVIDENCE_REFRESH_MS);
+    };
+    // Let the engine lay out the new series before reading coordinates back.
+    timer = setTimeout(measure, RENDER_EVIDENCE_FIRST_MEASURE_MS);
+    return () => { if (timer != null) clearTimeout(timer); };
   }, [mergedEngineCandles, historySource, resolvedSymbol, timeframe, chartEpoch, pricePrecision]);
   useLayoutEffect(() => {
     if (!onScannerSurfaceChange) return;

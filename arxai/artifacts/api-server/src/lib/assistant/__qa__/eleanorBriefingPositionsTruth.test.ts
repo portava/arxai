@@ -6,7 +6,12 @@
 // every account read fails exactly as it would in an outage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildEleanorContext, composeEleanorBriefing, type EleanorContext } from "../eleanorContext.js";
+import type { EleanorContext } from "../eleanorContext.js";
+
+// The outage case needs a database that refuses connections. Forced, not
+// defaulted: CI sets a real DATABASE_URL for the other tests in this lane.
+process.env["DATABASE_URL"] = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
+const { buildEleanorContext, composeEleanorBriefing } = await import("../eleanorContext.js");
 
 function baseCtx(account: Partial<EleanorContext["account"]>): EleanorContext {
   return {

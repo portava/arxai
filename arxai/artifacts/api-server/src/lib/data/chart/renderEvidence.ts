@@ -23,12 +23,18 @@
 // A bound report with any mismatch, dropped bar or failed round-trip is a
 // measured FAIL (score 0), which fails the handshake outright.
 //
+// Keyed by the reader's feed-scope bridge as well (feedScope.ts): the chart's
+// candle request and Eleanor's reads both run under the user's bound bridge,
+// so a draw of one bridge's series never counts for a read served from
+// another (the account-collapse shape the provenance guard forbids).
+//
 // Storage is per-process memory: evidence is seconds-lived and re-posted on
 // every redraw, so a restart only means "unmeasured" until the next draw.
 
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { withSubMetric } from "./chartTruthScore.js";
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
+import { currentFeedScopeBridgeSync, feedScopeCacheKey } from "../feedScope.js";
 
 export const RENDER_EVIDENCE_TTL_MS = 120_000;
 const MAX_ENTRIES = 5_000;
@@ -59,11 +65,15 @@ export interface RenderEvidenceReport {
 interface Stored extends RenderEvidenceReport { userId: number; receivedAt: number }
 
 const store = new Map<string, Stored>();
-const keyOf = (userId: number, symbol: string, timeframe: string) =>
-  `${userId}|${symbol.trim().toUpperCase()}|${timeframe}`;
+const keyOf = (userId: number, scopeBridge: number | null, symbol: string, timeframe: string) =>
+  `${userId}|${feedScopeCacheKey(scopeBridge)}|${symbol.trim().toUpperCase()}|${timeframe}`;
 
-export function recordRenderEvidence(userId: number, report: RenderEvidenceReport, now = Date.now()): void {
-  const key = keyOf(userId, report.symbol, report.timeframe);
+/** Record a report. `scopeBridge` is the request's resolved feed-scope bridge
+ * (await currentFeedScopeBridge() in the route); null = the shared series. */
+export function recordRenderEvidence(
+  userId: number, report: RenderEvidenceReport, scopeBridge: number | null = null, now = Date.now(),
+): void {
+  const key = keyOf(userId, scopeBridge, report.symbol, report.timeframe);
   store.delete(key);
   if (store.size >= MAX_ENTRIES) {
     for (const [k, v] of store) {
@@ -88,7 +98,10 @@ export function judgeRenderEvidence(
   state: Pick<ChartIntelligenceState, "symbol" | "timeframe" | "truthState" | "currentCandle" | "latestClosedCandle">,
   now = Date.now(),
 ): RenderEvidenceVerdict {
-  const e = store.get(keyOf(userId, state.symbol, state.timeframe));
+  // The reader's bridge must already be resolved; a pending lookup is a miss.
+  const scopeBridge = currentFeedScopeBridgeSync();
+  if (scopeBridge === undefined) return { status: "absent", detail: "Renderer evidence unavailable: the reader's feed scope is not resolved." };
+  const e = store.get(keyOf(userId, scopeBridge, state.symbol, state.timeframe));
   if (!e) return { status: "absent", detail: "Renderer evidence unavailable: the chart has not reported a measured draw." };
   if (now - e.receivedAt > RENDER_EVIDENCE_TTL_MS) {
     return { status: "absent", detail: "Renderer evidence expired: the chart has not re-measured recently." };
@@ -123,7 +136,11 @@ export function judgeRenderEvidence(
 /** Apply the user's renderer evidence to a state's Render Accuracy check.
  * Absent/unbound/unavailable evidence leaves it unmeasured (with the reason). */
 export function applyRenderEvidence<T extends ChartIntelligenceState>(state: T, userId: number, now = Date.now()): T {
+  // A state without a truth score has no Render Accuracy check to fill (and so
+  // can never be VERIFIED): hand it back untouched rather than throw.
+  if (!state?.chartTruthScore?.subMetrics) return state;
   const verdict = judgeRenderEvidence(userId, state, now);
   const raw = verdict.status === "measured" ? verdict.score : null;
-  return { ...state, chartTruthScore: withSubMetric(state.chartTruthScore, "render_accuracy", raw, verdict.detail) };
+  const chartTruthScore = withSubMetric(state.chartTruthScore, "render_accuracy", raw, verdict.detail);
+  return chartTruthScore === state.chartTruthScore ? state : { ...state, chartTruthScore };
 }

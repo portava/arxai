@@ -11,6 +11,8 @@ export interface RenderEvidenceTarget { symbol: string; timeframe: string; sourc
 let lastSent = "";
 let lastSentAt = 0;
 /** Re-post an unchanged measurement at least this often (server TTL is 120s). */
+/** Delay before the first measurement of a new draw (engine layout). */
+export const RENDER_EVIDENCE_FIRST_MEASURE_MS = 250;
 export const RENDER_EVIDENCE_REFRESH_MS = 60_000;
 
 export function reportRenderEvidence(adapter: ChartEngineAdapter | null, target: RenderEvidenceTarget, now = Date.now()): void {
@@ -19,7 +21,7 @@ export function reportRenderEvidence(adapter: ChartEngineAdapter | null, target:
   try { fidelity = adapter.measureRenderFidelity(); } catch { return; }
   if (!fidelity) return;
   const body = JSON.stringify({ symbol: target.symbol, timeframe: target.timeframe, source: target.source, ...fidelity });
-  if (body === lastSent && now - lastSentAt < RENDER_EVIDENCE_REFRESH_MS) return;
+  if (body === lastSent && now - lastSentAt < RENDER_EVIDENCE_REFRESH_MS / 2) return;
   lastSent = body; lastSentAt = now;
   void fetch("/api/me/chart/render-evidence", {
     method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body,
