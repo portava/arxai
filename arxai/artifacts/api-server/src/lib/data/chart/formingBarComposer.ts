@@ -30,9 +30,23 @@
 //   The composer itself is provider-agnostic; sourcing is wired per provider
 //   (EA ingest, derivFormingBridge). Every store and reader is scoped by the
 //   exact provider, including the SSE event bus and freshness clock.
+//
+// BRIDGE PARTITION
+//   Two traders' bridges can stream the same symbol from different brokers.
+//   Every MT5 store entry is also keyed by the writing bridge connection (null
+//   = unattributed writer), so one broker's ticks never fold into another
+//   broker's tip or freshness clock. A reader names the partition it serves
+//   (the chart passes the serving bridge of its bars); a reader that names none
+//   gets the most recently ticking partition, the platform-wide behaviour.
+//
+// BUCKETS
+//   Bars are bucketed on the broker grid (brokerBucket.ts) with the bridge's
+//   measured clock offset, so a D1/H4/W1/MN1 tip opens exactly where the broker
+//   bar under it opens.
 
 import { EventEmitter } from "node:events";
-import { CHART_TIMEFRAMES, timeframeMs, type ChartTimeframe } from "./timeframes.js";
+import { CHART_TIMEFRAMES, type ChartTimeframe } from "./timeframes.js";
+import { brokerBucketOpenMs } from "./brokerBucket.js";
 import { normalizeSymbolKey } from "../providers/mt5Provider.js";
 import { resolveDerivSymbol } from "../providers/derivProvider.js";
 import { MARKET_FROZEN_BROKER_STALE_MS, MARKET_FROZEN_WALL_FRESH_MS } from "../freshness.js";
@@ -62,10 +76,22 @@ export function isFormingTickSource(value: unknown): value is FormingTickSource 
   return value === "mt5_broker" || value === "deriv" || value === "deriv_public";
 }
 
+/**
+ * Which writer's partition: a bridge connection id, or null for ticks with no
+ * attributed bridge (Deriv, an unattributed EA). "latest" (read side only)
+ * selects whichever partition ticked most recently.
+ */
+export type FormingPartition = number | null;
+export type FormingPartitionSelector = FormingPartition | "latest";
+
 export interface FormingBarState {
   /** Exact tick provider; never inferred from the symbol. */
   source: StoreSource;
-  /** Interval-open epoch ms (floor(tickMs / intervalMs) * intervalMs). */
+  /** The writing bridge connection (null = unattributed). */
+  bridgeConnectionId: FormingPartition;
+  /** Broker clock offset (broker − UTC, ms) the bucket was computed with. */
+  brokerOffsetMs: number;
+  /** Interval-open epoch ms on the broker grid (brokerBucketOpenMs). */
   openMs: number;
   open: number;
   high: number;
@@ -92,8 +118,50 @@ function sourceSymbolKey(symbolKey: string, source: StoreSource): string {
   return `${source}|${symbolKey}`;
 }
 
-function stateKey(symbolKey: string, timeframe: ChartTimeframe, source: StoreSource): string {
-  return `${sourceSymbolKey(symbolKey, source)}|${timeframe}`;
+function partitionSegment(partition: FormingPartition): string {
+  return partition == null ? "b:none" : `b:${partition}`;
+}
+
+function partitionKey(symbolKey: string, source: StoreSource, partition: FormingPartition): string {
+  return `${sourceSymbolKey(symbolKey, source)}|${partitionSegment(partition)}`;
+}
+
+function stateKey(symbolKey: string, timeframe: ChartTimeframe, source: StoreSource, partition: FormingPartition): string {
+  return `${partitionKey(symbolKey, source, partition)}|${timeframe}`;
+}
+
+// source + symbolKey → the partition that ticked most recently ("latest" reads).
+const latestPartitionBySymbol = new Map<string, FormingPartition>();
+
+function resolvePartition(
+  symbolKey: string,
+  source: StoreSource,
+  selector: FormingPartitionSelector,
+): FormingPartition | undefined {
+  if (selector !== "latest") return selector;
+  const k = sourceSymbolKey(symbolKey, source);
+  return latestPartitionBySymbol.has(k) ? latestPartitionBySymbol.get(k)! : undefined;
+}
+
+// ── Bounded memory ─────────────────────────────────────────────────────────
+// Entries no tick has touched for this long are evicted (a symbol nobody
+// streams any more, a bridge that disconnected). A tip that old is frozen and
+// would be reported stale anyway; after eviction the reader simply has no tip
+// and falls back to closed bars. The sweep runs at most once a minute, on fold.
+export const FORMING_STATE_TTL_MS = 30 * 60_000;
+const SWEEP_EVERY_MS = 60_000;
+let lastSweepWallMs = 0;
+
+function sweepExpired(nowWallMs: number): void {
+  if (Math.abs(nowWallMs - lastSweepWallMs) < SWEEP_EVERY_MS) return;
+  lastSweepWallMs = nowWallMs;
+  const cutoff = nowWallMs - FORMING_STATE_TTL_MS;
+  for (const [k, v] of store) if (v.lastTickWallMs < cutoff) store.delete(k);
+  for (const [k, v] of lastTickBySymbol) if (v.wallMs < cutoff) lastTickBySymbol.delete(k);
+  for (const [k, partition] of latestPartitionBySymbol) {
+    const [source, symbolKey] = k.split("|") as [StoreSource, string];
+    if (!lastTickBySymbol.has(partitionKey(symbolKey, source, partition))) latestPartitionBySymbol.delete(k);
+  }
 }
 
 /**
@@ -125,13 +193,14 @@ export interface LastTickInfo {
   quoteHeldSinceWallMs: number;
 }
 
-// source + symbolKey → last tick seen (across all timeframes).
+// source + symbolKey + partition → last tick seen (across all timeframes).
 const lastTickBySymbol = new Map<string, LastTickInfo>();
 
 // ── Tick notification bus ──────────────────────────────────────────────────
-// One in-process emitter keyed by symbolKey. The SSE handler subscribes for the
-// symbol it is streaming and, on each notification, pulls the current-interval
-// snapshot for its own timeframe (decoupling fold cardinality from subscribers).
+// One in-process emitter keyed by source + symbolKey. The SSE handler subscribes
+// for the symbol it is streaming; each notification names the partition that
+// ticked, and the handler pulls the current-interval snapshot of the partition
+// it serves for its own timeframe (decoupling fold cardinality from subscribers).
 class FormingBarBus {
   private readonly emitter = new EventEmitter();
   constructor() {
@@ -142,15 +211,15 @@ class FormingBarBus {
   private key(symbolKey: string, source: StoreSource): string {
     return `forming:${sourceSymbolKey(formingKey(symbolKey), source)}`;
   }
-  on(symbolKey: string, listener: () => void, source: StoreSource = "unknown"): void {
+  on(symbolKey: string, listener: (partition: FormingPartition) => void, source: StoreSource = "unknown"): void {
     this.emitter.on(this.key(symbolKey, source), listener);
   }
-  off(symbolKey: string, listener: () => void, source: StoreSource = "unknown"): void {
+  off(symbolKey: string, listener: (partition: FormingPartition) => void, source: StoreSource = "unknown"): void {
     this.emitter.off(this.key(symbolKey, source), listener);
   }
-  emit(symbolKey: string, source: StoreSource): void {
+  emit(symbolKey: string, source: StoreSource, partition: FormingPartition = null): void {
     try {
-      this.emitter.emit(this.key(symbolKey, source));
+      this.emitter.emit(this.key(symbolKey, source), partition);
     } catch {
       // Advisory bus — a misbehaving listener must never propagate into the
       // EA ingest path that folds the tick.
@@ -170,6 +239,8 @@ export const formingBarBus = new FormingBarBus();
  *                    back to wall clock when absent.
  * @param nowWallMs   Server wall-clock ms — used for silence/freshness, so the
  *                    tip freezes on real receive-time silence (not broker time).
+ * @param writer      The writing bridge (partition) and its measured broker
+ *                    clock offset (broker − UTC ms; buckets use the broker grid).
  *
  * Best-effort: never throws into the caller (EA ingest path).
  */
@@ -179,16 +250,24 @@ export function foldFormingTick(
   brokerTimeMs: number | null,
   nowWallMs: number = Date.now(),
   source: StoreSource = "unknown",
+  writer: { bridgeConnectionId?: number | null; brokerOffsetMs?: number | null } = {},
 ): void {
   if (!Number.isFinite(bid) || bid <= 0) return;
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return;
   const bucketTime = brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : nowWallMs;
+  const partition: FormingPartition =
+    typeof writer.bridgeConnectionId === "number" && Number.isFinite(writer.bridgeConnectionId)
+      ? writer.bridgeConnectionId
+      : null;
+  const brokerOffsetMs =
+    typeof writer.brokerOffsetMs === "number" && Number.isFinite(writer.brokerOffsetMs) ? writer.brokerOffsetMs : 0;
+  sweepExpired(nowWallMs);
 
   // Record the raw last tick (exact broker time, not interval-floored) so the
   // market-frozen / closed indicator can report the real last-quote time and
   // measure broker-time staleness. Display/telemetry only.
-  const tickKey = sourceSymbolKey(symbolKey, source);
+  const tickKey = partitionKey(symbolKey, source, partition);
   const prevTick = lastTickBySymbol.get(tickKey);
   const tickBrokerTimeMs = brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : null;
   const quoteMoved = prevTick != null && (prevTick.bid !== bid || prevTick.brokerTimeMs !== tickBrokerTimeMs);
@@ -199,16 +278,18 @@ export function foldFormingTick(
     quoteMovedWallMs: quoteMoved ? nowWallMs : prevTick?.quoteMovedWallMs ?? null,
     quoteHeldSinceWallMs: quoteMoved || prevTick == null ? nowWallMs : prevTick.quoteHeldSinceWallMs,
   });
+  latestPartitionBySymbol.set(sourceSymbolKey(symbolKey, source), partition);
 
   for (const tf of CHART_TIMEFRAMES) {
-    const intervalMs = timeframeMs(tf);
-    const openMs = Math.floor(bucketTime / intervalMs) * intervalMs;
-    const k = stateKey(symbolKey, tf, source);
+    const openMs = brokerBucketOpenMs(bucketTime, tf, brokerOffsetMs);
+    const k = stateKey(symbolKey, tf, source, partition);
     const prev = store.get(k);
     if (!prev || prev.openMs !== openMs) {
       // New interval (or first tick) → open a fresh bar at this tick's price.
       store.set(k, {
         source,
+        bridgeConnectionId: partition,
+        brokerOffsetMs,
         openMs,
         open: bid,
         high: bid,
@@ -223,9 +304,34 @@ export function foldFormingTick(
       prev.close = bid;
       prev.lastTickWallMs = nowWallMs;
       prev.tickCount += 1;
+      prev.brokerOffsetMs = brokerOffsetMs;
     }
   }
-  formingBarBus.emit(symbolKey, source);
+  formingBarBus.emit(symbolKey, source, partition);
+}
+
+/**
+ * The partition a live reader should follow: its own bridge when that bridge
+ * has ticked this symbol, else `sticky` (the partition it already follows)
+ * while that one keeps ticking, else the most recently ticking partition.
+ * undefined when no partition has ticked. Display/telemetry only.
+ */
+export function resolveFormingPartition(
+  symbol: string,
+  source: StoreSource,
+  preferred: FormingPartition,
+  sticky?: FormingPartition,
+  nowWallMs: number = Date.now(),
+  stickyFreshMs: number = 60_000,
+): FormingPartition | undefined {
+  const symbolKey = formingKey(symbol);
+  if (!symbolKey) return undefined;
+  if (preferred != null && lastTickBySymbol.has(partitionKey(symbolKey, source, preferred))) return preferred;
+  if (sticky !== undefined) {
+    const last = lastTickBySymbol.get(partitionKey(symbolKey, source, sticky));
+    if (last && nowWallMs - last.wallMs <= stickyFreshMs) return sticky;
+  }
+  return resolvePartition(symbolKey, source, "latest");
 }
 
 /**
@@ -243,13 +349,15 @@ export function getFormingBar(
   timeframe: ChartTimeframe,
   nowWallMs: number = Date.now(),
   source: StoreSource = "unknown",
+  partition: FormingPartitionSelector = "latest",
 ): FormingBarSnapshot | null {
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return null;
-  const state = store.get(stateKey(symbolKey, timeframe, source));
+  const resolved = resolvePartition(symbolKey, source, partition);
+  if (resolved === undefined) return null;
+  const state = store.get(stateKey(symbolKey, timeframe, source, resolved));
   if (!state) return null;
-  const intervalMs = timeframeMs(timeframe);
-  const currentOpenMs = Math.floor(nowWallMs / intervalMs) * intervalMs;
+  const currentOpenMs = brokerBucketOpenMs(nowWallMs, timeframe, state.brokerOffsetMs);
   if (state.openMs !== currentOpenMs) return null;
   return { ...state, symbolKey, timeframe };
 }
@@ -263,8 +371,9 @@ export function getFormingTickAgeMs(
   timeframe: ChartTimeframe,
   nowWallMs: number = Date.now(),
   source: StoreSource = "unknown",
+  partition: FormingPartitionSelector = "latest",
 ): number | null {
-  const snap = getFormingBar(symbol, timeframe, nowWallMs, source);
+  const snap = getFormingBar(symbol, timeframe, nowWallMs, source, partition);
   if (!snap) return null;
   return Math.max(0, nowWallMs - snap.lastTickWallMs);
 }
@@ -310,10 +419,13 @@ export function getFeedFreshness(
   symbol: string,
   nowWallMs: number = Date.now(),
   source: StoreSource = "unknown",
+  partition: FormingPartitionSelector = "latest",
 ): MarketFreshness | null {
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return null;
-  const last = lastTickBySymbol.get(sourceSymbolKey(symbolKey, source));
+  const resolved = resolvePartition(symbolKey, source, partition);
+  if (resolved === undefined) return null;
+  const last = lastTickBySymbol.get(partitionKey(symbolKey, source, resolved));
   if (!last) return null;
   const brokerStaleMs =
     last.brokerTimeMs != null ? Math.max(0, nowWallMs - last.brokerTimeMs) : null;
@@ -349,4 +461,11 @@ export function getFeedFreshness(
 export function __resetFormingBarStore(): void {
   store.clear();
   lastTickBySymbol.clear();
+  latestPartitionBySymbol.clear();
+  lastSweepWallMs = 0;
+}
+
+/** Test-only: entry counts, to check the stores stay bounded. */
+export function __formingStoreSizes(): { bars: number; ticks: number; latest: number } {
+  return { bars: store.size, ticks: lastTickBySymbol.size, latest: latestPartitionBySymbol.size };
 }

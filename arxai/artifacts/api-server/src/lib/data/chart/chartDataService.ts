@@ -71,7 +71,9 @@ import {
   getFormingTickAgeMs,
   getFeedFreshness,
   type FormingBarSnapshot,
+  type FormingPartition,
 } from "./formingBarComposer.js";
+import { brokerBucketCloseMs, isBrokerBucketAligned } from "./brokerBucket.js";
 
 // Quality precedence + trailing-interval thresholds now live in the shared
 // freshness module (../freshness.js) so every analysis/chart surface classifies
@@ -215,7 +217,7 @@ function buildFormingTipCandle(
   timeframe: ChartTimeframe,
   nowMs: number,
 ): NormalizedChartCandle {
-  const closeMs = forming.openMs + timeframeMs(timeframe);
+  const closeMs = brokerBucketCloseMs(forming.openMs, timeframe, forming.brokerOffsetMs);
   return {
     ...template,
     timeBasisEvidence: unavailableCandleTimeBasis(template.source),
@@ -319,12 +321,15 @@ async function buildChartFeed(
   // the market is trading, whatever the static weekend schedule says.
   // Stored history (display-only fallback) gets no live tick evidence, exactly
   // as it gets no forming tip: a live tick must not be attached to stored bars.
-  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
+  // Tick state is partitioned by writer: an MT5 series reads the ticks of the
+  // bridge that wrote its bars, never another broker's.
+  const tickPartition: FormingPartition = source === "mt5_broker" ? servingBridgeId : null;
+  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker", tickPartition) : null;
   const tickSource = !storedHistory && isFormingTickSource(source) ? source : null;
   const tickFreshness = tickSource === "mt5_broker"
     ? mt5TickFreshness
     : tickSource
-      ? getFeedFreshness(symbol, now, tickSource)
+      ? getFeedFreshness(symbol, now, tickSource, tickPartition)
       : null;
   const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
   const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
@@ -473,16 +478,24 @@ async function buildChartFeed(
   // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && !storedHistory && lastCandle && isFormingTickSource(source)) {
-    const forming = getFormingBar(symbol, timeframe, now, source);
+  if (includeFormingTip && lastCandle && !storedHistory && isFormingTickSource(source)) {
+    const forming = getFormingBar(symbol, timeframe, now, source, tickPartition);
     if (forming) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
-      if (tipOpenMs > lastClosedOpenMs) {
+      // Safety net for coarse timeframes: a tip that opens inside the newest
+      // bar's interval but not on its open is the same session bucketed on a
+      // different grid (an offset that changed, a bar pushed before the clock
+      // was measured). It is merged into that bar, never appended beside it.
+      const sameSessionOffGrid = timeframeMs(timeframe) >= timeframeMs("H2")
+        && tipOpenMs > lastClosedOpenMs
+        && tipOpenMs - lastClosedOpenMs < timeframeMs(timeframe)
+        && !isBrokerBucketAligned(lastClosedOpenMs, timeframe, forming.brokerOffsetMs);
+      if (tipOpenMs > lastClosedOpenMs && !sameSessionOffGrid) {
         // Tip is for an interval ahead of the newest closed bar → append.
         candles = [...candles, buildFormingTipCandle(lastCandle, forming, timeframe, now)];
         formingTipPresent = true;
-      } else if (tipOpenMs === lastClosedOpenMs) {
+      } else if (tipOpenMs === lastClosedOpenMs || sameSessionOffGrid) {
         // Provider's newest bar is the same (current) interval → merge live
         // extremes onto it; keep the closed bar's open, take the tip's close.
         const merged: NormalizedChartCandle = {
@@ -508,7 +521,7 @@ async function buildChartFeed(
       }
       // tipOpenMs < lastClosedOpenMs → stale tip behind the closed feed; ignore.
       if (formingTipPresent) {
-        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source);
+        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source, tickPartition);
       }
     }
   }

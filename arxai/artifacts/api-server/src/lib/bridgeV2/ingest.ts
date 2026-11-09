@@ -401,8 +401,13 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
     // tip ticks in real time. Display/telemetry only; never persisted, never an
     // analysis/execution input. The tip buckets on the same clock as the bars:
     // UTC when this bridge's offset is measured (bars are converted at ingest),
-    // else the raw broker clock (bars are stored raw too).
-    foldFormingTick(symbol, bid, tickUtc ? tickUtc.utcMs : brokerTimeEpochMs, Date.now(), "mt5_broker");
+    // else the raw broker clock (bars are stored raw too). Partitioned by the
+    // writing bridge and bucketed on its broker grid, so another bridge's ticks
+    // never fold into this broker's tip.
+    foldFormingTick(symbol, bid, tickUtc ? tickUtc.utcMs : brokerTimeEpochMs, Date.now(), "mt5_broker", {
+      bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+      brokerOffsetMs: tickUtc ? tickUtc.offset.offsetMs : null,
+    });
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }
