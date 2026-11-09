@@ -702,6 +702,7 @@ interface MessageContext {
  */
 function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
   if (quality !== "stale" && quality !== "delayed") return null;
+  if (ctx.storedHistory && ctx.marketClosedAtMs == null) return storedHistoryMessage(displaySymbol, ctx);
   if (ctx.marketClosedAtMs != null) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
   }
@@ -742,6 +743,7 @@ function notLiveReasonFor(quality: ChartQuality, ctx: MessageContext): "market_c
   if (ctx.storedHistory) return readableNotLiveQuality(quality) ? "stored_history" : null;
   if (ctx.marketClosedAtMs != null && readableNotLiveQuality(quality)) return "market_closed";
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) return "stored_history";
+  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) return "stored_history";
   return null;
 }
 
@@ -753,6 +755,9 @@ function buildMessage(
 ): string {
   if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
+  }
+  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) {
+    return storedHistoryMessage(displaySymbol, ctx);
   }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
     return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;

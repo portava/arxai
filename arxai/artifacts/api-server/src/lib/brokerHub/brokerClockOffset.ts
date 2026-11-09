@@ -137,11 +137,16 @@ export function brokerStampToUtcMs(
   return { utcMs: brokerMs - offset.offsetMs, offset };
 }
 
-/** Parse an EA display stamp ("2026.11.04 05:07:07", MQL TimeToString) as a
- *  clock reading in ms. The reading is in whatever clock produced it. */
+/** Parse an EA display stamp as a clock reading in ms: the MQL TimeToString
+ *  spelling ("2026.11.04 05:07:07", v154/v15x) or the zone-less ISO spelling
+ *  ("2026-11-04T05:07:07", v131 IsoFromTime). The reading is in whatever clock
+ *  produced it. A stamp carrying a zone ("Z", "+02:00") is an instant, not a
+ *  clock reading, and is rejected (ISO instants have their own parsers). */
 export function parseMqlTimeString(value: unknown): number | null {
   if (typeof value !== "string") return null;
-  const m = /^(\d{4})\.(\d{2})\.(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value.trim());
+  const v = value.trim();
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(v)
+    ?? /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(v);
   if (!m) return null;
   const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0), Number(m[6] ?? 0));
   return Number.isFinite(ms) ? ms : null;

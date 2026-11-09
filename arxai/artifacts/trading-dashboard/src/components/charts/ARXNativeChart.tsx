@@ -1462,6 +1462,12 @@ export function ARXNativeChart({
         ? "No new bars — the market may be closed or the feed delayed"
         : "Feed is stale";
   const stripUnavailable = feedStatus?.quality === "unavailable" || feedStatus?.quality === "empty";
+  // No feed answered, so the server served the newest bars it had stored
+  // (closed market, disconnected bridge). Name that and the last bar's age so
+  // the bars are never read as live.
+  const storedHistoryText = hasCandles && feedStatus?.notLiveReason === "stored_history"
+    ? storedHistoryChipText(candles[candles.length - 1]!.openTime, stripNowMs)
+    : null;
   const stripRefreshing = query.isFetching && !query.isLoading;
 
   // Phase 2 — Chart Safe Mode: active when candles exist but the integrity
@@ -1808,6 +1814,11 @@ export function ARXNativeChart({
             Data integrity failed — analysis paused
           </span>
         )}
+        {storedHistoryText && (
+          <span className="rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] text-sky-200" data-testid="arx-stored-history">
+            {storedHistoryText}
+          </span>
+        )}
         {stripStaleText && (
           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300" data-testid="arx-mirror-stale">
             {stripStaleText}
@@ -2005,6 +2016,15 @@ export function ARXNativeChart({
       <ChartLibraryCredit />
     </Card>
   );
+}
+
+/** Strip chip for bars served from stored history: last bar and its age. */
+export function storedHistoryChipText(newestOpenIso: string, nowMs: number): string {
+  const opened = Date.parse(newestOpenIso);
+  if (!Number.isFinite(opened)) return "Stored history, not live";
+  const mins = Math.max(0, Math.floor((nowMs - opened) / 60_000));
+  const age = mins < 60 ? `${mins} min` : mins < 48 * 60 ? `${Math.floor(mins / 60)} h` : `${Math.floor(mins / 1440)} days`;
+  return `Stored history up to the last bar (${age} ago), not live`;
 }
 
 export default ARXNativeChart;

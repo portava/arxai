@@ -78,6 +78,23 @@ test("parses the EA's TimeToString stamp as a clock reading", () => {
   assert.equal(parseMqlTimeString("2026.11.04 09:00:00"), T0);
   assert.equal(parseMqlTimeString("2026.11.04 09:00"), T0);
   assert.equal(parseMqlTimeString(""), null);
-  assert.equal(parseMqlTimeString("2026-11-04T09:00:00Z"), null, "only the MQL spelling; ISO stamps have their own parsers");
+  assert.equal(parseMqlTimeString("2026-11-04T09:00:00Z"), null, "a zoned ISO stamp is an instant, not a clock reading");
+  assert.equal(parseMqlTimeString("2026-11-04T09:00:00+02:00"), null, "a zoned ISO stamp is an instant, not a clock reading");
   assert.equal(parseMqlTimeString(12345), null);
+});
+
+test("parses the v131 heartbeat's zone-less ISO stamp (IsoFromTime) as a clock reading", () => {
+  assert.equal(parseMqlTimeString("2026-11-04T09:00:00"), T0);
+  assert.equal(parseMqlTimeString("2026-11-04 09:00:00"), T0);
+  assert.equal(parseMqlTimeString("2026-11-04T09:00"), T0);
+  // End to end: a v131 heartbeat on a UTC+2 broker measures +2 h.
+  const q = recordBrokerClockSample({
+    bridgeConnectionId: 131,
+    brokerMs: parseMqlTimeString("2026-11-04T11:00:00"),
+    gmtMs: T0,
+    basis: "heartbeat",
+    nowMs: T0,
+  });
+  assert.equal(q, 2 * 60 * 60_000);
+  assert.equal(getBrokerClockOffset(131, T0)?.offsetMs, 2 * 60 * 60_000);
 });

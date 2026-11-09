@@ -577,3 +577,23 @@ describe("a stale flag on a partial feed never earns the closed-market all-clear
     expect(staleChip()).toMatch(/not current/i);
   });
 });
+
+describe("stored history when no feed answers (closed market or down feed)", () => {
+  it("keeps the stored bars on the canvas with a stored-history chip and the last bar's age", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NEWEST_OPEN_MS + 5 * 60 * 60_000);
+    setResponse(makeResponse({
+      isLive: false, aiUsable: false, quality: "stale", stale: true, notLiveReason: "stored_history",
+    } as Partial<ChartFeedStatus>));
+    renderChart();
+    expect(screen.queryByTestId("arx-native-empty")).toBeNull();
+    expect(adapterSpies.setCandles).toHaveBeenCalled();
+    expect(screen.getByTestId("arx-stored-history").textContent).toBe("Stored history up to the last bar (5 h ago), not live");
+    expect(screen.queryByTestId("arx-native-not-ai")).not.toBeNull();
+  });
+
+  it("shows no stored-history chip on a live feed", () => {
+    renderChart();
+    expect(screen.queryByTestId("arx-stored-history")).toBeNull();
+  });
+});
