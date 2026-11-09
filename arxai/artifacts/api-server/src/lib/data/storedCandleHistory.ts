@@ -11,7 +11,8 @@
 // reports it not live, not AI-usable and without Truth market evidence.
 
 import * as candleCache from "./candleCache.js";
-import { MT5_BROKER_MIRROR_SOURCE } from "./brokerCandleStore.js";
+import { MT5_BROKER_MIRROR_SOURCE, normalizeBrokerTimeframe, TIMEFRAME_MS } from "./brokerCandleStore.js";
+import { readBridgeStoredCandles } from "./bridgeStoredCandles.js";
 import type { MarketCandlesResult } from "./marketDataRouter.js";
 import type { SeriesProvenance } from "./types.js";
 
@@ -41,27 +42,81 @@ function brokerCodeForSource(source: string): SeriesProvenance["brokerCode"] {
   return "third_party";
 }
 
+/** The MT5 mirror is preferred only while its newest bar is this close to the newest stored source. */
+export const MT5_MIRROR_PREFERENCE_INTERVALS = 3;
+
+function intervalMsFor(tf: string): number {
+  const btf = normalizeBrokerTimeframe(tf);
+  return btf ? TIMEFRAME_MS[btf] : 5 * 60_000;
+}
+
+export interface StoredHistoryOptions {
+  /** The reader's own bridge: its broker_candles rows are served first (own_bridge). */
+  bridgeConnectionId?: number | null;
+}
+
 /**
  * The newest stored bars for one symbol|timeframe, from ONE stored source
- * (series are never blended): the MT5 broker store when it holds bars,
- * otherwise the stored source whose newest bar is the most recent. Returns
- * `prior` (the exhausted live result) unchanged when nothing is stored or the
- * store cannot be read.
+ * (series are never blended). A reader with a bridge gets that bridge's own
+ * stored broker bars when it has any. Otherwise the shared market_candles
+ * store: the MT5 broker mirror when its newest bar is within
+ * MT5_MIRROR_PREFERENCE_INTERVALS of the newest stored source, else the
+ * stored source whose newest bar is the most recent. Returns `prior` (the
+ * exhausted live result) unchanged when nothing is stored or the store cannot
+ * be read.
  */
 export async function routeStoredCandleHistory(
   symbol: string,
   timeframe: string,
   limit: number,
   prior: MarketCandlesResult,
+  opts: StoredHistoryOptions = {},
 ): Promise<MarketCandlesResult> {
   if (prior.ok) return prior;
   const tf = normalizeTimeframe(timeframe);
+  const pin = opts.bridgeConnectionId;
+  if (typeof pin === "number" && Number.isFinite(pin)) {
+    try {
+      const own = await readBridgeStoredCandles(pin, symbol, tf, limit);
+      if (own && own.candles.length > 0) {
+        return {
+          ok: true,
+          symbol,
+          assetClass: prior.assetClass,
+          candles: own.candles,
+          primaryProvider: MT5_BROKER_MIRROR_SOURCE,
+          attempts: prior.attempts,
+          userMessage: "Showing stored history; no live feed is available.",
+          adminDetail: `Live chain exhausted (${prior.adminDetail}); served ${own.candles.length} stored broker bars of bridge ${pin}, newest ${own.newest}.`,
+          provenance: {
+            providerId: MT5_BROKER_MIRROR_SOURCE,
+            subProviderId: STORED_HISTORY_SUB_PROVIDER,
+            brokerCode: "mt5",
+            bridgeConnectionId: pin,
+            userId: own.userId,
+            brokerSymbol: own.brokerSymbol,
+            environment: "unknown",
+            receivedAt: new Date().toISOString(),
+            delayed: null,
+            source: "DERIVED",
+            sourceId: `${MT5_BROKER_MIRROR_SOURCE}:${symbol.trim().toUpperCase()}:${tf}`,
+          },
+        };
+      }
+    } catch {
+      // The bridge store is unreadable: fall through to the shared mirror.
+    }
+  }
   try {
     const sources = (await candleCache.listCachedSources(symbol, tf))
       .filter((s) => s.count > 0 && s.newest != null && !isNonMarketSource(s.source));
     if (sources.length === 0) return prior;
-    const chosen = sources.find((s) => s.source === MT5_BROKER_MIRROR_SOURCE)
-      ?? [...sources].sort((a, b) => Date.parse(b.newest!) - Date.parse(a.newest!))[0]!;
+    const newestFirst = [...sources].sort((a, b) => Date.parse(b.newest!) - Date.parse(a.newest!));
+    const newestMs = Date.parse(newestFirst[0]!.newest!);
+    const mirror = sources.find((s) => s.source === MT5_BROKER_MIRROR_SOURCE);
+    const mirrorCurrent = mirror != null
+      && newestMs - Date.parse(mirror.newest!) <= MT5_MIRROR_PREFERENCE_INTERVALS * intervalMsFor(tf);
+    const chosen = mirrorCurrent ? mirror! : newestFirst[0]!;
     const read = await candleCache.readCachedCandles({ symbol, timeframe: tf, source: chosen.source, limit });
     if (read.count === 0) return prior;
     const provenance: SeriesProvenance = {

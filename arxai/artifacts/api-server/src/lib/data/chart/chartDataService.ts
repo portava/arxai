@@ -278,7 +278,7 @@ async function buildChartFeed(
     if (shared.primaryProvider === "mt5_broker") result = shared;
   }
   if (!result.ok && opts.storedHistoryFallback === true) {
-    result = await routeStoredCandleHistory(symbol, timeframe, limit, result);
+    result = await routeStoredCandleHistory(symbol, timeframe, limit, result, { bridgeConnectionId: pinnedBridge });
   }
   const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
