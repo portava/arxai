@@ -15,6 +15,7 @@
 // Run: pnpm --filter @workspace/api-server run test:behavior-ownership-route
 
 import { after, before, test } from "node:test";
+import { executablePaperFixture } from "../../lib/safety/__qa__/paperModeFixture.js";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -200,7 +201,10 @@ async function json<T = Record<string, unknown>>(res: Response): Promise<T> {
   return await res.json() as T;
 }
 
+// Paper bookings need an executable Safety Core (safety/entryPolicy.ts).
+let restorePaperMode: (() => Promise<void>) | undefined;
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   const a = await seedUser(EMAIL_A, "QA Behavior Owner A");
   const b = await seedUser(EMAIL_B, "QA Behavior Owner B");
@@ -273,6 +277,7 @@ before(async () => {
 });
 
 after(async () => {
+  await restorePaperMode?.();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await deleteFixtures();
 });
