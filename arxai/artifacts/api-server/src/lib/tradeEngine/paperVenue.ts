@@ -448,6 +448,7 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
       ? { bid: q.bid, ask: q.ask, at: q.at, source: q.source }
       : { bid: marketPx, ask: marketPx, at: new Date(nowMs), source: "paper_simulator_price" } },
     auditContext: { caller: a.caller, ...(a.clientRequestKey ? { clientRequestKey: a.clientRequestKey } : {}) },
+    generatedEntry: a.decisionId != null,
   });
   if (!risk.allowed) return governorRefusal(risk);
   const ins = await db.insert(paperOrdersTable).values({
@@ -609,6 +610,7 @@ export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; o
     paperAccountId: a.paperAccountId,
     facts: { quote: a.quote },
     auditContext: a.auditContext,
+    generatedEntry: a.decisionId != null,
   });
   if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
   const ins = await db.insert(paperOrdersTable).values({

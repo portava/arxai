@@ -4038,6 +4038,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }, {
       connectionId: bridge?.id ?? null,
       virtualAccountId: rgVirtualAccountId,
+      generatedEntry: row.selfTradeDecisionId != null,
       auditContext: { caller: "live_dispatch", commandId: args.commandId, commandType: row.commandType },
     });
     if (!risk.allowed) {
