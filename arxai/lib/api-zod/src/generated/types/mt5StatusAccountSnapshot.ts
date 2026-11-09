@@ -25,4 +25,9 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
+  /**
+   * When the EA last pushed these account figures (ISO). Null when never synced.
+   * @nullable
+   */
+  syncedAt?: string | null;
 };

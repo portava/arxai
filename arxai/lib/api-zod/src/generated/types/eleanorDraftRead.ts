@@ -20,9 +20,14 @@ export interface EleanorDraftRead {
   timeframe: string;
   /** True when the state is fresh and understanding engines are populated */
   feedUsable: boolean;
-  /** Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution. */
+  /** Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution. */
   dataQuality: EleanorDraftReadDataQuality;
+  /** True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers. */
+  feedConfirmed?: boolean;
+  /** 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral'). */
   bias: EleanorDraftReadBias;
+  /** When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers. */
+  asOf?: string;
   headline: string;
   points: string[];
   cautions: string[];

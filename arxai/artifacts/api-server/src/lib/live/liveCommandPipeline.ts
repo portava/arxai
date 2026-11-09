@@ -20,6 +20,7 @@ import { readBoundManagementRiskPosition, withBoundManagementClose, managementFu
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
+import { heartbeatAgeSecondsFrom } from "../brokerHub/freshness.js";
 import { randomUUID } from "node:crypto";
 import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
 import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
@@ -83,6 +84,13 @@ import {
 import type { ReconciliationRunRowLike } from "./unknownReconciler.js";
 import { explainMt5Retcode } from "../mt5/mt5Retcodes.js";
 import { getMyArming } from "./liveArming.js";
+import {
+  CANCEL_LIVE_PENDING_ORDER, MODIFY_LIVE_PENDING_ORDER, PENDING_CONTROL_COMMAND_TYPES, PENDING_CONTROL_EA_ACTION,
+  PENDING_CONTROL_IN_FLIGHT_STATUSES, PENDING_CONTROL_ORDER_TYPE, checkPendingOrderControllable, currentPendingLevels,
+  isAllowedPendingControlResultTransition, isPendingControlCommandType, mapPendingControlOutcome,
+  originalStatusAfterControl, pendingControlMirrorPayload, pendingControlRestrictedByEntryPosture,
+  pendingControlRiskIntent, validatePendingModify, type PendingControlCommandType, type PendingLevels,
+} from "./livePendingControl.js";
 import {
   killSwitchCloseBypassApplies,
   effectiveKillSwitchEngaged,
@@ -1929,7 +1937,152 @@ export function isLivePartialCloseRequest(requestedVolume: number, positionVolum
  * Still requires user-armed + kill-switch off; volume + symbol come from
  * the position row.
  */
-export async function createLiveOpsDraft(input: {
+export type LiveOpsDraftResult =
+  | { ok: true; command: ArxLiveCommand }
+  | { ok: false; reason: string; detail?: string };
+
+/**
+ * A cancel / modify of the caller's own working live pending order. The order
+ * row is named by its commandId; symbol, side, volume and ticket are read from
+ * that row under a row lock (never taken from the caller). `quote` is the
+ * current two-sided bid/ask for the modify side checks (null = the broker
+ * enforces them).
+ */
+export type LivePendingControlDraftInput = {
+  userId: number;
+  commandType: PendingControlCommandType;
+  targetCommandId: string;
+  modify?: { price?: number | null; stopLoss?: number | null; takeProfit?: number | null };
+  quote?: { bid: number | null; ask: number | null } | null;
+  sourcePage?: string;
+};
+
+export async function createLiveOpsDraft(
+  input: LivePositionOpsDraftInput | LivePendingControlDraftInput,
+): Promise<LiveOpsDraftResult> {
+  if (input.commandType === CANCEL_LIVE_PENDING_ORDER || input.commandType === MODIFY_LIVE_PENDING_ORDER) {
+    return createPendingControlDraft(input);
+  }
+  return createPositionOpsDraft(input as LivePositionOpsDraftInput);
+}
+
+/** Lots / ticket / levels of a pending-control draft, all from the locked order row. */
+async function createPendingControlDraft(input: LivePendingControlDraftInput): Promise<LiveOpsDraftResult> {
+  const arming = await getMyArming(input.userId);
+  if (!arming || !arming.isArmed) return { ok: false, reason: "USER_NOT_ARMED_FOR_LIVE" };
+  // Same per-user kill-switch rule as a user CLOSE: refused while engaged. The
+  // admin emergency-close bypass stays CLOSE_LIVE_POSITION-only.
+  if (arming.killSwitchEngaged) return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
+  const targetCommandId = String(input.targetCommandId ?? "").trim();
+  if (!targetCommandId) return { ok: false, reason: "PENDING_ORDER_NOT_FOUND" };
+  const manualBridge = (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
+  const source = input.sourcePage ?? (input.commandType === CANCEL_LIVE_PENDING_ORDER ? "LIVE_PENDING_ORDERS_CANCEL" : "LIVE_PENDING_ORDERS_MODIFY");
+  const ownership = await resolveOwnershipFields({ userId: input.userId, cycleId: null, source });
+  const commandId = `lvcmd_${randomUUID()}`;
+  const orderType = PENDING_CONTROL_ORDER_TYPE[input.commandType];
+
+  const drafted = await db.transaction(async (tx): Promise<LiveOpsDraftResult & { orderTicket?: string; symbol?: string }> => {
+    // Row lock on the order serializes concurrent cancel/modify drafts of it.
+    const [orig] = await tx.select().from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.commandId, targetCommandId),
+      eq(arxLiveCommandsTable.userId, input.userId),
+    )).for("update");
+    const inFlight = await tx.select({ id: arxLiveCommandsTable.id }).from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, input.userId),
+      inArray(arxLiveCommandsTable.commandType, [...PENDING_CONTROL_COMMAND_TYPES]),
+      inArray(arxLiveCommandsTable.status, [...PENDING_CONTROL_IN_FLIGHT_STATUSES]),
+      sql`${arxLiveCommandsTable.payload} ->> 'targetCommandId' = ${targetCommandId}`,
+    )).limit(1);
+    const positionTickets = new Set<string>();
+    if (orig?.brokerTicket) {
+      const pos = await livePositionLedger.select(
+        { brokerTicket: livePositionColumns.brokerTicket },
+        { where: and(eq(livePositionColumns.userId, input.userId), eq(livePositionColumns.brokerTicket, orig.brokerTicket)), limit: 1 },
+        tx,
+      );
+      for (const p of pos) if (p.brokerTicket) positionTickets.add(String(p.brokerTicket));
+    }
+    const check = checkPendingOrderControllable({
+      row: orig ?? null, userId: input.userId, positionTickets, inFlightControlCount: inFlight.length,
+    });
+    if (!check.ok) return { ok: false, reason: check.reason, detail: check.detail };
+    const o = orig!;
+    const side: "BUY" | "SELL" = String(o.side).toUpperCase() === "SELL" ? "SELL" : "BUY";
+    const [lastModify] = await tx.select({ payload: arxLiveCommandsTable.payload }).from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, input.userId),
+      eq(arxLiveCommandsTable.commandType, MODIFY_LIVE_PENDING_ORDER),
+      eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
+      sql`${arxLiveCommandsTable.payload} ->> 'targetCommandId' = ${targetCommandId}`,
+    )).orderBy(desc(arxLiveCommandsTable.id)).limit(1);
+    const before: PendingLevels = currentPendingLevels(o, lastModify ?? null);
+    let stopLoss: number | null = null;
+    let takeProfit: number | null = null;
+    const payload: Record<string, unknown> = {
+      targetCommandId,
+      orderTicket: check.orderTicket,
+      targetOrderType: o.orderType,
+      quoteAtDraft: input.quote ?? null,
+    };
+    if (input.commandType === MODIFY_LIVE_PENDING_ORDER) {
+      const v = validatePendingModify({
+        orderType: o.orderType, side, current: before, next: input.modify ?? {},
+        bid: input.quote?.bid ?? null, ask: input.quote?.ask ?? null,
+      });
+      if (!v.ok) return { ok: false, reason: v.code, detail: v.detail };
+      stopLoss = v.effective.stopLoss;
+      takeProfit = v.effective.takeProfit;
+      payload["pendingModifyV1"] = {
+        before,
+        after: { price: v.effective.price, stopLimitPrice: before.stopLimitPrice, stopLoss, takeProfit },
+        priceChanged: v.priceChanged,
+      };
+    }
+    const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
+      commandId, userId: input.userId, commandType: input.commandType, symbol: o.symbol, side, orderType,
+      requestedVolume: Number(o.requestedVolume), stopLoss, takeProfit, payload,
+      actorId: input.userId, actorType: "USER",
+    });
+    const [row] = await tx.insert(arxLiveCommandsTable).values({
+      commandId,
+      userId: input.userId,
+      bridgeConnectionId: manualBridge?.id ?? null,
+      accountLogin: manualBridge?.accountNumber ?? null,
+      brokerServer: manualBridge?.brokerName ?? null,
+      accountNumber: arming.accountNumberConfirmed,
+      commandType: input.commandType,
+      status: "LIVE_CONFIRMATION_REQUIRED",
+      symbol: o.symbol,
+      side,
+      orderType,
+      requestedVolume: Number(o.requestedVolume),
+      stopLoss,
+      takeProfit,
+      sourcePage: source,
+      allocationId: ownership.allocationId,
+      cycleId: ownership.cycleId,
+      source: ownership.source,
+      payload,
+      payloadHash: integrity.payloadHash,
+      integrityHash: integrity.integrityHash,
+      integrityKeyVersion: integrity.integrityKeyVersion,
+      integrityStatus: integrity.integrityStatus,
+      actorId: integrity.actorId,
+      actorType: integrity.actorType,
+      actionType: integrity.actionType,
+    }).returning();
+    return { ok: true, command: row!, orderTicket: check.orderTicket, symbol: o.symbol };
+  });
+  if (!drafted.ok) return drafted;
+  await audit({
+    eventType: "LIVE_DRAFT_CREATED", userId: input.userId, symbol: drafted.symbol,
+    message: `Live pending-order control draft created: ${input.commandType} order=${drafted.orderTicket}`,
+    metadata: { commandId, commandType: input.commandType, targetCommandId, orderTicket: drafted.orderTicket },
+  });
+  return { ok: true, command: drafted.command };
+}
+
+/** Close / modify-SL/TP of an open live position. */
+export type LivePositionOpsDraftInput = {
   userId: number;
   commandType: "CLOSE_LIVE_POSITION" | "MODIFY_LIVE_SLTP";
   brokerTicket: string;
@@ -1951,7 +2104,9 @@ export async function createLiveOpsDraft(input: {
   // read-only ownership. NEVER honored for OPEN / MODIFY / increase-exposure.
   killSwitchCloseBypass?: KillSwitchCloseBypass | null;
   managementTarget?: ManagementTarget;
-}): Promise<{ ok: true; command: ArxLiveCommand } | { ok: false; reason: string; detail?: string }> {
+};
+
+async function createPositionOpsDraft(input: LivePositionOpsDraftInput): Promise<LiveOpsDraftResult> {
   const arming = await getMyArming(input.userId);
   if (!arming || !arming.isArmed) return { ok: false, reason: "USER_NOT_ARMED_FOR_LIVE" };
   // Narrow kill-switch bypass — honored ONLY for an admin emergency CLOSE.
@@ -2487,8 +2642,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       tradingFrozen: _slotAllocTable.tradingFrozen,
     }).from(_slotAllocTable).where(eq(_slotAllocTable.userId, args.userId)).limit(1);
     const allocRow = allocRows[0];
+    // A pending-order MODIFY moves where new exposure opens: frozen like an entry.
     const isEntry = row.commandType === "PLACE_LIVE_MARKET_ORDER"
-      || row.commandType === "PLACE_LIVE_PENDING_ORDER";
+      || row.commandType === "PLACE_LIVE_PENDING_ORDER"
+      || pendingControlRestrictedByEntryPosture(row.commandType);
     const fullFrozen = allocRow?.allocationStatus === "frozen";
     const tradingFrozen = !!allocRow?.tradingFrozen;
     if (fullFrozen || (tradingFrozen && isEntry)) {
@@ -2613,13 +2770,14 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       && (row.payload as { killSwitchCloseBypass?: unknown }).killSwitchCloseBypass != null;
     const stop = preCheckStopRefusal(await platformStop(), {
       own: "platform_emergency_stop",
-      opensNewRisk: LIVE_ENTRY_COMMAND_TYPES.has(row.commandType),
+      opensNewRisk: LIVE_ENTRY_COMMAND_TYPES.has(row.commandType) || pendingControlRestrictedByEntryPosture(row.commandType),
       venue: "LIVE",
     });
     if (emergencyKillSwitchBlocksDispatch({
       emergencyKillSwitch: stop.sources.includes("platform_emergency_stop"),
       safetyCoreKillSwitch: stop.sources.includes("safety_core_kill_switch"),
-      commandType: row.commandType,
+      // A pending-order MODIFY is refused by the safety-core stop like an entry.
+      commandType: pendingControlRestrictedByEntryPosture(row.commandType) ? "PLACE_LIVE_PENDING_ORDER" : row.commandType,
       hasKillSwitchCloseBypassMarker,
     })) {
       const reason = EMERGENCY_KILL_SWITCH_BLOCK_REASON;
@@ -2669,7 +2827,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // (isActive + expiry vs end_time) is decided by the pure helper so the
   // contract is unit-tested in one place.
   if (row.commandType === "PLACE_LIVE_MARKET_ORDER"
-    || row.commandType === "PLACE_LIVE_PENDING_ORDER") {
+    || row.commandType === "PLACE_LIVE_PENDING_ORDER"
+    || pendingControlRestrictedByEntryPosture(row.commandType)) {
     const { riskLocksTable } = await import("@workspace/db");
     const lockRows = await db.select({
       lockType: riskLocksTable.lockType,
@@ -2725,7 +2884,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // flag defaults false, so enabling enforcement changes nothing until an
   // operator sets it, and it can only ever refuse, never permit.
   if (row.commandType === "PLACE_LIVE_MARKET_ORDER"
-    || row.commandType === "PLACE_LIVE_PENDING_ORDER") {
+    || row.commandType === "PLACE_LIVE_PENDING_ORDER"
+    || pendingControlRestrictedByEntryPosture(row.commandType)) {
     const { userSlotAllocationTable: _closeOnlyAllocTable } = await import("@workspace/db");
     const closeOnlyRows = await db.select({
       closeOnlyMode: _closeOnlyAllocTable.closeOnlyMode,
@@ -3528,9 +3688,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     };
   }
 
-  const hbAge = bridge?.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(bridge.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, so gate 7 fails), never clamped to a fresh 0s.
+  const hbAge = heartbeatAgeSecondsFrom(bridge?.lastHeartbeat ?? null, Date.now());
+  const hbObservedAt = bridge?.lastHeartbeat ? new Date(bridge.lastHeartbeat) : null;
   const caps = (bridge?.capabilities ?? {}) as { eaInputs?: Record<string, unknown> };
   const ea = (caps.eaInputs ?? {}) as Record<string, unknown>;
 
@@ -3540,8 +3701,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // or because its size exceeds the current per-symbol cap — would trap
   // real money in a losing trade. Authz, kill switch, master switch, EA
   // readiness, account-type, daily-loss gates still apply.
+  // A pending-order cancel / modify is an ops command for these gates too: it
+  // adds no lots, and a modify's levels are judged by the Risk Governor below.
   const isOpsCommand = row.commandType === "CLOSE_LIVE_POSITION"
-    || row.commandType === "MODIFY_LIVE_SLTP";
+    || row.commandType === "MODIFY_LIVE_SLTP"
+    || isPendingControlCommandType(row.commandType);
 
   const perMarketMap = (settings.maxLotPerMarket as Record<string, number>) ?? {};
   // T019 — owner allowed-symbol set is governance-driven. When the owner
@@ -3812,7 +3976,24 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // held back only by an invalid quantity or a disconnected bridge, so open
   // exposure is never trapped. Writes a user_risk_events row either way.
   {
-    const rgAction: IntentAction = row.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE"
+    // Pending-order controls: a cancel is a CLOSE of the order's lots
+    // (reduce-only rules); a modify is a MODIFY at the new entry whose stop is
+    // judged by its risk distance (pendingControlRiskIntent).
+    const pendingIntent = isPendingControlCommandType(row.commandType)
+      ? (() => {
+          const m = ((row.payload ?? {}) as Record<string, unknown>)["pendingModifyV1"] as
+            { before?: PendingLevels; after?: { price: number | null; stopLoss: number | null; takeProfit: number | null } } | undefined;
+          const empty: PendingLevels = { price: null, stopLimitPrice: null, stopLoss: null, takeProfit: null };
+          return pendingControlRiskIntent({
+            commandType: row.commandType as PendingControlCommandType,
+            side: row.side === "SELL" ? "SELL" : "BUY",
+            before: m?.before ?? empty,
+            after: m?.after ?? { price: null, stopLoss: row.stopLoss ?? null, takeProfit: row.takeProfit ?? null },
+          });
+        })()
+      : null;
+    const rgAction: IntentAction = pendingIntent ? pendingIntent.action
+      : row.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE"
       : row.commandType === "MODIFY_LIVE_SLTP" ? "MODIFY" : "OPEN";
     let rgVirtualAccountId: number | null = null;
     if (routingMode === "SHARED_MASTER_MT5") {
@@ -3825,8 +4006,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     const pendingPriceRaw = (row.payload as Record<string, unknown> | null)?.["price"];
     // A modify names the position it changes; a null new stop means "leave
     // the stop as it is", so the resulting stop is the position's current one.
-    let rgPosition: { entryPrice: number; stopLoss: number | null } | null = null;
-    if (rgAction === "MODIFY") {
+    let rgPosition: { entryPrice: number; stopLoss: number | null } | null = pendingIntent?.position ?? null;
+    if (rgAction === "MODIFY" && !pendingIntent) {
       try { rgPosition = await readLiveModifyRiskPosition(row); }
       catch (error) {
         if (!(error instanceof ManagementTargetError)) throw error;
@@ -3847,9 +4028,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       symbol: row.symbol,
       side: row.side === "BUY" || row.side === "SELL" ? row.side : null,
       lots: Number(row.requestedVolume),
-      entryPrice: isPendingEntry && typeof pendingPriceRaw === "number" ? pendingPriceRaw : null,
-      stopLoss: row.stopLoss ?? (rgAction === "MODIFY" ? rgPosition?.stopLoss ?? null : null),
-      takeProfit: row.takeProfit ?? null,
+      entryPrice: pendingIntent ? pendingIntent.entryPrice
+        : isPendingEntry && typeof pendingPriceRaw === "number" ? pendingPriceRaw : null,
+      stopLoss: pendingIntent ? pendingIntent.stopLoss
+        : row.stopLoss ?? (rgAction === "MODIFY" ? rgPosition?.stopLoss ?? null : null),
+      takeProfit: pendingIntent ? pendingIntent.takeProfit : row.takeProfit ?? null,
       intentRef: `live_command:${args.commandId}`,
       position: rgPosition,
     }, {
@@ -3988,6 +4171,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     killSwitchEngaged: effectiveKillSwitchEngaged(!!arming?.killSwitchEngaged, killSwitchBypassActive),
     bridgeAccountType: bridge?.accountType ?? null,
     bridgeHeartbeatAgeSec: hbAge,
+    bridgeLastHeartbeatAt: hbObservedAt && Number.isFinite(hbObservedAt.getTime()) ? hbObservedAt.toISOString() : null,
     bridgeEaVersion: bridge?.eaVersion ?? null,
     bridgeEnableLiveExecution: typeof ea["enableLiveExecution"] === "boolean" ? (ea["enableLiveExecution"] as boolean) : null,
     bridgeReadOnlyMode: typeof ea["readOnlyMode"] === "boolean" ? (ea["readOnlyMode"] as boolean) : null,
@@ -4071,7 +4255,9 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // pass the cap-check; the loser surfaces
   // `MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED`. Released on any failure path.
   let reservationId: number | null = null;
-  if (routingMode === "SHARED_MASTER_MT5" && bridge?.id) {
+  // A pending-order cancel / modify adds no lots: no reservation (the order's
+  // own reservation stays on the order's row until the cancel settles it).
+  if (routingMode === "SHARED_MASTER_MT5" && bridge?.id && !isPendingControlCommandType(row.commandType)) {
     const { sharedMasterAccountsTable } = await import("@workspace/db");
     const [sma] = await db.select({ id: sharedMasterAccountsTable.id })
       .from(sharedMasterAccountsTable)
@@ -4179,6 +4365,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     volume: Number(row.requestedVolume),
     stopLoss: row.stopLoss != null ? Number(row.stopLoss) : null,
     takeProfit: row.takeProfit != null ? Number(row.takeProfit) : null,
+    // Two controls of different orders with equal symbol/side/lots must not
+    // collide on the minute-bucket key: key them by the target order too.
+    discriminator: isPendingControlCommandType(row.commandType)
+      ? `${row.commandType}:${String(((row.payload ?? {}) as Record<string, unknown>)["orderTicket"] ?? "")}`
+      : undefined,
   });
   // Task #28 — stamp TTL + authoritative server clock at the moment of
   // dispatch. A command not executed by the EA before `expiresAt` is swept
@@ -4714,7 +4905,14 @@ const LIVE_COMMAND_TYPE_TO_EA_ACTION: Record<string, string> = {
   PLACE_LIVE_PENDING_ORDER: "PLACE_PENDING",
   CLOSE_LIVE_POSITION: "CLOSE_POSITION",
   MODIFY_LIVE_SLTP: "MODIFY_POSITION",
+  // Pending-order controls (v154 HandleCancelPending / HandleModifyPending).
+  ...PENDING_CONTROL_EA_ACTION,
 };
+
+/** The EA mailbox action a live command type is mirrored as (undefined = unmapped). */
+export function eaActionForLiveCommandType(commandType: string): string | undefined {
+  return LIVE_COMMAND_TYPE_TO_EA_ACTION[commandType];
+}
 
 // Live command types that act on an EXISTING broker position and therefore MUST
 // carry a real, non-zero broker position ticket when mirrored into mt5_commands.
@@ -4807,6 +5005,11 @@ export function buildBridgedMt5CommandPayload(liveRow: {
     const exp = num(src["expirationEpoch"]);
     if (exp) payload.expirationEpoch = Math.floor(exp);
   }
+  // Pending-order cancel / modify: the EA reads `orderTicket` (and `entry` for
+  // a price change); they target an order, never a position ticket.
+  if (isPendingControlCommandType(liveRow.commandType)) {
+    return { ...payload, ...pendingControlMirrorPayload(liveRow.commandType, liveRow.payload) };
+  }
   const positionTicket = resolveBridgedPositionTicket({
     commandType: liveRow.commandType,
     brokerTicketColumn: liveRow.brokerTicket,
@@ -4890,6 +5093,7 @@ const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridge
 );
 
 export type BridgedLiveOutcome =
+  | "LIVE_CANCELLED"
   | "LIVE_ACKNOWLEDGED"
   | "LIVE_FILLED"
   | "LIVE_PARTIALLY_FILLED"
@@ -4979,6 +5183,10 @@ export function mapBridgedLiveOutcome(input: {
   if (LIVE_NOT_EXECUTED_STATUS_RE.test(status)) return "LIVE_REJECTED";
   // Explicit uncertainty/acceptance is never promoted by an existing ticket.
   if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
+  // Pending-order cancel / modify: CANCELLED / MODIFIED with the order ticket
+  // (never a fill size); anything else is unconfirmed.
+  if (isPendingControlCommandType(input.commandType))
+    return mapPendingControlOutcome({ commandType: input.commandType, status, hasBrokerTicket: input.hasBrokerTicket });
   // Only an explicit acknowledgement (or, below, an accepted live pending order).
   if (["acknowledged","live_acknowledged"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
   if (["partially_filled","live_partially_filled"].includes(statusLc))
@@ -5001,6 +5209,70 @@ function settlementConsumers(command: ArxLiveCommand): SettlementConsumer[] {
     ? [isAgentManagementCommand(command) ? "AGENT_CLOSE_POSITION" as const : "MANUAL_CLOSE_POSITION" as const] : [])];
 }
 
+/**
+ * Inside the cancel result's transaction: the broker confirmed the cancel, so
+ * the ORIGINAL PLACE_LIVE_PENDING_ORDER row (still LIVE_ACKNOWLEDGED) becomes
+ * LIVE_CANCELLED, gets its own applied receipt event (the settlement outbox
+ * certifies a job against its command's latest applied receipt) and its
+ * EXPOSURE_RESERVATION job, which settleReservationForStatus maps to RELEASE.
+ * Returns the cancelled row, or null when nothing applies (not a cancel, not
+ * confirmed, or the order already left LIVE_ACKNOWLEDGED — then it is left
+ * as it is and audited).
+ */
+async function applyPendingCancelToOriginal(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  control: ArxLiveCommand,
+  controlFinalStatus: ArxLiveCommandStatus,
+  controlFingerprint: string,
+  now: Date,
+): Promise<ArxLiveCommand | null> {
+  if (control.commandType !== CANCEL_LIVE_PENDING_ORDER || controlFinalStatus !== "LIVE_CANCELLED") return null;
+  const targetCommandId = String(((control.payload ?? {}) as Record<string, unknown>)["targetCommandId"] ?? "");
+  if (!targetCommandId) return null;
+  const [orig] = await tx.select().from(arxLiveCommandsTable).where(and(
+    eq(arxLiveCommandsTable.commandId, targetCommandId),
+    eq(arxLiveCommandsTable.userId, control.userId),
+    eq(arxLiveCommandsTable.commandType, "PLACE_LIVE_PENDING_ORDER"),
+  )).for("update");
+  const next = orig ? originalStatusAfterControl(control.commandType, controlFinalStatus, orig.status) : null;
+  if (!orig || !next || orig.brokerTicket !== control.brokerTicket) {
+    await audit({
+      eventType: "LIVE_PENDING_CANCEL_ORIGINAL_NOT_APPLIED", severity: "WARNING", userId: control.userId,
+      symbol: control.symbol,
+      message: `Broker confirmed the cancel of order ${control.brokerTicket ?? "?"}, but the order row ${targetCommandId} was not changed`,
+      metadata: { controlCommandId: control.commandId, targetCommandId, originalStatus: orig?.status ?? null,
+        originalTicket: orig?.brokerTicket ?? null, controlTicket: control.brokerTicket },
+    }, tx);
+    return null;
+  }
+  const [cancelled] = await tx.update(arxLiveCommandsTable).set({
+    status: next, closedAt: now, resultRecordedAt: now,
+  }).where(and(
+    eq(arxLiveCommandsTable.id, orig.id),
+    eq(arxLiveCommandsTable.userId, orig.userId),
+    eq(arxLiveCommandsTable.status, orig.status),
+  )).returning();
+  if (!cancelled) throw new Error("PENDING_CANCEL_ORIGINAL_CLAIM_LOST");
+  const fingerprint = executionReportFingerprint({ pendingCancelOf: orig.commandId, by: control.commandId, controlFingerprint });
+  await recordExecutionEvent({
+    commandRowId: orig.id, source: "ea", eventType: `RESULT_${next}`, occurredAt: now,
+    payload: {
+      commandId: orig.commandId, applied: true, finalStatus: next, previousStatus: orig.status,
+      previousExecutedVolume: orig.executedVolume,
+      executedVolume: cancelled.executedVolume, brokerTicket: cancelled.brokerTicket,
+      cancelledByCommandId: control.commandId, reportedOutcome: "PENDING_ORDER_CANCELLED_AT_BROKER",
+      reportFingerprint: fingerprint, settlementOutboxVersion: 1,
+    },
+  }, tx);
+  await enqueueResultSettlement(tx, cancelled, fingerprint, ["EXPOSURE_RESERVATION"]);
+  await audit({
+    eventType: "LIVE_PENDING_ORDER_CANCELLED", severity: "HIGH", userId: control.userId, symbol: control.symbol,
+    message: `Live pending order ${cancelled.brokerTicket} cancelled at the broker (command ${control.commandId})`,
+    metadata: { targetCommandId, controlCommandId: control.commandId, orderTicket: cancelled.brokerTicket },
+  }, tx);
+  return cancelled;
+}
+
 export async function recordLiveCommandResult(args: {
   userId: number;
   commandId: string;
@@ -5014,6 +5286,7 @@ export async function recordLiveCommandResult(args: {
   // ACK does not release reservations or certify settlement.
   outcome:
     | "LIVE_FILLED"
+    | "LIVE_CANCELLED"
     | "LIVE_PARTIALLY_FILLED"
     | "LIVE_ACKNOWLEDGED"
     | "LIVE_REJECTED"
@@ -5138,9 +5411,14 @@ export async function recordLiveCommandResult(args: {
     const applicable = LIVE_RESULT_APPLICABLE_STATUSES.includes(
       row.status as ArxLiveCommandStatus,
     );
+    // A cancel's broker-confirmed CANCELLED is the one result-only hop that
+    // is not in the shared table (SENT → LIVE_CANCELLED, cancel type only).
+    // Any other command reporting LIVE_CANCELLED is never applied.
     const mayApply =
       applicable &&
-      isAllowedLiveTransition(row.status as ArxLiveCommandStatus, finalStatus);
+      (finalStatus === "LIVE_CANCELLED"
+        ? isAllowedPendingControlResultTransition(row.commandType, row.status, finalStatus)
+        : isAllowedLiveTransition(row.status as ArxLiveCommandStatus, finalStatus));
     const retained =
       applicable ||
       isTerminalLiveStatus(row.status as ArxLiveCommandStatus) ||
@@ -5175,6 +5453,10 @@ export async function recordLiveCommandResult(args: {
         // R2 S5 — the broker saw the order; nothing is filled and nothing is
         // refused. No terminal stamps of any kind (spec §20: acknowledged is not
         // treated as filled).
+      } else if (effectiveOutcome === "LIVE_CANCELLED") {
+        // The broker removed the pending order this cancel named: not a fill,
+        // not a refusal. The order ticket stays in brokerTicket as evidence.
+        updates.closedAt = now;
       } else if (effectiveOutcome === "STALE_COMMAND_REJECTED") {
         updates.rejectedAt = now;
         updates.expiredAt = now;
@@ -5264,6 +5546,11 @@ export async function recordLiveCommandResult(args: {
     );
     if (mayApply) await enqueueResultSettlement(tx, updated, reportFingerprint, settlementConsumers(updated));
     else await holdChangedSettlementEvidence(tx, updated);
+    // A confirmed pending-order cancel cancels the ORIGINAL order row in this
+    // same transaction and queues its exposure-reservation settlement (RELEASE).
+    const cancelledOriginal = mayApply
+      ? await applyPendingCancelToOriginal(tx, updated, finalStatus, reportFingerprint, now)
+      : null;
     await audit(
       {
         eventType: mayApply
@@ -5291,7 +5578,7 @@ export async function recordLiveCommandResult(args: {
         severity: "CRITICAL",
         status: !mayApply
           ? "ATTEMPTED"
-          : finalStatus === "LIVE_FILLED"
+          : finalStatus === "LIVE_FILLED" || (finalStatus === "LIVE_CANCELLED" && cancelledOriginal != null)
             ? "ALLOWED"
             : [
                   "LIVE_UNKNOWN",
@@ -5319,6 +5606,7 @@ export async function recordLiveCommandResult(args: {
       command: updated,
       row,
       applied: mayApply,
+      cancelledOriginal,
       finalStatus,
       now,
       reason: mayApply
@@ -5340,6 +5628,12 @@ export async function recordLiveCommandResult(args: {
   // Each task already committed with the receipt. The synchronous path and
   // opt-in recovery worker use identical fenced, idempotent consumers.
   const { jobs, manualClosedRows } = await settleCommandJobs(updated.id, args.userId);
+  // The cancelled order's own reservation settlement (queued in the receipt
+  // transaction above). A failure here leaves the job for the worker / retry.
+  if ("cancelledOriginal" in persisted && persisted.cancelledOriginal) {
+    try { await settleCommandJobs(persisted.cancelledOriginal.id, args.userId); }
+    catch (error) { logger.warn({ commandId: persisted.cancelledOriginal.commandId, error: String(error) }, "Cancelled pending order settlement deferred"); }
+  }
   const positionJob = jobs.find(job => job.consumer !== "EXPOSURE_RESERVATION");
   const settlementRecovery = {
     scope: "LATEST_ACCEPTED_COMMAND_STATE" as const,

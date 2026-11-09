@@ -47,7 +47,7 @@ import { isSweeperEnabled, getEleanorSweeperStatus } from "../lib/assistant/elea
 import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/eleanorMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
 import { toolResultText } from "../lib/assistant/toolResultText.js";
-import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
@@ -69,7 +69,8 @@ import { buildEleanorContext, composeEleanorBriefing, type EleanorRole } from ".
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
-import { buildEleanorChartContext, buildGatedTrustLine } from "../lib/data/chart/eleanorChartContext.js";
+import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
+import { buildEleanorChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/eleanorChartContext.js";
 import { buildEleanorStructuralRead } from "../lib/assistant/eleanorStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
 import { buildEleanorDraftRead, type EleanorDraftIntent } from "../lib/assistant/eleanorDraftRead.js";
@@ -78,6 +79,7 @@ import { classifySymbol } from "../lib/data/marketDataRouter.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   buildSetupPreview,
+  setupPreviewProviderSource,
   type SetupSide,
   type SetupPreviewProviderSource,
 } from "../lib/assistant/setupPreview.js";
@@ -462,7 +464,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   const cautions: string[] = [];
   if ((s.riskScore ?? 0) >= 70) cautions.push("Volatility risk elevated — size smaller.");
   if (conf < 50) cautions.push("Confidence is not high — wait for confirmation if momentum is weak.");
-  if (s.statusBadge && /SPREAD|CHOPPY|REJECT/i.test(s.statusBadge)) {
+  if (s.statusBadge && /SPREAD|CHOPPY|REJECT|LOW_OPPORTUNITY/i.test(s.statusBadge)) {
     cautions.push(`Scanner flagged ${s.statusBadge.replace(/_/g, " ").toLowerCase()}.`);
   }
 
@@ -679,6 +681,10 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   ]);
   res.json({
     chartRead: outcome.chartRead,
+    // The service's own read layer, beside chartRead, so the Scanner panel and
+    // the chat tool (tools.ts forwards outcome.readLayer) share one source.
+    // Display-only; the client may only use it to DOWNGRADE a missing layer.
+    readLayer: outcome.readLayer,
     ...(aaci ? { aaci } : {}),
     ...envelope,
     readOnlyMode: true,
@@ -725,15 +731,15 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // null context (→ INSUFFICIENT basis → the producer refuses a drawing).
   let eleanorCtx: Awaited<ReturnType<typeof buildEleanorChartContext>> | null = null;
   try {
-    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, 200);
+    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
   } catch {
     // fail-safe — handled as a gated (non-VERIFIED) read below.
   }
 
   const candles = eleanorCtx?.candles ?? [];
-  let htfBias: StructureBias = "No clear edge";
-  if ((eleanorCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(eleanorCtx!.htfCandles);
-  const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
+  const htfTimeframe = eleanorCtx?.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(eleanorCtx?.htfCandles, htfTimeframe);
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, pricePrecision: knownPricePrecision(symbol) });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
     if (!read.cautions.includes("Feed not confirmed at draw-time — limited visibility.")) {
@@ -742,18 +748,31 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const basis = eleanorCtx?.basis ?? "INSUFFICIENT";
-  const trustLine = eleanorCtx?.trustLine ?? `${timeframe} candles syncing`;
-  const blockReason = eleanorCtx?.blockReason ?? null;
+  // HONESTY (same rule as draft-read and read-chart): a gated read never shows
+  // the success-path "Verified … · Live feed …" line, which is composed from
+  // raw gate flags and can disagree with the feed state that set the basis.
+  const trustLine = eleanorCtx && basis === "VERIFIED"
+    ? eleanorCtx.trustLine
+    : buildGatedTrustLine(timeframe, {
+        available: eleanorCtx != null,
+        stale: eleanorCtx?.state.stale ?? false,
+        aiUsable: eleanorCtx?.state.aiUsable ?? false,
+        basis,
+        quality: eleanorCtx?.state.truthState?.quality ?? null,
+        notLiveReason: eleanorCtx?.state.truthState?.notLiveReason ?? null,
+      });
+  // Name what is actually not confirmed (feed, candles, or the specific chart
+  // check) so the refusal never says "the feed isn't confirmed" when it is.
+  const blockReason = gatedReadReason(eleanorCtx);
 
-  // Provider honesty: no broker-native quote feed is active yet
-  // (MT5_BROKER_FEED_NOT_ACTIVE), so every current feed is a composite /
-  // synthetic source — the producer must never use broker-native language.
+  // Provider honesty: name the source that actually served this series. Only
+  // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
+  // source is composite, and the producer then never uses broker-native language.
   const assetClass = classifySymbol(symbol);
-  const providerSource: SetupPreviewProviderSource = {
+  const providerSource: SetupPreviewProviderSource = setupPreviewProviderSource(
     assetClass,
-    composite: true,
-    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
-  };
+    eleanorCtx?.state.truthState.source ?? null,
+  );
 
   // Bridge + allocation truth (per-user). Allocation is used only to decide
   // whether account-currency risk can be shown — never to fabricate a number.
@@ -874,6 +893,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
       direction: (side ?? draft?.side) ?? null,
       symbol,
       timeframe,
+      // The state this drawing was built from (enriched with the user's own
+      // broker quote), so the receipt records the read the user saw.
+      state: eleanorCtx?.state,
     });
   }
 
@@ -938,7 +960,7 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
   // gate-blocked (basis !== "VERIFIED") below.
   let eleanorCtx: Awaited<ReturnType<typeof buildEleanorChartContext>> | null = null;
   try {
-    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, limit);
+    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
   } catch {
     // fail-safe — treat as gate-blocked below
   }
@@ -960,6 +982,8 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
       stale: eleanorCtx?.state.stale ?? state.stale,
       aiUsable: eleanorCtx?.state.aiUsable ?? state.aiUsable,
       basis: eleanorCtx?.basis ?? "INSUFFICIENT",
+      quality: (eleanorCtx?.state ?? state).truthState?.quality ?? null,
+      notLiveReason: (eleanorCtx?.state ?? state).truthState?.notLiveReason ?? null,
     });
   }
   // Chart Brain v2 (Task 5): record an immutable Decision Receipt + the implied

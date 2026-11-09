@@ -21,6 +21,7 @@ export function ConfirmCloseModal({
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const pnl: number | null = card.waitingForSync || card.unrealizedPnl == null ? null : card.unrealizedPnl;
 
   async function submit() {
     setBusy(true); setErr(null);
@@ -61,8 +62,14 @@ export function ConfirmCloseModal({
             <div>Entry: <span className="text-foreground">{card.entryPrice ?? "—"}</span></div>
             <div>
               P&L:{" "}
-              <span className={(card.unrealizedPnl ?? 0) >= 0 ? "text-success" : "text-danger"}>
-                {card.waitingForSync ? "waiting for sync" : (card.unrealizedPnl ?? 0).toFixed(2)}
+              {/* Unknown P/L is said plainly — never a 0.00 stand-in. */}
+              <span
+                data-testid="confirm-close-pnl"
+                className={pnl == null ? "text-txt-muted" : pnl > 0 ? "text-success" : pnl < 0 ? "text-danger" : "text-foreground"}
+              >
+                {pnl == null
+                  ? (card.waitingForSync ? "Not reported — waiting for broker sync" : "Not reported by the broker")
+                  : <>{pnl.toFixed(2)}{card.pnlIsEstimate && " est."}</>}
               </span>
             </div>
           </div>

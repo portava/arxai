@@ -70,7 +70,12 @@ router.get("/me/trade-health", requireUser, async (req, res): Promise<void> => {
       : null;
 
   const cacheKey = `${userId}|${chartSymbol ?? ""}|${isAdmin ? 1 : 0}`;
-  const { report, chartSymbol: resolvedChartSymbol } = await tradeHealthCache.get(
+  const {
+    report,
+    chartSymbol: resolvedChartSymbol,
+    positionsMeasured,
+    positionsNote,
+  } = await tradeHealthCache.get(
     cacheKey,
     () =>
       buildTradeHealthForUser({
@@ -100,6 +105,10 @@ router.get("/me/trade-health", requireUser, async (req, res): Promise<void> => {
     overtrading: report.overtrading,
     overlays: report.overlays,
     summary: report.summary,
+    // False when the caller's positions could not be read: an empty
+    // assessments list is then not "no open positions".
+    positionsMeasured,
+    positionsNote,
     ...SAFETY_ENVELOPE,
   });
 });

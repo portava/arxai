@@ -182,6 +182,30 @@ function FreshnessBadge({
   );
 }
 
+// NAV calculation status chip. A pool's navStatus says whether its NAV was
+// computed ("OK"), is held for review ("UNDER_REVIEW") or was never computed
+// ("NOT_COMPUTED") — it is not a data-freshness reading, so it is never fed
+// through FreshnessBadge (which would show a healthy "OK" as "Unavailable").
+function NavStatusBadge({ navStatus }: { navStatus: string | null | undefined }) {
+  const s = (navStatus ?? "").toUpperCase();
+  const map: Record<string, { cls: string; label: string; title: string }> = {
+    OK: { cls: "bg-emerald-500/15 text-emerald-400", label: "NAV computed", title: "The pool NAV was computed at the last valuation cycle." },
+    UNDER_REVIEW: { cls: "bg-sky-500/15 text-sky-400", label: "NAV under review", title: "The pool NAV could not be computed; the prior NAV is held while it is reviewed." },
+    NOT_COMPUTED: { cls: "bg-muted text-muted-foreground", label: "NAV not computed", title: "No NAV has been computed for this pool yet." },
+  };
+  const m = map[s] ?? { cls: "bg-muted text-muted-foreground", label: "NAV status unknown", title: `Unrecognised NAV status: ${navStatus ?? "none reported"}` };
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${m.cls}`}
+      data-testid="nav-status-badge"
+      title={m.title}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {m.label}
+    </span>
+  );
+}
+
 // A signed money figure that colours gains green and losses red.
 function PnlValue({ value, currency }: { value: number | null | undefined; currency: string }) {
   if (value == null) return <span className="tabular-nums">—</span>;
@@ -469,7 +493,7 @@ function BreakdownRow({
 }
 
 // ── Holdings (Fund Book) tab ─────────────────────────────────────────────────
-function HoldingsTab() {
+export function HoldingsTab() {
   const fundBookQ = useGetMeFundBook();
   const drawdownQ = useGetMeFundBookDrawdown();
 
@@ -501,6 +525,8 @@ function HoldingsTab() {
       </div>
       {pools.filter((p: FundBookInvestorPool) => p.poolKey === "BALANCED").map((p: FundBookInvestorPool) => {
         const dd = poolDrawdowns.find((d) => d.poolKey === p.poolKey);
+        // No NAV computed: navPerUnit / currentValue are placeholders, not values.
+        const navNotComputed = (p.navStatus ?? "").toUpperCase() === "NOT_COMPUTED";
         return (
           <Card key={p.poolKey} data-testid={`holding-${p.poolKey}`}>
             <CardHeader className="pb-2">
@@ -510,7 +536,7 @@ function HoldingsTab() {
                   <Badge variant="outline" className="text-[11px]">
                     {p.riskLevel}
                   </Badge>
-                  <FreshnessBadge freshness={p.navStatus} />
+                  <NavStatusBadge navStatus={p.navStatus} />
                 </div>
               </div>
             </CardHeader>
@@ -521,7 +547,7 @@ function HoldingsTab() {
                     Current value
                   </p>
                   <p className="text-2xl font-black tabular-nums" data-testid={`holding-value-${p.poolKey}`}>
-                    {fmtMoney(p.currentValue, ccy)}
+                    {navNotComputed ? "Not valued yet" : fmtMoney(p.currentValue, ccy)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -535,7 +561,7 @@ function HoldingsTab() {
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
                 <HoldingStat label="Units owned" value={fmtUnits(p.unitsOwned)} />
-                <HoldingStat label="Unit price (NAV)" value={fmtMoney(p.navPerUnit, ccy)} />
+                <HoldingStat label="Unit price (NAV)" value={navNotComputed ? "Not computed" : fmtMoney(p.navPerUnit, ccy)} />
                 <HoldingStat label="Average cost / unit" value={fmtMoney(p.averageNav, ccy)} />
                 <HoldingStat label="Cost basis" value={fmtMoney(p.costBasis, ccy)} />
                 <HoldingStat label="Ownership of pool" value={fmtPct(p.ownershipPct)} />

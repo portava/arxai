@@ -28,7 +28,7 @@ export async function buildInvestorQualitySummary(
   return {
     signalsTracked: m.totals.tracked,
     signalsGraded: m.totals.graded,
-    winRatePct: m.totals.graded > 0 ? Math.round(m.rates.winRate * 1000) / 10 : null,
+    winRatePct: m.rates.winRate != null ? Math.round(m.rates.winRate * 1000) / 10 : null,
     avoidedBadTrades: m.avoidedBadTrades,
     disclaimer:
       "Signal-quality metrics describe past observed performance only and are not a forecast or guarantee of future results.",

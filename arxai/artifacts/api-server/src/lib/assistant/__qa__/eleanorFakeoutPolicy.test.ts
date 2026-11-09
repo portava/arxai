@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  adverseWickPct, FAKEOUT_MAX_FAILED_ATTEMPTS, FAKEOUT_BAR_INTERVAL_MS,
   FAKEOUT_ADJUST_COOLDOWN_MS, FAKEOUT_MAX_ADJUSTMENTS, FAKEOUT_MAX_SL_WIDEN_RATIO,
   decideFakeoutAdjustment, isAdverseFakeout, type FakeoutDecisionInput,
 } from "../eleanorFakeoutPolicy.js";
@@ -19,7 +20,8 @@ const base: FakeoutDecisionInput = {
 
 test("isAdverseFakeout: long wick against the position that closed back, with no standing reversal evidence", () => {
   assert.equal(isAdverseFakeout(base).yes, true);
-  assert.equal(isAdverseFakeout({ ...base, fakeoutRiskScore: 40 }).yes, false);
+  // A short adverse wick (most of the bar is body) is not a fakeout, whatever the profit-side score says.
+  assert.equal(isAdverseFakeout({ ...base, fakeoutRiskScore: 95, lastBar: { o: 1.0950, h: 1.0995, l: 1.0940, c: 1.0992 } }).yes, false);
   assert.equal(isAdverseFakeout({ ...base, reversalRiskScore: 70 }).yes, false);
   assert.equal(isAdverseFakeout({ ...base, lastBar: { ...spikeDownBar, c: 1.0960 } }).yes, false); // closed against
   assert.equal(isAdverseFakeout({ ...base, lastBar: null }).yes, false);
@@ -119,4 +121,38 @@ test("SHIFT_SL rounds to the symbol's digits", () => {
   });
   assert.equal(gold.action, "SHIFT_SL");
   assert.equal(gold.newStopLoss, Number(gold.newStopLoss!.toFixed(2)));
+});
+
+// ── Follow-up 2026-11-04: the rule reads the ADVERSE wick from the bar itself ──
+test("adverse wick is the stop-side wick: lower for a long, upper for a short", () => {
+  assert.equal(Math.round(adverseWickPct("BUY", spikeDownBar)!), 91);
+  assert.equal(Math.round(adverseWickPct("SELL", spikeDownBar)!), 5);
+  assert.equal(adverseWickPct("BUY", null), null);
+});
+
+test("a long whose bar only has a long UPPER wick (profit-side rejection) is never treated as a stop-hunt", () => {
+  // Trade-intelligence's fakeoutRiskScore is high for this bar (upper wick), but the stop side is untouched.
+  const upperWick = { o: 1.0955, h: 1.1040, l: 1.0950, c: 1.0960 };
+  const d = decideFakeoutAdjustment({ ...base, lastBar: upperWick, fakeoutRiskScore: 90, stopLoss: 1.0952 });
+  assert.notEqual(d.action, "SHIFT_SL");
+});
+
+test("the real stop-hunt shifts even when the profit-side score is low", () => {
+  assert.equal(decideFakeoutAdjustment({ ...base, fakeoutRiskScore: 3 }).action, "SHIFT_SL");
+});
+
+test("one shift per bar, never on a stale bar, and Eleanor stops after repeated refusals", () => {
+  const t = now - 2 * FAKEOUT_BAR_INTERVAL_MS; // closed 15 min ago
+  const bar = { ...spikeDownBar, t };
+  assert.equal(decideFakeoutAdjustment({ ...base, lastBar: bar }).action, "SHIFT_SL");
+  assert.equal(decideFakeoutAdjustment({ ...base, lastBar: bar, lastFakeoutBarAt: t }).reason, "already acted on this bar");
+  const stale = { ...spikeDownBar, t: now - 5 * FAKEOUT_BAR_INTERVAL_MS };
+  assert.equal(decideFakeoutAdjustment({ ...base, lastBar: stale }).reason, "the last completed bar is stale");
+  assert.equal(decideFakeoutAdjustment({ ...base, lastBar: bar, failedSoFar: FAKEOUT_MAX_FAILED_ATTEMPTS }).action, "NONE");
+});
+
+test("monitor state keeps the bar the last shift acted on", () => {
+  const s = parseMonitorState(serializeMonitorState({ ...emptyMonitorState(), lastFakeoutBarAt: 123 }));
+  assert.equal(s.lastFakeoutBarAt, 123);
+  assert.equal(emptyMonitorState().lastFakeoutBarAt, null);
 });

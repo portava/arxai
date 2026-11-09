@@ -180,7 +180,21 @@ test("Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTra
   const closedDirect = await closePaperFill({
     userId: u.a, order: direct.order, exitPrice: 1.11, intentRef: `qa_close:${direct.order.id}`, auditContext: { caller: "QA" }, eventLabel: "QA close",
   });
-  assert.deepEqual(closedPipe, closedDirect);
+  // Since 84111206 a close of an instrument with no contract size returns
+  // pnl null and a reason that names the order's own symbol (before, both
+  // closes returned the same guessed `move × lots × 100`). The two orders
+  // must be on different symbols (a second same-symbol BUY is a governor
+  // duplicate), so, as `strip` does for the rows above, the symbol is the
+  // only thing allowed to differ: the pipeline's result must equal the
+  // venue's own result with QAPCUSD read as QAPBUSD, field for field.
+  assert.ok(closedPipe.ok && closedDirect.ok, JSON.stringify([closedPipe, closedDirect]));
+  assert.equal(closedPipe.pnl, null);
+  assert.match(String(closedPipe.pnlUnavailableReason), new RegExp(`^contract size for ${SYMBOL} is unknown`));
+  assert.deepEqual(closedPipe, {
+    ...closedDirect,
+    pnlUnavailableReason: closedDirect.pnlUnavailableReason == null ? null
+      : closedDirect.pnlUnavailableReason.replaceAll(SYMBOL_2, SYMBOL),
+  });
   assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, viaPipe.order.id)))[0]!.status, "CLOSED_MANUAL");
 
   // Settlement and rollback: not re-governed, same columns move.
@@ -219,16 +233,20 @@ test("closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&L and i
     userId: u.a, order: opened.order, exitPrice: 1.11, intentRef: `qa_close:${opened.order.id}`, auditContext: { caller: "QA" }, eventLabel: "QA close",
   });
   assert.ok(closed.ok, JSON.stringify(closed));
-  assert.ok(Math.abs(closed.pnl - (1.11 - PX) * 0.1 * 100) < 1e-9);
+  // QAPBUSD has no broker contract spec and is not a fiat pair: the amount is
+  // withheld (the 0 placeholder is stored), never sized with a guessed × 100.
+  assert.equal(closed.pnl, null);
+  assert.match(String(closed.pnlUnavailableReason), /contract size for QAPBUSD is unknown/);
   const [row] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, opened.order.id));
   assert.equal(row!.status, "CLOSED_MANUAL");
   assert.ok(row!.closedAt);
   assert.ok(Math.abs(row!.exitPrice! - 1.11) < 1e-6);
+  assert.equal(row!.profitLoss, 0, "the not-sized placeholder");
   const actions = (await riskRows(u.a)).map((r) => (r.details as { intent: { action: string } }).intent.action);
   assert.deepEqual(actions, ["OPEN", "CLOSE"]);
   const last = (await events(opened.order.id)).at(-1)!;
   assert.equal(last.eventType, "CLOSED_MANUAL");
-  assert.match(last.message, /QA close @ 1\.11000, P&L /);
+  assert.match(last.message, /QA close @ 1\.11000, P&L not sized: .* placeholder, not a result\.$/);
 });
 
 test("settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only status / exit / P&L move", async () => {

@@ -58,6 +58,23 @@ export interface OpenExposureSummary {
   netSide: ExecutionPreviewSide | null;
 }
 
+/**
+ * The money half of the broker's symbol report (arx_symbol_specs), as the EA
+ * sent it. Every field is null when the broker has not reported it.
+ */
+export interface BrokerContractSpec {
+  /** Units of the instrument per 1.00 lot (e.g. 100 oz for XAUUSD). */
+  contractSize: number | null;
+  /** Price step the tick value refers to. */
+  tickSize: number | null;
+  /** Money per tick per 1.00 lot, in the account's deposit currency (MT5). */
+  tickValue: number | null;
+  /** Currency the symbol's profit is booked in (e.g. "USD"), when reported. */
+  profitCurrency: string | null;
+  /** When the EA last reported this symbol (ISO), or null. */
+  reportedAt: string | null;
+}
+
 export interface ExecutionPreviewInput {
   symbol: string;
   side: ExecutionPreviewSide;
@@ -72,6 +89,13 @@ export interface ExecutionPreviewInput {
   spec: PreTradeBrokerSpec;
   /** True when `spec` came from a real EA report (not a static guess). */
   hasBrokerTruth: boolean;
+  /**
+   * The broker-reported contract size / tick value for this symbol, or null /
+   * omitted when there is no broker report. Money is priced from these first.
+   */
+  contract?: BrokerContractSpec | null;
+  /** The MT5 account's deposit currency (e.g. "USD"), or null when unknown. */
+  accountCurrency?: string | null;
   quote: ExecutionPreviewQuote;
   /** Recent recent ATR / volatility in PRICE units (>= 0) or null. */
   atrPrice: number | null;

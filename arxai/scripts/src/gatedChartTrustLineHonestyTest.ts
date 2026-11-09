@@ -42,11 +42,13 @@ const hasForbidden = (s: string) => FORBIDDEN.filter((t) => s.includes(t));
 // 1. THE BUG CASE: W1 read whose gate flags all pass but whose feed is delayed
 //    (available, not stale, NOT aiUsable → basis INSUFFICIENT). The old code
 //    could surface "Verified W1 candles · Live feed · …" here.
+// The feed status grades this feed "delayed" (only that grade is a delayed feed).
 const w1 = buildGatedTrustLine("W1", {
   available: true,
   stale: false,
   aiUsable: false,
   basis: "INSUFFICIENT",
+  quality: "delayed",
 });
 rec(
   1,
@@ -65,6 +67,26 @@ rec(
   "W1 gated line is NOT the leaky success-path string",
   w1 !== "Verified W1 candles · Live feed · Mirror synced · AACI verified",
   w1,
+);
+
+// 3b. A current feed that is not usable for another reason is named for that
+//     reason, never "delayed": gaps (partial), failed integrity (invalid), or
+//     an unknown grade.
+const notDelayed: Array<[string | null | undefined, string]> = [
+  ["partial", "W1 candles syncing · candle sequence incomplete · read gated"],
+  ["invalid", "W1 candles syncing · candles failed integrity checks · read gated"],
+  [null, "W1 candles syncing · feed not confirmed · read gated"],
+  [undefined, "W1 candles syncing · feed not confirmed · read gated"],
+];
+const notDelayedBad = notDelayed
+  .map(([quality, want]): [string, string] =>
+    [buildGatedTrustLine("W1", { available: true, stale: false, aiUsable: false, basis: "INSUFFICIENT", quality }), want])
+  .filter(([got, want]) => got !== want || /delayed/.test(got));
+rec(
+  3.5,
+  "non-delayed unusable feed grades are named, never 'feed delayed'",
+  notDelayedBad.length === 0,
+  notDelayedBad.map(([got, want]) => `got "${got}" want "${want}"`).join(" | "),
 );
 
 // 4. Feed unavailable (eleanorCtx null) → honest "feed unavailable".
@@ -97,7 +119,9 @@ rec(
   stale,
 );
 
-// 6. Fresh feed but PARTIAL basis (mirror/AACI degraded) → "mirror syncing".
+// 6. Fresh feed but PARTIAL basis (a mirror/AACI check did not pass or could
+//    not be measured) → the clean feed is not called "syncing"; the line says
+//    a check did not pass.
 const partial = buildGatedTrustLine("H1", {
   available: true,
   stale: false,
@@ -106,13 +130,13 @@ const partial = buildGatedTrustLine("H1", {
 });
 rec(
   6,
-  "fresh+PARTIAL → 'mirror syncing', honest",
-  partial === "H1 candles syncing · mirror syncing · read gated" &&
+  "fresh+PARTIAL → 'not every chart check passed', honest",
+  partial === "H1 candles clean · not every chart check passed · read gated" &&
     hasForbidden(partial).length === 0,
   partial,
 );
 
-// 7. Fresh feed but SYNCING basis (truth < threshold) → "awaiting sync".
+// 7. Fresh feed but SYNCING basis (truth < threshold) → names the threshold.
 const syncing = buildGatedTrustLine("H4", {
   available: true,
   stale: false,
@@ -121,15 +145,16 @@ const syncing = buildGatedTrustLine("H4", {
 });
 rec(
   7,
-  "fresh+SYNCING → 'awaiting sync', honest",
-  syncing === "H4 candles syncing · awaiting sync · read gated" &&
+  "fresh+SYNCING → 'Chart Truth below 75', honest",
+  syncing === "H4 candles clean · Chart Truth below 75 · read gated" &&
     hasForbidden(syncing).length === 0,
   syncing,
 );
 
 // 8. EXHAUSTIVE INVARIANT: across every feed-state combination, a gated trust
 //    line must never contain "Verified" or "Live feed", and must echo the
-//    timeframe + the "read gated" suffix.
+//    timeframe + the "read gated" suffix. A clean, current feed is never
+//    called "syncing"; an unavailable / stale / delayed feed never "clean".
 const bases: EleanorChartReadBasis[] = ["INSUFFICIENT", "PARTIAL", "SYNCING", "VERIFIED"];
 const tfs = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
 const leaks: string[] = [];
@@ -140,8 +165,11 @@ for (const tf of tfs) {
         for (const basis of bases) {
           const line = buildGatedTrustLine(tf, { available, stale: sstale, aiUsable, basis });
           const bad = hasForbidden(line);
+          const feedClean = available && !sstale && aiUsable;
           const wellFormed =
-            line.startsWith(`${tf} candles syncing · `) && line.endsWith(" · read gated");
+            line.startsWith(feedClean ? `${tf} candles clean · ` : `${tf} candles syncing · `) &&
+            line.endsWith(" · read gated") &&
+            (feedClean ? !/syncing/i.test(line) : !/clean/i.test(line));
           if (bad.length > 0 || !wellFormed) {
             leaks.push(`${tf}/${available}/${sstale}/${aiUsable}/${basis} → "${line}"`);
           }

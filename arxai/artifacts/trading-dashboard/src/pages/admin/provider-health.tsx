@@ -21,7 +21,10 @@ interface ProviderEntry {
   usedBy: string[];
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved";
+  // "unverified" = configured, but nothing in this snapshot checked it.
+  // "offline" = the MT5 bridge pushed nothing within the freshness window
+  // (older servers sent "reserved" for the same state).
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified" | "offline";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -54,6 +57,20 @@ interface FeedsHealth {
       accountType: string | null;
       masterLiveCapable: boolean;
       blockReason: string | null;
+      // The bridge the master-live detector evaluated (LIVE-mode first) —
+      // not necessarily the freshest bridge. Absent on older servers.
+      subject?: "master_live_candidate";
+      readOk?: boolean;
+    };
+    // Freshest heartbeat of any non-revoked bridge (absent on older servers).
+    freshestBridge?: {
+      readOk: boolean;
+      present: boolean;
+      status: "live" | "stale" | "offline" | "none";
+      ageSec: number | null;
+      mode: string | null;
+      accountType: string | null;
+      eaVersion: string | null;
     };
     quotePush: { active: boolean; symbolsWithFreshQuote: number; symbolsProbed: number; note: string };
     candlePush: { active: boolean; totalSeries: number; contributing: number; stale: number; nonContributing: number };
@@ -102,6 +119,8 @@ interface Snapshot {
   feeds: FeedsHealth;
   assetClassActivity: AssetClassActivity[];
   activeConsumers: ActiveConsumer[];
+  // What activeConsumers is built from (absent on older servers).
+  activeConsumersBasis?: string;
   summary: {
     totalProviders: number;
     healthy: number;
@@ -109,6 +128,9 @@ interface Snapshot {
     failing: number;
     notConfigured: number;
     reserved: number;
+    // Absent from servers older than the observed-status change.
+    unverified?: number;
+    offline?: number;
     configuredButUnused: number;
   };
 }
@@ -143,7 +165,10 @@ function statusBadge(s: ProviderEntry["status"]) {
     case "degraded":       return <Badge className="bg-warning/20 text-warning">degraded</Badge>;
     case "failing":        return <Badge className="bg-danger/20 text-danger">failing</Badge>;
     case "not_configured": return <Badge className="bg-secondary/20 text-txt-secondary">not configured</Badge>;
-    case "reserved":       return <Badge className="bg-primary/20 text-primary">reserved</Badge>;
+    // Older servers' "reserved" meant the same thing: no MT5 push in the window.
+    case "reserved":
+    case "offline":        return <Badge className="bg-danger/20 text-danger">offline</Badge>;
+    case "unverified":     return <Badge className="bg-secondary/20 text-txt-secondary">not checked</Badge>;
   }
 }
 
@@ -196,11 +221,54 @@ function fmtAge(ageMs: number | null): string {
 
 // Compact UTC date+time (minute precision) for broker-candle oldest/newest,
 // which can span days — a time-only label would be ambiguous.
+// The current time, re-read every `intervalMs` while mounted (cleared on
+// unmount), so an age shown on a card that does not poll keeps growing.
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+// "Ns ago" since `since`, kept current by its own 1 s clock.
+function LiveAge({ since }: { since: number }) {
+  const now = useNow(1000);
+  return <>{fmtAge(now - since)}</>;
+}
+
+// Shown when a refresh failed and the card is still displaying the data of an
+// earlier successful load: says how old it is and that it is not current.
+function StaleDataNote({ loadedAt, what, testId }: { loadedAt: number; what: string; testId: string }) {
+  return (
+    <Alert className="border-warning/40 bg-warning/10" data-testid={testId}>
+      <AlertTriangle className="h-4 w-4 text-warning" />
+      <AlertTitle>Not current — the latest refresh failed</AlertTitle>
+      <AlertDescription className="text-xs">
+        The {what} below is from the last successful load at{" "}
+        {new Date(loadedAt).toLocaleTimeString()} (<LiveAge since={loadedAt} />). It may no
+        longer describe what is happening now.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toISOString().replace("T", " ").slice(0, 16);
+}
+
+// "Last candle" for the asset-class activity table. The server's value is the
+// newest provider bar's CLOSE time, which for a still-forming bar is a
+// scheduled FUTURE instant — label it as such, and always with date + UTC.
+function activityLastCandleText(iso: string | null, nowMs: number): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  return t > nowMs ? `forming · closes ${fmtDateTime(iso)} UTC` : `closed ${fmtDateTime(iso)} UTC`;
 }
 
 type BackfillStatus = "NOT_STARTED" | "BUILDING" | "PARTIAL" | "COMPLETE" | "BROKER_LIMITED" | "ERROR";
@@ -258,11 +326,14 @@ interface BrokerCoverageResponse {
 function BrokerCandleCoverageCard() {
   const [symbol, setSymbol] = useState("");
   const [data, setData] = useState<BrokerCoverage | null>(null);
+  // When `data` was loaded (client clock) and for which filter. A failed
+  // refresh keeps `data` but marks it as not current (see StaleDataNote).
+  const [loaded, setLoaded] = useState<{ at: number; symbol: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const q = symbol.trim() ? `?symbol=${encodeURIComponent(symbol.trim())}` : "";
       const r = await fetch(`${BASE}/api/admin/market-data/broker-candles${q}`, {
@@ -276,7 +347,7 @@ function BrokerCandleCoverageCard() {
       }
       const j = (await r.json()) as BrokerCoverageResponse;
       if (!j.ok) setErr("Unknown error");
-      else setData(j.coverage);
+      else { setData(j.coverage); setLoaded({ at: Date.now(), symbol: symbol.trim() }); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -335,6 +406,13 @@ function BrokerCandleCoverageCard() {
           </Alert>
         )}
 
+        {data && err && loaded && (
+          <StaleDataNote
+            loadedAt={loaded.at}
+            what={`coverage${loaded.symbol ? ` for "${loaded.symbol.toUpperCase()}"` : " for all symbols"}`}
+            testId="alert-broker-coverage-stale"
+          />
+        )}
         {data && (
           <>
             {/* Per-backfill-status summary */}
@@ -444,11 +522,14 @@ function BrokerCandleCoverageCard() {
 // reaching for curl. Empty-state guides the operator to the EA contract doc.
 function Mt5CandleFeedCard() {
   const [feed, setFeed] = useState<Mt5FeedResponse | null>(null);
+  // Client time of the last successful load. A failed poll keeps `feed` but
+  // the card then says it is not current instead of "feed connected".
+  const [feedAt, setFeedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const r = await fetch(`${BASE}/api/admin/market-data/mt5-feed`, {
         credentials: "include",
@@ -461,7 +542,7 @@ function Mt5CandleFeedCard() {
       }
       const j = (await r.json()) as Mt5FeedResponse;
       if (!j.ok) setErr("Unknown error");
-      else setFeed(j);
+      else { setFeed(j); setFeedAt(Date.now()); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -484,12 +565,17 @@ function Mt5CandleFeedCard() {
         <CardTitle className="text-base flex items-center gap-2">
           <CandlestickChart className="h-4 w-4" />
           MT5 Candle Feed
-          {feed && (
+          {feed && !err && (
             <Badge
               className={feed.feedActive ? "bg-success/20 text-success" : "bg-secondary/20 text-txt-secondary"}
               data-testid="badge-mt5-feed-active"
             >
               {feed.feedActive ? "feed connected" : "feed offline"}
+            </Badge>
+          )}
+          {feed && err && (
+            <Badge className="bg-warning/20 text-warning" data-testid="badge-mt5-feed-active">
+              status unknown — last load {feedAt != null ? <LiveAge since={feedAt} /> : ""}: {feed.feedActive ? "connected" : "offline"}
             </Badge>
           )}
           <span className="ml-auto flex items-center gap-2">
@@ -516,8 +602,16 @@ function Mt5CandleFeedCard() {
           </Alert>
         )}
 
+        {feed && err && feedAt != null && (
+          <StaleDataNote loadedAt={feedAt} what="feed status" testId="alert-mt5-feed-stale" />
+        )}
         {feed && (
           <>
+            {feedAt != null && !err && (
+              <div className="text-[11px] text-muted-foreground" data-testid="text-mt5-feed-as-of">
+                As of {new Date(feedAt).toLocaleTimeString()}.
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               {[
                 ["Total series", feed.summary.totalSeries, "bg-secondary/20 text-foreground"],
@@ -584,11 +678,12 @@ function Mt5CandleFeedCard() {
 
 export default function ProviderHealthPage() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [snapAt, setSnapAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const r = await fetch(`${BASE}/api/admin/providers/health`, {
         credentials: "include",
@@ -601,7 +696,7 @@ export default function ProviderHealthPage() {
       }
       const j = await r.json();
       if (!j.ok) setErr(j.message ?? j.error ?? "Unknown error");
-      else setSnap(j.snapshot as Snapshot);
+      else { setSnap(j.snapshot as Snapshot); setSnapAt(Date.now()); setErr(null); }
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -638,17 +733,21 @@ export default function ProviderHealthPage() {
         </Alert>
       )}
 
+      {snap && err && snapAt != null && (
+        <StaleDataNote loadedAt={snapAt} what="provider snapshot" testId="alert-provider-health-stale" />
+      )}
       {snap && (
         <>
           {/* Summary tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[
               ["Total", snap.summary.totalProviders, "bg-secondary/20 text-foreground"],
               ["Healthy", snap.summary.healthy, "bg-success/20 text-success"],
               ["Degraded", snap.summary.degraded, "bg-warning/20 text-warning"],
               ["Failing", snap.summary.failing, "bg-danger/20 text-danger"],
+              ["Not checked", snap.summary.unverified ?? "—", "bg-secondary/20 text-txt-secondary"],
               ["Not configured", snap.summary.notConfigured, "bg-secondary/20 text-txt-secondary"],
-              ["Reserved", snap.summary.reserved, "bg-primary/20 text-primary"],
+              ["Offline", snap.summary.offline ?? snap.summary.reserved, "bg-danger/20 text-danger"],
               ["Configured but unused", snap.summary.configuredButUnused, "bg-fuchsia-500/20 text-fuchsia-300"],
             ].map(([label, val, cls]) => (
               <Card key={label as string} className="border-border/40">
@@ -675,11 +774,43 @@ export default function ProviderHealthPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-              {/* MT5 heartbeat */}
+              {/* Freshest MT5 bridge heartbeat (any mode) */}
+              {snap.feeds.mt5.freshestBridge && (
+                <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-freshest-bridge">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">Freshest MT5 bridge heartbeat</span>
+                    {snap.feeds.mt5.freshestBridge.readOk ? (
+                      <Badge className={feedStatusCls(snap.feeds.mt5.freshestBridge.status)}>
+                        {snap.feeds.mt5.freshestBridge.present ? snap.feeds.mt5.freshestBridge.status : "no bridge registered"}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                    )}
+                  </div>
+                  {snap.feeds.mt5.freshestBridge.readOk && snap.feeds.mt5.freshestBridge.present && (
+                    <div className="text-muted-foreground font-mono">
+                      age {snap.feeds.mt5.freshestBridge.ageSec == null ? "—" : `${snap.feeds.mt5.freshestBridge.ageSec}s`}
+                      {" · "}mode {snap.feeds.mt5.freshestBridge.mode ?? "—"}
+                      {" · "}EA {snap.feeds.mt5.freshestBridge.eaVersion ?? "—"}
+                      {" · "}{snap.feeds.mt5.freshestBridge.accountType ?? "—"}
+                    </div>
+                  )}
+                  <div className="text-muted-foreground">Any non-revoked bridge, demo included.</div>
+                </div>
+              )}
+
+              {/* Master-live candidate heartbeat */}
               <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-heartbeat">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">MT5 heartbeat</span>
-                  <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  <span className="font-semibold">MT5 master-live candidate heartbeat</span>
+                  {snap.feeds.mt5.heartbeat.readOk === false ? (
+                    <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                  ) : (
+                    <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  )}
+                </div>
+                <div className="text-muted-foreground">
+                  The bridge the master-live check evaluated (LIVE-mode bridges first) — not necessarily the freshest bridge.
                 </div>
                 <div className="text-muted-foreground font-mono">
                   age {snap.feeds.mt5.heartbeat.ageSec == null ? "—" : `${snap.feeds.mt5.heartbeat.ageSec}s`}
@@ -802,7 +933,7 @@ export default function ProviderHealthPage() {
                       <th className="text-left py-1 pr-3">Quote provider</th>
                       <th className="text-left py-1 pr-3">Quality</th>
                       <th className="text-left py-1 pr-3">AI usable</th>
-                      <th className="text-right py-1">Last candle</th>
+                      <th className="text-right py-1">Newest bar close</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -817,12 +948,18 @@ export default function ProviderHealthPage() {
                         <td className="py-1 pr-3 font-mono">{a.latestQuoteProvider ?? "—"}</td>
                         <td className="py-1 pr-3">
                           <Badge className={qualityCls(a.feedQuality)}>{a.feedQuality}</Badge>
+                          {/* "unknown" = the server could not read this class's feed status at all. */}
+                          {a.feedQuality === "unknown" && <div className="text-[10px] text-warning">Feed status could not be read</div>}
                           {a.staleReason && <div className="text-[10px] text-warning">{a.staleReason}</div>}
                         </td>
                         <td className="py-1 pr-3">
-                          <span className={a.aiUsable ? "text-success" : "text-txt-secondary"}>{a.aiUsable ? "yes" : "no"}</span>
+                          {a.feedQuality === "unknown" ? (
+                            <span className="text-txt-secondary">not checked</span>
+                          ) : (
+                            <span className={a.aiUsable ? "text-success" : "text-txt-secondary"}>{a.aiUsable ? "yes" : "no"}</span>
+                          )}
                         </td>
-                        <td className="py-1 text-right font-mono text-muted-foreground">{a.lastCandleTime ? fmtTime(a.lastCandleTime) : "—"}</td>
+                        <td className="py-1 text-right font-mono text-muted-foreground">{activityLastCandleText(a.lastCandleTime, Date.now())}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -831,17 +968,32 @@ export default function ProviderHealthPage() {
             </CardContent>
           </Card>
 
-          {/* Active consumers — inverse of provider.usedBy over live providers */}
+          {/* Surfaces wired to providers something observed answering — the
+              usedBy wiring of "healthy" providers, not a trace of live reads.
+              Only a server that states the basis (activeConsumersBasis) is
+              taken to mean "answered"; an older server may mark a provider
+              healthy because its key is set, so the card then claims nothing
+              about checks. */}
           <Card data-testid="card-active-consumers">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="h-4 w-4" />
-                Active consumers (what each surface reads right now)
+                {snap.activeConsumersBasis
+                  ? "Surfaces wired to providers that answered"
+                  : "Surfaces wired to providers the server marked healthy"}
               </CardTitle>
+              <p className="text-[11px] text-muted-foreground">
+                {snap.activeConsumersBasis ??
+                  "Providers the server marked healthy, mapped to the surfaces wired to them. This server does not say whether they were checked. Not a trace of what each surface read."}
+              </p>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               {snap.activeConsumers.length === 0 ? (
-                <div className="text-muted-foreground italic">No live providers — every surface is on a fallback or awaiting feed.</div>
+                <div className="text-muted-foreground italic">
+                  {snap.activeConsumersBasis
+                    ? "No provider answered this snapshot's self-test or reported live data, so no surface can be shown as reading one."
+                    : "No provider was marked healthy in this snapshot, so no surface is listed."}
+                </div>
               ) : (
                 snap.activeConsumers.map((c) => (
                   <div key={c.consumer} className="font-mono flex gap-2 items-baseline" data-testid={`consumer-${c.consumer}`}>

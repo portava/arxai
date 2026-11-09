@@ -51,14 +51,32 @@ router.get("/risk/dashboard-cards", requireUser, async (req, res) => {
   res.json({
     venue: ov.venue,
     riskStatus: ov.budget.riskStatus,
+    riskStatusReason: ov.budget.riskStatusReason,
     dailyRiskRemaining: ov.budget.dailyRiskRemaining,
     weeklyRiskRemaining: ov.budget.weeklyRiskRemaining,
+    dailyRiskLimitUnvalued: ov.budget.dailyRiskLimitUnvalued,
+    weeklyRiskLimitUnvalued: ov.budget.weeklyRiskLimitUnvalued,
+    // A cap is set but its use was not measured: the null *Remaining is unknown, not "no cap".
+    dailyRiskUsedUnmeasured: ov.budget.dailyRiskUsedUnmeasured,
+    weeklyRiskUsedUnmeasured: ov.budget.weeklyRiskUsedUnmeasured,
+    equityKnown: ov.budget.equityKnown,
+    // Additive: whether the risk used behind *RiskRemaining was measured.
+    dailyRiskUsedKnown: ov.budget.dailyRiskUsedKnown,
+    dailyRiskUsedUnknownReason: ov.budget.dailyRiskUsedUnknownReason,
+    weeklyRiskUsedKnown: ov.budget.weeklyRiskUsedKnown,
+    weeklyRiskUsedUnknownReason: ov.budget.weeklyRiskUsedUnknownReason,
+    // Additive: set when the paper loss count or equity behind *RiskRemaining
+    // is below the booked figures, with both figures in plain words.
+    riskCountNote: ov.budget.riskCountNote,
     openRisk: ov.budget.openRisk,
     openPositions: ov.budget.openPositions,
     tradesToday: ov.activity?.tradesToday ?? null,
     consecutiveLosses: ov.activity?.consecutiveLosses ?? null,
-    overtrading: (ov.activity?.closesInLastHour ?? 0) >= 5 ? "OVERTRADING_RISK"
-      : (ov.activity?.reentriesAfterLossInLastHour ?? 0) >= 2 ? "REVENGE_TRADING_RISK" : "NORMAL",
+    // UNKNOWN when the trader's activity could not be read (no paper account,
+    // or the closes read failed): nothing was measured, so it is not NORMAL.
+    overtrading: ov.activity == null ? "UNKNOWN"
+      : ov.activity.closesInLastHour >= 5 ? "OVERTRADING_RISK"
+      : ov.activity.reentriesAfterLossInLastHour >= 2 ? "REVENGE_TRADING_RISK" : "NORMAL",
     activeHalts: ov.halt.sources,
     propFirm: pf.config.enabled ? pf : null,
     permissions: ov.permissions,
@@ -127,8 +145,10 @@ router.post("/prop-firm/configure", requireUser, async (req, res) => {
   const r = await configurePropFirm(req.authUser!.id, p.data);
   res.json(r.config);
 });
+// Reset restarts the challenge: it is measured again from the active paper
+// account's equity now. The configured rules are kept.
 router.post("/prop-firm/reset", requireUser, async (req, res) => {
-  const r = await configurePropFirm(req.authUser!.id, { enabled: true });
+  const r = await configurePropFirm(req.authUser!.id, { enabled: true }, { restart: true });
   res.json(r.config);
 });
 

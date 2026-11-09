@@ -264,6 +264,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:risk-governor-rr-daily" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-effective-views" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-paper-facts" },
+  // DEMO/LIVE weekly loss and today's trade count cover every close (needs PostgreSQL).
+  { pkg: "@workspace/api-server", script: "test:risk-governor-broker-activity" },
   // Trade Engine: LIVE / DEMO / PAPER as modes of one pipeline (submitTrade).
   { pkg: "@workspace/api-server", script: "test:trade-engine-pipeline" },
   // Its staged contract (draftTrade / confirmTrade / dispatchTrade) passes

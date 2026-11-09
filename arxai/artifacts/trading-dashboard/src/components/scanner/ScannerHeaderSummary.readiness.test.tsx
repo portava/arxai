@@ -16,7 +16,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { evaluateTradeHealthReadiness } from "@workspace/domain/market";
-import type { ScannerTruth } from "@/lib/scannerTruth";
+import { resolveScannerTruth, type ScannerTruth } from "@/lib/scannerTruth";
 
 // The readiness verdict under test — swapped per-case, built by the REAL
 // evaluator so we never hand-fake an impossible field combination.
@@ -178,6 +178,44 @@ describe("ScannerHeaderSummary — Trade-Health readiness chip (B7, display-only
     expect(currentReadiness.displayLabel).toBe("Live read · execution gated");
     expect(label.className).toContain("text-success");
     expect(chip.className).toContain("ring-success/20");
+  });
+
+  it("adapter-driven: a frozen account on a clean live 1m read shows the gated label from resolveScannerTruth (owner screenshot 2026-10-27)", () => {
+    const NOW = Date.parse("2026-10-27T16:02:00.000Z");
+    const t = resolveScannerTruth({
+      symbolDisplay: "V75",
+      symbolInternal: "V75",
+      timeframe: "1m",
+      feedStatus: {
+        symbol: "V75", displaySymbol: "V75", assetClass: "synthetic", source: "deriv",
+        isLive: true, lastTickTime: new Date(NOW).toISOString(), lastCandleTime: new Date(NOW).toISOString(),
+        latencyMs: 100, missing: 0, duplicate: 0, outOfOrder: 0, invalidOhlc: 0, stale: false,
+        quality: "clean", warning: null, aiUsable: true, feedReadinessState: "ready", message: "ok",
+      } as unknown as Parameters<typeof resolveScannerTruth>[0]["feedStatus"],
+      candleCount: 200,
+      requestedCount: 200,
+      firstTime: new Date(NOW - 200 * 60_000).toISOString(),
+      lastTime: new Date(NOW - 10_000).toISOString(),
+      lastClose: 33588.01,
+      quote: null,
+      headerOk: null,
+      mode: {
+        isLoading: false, isDemo: true, isLiveShared: false, isPaper: false, isLiveArmed: false,
+        isFrozen: true, canManualTrade: true, canAutoTrade: false, isSharedMasterAssigned: false,
+        ownBridgeConnected: false, approvalStatus: null,
+        frozenReason: "Trading is restricted on your account.", cleanBlockedReason: null,
+      },
+      nowMs: NOW,
+    });
+    expect(t.strip.trading.verdict).toBe("Blocked");
+    currentReadiness = t.readiness;
+    render(<ScannerHeaderSummary running={false} />);
+    expect(screen.getByTestId("scanner-header-readiness-label").textContent).toBe(
+      "Live read · execution gated",
+    );
+    expect(screen.getByTestId("scanner-header-readiness-trust").textContent).toBe(
+      "Live-confirmed 1m read — live execution is currently gated by your account checks.",
+    );
   });
 
   it("a blocked (not-available) read shows danger tone, never green", () => {

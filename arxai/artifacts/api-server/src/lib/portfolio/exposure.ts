@@ -8,11 +8,27 @@ export interface CurrencyExposure {
 export interface PortfolioExposure {
   totalOpen: number;
   totalClosed: number;
-  floatingPnl: number;
+  /** null when any open row has no marked-to-market P&L — never a guessed 0. */
+  floatingPnl: number | null;
+  floatingPnlUnavailableReason: string | null;
+  /** Excludes rows whose pnlStatus is UNKNOWN (schema contract, trades.ts). */
   realizedPnl: number;
+  /** Closed rows left out of realized/daily/weekly because pnlStatus is UNKNOWN. */
+  realizedPnlExcludedUnknown: number;
+  /** Where these figures come from; the page must say so. */
+  source: "LEGACY_TRADES_TABLE";
+  sourceNote: string;
   exposureByMarket: Record<string, number>;
   exposureByStrategy: Record<string, number>;
   exposureByCurrency: CurrencyExposure[];
+  /**
+   * Open rows whose symbol is not one of the pairs the code can split into
+   * currencies (EURGBP, XAUUSD, a broker-suffixed name, a synthetic …). Their
+   * currency exposure is NOT in exposureByCurrency, so an empty list with
+   * unmapped rows is "not decomposed", never "no currency exposure".
+   */
+  currencyExposureUnmappedRows: number;
+  currencyExposureUnmappedSymbols: string[];
   dailyDrawdown: number;
   weeklyDrawdown: number;
 }
@@ -45,6 +61,12 @@ function marketTypeOf(symbol: string): string {
   return "Other";
 }
 
+// The trades table is a frozen record of simulated rows (schema/trades.ts):
+// no broker order stood behind any row and it takes no new trades. The note
+// must say so, and must not imply the paper book or DEMO EA rows are in it.
+export const LEGACY_TRADES_SOURCE_NOTE =
+  "From the legacy trades table only: simulated rows that no broker order stood behind. This table no longer records new trades. Your paper book (paper orders) and DEMO EA positions are not included. Broker positions are not included, so an empty view does not mean you have no open exposure.";
+
 export function computeExposure(trades: Trade[]): PortfolioExposure {
   const open = trades.filter((t) => t.status === "OPEN");
   const closed = trades.filter((t) => t.status === "CLOSED_WIN" || t.status === "CLOSED_LOSS");
@@ -53,36 +75,56 @@ export function computeExposure(trades: Trade[]): PortfolioExposure {
   const exposureByStrategy: Record<string, number> = {};
   const currencyMap = new Map<string, number>();
   let floating = 0;
+  let unmarkedOpen = 0;
+  let unmappedCurrencyRows = 0;
+  const unmappedCurrencySymbols = new Set<string>();
 
   for (const t of open) {
     const mt = marketTypeOf(t.symbol);
     exposureByMarket[mt] = (exposureByMarket[mt] ?? 0) + t.lot;
     exposureByStrategy[t.strategy] = (exposureByStrategy[t.strategy] ?? 0) + t.lot;
-    floating += t.pnl ?? 0;
+    // Legacy OPEN rows are never marked to market: a null (or UNKNOWN) pnl is
+    // unmeasured, so the floating total cannot be stated.
+    if (t.pnl == null || t.pnlStatus === "UNKNOWN") unmarkedOpen++;
+    else floating += t.pnl;
     const pair = PAIR_CURRENCIES[t.symbol];
     if (pair) {
       const sign = t.direction === "BUY" ? 1 : -1;
       currencyMap.set(pair[0], (currencyMap.get(pair[0]) ?? 0) + sign * t.lot);
       currencyMap.set(pair[1], (currencyMap.get(pair[1]) ?? 0) - sign * t.lot);
+    } else {
+      unmappedCurrencyRows++;
+      unmappedCurrencySymbols.add(t.symbol);
     }
   }
 
-  const realized = closed.reduce((a, t) => a + (t.pnl ?? 0), 0);
+  // trades.ts: rows with pnlStatus "UNKNOWN" MUST be excluded from any P/L
+  // aggregate — their numeric pnl is not a measured result.
+  const measuredClosed = closed.filter((t) => t.pnlStatus !== "UNKNOWN");
+  const realized = measuredClosed.reduce((a, t) => a + (t.pnl ?? 0), 0);
   const dayMs = 86400000;
   const now = Date.now();
-  const dailyTrades = closed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < dayMs);
-  const weeklyTrades = closed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < 7 * dayMs);
+  const dailyTrades = measuredClosed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < dayMs);
+  const weeklyTrades = measuredClosed.filter((t) => t.closedAt && now - new Date(t.closedAt).getTime() < 7 * dayMs);
   const dailyDrawdown = Math.min(0, dailyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0));
   const weeklyDrawdown = Math.min(0, weeklyTrades.reduce((a, t) => a + (t.pnl ?? 0), 0));
 
   return {
     totalOpen: open.length,
     totalClosed: closed.length,
-    floatingPnl: floating,
+    floatingPnl: unmarkedOpen > 0 ? null : floating,
+    floatingPnlUnavailableReason: unmarkedOpen > 0
+      ? `${unmarkedOpen} of ${open.length} open row${open.length === 1 ? "" : "s"} not marked to market (no recorded P&L)`
+      : null,
     realizedPnl: realized,
+    realizedPnlExcludedUnknown: closed.length - measuredClosed.length,
+    source: "LEGACY_TRADES_TABLE",
+    sourceNote: LEGACY_TRADES_SOURCE_NOTE,
     exposureByMarket,
     exposureByStrategy,
     exposureByCurrency: [...currencyMap.entries()].map(([currency, netLots]) => ({ currency, netLots })),
+    currencyExposureUnmappedRows: unmappedCurrencyRows,
+    currencyExposureUnmappedSymbols: [...unmappedCurrencySymbols],
     dailyDrawdown,
     weeklyDrawdown,
   };

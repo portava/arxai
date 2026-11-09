@@ -22,7 +22,7 @@
 import { livePositionColumns } from "../lib/positions/ledger.js";
 import { readOpenPositions, selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
-import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatAgeSecondsFrom, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -161,9 +161,10 @@ function parseUserIdParam(req: Request): number | null {
   return id;
 }
 
+// Shared heartbeat policy: a heartbeat dated after the server's clock has no
+// verifiable age, so it is null (shown "—"), never "0s".
 function heartbeatAgeSeconds(lastHeartbeat: Date | null): number | null {
-  if (!lastHeartbeat) return null;
-  return Math.max(0, Math.round((Date.now() - new Date(lastHeartbeat).getTime()) / 1000));
+  return heartbeatAgeSecondsFrom(lastHeartbeat, Date.now());
 }
 
 interface TraderRow {

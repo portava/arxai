@@ -15,7 +15,12 @@ function deriveBridgeState(connectionStatus: ConnectionStatus, freshness: Freshn
   if (connectionStatus === "unavailable" || connectionStatus === "disconnected") return "offline";
   if (freshness === "stale" || freshness === "unavailable") return "stale";
   if (freshness === "live") return "live";
-  return "delayed";
+  // "fresh" and "delayed" (30 s – 2 min old) are delayed whatever the
+  // connection says: a connected stream does not make old broker data current,
+  // and only a snapshot the server calls live pulses "Live".
+  if (freshness === "fresh" || freshness === "delayed") return "delayed";
+  // A freshness value this client does not know is not evidence of anything.
+  return "offline";
 }
 
 export interface UseLiveBridgeRefreshResult extends UseLiveAccountSnapshotResult {

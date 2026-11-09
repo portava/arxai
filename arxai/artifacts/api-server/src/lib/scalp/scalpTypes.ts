@@ -29,6 +29,20 @@ export type ScalpStatus =
   // fake lot size. Keeps us honest instead of guessing.
   | "AWAITING_DATA";
 
+/**
+ * WHY an AWAITING_DATA result was returned, so surfaces never describe a
+ * non-feed gate as a feed problem. Set only on AWAITING_DATA exits:
+ *   - NO_SCANNER_READ: no current scanner read for this symbol/bar/source, or no
+ *     price (feed reason).
+ *   - NOT_LIVE: the scanner read is not from a live feed (feed reason).
+ *   - INSUFFICIENT_DATA: the shared sufficiency verdict does not allow a setup
+ *     (feed/data reason).
+ *   - NO_SPECS: the feed is live and sufficient, but the broker's symbol
+ *     details (lot size, point value) are unavailable, so no scalp can be sized.
+ *     NOT a feed reason.
+ */
+export type ScalpRejectReason = "NO_SCANNER_READ" | "NOT_LIVE" | "INSUFFICIENT_DATA" | "NO_SPECS";
+
 export type ScalpMode =
   | "SNIPER"
   | "SAFER"
@@ -230,6 +244,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpStatus;
+  /** Why an AWAITING_DATA result was returned (absent/null otherwise). */
+  rejectReason?: ScalpRejectReason | null;
+  /** The engine timeframe this result was read on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ConfidenceLabel;
   entryType: ScalpEntryType | null;
@@ -248,9 +266,35 @@ export interface ScalpResult {
   estimatedRiskAmount: number | null;
   rewardToRisk: number | null;
   estimatedMargin: number | null;
+  /**
+   * Currency of estimatedProfitMainTP / estimatedRiskAmount / estimatedMargin /
+   * targetProfitAmount: the trading account's currency as the broker reported
+   * it. Null when the account currency is not known — the money figures are
+   * then in the account currency but the UI must not name one.
+   */
+  moneyCurrency?: string | null;
   spreadRisk: RiskBand;
   slippageRisk: RiskBand;
+  /**
+   * True when the engine turned the scalp down before it read the spread:
+   * `spreadRisk` / `slippageRisk` are then placeholders, not observations,
+   * and must not be shown. Display only — no decision reads it.
+   */
+  spreadNotRead?: boolean;
   newsRisk: RiskBand;
+  /** True when news risk could not be checked: `newsRisk` is then not an observation. */
+  newsRiskUnchecked?: boolean;
+  /**
+   * True when no economic calendar is configured, so scheduled news was not
+   * checked at all: `newsRisk` is then not an observation and must not read LOW.
+   */
+  newsRiskNotConfigured?: boolean;
+  /**
+   * True when no economic calendar looked at scheduled events for this market
+   * (none is connected). Display only — no decision reads it: a LOW `newsRisk`
+   * is then a default, not an observation, and is shown as "Not checked".
+   */
+  newsRiskNotChecked?: boolean;
   timingStatus: TimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -375,10 +419,18 @@ export interface ScalpBasket {
   averageEntry: number;
   currentPrice: number | null;
   combinedFloatingPl: number | null;
-  /** Volume-weighted average entry — the basket's break-even price. */
+  /**
+   * Volume-weighted average entry. Spread, commission and swap are NOT
+   * included, so this is the break-even before costs, not a true break-even.
+   */
   breakEvenPrice: number;
   /** True when any leg has no protective stop-loss. */
   hasUnprotectedLeg: boolean;
+  /**
+   * The symbol's price digits from the broker spec (for formatting
+   * averageEntry / breakEvenPrice); null when the spec does not say.
+   */
+  digits?: number | null;
   legs: ScalpBasketLeg[];
   /** Current flame read for the basket's symbol+direction (honest NONE when blind). */
   flame: ScalpFlameRead;
@@ -406,6 +458,11 @@ export interface ScalpSpecInput {
   spreadPoints: number | null;
   category: string | null;
   displayName: string | null;
+  /**
+   * Currency the symbol's profit is computed in (MT5 SYMBOL_CURRENCY_PROFIT),
+   * e.g. "JPY" for USDJPY. Null/absent when the broker did not report it.
+   */
+  profitCurrency?: string | null;
 }
 
 /** Scanner technical read, normalized (from ScannerOpportunity / MarketAnalysis). */
@@ -436,6 +493,24 @@ export interface ScalpScannerInput {
    */
   sufficiency?: MarketDataSufficiencyVerdict | null;
   newsRisk?: RiskBand;
+  /**
+   * True when scheduled event risk applies but could not be checked (the news
+   * lookup failed or a configured calendar did not answer). `newsRisk` is then
+   * not an observation; the engine fails closed and says so.
+   */
+  newsRiskUnchecked?: boolean;
+  /**
+   * True when no economic calendar is configured, so scheduled events were not
+   * checked at all. Technicals-only by design: the engine does not fail closed,
+   * but the result carries the flag so `newsRisk` is never shown as LOW.
+   */
+  newsRiskNotConfigured?: boolean;
+  /**
+   * True when no economic calendar is connected, so scheduled events were not
+   * looked at. Display only: the engine copies it to the result and makes no
+   * decision on it (gating stays on `newsRiskUnchecked`).
+   */
+  newsRiskNotChecked?: boolean;
   generatedAt?: string;
 }
 
@@ -444,6 +519,8 @@ export interface ScalpAccountInput {
   equity: number | null;
   freeMargin: number | null;
   leverage?: number | null;
+  /** The trading account's currency as the broker reported it. Null when unknown. */
+  currency?: string | null;
 }
 
 /** One OHLC candle for the flame window (oldest → newest in the array). */

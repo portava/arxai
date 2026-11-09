@@ -214,3 +214,31 @@ test("directional flags NEVER outrun canShowTradeSetup (display gate stays the f
     }
   }
 });
+
+// levels-withheld-vs-shown: a LIVE read whose quote carries no bid/ask spread
+// (Deriv public ticks are last-price only) withholds the setup for the
+// quote-binding reason — never the false "Live feed is delayed".
+test("LIVE + enough bars + quoteBinding LAST_ONLY => partial, quote_unbound, no setup, never 'delayed feed'", () => {
+  const v = evaluateMarketDataSufficiency({
+    symbol: APPROVED, timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 200, quoteBinding: "LAST_ONLY",
+  });
+  assert.equal(v.status, "partial");
+  assert.equal(v.reasonCode, "quote_unbound");
+  assert.equal(v.canShowTradeSetup, false);
+  assert.equal(v.mayShowDirection, false);
+  assert.match(v.humanReason, /no bid\/ask spread is bound/);
+  assert.doesNotMatch(v.humanReason, /Live feed is delayed/);
+  assert.equal(v.freshnessVerdict, "LIVE");
+});
+
+test("quoteBinding never overrides a harder gate and is a no-op when BOUND/absent", () => {
+  const thin = evaluateMarketDataSufficiency({ symbol: APPROVED, timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 2, quoteBinding: "LAST_ONLY" });
+  assert.equal(thin.reasonCode, "not_enough_bars");
+  const delayed = evaluateMarketDataSufficiency({ symbol: APPROVED, timeframe: "M5", freshnessVerdict: "LIVE_DELAYED", availableClosedCandles: 200, quoteBinding: "LAST_ONLY" });
+  assert.equal(delayed.reasonCode, "stale_feed");
+  for (const quoteBinding of ["BOUND", null, undefined] as const) {
+    const v = evaluateMarketDataSufficiency({ symbol: APPROVED, timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 200, quoteBinding });
+    assert.equal(v.status, "sufficient");
+    assert.equal(v.canShowTradeSetup, true);
+  }
+});

@@ -2,6 +2,11 @@ export type SkillLevel =
   | "Beginner" | "Developing Trader" | "Disciplined Trader"
   | "Consistent Trader" | "Advanced Trader" | "Elite Trader";
 
+/** The eight process pillars, as the skill API names them in unmeasuredPillars. */
+export type SkillPillar =
+  | "discipline" | "execution" | "risk" | "emotional"
+  | "consistency" | "planning" | "review" | "practice";
+
 export interface TraderSkillProfile {
   id: number;
   skillLevel: SkillLevel;

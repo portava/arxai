@@ -31,7 +31,7 @@ import type {
   ScalpJournalEntry,
   ScalpSymbolPersonality,
 } from "@workspace/api-client-react";
-import { directionTone, fmtMoney } from "@/components/scanner/scalpLabels";
+import { directionTone, fmtScalpMoney } from "@/components/scanner/scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // Scalp Journal & Lessons — a dedicated, filterable history page for the
@@ -43,16 +43,20 @@ import { useAssistantName } from "@/lib/assistant-name";
 
 // ── Result / outcome helpers (shared shape with EleanorScalpReviewPanel) ────────
 
+// Only a KNOWN (broker-realised) P/L earns a plain "Win" / "Loss"; a result
+// graded from the last floating reading before the close says it is estimated.
 function resultBadge(
   result: string,
+  plQuality: string,
 ): { label: string; tone: string; icon: typeof CheckCircle2 } {
+  const known = plQuality === "KNOWN";
   switch (result) {
     case "WIN":
-      return { label: "Win", tone: "text-emerald-300 border-emerald-500/40", icon: CheckCircle2 };
+      return { label: known ? "Win" : "Likely win (estimated)", tone: "text-emerald-300 border-emerald-500/40", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-rose-300 border-rose-500/40", icon: XCircle };
+      return { label: known ? "Loss" : "Likely loss (estimated)", tone: "text-rose-300 border-rose-500/40", icon: XCircle };
     case "BREAKEVEN":
-      return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
+      return { label: known ? "Break-even" : "Roughly flat (estimated)", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     case "OPEN":
       return { label: "Still open", tone: "text-sky-300 border-sky-500/40", icon: CircleDot };
     default:
@@ -66,11 +70,11 @@ function resultBadge(
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
     const tone = entry.realizedPl > 0 ? "text-emerald-300" : entry.realizedPl < 0 ? "text-rose-300" : "text-muted-foreground";
-    return { text: fmtMoney(entry.realizedPl), tone, note: null };
+    return { text: fmtScalpMoney(entry.realizedPl, null), tone, note: null };
   }
   if (entry.plQuality === "ESTIMATED" && entry.lastFloatingPl != null) {
     const tone = entry.lastFloatingPl > 0 ? "text-emerald-300" : entry.lastFloatingPl < 0 ? "text-rose-300" : "text-muted-foreground";
-    return { text: `${fmtMoney(entry.lastFloatingPl)}`, tone, note: "estimated from the last reading" };
+    return { text: fmtScalpMoney(entry.lastFloatingPl, null), tone, note: "estimated from the last reading" };
   }
   return { text: "—", tone: "text-muted-foreground", note: "the broker never sent a final figure" };
 }
@@ -123,7 +127,7 @@ function buildJournalCsv(entries: ScalpJournalEntry[]): string {
     [
       e.displayName ?? e.symbol,
       e.direction === "BUY" ? "Buy" : "Sell",
-      resultBadge(e.result).label,
+      resultBadge(e.result, e.plQuality).label,
       journalPlCell(e),
       e.plQuality,
       e.lesson ?? "",
@@ -155,7 +159,7 @@ function downloadJournalCsv(entries: ScalpJournalEntry[]): void {
 
 function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
   const { name } = useAssistantName();
-  const badge = resultBadge(entry.result);
+  const badge = resultBadge(entry.result, entry.plQuality);
   const pl = plLine(entry);
   const Icon = badge.icon;
   return (
@@ -202,9 +206,15 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
         {entry.closedAt && <span>Closed {fmtDate(entry.closedAt)}</span>}
         {entry.eleanorWarnedCorrectly != null && (
           <span>
-            {entry.eleanorWarnedCorrectly
-              ? `${name}'s warning matched what happened.`
-              : `This one didn't follow ${name}'s read.`}
+            {/* Derived from the result; unless that result is a KNOWN
+                (broker-realised) P/L it was graded from the last reading. */}
+            {entry.plQuality === "KNOWN"
+              ? entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched what happened.`
+                : `This one didn't follow ${name}'s read.`
+              : entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched the last reading before the close (estimated).`
+                : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
         )}
         {entry.entryCount > 1 && <span>{entry.entryCount} entries</span>}
@@ -216,7 +226,7 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
 
 function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
   const { name } = useAssistantName();
-  const badge = resultBadge(entry.result);
+  const badge = resultBadge(entry.result, entry.plQuality);
   const pl = plLine(entry);
   const Icon = badge.icon;
   return (
@@ -256,9 +266,15 @@ function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
         {entry.eleanorWarnedCorrectly != null && (
           <span>
-            {entry.eleanorWarnedCorrectly
-              ? `${name}'s warning matched what happened.`
-              : `This one didn't follow ${name}'s read.`}
+            {/* Derived from the result; unless that result is a KNOWN
+                (broker-realised) P/L it was graded from the last reading. */}
+            {entry.plQuality === "KNOWN"
+              ? entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched what happened.`
+                : `This one didn't follow ${name}'s read.`
+              : entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched the last reading before the close (estimated).`
+                : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
         )}
         {entry.entryCount > 1 && <span>{entry.entryCount} entries</span>}
@@ -279,8 +295,12 @@ const PERSONALITY_MIN_SAMPLE = 5;
 const WIN_RATE_MIN_SAMPLE = 5;
 
 // ── Summary strip ────────────────────────────────────────────────────────────
-// At-a-glance read of the whole scalp record. Every number is derived from the
+// At-a-glance read of the loaded scalp record. Every number is derived from the
 // existing read-only endpoints — no new backend, no fabricated realised P/L.
+// GET /me/scalp/journal returns at most JOURNAL_PAGE_LIMIT rows (newest by
+// last update); when a full page comes back the strip says it covers only
+// that window, because older signals exist but are not loaded.
+const JOURNAL_PAGE_LIMIT = 200;
 
 interface ScalpSummary {
   total: number;
@@ -291,6 +311,12 @@ interface ScalpSummary {
   open: number;
   unknown: number;
   decided: number;
+  /** Decided results graded from an estimate rather than a broker-realised P/L. */
+  estimatedDecided: number;
+  /** Per outcome: results graded from an estimate (not a KNOWN P/L). */
+  estimatedWins: number;
+  estimatedLosses: number;
+  estimatedBreakeven: number;
   winRatePct: number | null;
   stillLearning: number;
   cautious: number;
@@ -305,16 +331,25 @@ function buildSummary(
   let breakeven = 0;
   let open = 0;
   let unknown = 0;
+  let estimatedDecided = 0;
+  let estimatedWins = 0;
+  let estimatedLosses = 0;
+  let estimatedBreakeven = 0;
   for (const e of entries) {
+    const estimated = e.plQuality !== "KNOWN";
+    if ((e.result === "WIN" || e.result === "LOSS") && estimated) estimatedDecided += 1;
     switch (e.result) {
       case "WIN":
         wins += 1;
+        if (estimated) estimatedWins += 1;
         break;
       case "LOSS":
         losses += 1;
+        if (estimated) estimatedLosses += 1;
         break;
       case "BREAKEVEN":
         breakeven += 1;
+        if (estimated) estimatedBreakeven += 1;
         break;
       case "OPEN":
         open += 1;
@@ -347,10 +382,49 @@ function buildSummary(
     open,
     unknown,
     decided,
+    estimatedDecided,
+    estimatedWins,
+    estimatedLosses,
+    estimatedBreakeven,
     winRatePct,
     stillLearning,
     cautious,
   };
+}
+
+// A count of results graded from the last floating reading is a count of
+// likely outcomes, worded as the row badges are ("Likely win (estimated)").
+// Only a count made entirely of KNOWN (broker-realised) results is plain.
+type OutcomeKind = "WIN" | "LOSS" | "BREAKEVEN";
+const OUTCOME_WORDS: Record<OutcomeKind, { plain: string; likely: string }> = {
+  WIN: { plain: "wins", likely: "likely wins (estimated)" },
+  LOSS: { plain: "losses", likely: "likely losses (estimated)" },
+  BREAKEVEN: { plain: "break-even", likely: "roughly flat (estimated)" },
+};
+function outcomeCountLabel(kind: OutcomeKind, total: number, estimated: number): string {
+  const w = OUTCOME_WORDS[kind];
+  if (estimated <= 0) return w.plain;
+  if (estimated >= total) return w.likely;
+  return `${w.plain} (${estimated} estimated)`;
+}
+
+type OutcomeCounts = Pick<ScalpSummary, "wins" | "losses" | "breakeven" | "estimatedWins" | "estimatedLosses" | "estimatedBreakeven">;
+
+/** The outcome filter's options, named as the counts and row badges are. */
+export function resultFilterOptions(c: OutcomeCounts): ReadonlyArray<{ value: string; label: string }> {
+  const label = (kind: OutcomeKind, total: number, estimated: number) => {
+    const w = OUTCOME_WORDS[kind];
+    const plain = w.plain.charAt(0).toUpperCase() + w.plain.slice(1);
+    if (estimated <= 0) return plain;
+    if (estimated >= total) return w.likely.charAt(0).toUpperCase() + w.likely.slice(1);
+    return `${plain} (some estimated)`;
+  };
+  return RESULT_FILTERS.map((f) =>
+    f.value === "WIN" ? { ...f, label: label("WIN", c.wins, c.estimatedWins) }
+    : f.value === "LOSS" ? { ...f, label: label("LOSS", c.losses, c.estimatedLosses) }
+    : f.value === "BREAKEVEN" ? { ...f, label: label("BREAKEVEN", c.breakeven, c.estimatedBreakeven) }
+    : f,
+  );
 }
 
 function SummaryStat({
@@ -372,13 +446,19 @@ function SummaryStat({
   );
 }
 
-function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
+function ScalpSummaryStrip({ summary, capped }: { summary: ScalpSummary; capped: boolean }) {
   const { name } = useAssistantName();
   return (
     <Card data-testid="scalp-summary-strip">
       <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-4">
+        {capped && (
+          <p className="w-full text-[11px] text-amber-300" data-testid="scalp-summary-scope">
+            Showing only the {summary.total} most recently updated signals; older signals are not loaded or counted,
+            so these totals and the win rate describe that window, not your whole scalp record.
+          </p>
+        )}
         <SummaryStat
-          label="signals tracked"
+          label={capped ? `signals tracked (newest ${summary.total} only)` : "signals tracked"}
           value={String(summary.total)}
           testid="scalp-summary-total"
         />
@@ -394,7 +474,8 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
                 {summary.winRatePct}%
               </span>
               <span className="text-[11px] text-muted-foreground">
-                win rate ({summary.decided} decided)
+                {summary.estimatedDecided > 0 ? "estimated win rate" : "win rate"} ({summary.decided} decided
+                {summary.estimatedDecided > 0 ? ", graded from the last reading before each close" : ""})
               </span>
             </>
           ) : (
@@ -410,19 +491,19 @@ function ScalpSummaryStrip({ summary }: { summary: ScalpSummary }) {
         </div>
         <div className="h-8 w-px bg-border/60" aria-hidden />
         <SummaryStat
-          label="wins"
+          label={outcomeCountLabel("WIN", summary.wins, summary.estimatedWins)}
           value={String(summary.wins)}
           tone="text-emerald-300"
           testid="scalp-summary-wins"
         />
         <SummaryStat
-          label="losses"
+          label={outcomeCountLabel("LOSS", summary.losses, summary.estimatedLosses)}
           value={String(summary.losses)}
           tone="text-rose-300"
           testid="scalp-summary-losses"
         />
         <SummaryStat
-          label="break-even"
+          label={outcomeCountLabel("BREAKEVEN", summary.breakeven, summary.estimatedBreakeven)}
           value={String(summary.breakeven)}
           testid="scalp-summary-breakeven"
         />
@@ -489,7 +570,7 @@ function PersonalityRow({ p }: { p: ScalpSymbolPersonality }) {
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {p.tradesClosed} closed
-          {!stillLearning && p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
+          {!stillLearning && p.winRatePct != null ? ` · ${p.winRatePct}% won (estimated)` : ""}
         </span>
       </div>
 
@@ -535,7 +616,7 @@ export default function ScalpJournalPage() {
   const [dateTo, setDateTo] = useState("");
 
   const journal = useGetMeScalpJournal(
-    { limit: 200 },
+    { limit: JOURNAL_PAGE_LIMIT },
     {
       query: {
         queryKey: ["me-scalp-journal-page"],
@@ -656,7 +737,7 @@ export default function ScalpJournalPage() {
         </Button>
       </div>
 
-      {summaryReady && summary.total > 0 && <ScalpSummaryStrip summary={summary} />}
+      {summaryReady && summary.total > 0 && <ScalpSummaryStrip summary={summary} capped={journalEntries.length >= JOURNAL_PAGE_LIMIT} />}
 
       <Tabs defaultValue="journal">
         <TabsList>
@@ -698,7 +779,7 @@ export default function ScalpJournalPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {RESULT_FILTERS.map((f) => (
+                  {resultFilterOptions(summary).map((f) => (
                     <SelectItem key={f.value} value={f.value}>
                       {f.label}
                     </SelectItem>
@@ -754,7 +835,7 @@ export default function ScalpJournalPage() {
           <Card data-testid="scalp-journal-card">
             <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
               <CardTitle className="text-base">
-                {filteredJournal.length} of {journalEntries.length} signals
+                {filteredJournal.length} of {journalEntries.length >= JOURNAL_PAGE_LIMIT ? `the newest ${journalEntries.length}` : journalEntries.length} signals
               </CardTitle>
               <Button
                 variant="outline"

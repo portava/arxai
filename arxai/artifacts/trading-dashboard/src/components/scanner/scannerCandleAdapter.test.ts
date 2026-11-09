@@ -112,3 +112,16 @@ describe("adaptChartCandles", () => {
     expect(adaptChartCandles([])).toEqual([]);
   });
 });
+
+describe("adaptChartCandles — carries the server's bar-completeness fact", () => {
+  it("marks the forming tip isComplete=false and closed bars true; legacy bars carry nothing", () => {
+    const out = adaptChartCandles([
+      { openTime: "2026-10-27T16:01:00.000Z", open: 1, high: 1, low: 1, close: 1, isComplete: true, isForming: false },
+      { openTime: "2026-10-27T16:02:00.000Z", open: 1, high: 1, low: 1, close: 1, isComplete: false, isForming: true },
+      { openTime: "2026-10-27T16:03:00.000Z", open: 1, high: 1, low: 1, close: 1, isForming: true },
+      { time: 1_000, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+    expect(out.map((c) => c.isComplete)).toEqual([true, false, false, undefined]);
+    expect("isComplete" in out[3]!).toBe(false);
+  });
+});

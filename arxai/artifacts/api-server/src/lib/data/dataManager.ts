@@ -62,9 +62,31 @@ export async function getMarketData(symbol: string, timeframe = "1m", limit = 25
   return (await getMarketDataWithProvenance(symbol, timeframe, limit)).candles;
 }
 
-export async function getLatestQuote(symbol: string): Promise<MarketQuote> {
+/** A routed quote plus what its timestamp means and who served it. */
+export type LatestQuote = MarketQuote & {
+  /**
+   * True only when `timestamp` is the producer's own tick time (the router's
+   * tickTimeObserved). False when it is a receive-time stamp or its origin is
+   * unknown, so a caller must not treat it as the market tick time.
+   */
+  tickTimeObserved: boolean;
+  /** Provider that served the quote, or null when not reported. */
+  source: string | null;
+};
+
+/**
+ * The routed quote, or null when no provider served one. A failed lookup never
+ * comes back stamped with the current time (that read as an observation made
+ * "now"). Callers judge the quote's age with quoteObservationFreshness.
+ */
+export async function getLatestQuote(symbol: string): Promise<LatestQuote | null> {
   const r = await routeQuote(symbol);
-  return r.quote ?? { symbol, timestamp: new Date().toISOString() };
+  if (!r.ok || !r.quote) return null;
+  return {
+    ...r.quote,
+    tickTimeObserved: r.tickTimeObserved === true,
+    source: r.provenance?.providerId ?? r.primaryProvider ?? null,
+  };
 }
 
 export async function getProviderStatus() {

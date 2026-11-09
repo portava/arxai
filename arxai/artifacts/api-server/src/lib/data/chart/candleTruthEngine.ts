@@ -66,7 +66,7 @@ import {
 } from "./candleNormalization.js";
 import { timeframeMs, timeframeSeconds, type ChartTimeframe } from "./timeframes.js";
 import type { WeeklyPresenceProfile } from "./sessionProfile.js";
-import { classifyCandleFreshness, STALE_TRAILING_INTERVALS } from "../freshness.js";
+import { classifyCandleFreshness, scheduledWeekendClosure, STALE_TRAILING_INTERVALS } from "../freshness.js";
 import {
   getSymbolProfile,
   getSourceDocumentation,
@@ -251,6 +251,37 @@ function analyzeSeam(candles: NormalizedChartCandle[], intervalMs: number, now: 
 
 // ── Assessment logic ──────────────────────────────────────────────────────────
 
+/**
+ * Why a series is STALE, without calling a closed market a stale feed (the
+ * chart feed status words the same cases the same way): inside the
+ * instrument's scheduled weekend close with no bar since the close, AND the
+ * caller observed no trading (no tick has moved recently), the market is
+ * closed; a market with session closes otherwise may be closed (daily break,
+ * holiday) or its feed delayed; only a 24/7 market's lag is plainly a stale
+ * feed. The static weekend window runs past the real reopen, so the schedule
+ * alone never states a closure: without the caller's tick evidence
+ * (`tradingObserved` unknown) or with trading observed, the wording stays
+ * hedged — the same rule the chart feed status applies. The measured gap is
+ * always stated.
+ */
+function staleReason(
+  candles: NormalizedChartCandle[],
+  trailingIntervals: number | null,
+  profile: SymbolProfile,
+  now: number,
+  tradingObserved: boolean | null,
+): string {
+  const gap = `newest bar trails the current bar by ${trailingIntervals} intervals (threshold: ${STALE_TRAILING_INTERVALS})`;
+  if (profile.session.alwaysOpen) return `Feed is stale — ${gap}`;
+  const newestOpenMs = Date.parse(candles[candles.length - 1]?.openTime ?? "");
+  const closure = tradingObserved === false ? scheduledWeekendClosure(profile.session, now) : null;
+  if (closure && Number.isFinite(newestOpenMs) && newestOpenMs < closure.closedAtMs) {
+    const since = new Date(closure.closedAtMs).toISOString().slice(0, 16).replace("T", " ");
+    return `Market in its scheduled weekend close since ${since} UTC with no bar since — ${gap}; no new bars are expected until it reopens`;
+  }
+  return `No new bars — ${gap}; the market may be closed or the feed delayed`;
+}
+
 function computeAssessment(
   anomalies: SequenceAnomalies,
   candles: NormalizedChartCandle[],
@@ -258,6 +289,8 @@ function computeAssessment(
   mockDataDetected: boolean,
   trailingIntervals: number | null,
   profile: SymbolProfile,
+  now: number = Date.now(),
+  tradingObserved: boolean | null = null,
 ): { assessment: TruthAssessment; reasons: string[] } {
   const reasons: string[] = [];
 
@@ -285,9 +318,7 @@ function computeAssessment(
   // clean feed gets an honest STALE verdict rather than CLEAN or PARTIAL)
   const isStale = classifyCandleFreshness(trailingIntervals)?.freshness === "stale";
   if (isStale) {
-    reasons.push(
-      `Feed is stale — newest bar trails the current bar by ${trailingIntervals} intervals (threshold: ${STALE_TRAILING_INTERVALS})`,
-    );
+    reasons.push(staleReason(candles, trailingIntervals, profile, now, tradingObserved));
     return { assessment: "STALE", reasons };
   }
 
@@ -369,6 +400,7 @@ export function runCandleTruth(
     limit,
     now = Date.now(),
     sessionProfile = null,
+    tradingObserved = null,
   }: {
     symbol: string;
     displaySymbol: string;
@@ -382,6 +414,14 @@ export function runCandleTruth(
      * indices). Null for synthetics/crypto or when no profile is available.
      */
     sessionProfile?: WeeklyPresenceProfile | null;
+    /**
+     * The caller's tick evidence for this series' source: true when a quote
+     * observably moved in the last two minutes (the market is trading), false
+     * when ticks were checked and none moved, null/omitted when unknown. Only
+     * `false` lets a STALE reason say the market is in its scheduled weekend
+     * close; wording only — the assessment is unchanged.
+     */
+    tradingObserved?: boolean | null;
   },
 ): CandleTruthResult {
   const receivedAt = new Date(now).toISOString();
@@ -442,7 +482,7 @@ export function runCandleTruth(
 
   // Assessment
   const { assessment, reasons: assessmentReasons } = computeAssessment(
-    anomalies, candles, historyMinimumMet, mockDataDetected, trailingIntervals, profile,
+    anomalies, candles, historyMinimumMet, mockDataDetected, trailingIntervals, profile, now, tradingObserved,
   );
 
   // Summarize the actual emitted bases. A mixed or missing MT5 declaration

@@ -11,23 +11,16 @@ import { requireRole, getSessionFromReq } from "../lib/security/session.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
 import {
   startSession, recordStep, completeSession, recordRating,
-  getActive, getSession, listSessionsAll, dailyPerformanceReview,
+  getSession, listSessionsAll, dailyPerformanceReview,
   weeklySummary, readinessTrend, exportDailyReport, exportWeeklyReport,
-  STEPS,
+  dailyTestingStatus,
 } from "../lib/dailyTesting.js";
 
 const router = Router();
 
-router.get("/daily-testing/status", requireRole("OWNER", "ADMIN", "TESTER"), (_req, res) => {
-  const active = getActive();
-  res.json({
-    active,
-    stepTemplate: STEPS,
-    lastSession: listSessionsAll(1)[0] ?? null,
-    mt5Deferred: true,
-    realBrokerExecutionAvailable: false,
-    note: "Daily testing mode — simulator + tester intents only. MT5 deferred.",
-  });
+router.get("/daily-testing/status", requireRole("OWNER", "ADMIN", "TESTER"), async (_req, res) => {
+  // mt5Deferred follows the MT5 feed the readiness report observes now.
+  res.json(await dailyTestingStatus());
 });
 
 router.post("/daily-testing/start", requireRole("OWNER", "ADMIN", "TESTER"), async (req, res) => {

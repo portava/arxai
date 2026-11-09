@@ -1,0 +1,248 @@
+// Regression: the older Risk Control Center (/risk-settings) routes.
+//
+// GET /risk/audit — the "Live Risk Audit" sized loss % against a hard-coded
+// $1,000 balance and read the retired legacy trades table (every account's
+// rows, closed to new trades, and its closed rows never match the "CLOSED"
+// filter, so loss and streak always read 0). The response said only
+// balanceSource, which the RiskAudit schema did not carry. It now states
+// what the audit read so the page can say it is not the trader's account.
+//
+// The route runs for real; requireUser, computeRiskAudit and the settings
+// reader are mocked. No database, no network.
+//
+// Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
+//        src/routes/__qa__/riskSettingsRoutesTruth.test.ts
+
+import { after, before, test, mock } from "node:test";
+import assert from "node:assert/strict";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import express from "express";
+
+const SETTINGS = {
+  id: 1, riskMode: "Balanced", riskPerTradePct: 0.5, maxDailyLossPct: 2, maxWeeklyLossPct: 5, maxOpenTrades: 2,
+  maxTradesPerDay: 5, maxLotSize: 5, stopAfterLosingStreak: 3, cooldownAfterLossMinutes: 30, minConfidenceScore: 75,
+  disableDuringAbnormalVolatility: true, liveLocked: true, vol75ExtraConfidence: true, vol75SmallLot: true,
+  us30BlockNews: true, stocksBlockEarnings: true, forexBlockEvents: true,
+};
+const auditBalances: number[] = [];
+
+mock.module("../../lib/auth/middleware.js", {
+  namedExports: {
+    requireUser: (req: { authUser?: unknown }, _res: unknown, next: () => void) => {
+      req.authUser = { id: 7, role: "USER" };
+      next();
+    },
+  },
+});
+mock.module("../../lib/auditVault.js", { namedExports: { shadowCapture: async () => undefined } });
+mock.module("../../lib/risk/userRiskSettings.js", {
+  namedExports: {
+    getOrCreateUserRiskSettings: async () => ({ ...SETTINGS }),
+    updateUserRiskSettings: async (_u: number, patch: Record<string, unknown>) => ({ ...SETTINGS, ...patch }),
+  },
+});
+// The limits in force (strictest of trader, operator and platform), as the
+// Risk Governor resolves them. Default: the operator capped the lot at 0.5.
+const effective: {
+  maxLotSize: number; symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }>;
+  allowedSymbols: string[] | null; allowedDirection: "BUY" | "SELL" | null;
+} = {
+  maxLotSize: 0.5, symbolLimits: {}, allowedSymbols: null, allowedDirection: null,
+};
+mock.module("../../lib/riskGovernor/limitSettings.js", {
+  namedExports: { loadEffectiveLimits: async () => ({ ...effective, sources: { maxLotSize: "user_risk_limits.max_lot_size" } }) },
+});
+// The trader's stop switches (read by /risk/audit since the merge with the
+// halt fix): released, so no database is reached.
+mock.module("../../lib/safety/tradingHalt.js", {
+  namedExports: {
+    loadTradingHalt: async () => ({ engaged: false, sources: [], reason: null }),
+    loadTradingHaltReport: async () => ({ halt: { engaged: false, sources: [], reason: null }, reasons: [], unread: [] }),
+  },
+});
+// By default the stubbed audit result does not say what it read (no scope,
+// no closedTradesMeasured). With `reportsBasis` it reports what the real
+// computeRiskAudit reports for the options the route passes.
+let reportsBasis = false;
+const realAudit = await import("../../lib/riskAudit.js");
+mock.module("../../lib/riskAudit.js", {
+  namedExports: {
+    ...realAudit,
+    computeRiskAudit: async (balance: number, _input: unknown, opts: { countClosedRows?: boolean; userId?: number } = {}) => {
+      auditBalances.push(balance);
+      return {
+        passed: true, reasonsBlocked: [], warnings: [], riskPercent: 0.5, projectedLoss: 5, riskReward: 2,
+        dailyLossUsed: 0, weeklyLossUsed: 0, tradesRemaining: 5, openTradesCount: 0, losingStreak: 0, cooldownActive: false,
+        ...(reportsBasis ? {
+          closedTradesMeasured: opts.countClosedRows === true, measuredFrom: "LEGACY_TRADES_TABLE",
+          scope: opts.userId != null ? "USER" : "ALL_USERS", tradingHalt: null,
+        } : {}),
+      };
+    },
+  },
+});
+
+const { default: router } = await import("../risk.js");
+
+let server: Server;
+let base = "";
+before(async () => {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { (req as unknown as { log: unknown }).log = { error() {}, warn() {}, info() {} }; next(); });
+  app.use(router);
+  server = app.listen(0);
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+after(() => { server?.close(); });
+
+test("GET /risk/audit says it used a $1,000 placeholder and the legacy trades log", async () => {
+  const r = await fetch(`${base}/risk/audit`);
+  assert.equal(r.status, 200);
+  const body = await r.json() as Record<string, unknown>;
+  assert.equal(body["balanceSource"], "PLACEHOLDER_1000");
+  assert.equal(body["accountBalanceUsed"], auditBalances.at(-1), "the balance reported is the one the audit was sized against");
+  assert.equal(body["accountBalanceUsed"], 1000);
+  assert.equal(body["tradeSource"], "LEGACY_TRADES_TABLE");
+  assert.equal(body["tradeScope"], "ALL_ACCOUNTS", "a result that does not say whose rows it counted is not reported as yours");
+  assert.deepEqual(
+    [...(body["notMeasured"] as string[])].sort(),
+    ["cooldownActive", "dailyLossUsed", "losingStreak", "weeklyLossUsed"],
+    "a result that does not say it counted closed rows has no loss or streak measurement",
+  );
+  assert.ok(!Number.isNaN(Date.parse(String(body["evaluatedAt"]))), "the audit says when it ran");
+  // The audit result itself is passed through unchanged.
+  assert.equal(body["passed"], true);
+  assert.equal(body["tradesRemaining"], 5);
+});
+
+// Since the merge with the user-scope / closed-row fixes, the route counts
+// only the caller's rows and their closed rows; the basis fields follow what
+// the result says instead of a fixed "every account, nothing measured".
+test("GET /risk/audit reports the caller's own rows and measured closes when the audit counted them", async () => {
+  reportsBasis = true;
+  try {
+    const r = await fetch(`${base}/risk/audit`);
+    assert.equal(r.status, 200);
+    const body = await r.json() as Record<string, unknown>;
+    assert.equal(body["scope"], "USER");
+    assert.equal(body["tradeScope"], "USER", "tradeScope agrees with scope");
+    assert.equal(body["closedTradesMeasured"], true);
+    assert.deepEqual(body["notMeasured"], [], "closed rows were counted, so nothing is listed as unmeasured");
+    assert.equal(body["balanceSource"], "PLACEHOLDER_1000", "still a placeholder balance");
+    assert.equal(body["tradeSource"], "LEGACY_TRADES_TABLE");
+  } finally {
+    reportsBasis = false;
+  }
+});
+
+// POST /risk/lock-live writes risk_settings.liveLocked, a preference no live
+// dispatch gate reads (only the permission status / checklists list it). The
+// reply said "Manual unlock required before going live" and "lock removed"
+// as if it gated live trading; it now says what the toggle does and does not do.
+test("POST /risk/lock-live says the lock is a preference orders are not checked against", async () => {
+  const post = async (locked: boolean) => {
+    const r = await fetch(`${base}/risk/lock-live`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked }),
+    });
+    assert.equal(r.status, 200);
+    return r.json() as Promise<{ locked: boolean; message: string }>;
+  };
+  const on = await post(true);
+  assert.equal(on.locked, true);
+  assert.doesNotMatch(on.message, /required before going live/);
+  assert.match(on.message, /preference/);
+  assert.match(on.message, /orders are not checked against it/);
+  const off = await post(false);
+  assert.equal(off.locked, false);
+  assert.match(off.message, /does not enable live trading/);
+});
+
+// GET /risk/position-size capped the lot at the trader's own saved cap (or
+// the platform 5) and ignored the operator's account limit, so "Max Allowed
+// Lot 5.00 / Final Lot Size 2.00" showed for an order the governor refuses.
+// It now uses the lot cap in force: strictest of trader, operator, platform,
+// and the trader's per-symbol cap.
+async function size(symbol: string) {
+  const q = new URLSearchParams({ symbol, accountBalance: "100000", riskPercent: "2", entry: "1.1", stopLoss: "1.09" });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  return r.json() as Promise<{ maxLotAllowed: number; finalLot: number; suggestedLot: number }>;
+}
+
+test("GET /risk/position-size caps the lot at the operator's limit, not the saved 5", async () => {
+  effective.maxLotSize = 0.5; effective.symbolLimits = {};
+  const r = await size("EURUSD");
+  assert.equal(r.suggestedLot, 2, "the risk budget alone would size 2.00 lots");
+  assert.equal(r.maxLotAllowed, 0.5);
+  assert.equal(r.finalLot, 0.5);
+});
+
+test("GET /risk/position-size applies a stricter per-symbol cap", async () => {
+  effective.maxLotSize = 0.5; effective.symbolLimits = { EURUSD: { maxLots: 0.2, blocked: false } };
+  const r = await size("eurusd");
+  assert.equal(r.maxLotAllowed, 0.2);
+  assert.equal(r.finalLot, 0.2);
+  effective.symbolLimits = {};
+});
+
+// The calculator's symbol is free text. It was passed through as typed, so
+// "eurusd" was sized at $1 per point ("eurusd is not a currency pair") and
+// came out about 100,000x too large, capped at the max lot. The route now
+// trims and uppercases it, as the per-symbol cap lookup already did.
+test("GET /risk/position-size sizes a lowercase pair as the pair", async () => {
+  effective.maxLotSize = 100; effective.symbolLimits = {};
+  const q = new URLSearchParams({ symbol: " eurusd ", accountBalance: "10000", riskPercent: "1", entry: "1.1", stopLoss: "1.095" });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  const body = await r.json() as { finalLot: number; valueModel: string; basis: string };
+  assert.equal(body.valueModel, "forex_usd_quote");
+  assert.equal(body.finalLot, 0.2);
+  assert.doesNotMatch(body.basis, /not a currency pair/);
+  effective.maxLotSize = 0.5;
+});
+
+// The governor's max_position_size check also refuses a symbol outright: off
+// the operator's instrument allow-list, a BUY/SELL the operator restricted,
+// or a symbol the trader switched off (a per-symbol cap of 0 is stored as
+// blocked with no cap). The sizer still showed "Max Allowed Lot 0.50 / Final
+// Lot Size 0.50" for an order the governor refuses; it now gives no lot and
+// says why, from the same limits read.
+async function sizeQ(params: Record<string, string>) {
+  const q = new URLSearchParams({ accountBalance: "100000", riskPercent: "2", entry: "1.1", stopLoss: "1.09", ...params });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  return r.json() as Promise<{ maxLotAllowed: number; finalLot: number; refusedReason: string | null; warning: string | null }>;
+}
+
+test("GET /risk/position-size gives no lot for a symbol the governor refuses outright", async () => {
+  try {
+    effective.maxLotSize = 0.5; effective.symbolLimits = { EURUSD: { maxLots: null, blocked: true } };
+    const blocked = await sizeQ({ symbol: "eurusd" });
+    assert.equal(blocked.finalLot, 0);
+    assert.equal(blocked.maxLotAllowed, 0);
+    assert.match(blocked.refusedReason ?? "", /Trading EURUSD is switched off in your risk limits/);
+    assert.doesNotMatch(blocked.warning ?? "", /capped/, "no cap warning for a lot that is refused");
+
+    effective.symbolLimits = {}; effective.allowedSymbols = ["GBPUSD"];
+    const offList = await sizeQ({ symbol: "EURUSD" });
+    assert.equal(offList.finalLot, 0);
+    assert.match(offList.refusedReason ?? "", /EURUSD is not on the instruments your operator allowed/);
+
+    effective.allowedSymbols = null; effective.allowedDirection = "SELL";
+    const wrongSide = await sizeQ({ symbol: "EURUSD" }); // stop below entry: a BUY
+    assert.equal(wrongSide.finalLot, 0);
+    assert.match(wrongSide.refusedReason ?? "", /restricted to SELL trades only/);
+    const rightSide = await sizeQ({ symbol: "EURUSD", stopLoss: "1.11" }); // stop above entry: a SELL
+    assert.equal(rightSide.refusedReason, null);
+    assert.equal(rightSide.finalLot, 0.5);
+
+    effective.allowedDirection = null; effective.allowedSymbols = ["EURUSD"];
+    const allowed = await sizeQ({ symbol: "EURUSD" });
+    assert.equal(allowed.refusedReason, null, "an allowed symbol is sized as before");
+    assert.equal(allowed.finalLot, 0.5);
+  } finally {
+    effective.maxLotSize = 0.5; effective.symbolLimits = {}; effective.allowedSymbols = null; effective.allowedDirection = null;
+  }
+});

@@ -148,13 +148,20 @@ async function positionNearStopLossRule() {
       : Math.max(0, p.stopLoss - p.currentPrice);
     const pctOfSlRemaining = remaining / slDist;
     if (pctOfSlRemaining <= 0.25) {
+      // live_positions is the DEMO / legacy EA mirror, never the LIVE venue
+      // (arx_live_positions): say so, and say which price the distance was
+      // measured from. The row records no time for current_price, and
+      // last_synced_at does not date it: the P/L and SL push, partial closes
+      // and MODIFY results stamp last_synced_at without writing the price
+      // (executionReconciler.ts). So the price is never paired with a sync time.
+      const asOf = " (the time of that price was not recorded, so it may not be current)";
       const r = await createAlert({
         userId: p.userId,
         type: "POSITION_WARNING",
         priority: pctOfSlRemaining <= 0.05 ? "CRITICAL" : "HIGH",
         severity: pctOfSlRemaining <= 0.05 ? "danger" : "warning",
-        title: `Position near stop loss: ${p.symbol}`,
-        message: `Live position #${p.id} (${p.direction} ${p.symbol}) is ${(pctOfSlRemaining * 100).toFixed(0)}% from stop loss.`,
+        title: `Demo position near stop loss: ${p.symbol}`,
+        message: `Demo position #${p.id} (${p.direction} ${p.symbol}) has ${(pctOfSlRemaining * 100).toFixed(0)}% of its stop-loss distance left at the last recorded price ${p.currentPrice}${asOf}.`,
         symbol: p.symbol,
         relatedPositionId: p.id,
         relatedTradeId: p.tradeId ?? undefined,

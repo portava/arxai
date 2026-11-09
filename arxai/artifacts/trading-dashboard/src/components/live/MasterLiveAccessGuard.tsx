@@ -21,7 +21,7 @@
 // SECURITY: this is a UI convenience only. The server re-evaluates the
 // access gate on every dispatch — hiding the ticket here cannot bypass
 // the block.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ShieldAlert } from "lucide-react";
 
@@ -36,28 +36,57 @@ export type MasterLiveAccessVerdict = {
   loaded: boolean;
   requireStopLoss: boolean;
   scannerLiveEnabled: boolean;
+  /**
+   * Set when the access read failed (HTTP error, network failure, or an answer
+   * without a canTrade boolean): access could not be checked. canTrade is then
+   * false (fail-closed), but this is NOT a "not approved" answer.
+   */
+  error: string | null;
 };
 
-export function useMasterLiveAccess(): MasterLiveAccessVerdict {
-  const [v, setV] = useState<MasterLiveAccessVerdict>({
-    canTrade: false, status: null, blockReason: null, message: null, loaded: false, requireStopLoss: true, scannerLiveEnabled: false,
-  });
+const UNCHECKED_ACCESS: Omit<MasterLiveAccessVerdict, "loaded" | "error"> = {
+  canTrade: false, status: null, blockReason: null, message: null, requireStopLoss: true, scannerLiveEnabled: false,
+};
+
+/**
+ * `opts.open`: a ticket that stays mounted and only toggles its dialog passes
+ * its `open` flag, and access is re-read each time the dialog is reopened (so
+ * "Reopen the ticket to retry" is true). Without it, access is read on mount
+ * and when the window regains focus or becomes visible.
+ */
+export function useMasterLiveAccess(opts?: { open?: boolean }): MasterLiveAccessVerdict {
+  const [v, setV] = useState<MasterLiveAccessVerdict>({ ...UNCHECKED_ACCESS, loaded: false, error: null });
   const refetch = useCallback((signal?: AbortSignal) => {
+    // A failed read never keeps an earlier verdict as if it were current and
+    // never reads as "not approved": it is "could not be checked".
+    const failed = (error: string) => {
+      if (!signal?.aborted) setV({ ...UNCHECKED_ACCESS, loaded: true, error });
+    };
     fetch("/api/me/master-live/access", { credentials: "include", signal })
-      .then((r) => r.json())
-      .then((r) => {
+      .then(async (res) => {
+        const r = await res.json().catch(() => null);
         if (signal?.aborted) return;
+        if (!res.ok) {
+          const why = r && typeof r.error === "string" && r.error ? `: ${r.error}` : "";
+          failed(`Live access could not be checked (HTTP ${res.status}${why}).`);
+          return;
+        }
+        if (!r || typeof r.canTrade !== "boolean") {
+          failed("Live access could not be checked (the server's answer did not say whether live trading is allowed).");
+          return;
+        }
         setV({
-          canTrade: !!r.canTrade,
+          canTrade: r.canTrade,
           status: r.status ?? null,
           blockReason: r.blockReason ?? null,
           message: r.message ?? null,
           loaded: true,
           requireStopLoss: r.limits?.requireStopLoss ?? true,
           scannerLiveEnabled: !!r.scannerLiveEnabled,
+          error: null,
         });
       })
-      .catch(() => { if (!signal?.aborted) setV((p) => ({ ...p, loaded: true })); });
+      .catch(() => failed("Live access could not be checked (the request did not reach the server)."));
   }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -76,6 +105,18 @@ export function useMasterLiveAccess(): MasterLiveAccessVerdict {
       window.removeEventListener("focus", onFocus);
     };
   }, [refetch]);
+  // Re-read on reopen (closed → open), not on first mount (the effect above
+  // already reads then) and not on every render.
+  const open = opts?.open;
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const prev = wasOpen.current;
+    wasOpen.current = open;
+    if (open !== true || prev !== false) return;
+    const controller = new AbortController();
+    refetch(controller.signal);
+    return () => controller.abort();
+  }, [open, refetch]);
   return v;
 }
 
@@ -109,6 +150,20 @@ export function MasterLiveAccessBanner() {
   // actionable problems (approved-but-blocked, not approved, suspended,
   // risk-locked) below.
   if (v.canTrade) return null;
+
+  // The access read failed: nothing is known about approval, so never say
+  // "requires approval".
+  if (v.error) {
+    return (
+      <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="banner-master-live-access">
+        <ShieldAlert className="h-4 w-4 text-amber-400" />
+        <AlertTitle>Live access could not be checked.</AlertTitle>
+        <AlertDescription className="text-xs text-muted-foreground">
+          {v.error} Whether your account is approved for live trading is unknown; reload the page to retry.
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   // Approved but operationally blocked (e.g. owner/admin while the bridge
   // reconciles, EA heartbeat stale, kill switch active, governance setting).
@@ -150,6 +205,19 @@ export function MasterLiveAccessBanner() {
 export function MasterLiveAccessTicketBlock() {
   const v = useMasterLiveAccess();
   if (!v.loaded || v.canTrade) return null;
+  if (v.error) {
+    return (
+      <div
+        className="border border-amber-500/40 bg-amber-500/5 rounded-md p-3 text-sm text-amber-200"
+        data-testid="block-master-live-access-unknown"
+      >
+        <div className="font-medium">Live access could not be checked.</div>
+        <div className="text-xs text-muted-foreground mt-1">
+          {v.error} Whether your account is approved for live trading is unknown; reopen the ticket to retry.
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className="border border-rose-500/40 bg-rose-500/5 rounded-md p-3 text-sm text-rose-200"

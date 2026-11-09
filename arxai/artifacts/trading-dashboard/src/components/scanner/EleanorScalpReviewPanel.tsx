@@ -20,7 +20,7 @@ import type {
   ScalpJournalEntry,
   ScalpSymbolPersonality,
 } from "@workspace/api-client-react";
-import { directionTone, fmtMoney } from "./scalpLabels";
+import { directionTone, fmtScalpMoney } from "./scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // EleanorScalpReviewPanel (Phase 3) — the after-action review of recently closed
@@ -28,30 +28,38 @@ import { useAssistantName } from "@/lib/assistant-name";
 // user. 100% read-only: every line is reflection and guidance. No trade
 // buttons, no internal enum tokens visible, plain-English only.
 
+// Only a KNOWN (broker-realised) P/L earns a plain "Win" / "Loss". Every other
+// graded result came from the last floating reading before the close (no
+// commission or swap, and price may have moved after it), so the badge says it
+// is an estimate.
 function resultBadge(entry: ScalpJournalEntry): { label: string; tone: string; icon: typeof CheckCircle2 } {
+  const known = entry.plQuality === "KNOWN";
   switch (entry.result) {
     case "WIN":
-      return { label: "Win", tone: "text-success border-emerald-500/40", icon: CheckCircle2 };
+      return { label: known ? "Win" : "Likely win (estimated)", tone: "text-success border-emerald-500/40", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-danger border-rose-500/40", icon: XCircle };
+      return { label: known ? "Loss" : "Likely loss (estimated)", tone: "text-danger border-rose-500/40", icon: XCircle };
     case "BREAKEVEN":
-      return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
+      return { label: known ? "Break-even" : "Roughly flat (estimated)", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     default:
       return { label: "Outcome unclear", tone: "text-warning border-amber-500/40", icon: MinusCircle };
   }
 }
 
-// Outcome P/L line — honest about what we actually know. KNOWN = the broker's
-// realised number; ESTIMATED = our last observed floating figure; UNKNOWN =
-// we never got a trustworthy close figure (common on the demo path).
+// Outcome P/L line — honest about what we actually know. KNOWN is reserved
+// for a broker-reported realised number, which the server does not record
+// today; ESTIMATED = the last floating reading of every leg (the server sends
+// this for every closed scalp it can estimate); UNKNOWN = no reading covered
+// every leg, so there is no trustworthy close figure. The figures are in the
+// account's currency, which the entry does not carry, so no "$" is assumed.
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
     const tone = entry.realizedPl > 0 ? "text-success" : entry.realizedPl < 0 ? "text-danger" : "text-muted-foreground";
-    return { text: fmtMoney(entry.realizedPl), tone, note: null };
+    return { text: fmtScalpMoney(entry.realizedPl, null), tone, note: null };
   }
   if (entry.plQuality === "ESTIMATED" && entry.lastFloatingPl != null) {
     const tone = entry.lastFloatingPl > 0 ? "text-success" : entry.lastFloatingPl < 0 ? "text-danger" : "text-muted-foreground";
-    return { text: `${fmtMoney(entry.lastFloatingPl)}`, tone, note: "estimated from the last reading" };
+    return { text: fmtScalpMoney(entry.lastFloatingPl, null), tone, note: "estimated from the last reading" };
   }
   return { text: "—", tone: "text-muted-foreground", note: "the broker never sent a final figure" };
 }
@@ -96,9 +104,15 @@ function ReviewRow({ entry, name }: { entry: ScalpJournalEntry; name: string }) 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
         {entry.eleanorWarnedCorrectly != null && (
           <span>
-            {entry.eleanorWarnedCorrectly
-              ? `${name}'s warning matched what happened.`
-              : `This one didn't follow ${name}'s read.`}
+            {/* Derived from the result; unless that result is a KNOWN
+                (broker-realised) P/L it was graded from the last reading. */}
+            {entry.plQuality === "KNOWN"
+              ? entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched what happened.`
+                : `This one didn't follow ${name}'s read.`
+              : entry.eleanorWarnedCorrectly
+                ? `${name}'s warning matched the last reading before the close (estimated).`
+                : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
         )}
         {entry.entryCount > 1 && <span>{entry.entryCount} entries</span>}
@@ -130,7 +144,9 @@ function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {p.tradesClosed} closed
-          {p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
+          {/* Wins are graded from the last reading before each close (no
+              broker-realised P/L is recorded), so the share is an estimate. */}
+          {p.winRatePct != null ? ` · ${p.winRatePct}% won (estimated)` : ""}
         </span>
       </div>
 
@@ -175,8 +191,11 @@ export function EleanorScalpReviewPanel() {
     },
   );
 
-  const reviewList = reviews.data?.reviews ?? [];
-  const personalityList = personality.data?.symbols ?? [];
+  // React Query keeps the last successful data after a failed refetch. Its age
+  // is unknown, so after a failed read the old reviews / win rates are not
+  // shown as current (same rule as the Position Manager).
+  const reviewList = reviews.isError ? [] : reviews.data?.reviews ?? [];
+  const personalityList = personality.isError ? [] : personality.data?.symbols ?? [];
   const isFetching = reviews.isFetching || personality.isFetching;
 
   return (
@@ -230,7 +249,7 @@ export function EleanorScalpReviewPanel() {
                 {name} is gathering your recent closes…
               </p>
             )}
-            {reviews.data && reviewList.length === 0 && (
+            {reviews.data && !reviews.isError && reviewList.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No closed scalps yet. Once you close a position, {name}'s review
                 will land here.
@@ -252,7 +271,7 @@ export function EleanorScalpReviewPanel() {
                 {name} couldn't load what she's learned right now.
               </p>
             )}
-            {personality.data && personalityList.length === 0 && (
+            {personality.data && !personality.isError && personalityList.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 {name} learns a market's personality after a few closed trades on
                 it. Keep trading and patterns will show up here.

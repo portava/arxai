@@ -6,12 +6,15 @@ interface CoachReport {
   liveTradingStatus: string;
   reportType: string;
   traderStatus: {
-    readinessScore: number;
-    readinessGrade: string;
-    readinessLevel: string;
+    /** false (or absent on an older server) when the Risk Governor did not run. */
+    readinessEvaluated?: boolean;
+    readinessUnavailableReason?: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
     governorStatus: string;
-    paperTradingAllowed: boolean;
-    autopilotAllowed: boolean;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
     liveTradingAllowed: boolean;
   };
   performanceSummary: Record<string, unknown>;
@@ -73,6 +76,22 @@ const GOV_BADGE: Record<string, string> = {
   UNKNOWN: "bg-gray-500 text-white",
 };
 
+/** The governor status as this page names it (paper modes read as DEMO_*). */
+function governorStatusLabel(status: string): string {
+  if (status === "PAPER_ALLOWED") return "DEMO_ALLOWED";
+  if (status === "PAPER_CAUTION") return "DEMO_CAUTION";
+  if (status === "PAPER_PAUSED") return "DEMO_PAUSED";
+  return status;
+}
+
+/** "2026-10-28 08:00 UTC", or null when the report carries no usable time. */
+function reportTimeLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
 export default function TraderCoachPage() {
   const [coach, setCoach] = useState<CoachReport | null>(null);
   const [playbook, setPlaybook] = useState<PlaybookEntry[]>([]);
@@ -112,17 +131,40 @@ export default function TraderCoachPage() {
   if (!coach) return <div className="p-6">No coach data.</div>;
 
   const govBadge = GOV_BADGE[coach.traderStatus.governorStatus] ?? GOV_BADGE.UNKNOWN;
+  // Client may only downgrade: show a readiness figure only when the server
+  // says the governor was evaluated and every part of the figure is present.
+  const ts = coach.traderStatus;
+  const readinessKnown = ts.readinessEvaluated === true && ts.governorStatus !== "UNKNOWN"
+    && ts.readinessScore != null && ts.readinessGrade != null && ts.readinessLevel != null;
+  // The governor_ok checklist row is the one "system check" this report does
+  // read: say what it read (and when), never "not checked by this report".
+  // When the report read LOCKED, "not LOCKED" cannot be confirmed, so the row
+  // gets no checkbox, the same as the server's STOP row.
+  const governorRead = !!ts.governorStatus && ts.governorStatus !== "UNKNOWN";
+  const governorLocked = ts.governorStatus === "LOCKED"
+    || coach.preSessionChecklist.some(item => item.id === "system_locked");
+  const reportTime = reportTimeLabel(coach.generated_at);
+  const readAt = reportTime ? `when this report was generated (${reportTime})` : "when this report was generated";
 
   return (
     <div className="p-6 space-y-6 text-gray-100">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Trader Coach</h1>
-        <span className="px-2 py-1 rounded text-xs bg-blue-700">DEMO ONLY</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">LIVE TRADING DISABLED</span>
-        <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {coach.traderStatus.governorStatus === "PAPER_ALLOWED" ? "DEMO_ALLOWED" : coach.traderStatus.governorStatus === "PAPER_CAUTION" ? "DEMO_CAUTION" : coach.traderStatus.governorStatus === "PAPER_PAUSED" ? "DEMO_PAUSED" : coach.traderStatus.governorStatus}</span>
-        <span className="px-2 py-1 rounded text-xs bg-gray-700">
-          Readiness {coach.traderStatus.readinessScore}/{coach.traderStatus.readinessGrade} ({coach.traderStatus.readinessLevel})
-        </span>
+        {/* This page never reads the account mode, so it says what the coach
+            does (reviews paper trading, places no orders) — not whether the
+            account is armed for live trading. */}
+        <span className="px-2 py-1 rounded text-xs bg-blue-700">Paper trading review</span>
+        <span className="px-2 py-1 rounded text-xs bg-gray-700">Coaching only · places no orders</span>
+        <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {governorStatusLabel(coach.traderStatus.governorStatus)}</span>
+        {readinessKnown ? (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness">
+            Readiness {ts.readinessScore}/{ts.readinessGrade} ({ts.readinessLevel})
+          </span>
+        ) : (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness" title={ts.readinessUnavailableReason ?? undefined}>
+            Readiness unavailable — not evaluated
+          </span>
+        )}
         <button onClick={loadAll} className="ml-auto px-3 py-1 bg-blue-600 rounded text-sm">Refresh</button>
       </header>
 
@@ -176,12 +218,43 @@ export default function TraderCoachPage() {
 
       <section className="bg-gray-900 p-4 rounded">
         <h3 className="font-semibold mb-2">Daily Prep — pre-session checklist</h3>
-        <ul className="text-sm space-y-1">
-          {coach.preSessionChecklist.map(item => (
-            <li key={item.id} className="flex gap-2">
-              <input type="checkbox" disabled={item.auto} />
+        <p className="text-xs text-gray-400 mb-2">
+          {governorRead
+            ? "Apart from the Risk Governor status, this report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on)."
+            : "This report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on)."}
+          {" "}Tick each row yourself once you have confirmed it on the relevant page.
+          {governorLocked &&
+            " The Risk Governor rows show the LOCKED status this report read; they cannot be ticked off here."}
+        </p>
+        <ul className="text-sm space-y-1" data-testid="pre-session-checklist">
+          {coach.preSessionChecklist.map(item => item.id === "system_locked" ? (
+            // The server only adds this row when the Risk Governor status it
+            // read for this report is LOCKED, so it is a measured finding, not
+            // a user confirmation: no checkbox, so it cannot be "cleared".
+            <li key={item.id} className="flex gap-2 text-red-300" data-testid={`checklist-${item.id}`} role="alert">
+              <span aria-hidden="true" className="font-bold">■</span>
               <span>{item.label}</span>
-              {item.auto && <span className="text-xs text-blue-400">(auto-checked)</span>}
+              <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
+            </li>
+          ) : item.id === "governor_ok" && governorLocked ? (
+            // This report read the governor as LOCKED, so "not LOCKED" cannot
+            // be confirmed: no checkbox to tick.
+            <li key={item.id} className="flex gap-2 text-red-300" data-testid={`checklist-${item.id}`}>
+              <span aria-hidden="true" className="font-bold">■</span>
+              <span>{item.label}</span>
+              <span className="text-xs text-red-400">(Risk Governor reports LOCKED: this row cannot be confirmed)</span>
+            </li>
+          ) : (
+            <li key={item.id} className="flex gap-2" data-testid={`checklist-${item.id}`}>
+              <input type="checkbox" aria-label={item.label} />
+              <span>{item.label}</span>
+              {item.id === "governor_ok" && governorRead ? (
+                <span className="text-xs text-amber-400">
+                  (Risk Governor read as {governorStatusLabel(ts.governorStatus)} {readAt}; re-check before trading)
+                </span>
+              ) : item.auto ? (
+                <span className="text-xs text-amber-400">(system check — not checked by this report; verify before trading)</span>
+              ) : null}
             </li>
           ))}
         </ul>

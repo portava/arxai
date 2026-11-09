@@ -14,6 +14,7 @@ import type { HandshakeVerdictViewOverallStatus } from "./handshakeVerdictViewOv
 export interface HandshakeVerdictView {
   type: string;
   label: string;
+  /** ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored. */
   overallStatus: HandshakeVerdictViewOverallStatus;
   aggregateStatus: HandshakeVerdictViewAggregateStatus;
   safeToProceed: boolean;

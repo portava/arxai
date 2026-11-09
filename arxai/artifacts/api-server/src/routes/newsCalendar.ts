@@ -28,6 +28,7 @@ import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   scoreNewsRisk,
+  newsRiskDisplayLabel,
   detectVolatilitySpike,
   type ImpactLevel,
   type EconomicEventInput,
@@ -59,6 +60,107 @@ function serializeEvent(r: typeof economicEventsTable.$inferSelect) {
 }
 function serializeReport(r: typeof newsRiskReportsTable.$inferSelect) {
   return { ...r, createdAt: r.createdAt.toISOString() };
+}
+
+// ── Stored-calendar coverage ──────────────────────────────────────────────
+// Every "upcoming events" read below comes from the economic_events table,
+// which is filled ONLY by POST /economic-events/sync (no scheduler). A
+// connected provider therefore says nothing about what the table holds: it
+// may be empty (never synced) or end days ago. An empty result is only a
+// real "no events" when the stored calendar runs at least to the end of the
+// window asked about. Otherwise events cannot be ruled out, and the
+// response says so instead of a bare empty list.
+
+export interface StoredCalendarCoverage {
+  source: "ECONOMIC_EVENTS_TABLE";
+  /** A calendar provider is configured (it does not mean the table was synced). */
+  providerConfigured: boolean;
+  /** Rows in the stored calendar, all time. 0 = never synced. */
+  storedEventCount: number;
+  /** Latest event time held in the stored calendar (ISO), or null when empty. */
+  coveredThrough: string | null;
+  /** End of the window this read asked about (ISO). */
+  windowEnd: string;
+  /** True only when the stored calendar reaches the end of the window. */
+  windowCovered: boolean;
+  /** Plain statement when the window is not covered; null when it is. */
+  note: string | null;
+}
+
+export async function readStoredCalendarCoverage(windowEnd: Date): Promise<StoredCalendarCoverage> {
+  const providerConfigured = isCalendarProviderEnabled();
+  const [agg] = await db.select({
+    n: sql<number>`count(*)::int`,
+    latest: sql<string | Date | null>`max(${economicEventsTable.eventTime})`,
+  }).from(economicEventsTable);
+  const storedEventCount = Number(agg?.n ?? 0);
+  const latestMs = agg?.latest != null ? new Date(agg.latest).getTime() : NaN;
+  const coveredThrough = Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
+  const windowCovered = storedEventCount > 0 && Number.isFinite(latestMs) && latestMs >= windowEnd.getTime();
+  const how = providerConfigured
+    ? "Sync events on the Economic Calendar page to refresh it."
+    : "No economic-calendar provider is configured.";
+  const note = windowCovered
+    ? null
+    : storedEventCount === 0 || coveredThrough === null
+      ? `The stored economic calendar is empty (events have never been synced), so upcoming events cannot be ruled out. ${how}`
+      : `The stored economic calendar only runs to ${coveredThrough}; events after that have not been synced, so they cannot be ruled out. ${how}`;
+  return {
+    source: "ECONOMIC_EVENTS_TABLE",
+    providerConfigured,
+    storedEventCount,
+    coveredThrough,
+    windowEnd: windowEnd.toISOString(),
+    windowCovered,
+    note,
+  };
+}
+
+// ── Report age ────────────────────────────────────────────────────────────
+// A persisted news-risk report is a scan from the past: its riskLevel and
+// timeUntilEventMinutes were computed when the scan ran. A report older than
+// this window is not the current risk (same window as the dashboard's
+// NewsRiskCard, NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS). Unknown or future-
+// stamped (beyond the clock-skew allowance) ages are never current.
+export const NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS = 5 * 60_000;
+const REPORT_AGE_SKEW_MS = 5_000;
+
+export interface NewsRiskReportAge {
+  /** When the scan ran (ISO), or null when its time is unusable. */
+  generatedAt: string | null;
+  /** Whole minutes since the scan; null when unknown or stamped in the future. */
+  ageMinutes: number | null;
+  /** True only when the scan is no older than maxCurrentAgeMinutes. */
+  current: boolean;
+  maxCurrentAgeMinutes: number;
+  /** Plain-English statement when the report is not current; null when it is. */
+  note: string | null;
+}
+
+export function newsRiskReportAge(createdAt: Date | string | null | undefined, nowMs: number): NewsRiskReportAge {
+  const ms = createdAt == null ? NaN : new Date(createdAt).getTime();
+  const maxCurrentAgeMinutes = NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS / 60_000;
+  if (!Number.isFinite(ms) || ms > nowMs + REPORT_AGE_SKEW_MS) {
+    return {
+      generatedAt: Number.isFinite(ms) ? new Date(ms).toISOString() : null,
+      ageMinutes: null, current: false, maxCurrentAgeMinutes,
+      note: "When this news-risk scan ran could not be confirmed, so it is not the current risk. Run a new scan for a current read.",
+    };
+  }
+  const ageMs = Math.max(0, nowMs - ms);
+  const ageMinutes = Math.floor(ageMs / 60_000);
+  const current = ageMs <= NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS;
+  const ago = ageMinutes < 120 ? `${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} ago`
+    : ageMinutes < 2880 ? `${Math.floor(ageMinutes / 60)} hours ago` : `${Math.floor(ageMinutes / 1440)} days ago`;
+  return {
+    generatedAt: new Date(ms).toISOString(),
+    ageMinutes,
+    current,
+    maxCurrentAgeMinutes,
+    note: current
+      ? null
+      : `This news-risk scan ran ${ago} (at ${new Date(ms).toISOString()}), so it is not the current risk. Its risk level and minutes-to-event are from scan time. Run a new scan for a current read.`,
+  };
 }
 
 function rowToEventInput(r: typeof economicEventsTable.$inferSelect): EconomicEventInput {
@@ -198,18 +300,23 @@ router.post("/economic-events/sync", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /economic-events?currency=&impact=&days= ──────────────────────────
+// ── GET /economic-events?currency=&impact=&days=&pastHours= ───────────────
+// Window: eventTime in [now - pastHours, now + days*24h]. The window is rolling
+// hours from now, not calendar days. `pastHours` (additive, default 0) lets a
+// caller include events already released earlier today.
 const ListQuery = z.object({
   currency: z.string().optional(),
   impact: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   days: z.coerce.number().int().min(1).max(30).default(7),
+  pastHours: z.coerce.number().int().min(0).max(48).default(0),
 });
 
 router.get("/economic-events", async (req, res): Promise<void> => {
   try {
     const q = ListQuery.parse(req.query);
-    const since = new Date();
-    const until = new Date(Date.now() + q.days * 86400000);
+    const nowMs = Date.now();
+    const since = new Date(nowMs - q.pastHours * 3600_000);
+    const until = new Date(nowMs + q.days * 86400000);
     const conds = [
       gte(economicEventsTable.eventTime, since),
       lte(economicEventsTable.eventTime, until),
@@ -231,6 +338,10 @@ router.get("/economic-events", async (req, res): Promise<void> => {
 const UpcomingQuery = z.object({
   hours: z.coerce.number().int().min(1).max(168).default(24),
   minImpact: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("HIGH"),
+  // Optional look-back so a caller can keep showing an event that has JUST
+  // released (its post-release volatility window is still active). Default 0
+  // keeps the original "eventTime >= now" semantics for every other caller.
+  pastMinutes: z.coerce.number().int().min(0).max(120).default(0),
 });
 
 router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
@@ -238,7 +349,7 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
     const q = UpcomingQuery.parse(req.query);
     const ranks = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
     const allowed = ranks.slice(ranks.indexOf(q.minImpact));
-    const since = new Date();
+    const since = new Date(Date.now() - q.pastMinutes * 60 * 1000);
     const until = new Date(Date.now() + q.hours * 3600 * 1000);
     const rows = await db.select().from(economicEventsTable)
       .where(and(
@@ -247,7 +358,15 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
       ))
       .orderBy(economicEventsTable.eventTime);
     const filtered = rows.filter((r) => allowed.includes(r.impactLevel));
-    res.json({ events: filtered.map(serializeEvent), windowHours: q.hours, minImpact: q.minImpact });
+    const calendarCoverage = await readStoredCalendarCoverage(until);
+    res.json({
+      events: filtered.map(serializeEvent),
+      windowHours: q.hours,
+      minImpact: q.minImpact,
+      pastMinutes: q.pastMinutes,
+      checkedAt: new Date().toISOString(),
+      calendarCoverage,
+    });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /economic-events/upcoming failed");
     res.status(400).json({ error: "Invalid request" });
@@ -289,11 +408,17 @@ export async function generateNewsRiskForSymbol(symbol: string) {
                    : result.riskLevel === "HIGH_RISK" ? "warning" : "warning";
     void createAlert({
       type: "NEWS_RISK", priority, severity,
-      title: `News risk: ${result.riskLevel.replace(/_/g, " ")} for ${symbol}`,
+      // A critical-event hold outside the release window is a trade-plan
+      // hold, not a live no-trade window: the title says which.
+      title: `News risk: ${newsRiskDisplayLabel(result)} for ${symbol}`,
       message: result.tradeWarning ?? result.aiSummary,
       symbol,
       actionRequired: result.blockTrading,
-      dedupeKey: `news-risk:${symbol}:${result.riskLevel}:${result.event?.id ?? "none"}`,
+      // The hold and the live release window are different states (different
+      // titles), so they do not share a dedupe key: an unread hold alert must
+      // not suppress the live-window alert for the same event. Live-window
+      // keys are unchanged.
+      dedupeKey: `news-risk:${symbol}:${result.riskLevel}${result.criticalHold ? ":hold" : ""}:${result.event?.id ?? "none"}`,
     });
   }
 
@@ -309,7 +434,11 @@ router.post("/news-risk/generate", async (req, res): Promise<void> => {
   try {
     const { symbol } = GenerateBody.parse(req.body);
     const { row, result } = await generateNewsRiskForSymbol(symbol);
-    res.json({ ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading });
+    const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+    res.json({
+      ...serializeReport(row), reasons: result.reasons, blockTrading: result.blockTrading, calendarCoverage,
+      reportAge: newsRiskReportAge(row.createdAt, Date.now()),
+    });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /news-risk/generate failed");
     res.status(400).json({ error: "Failed to generate news risk report" });
@@ -360,12 +489,15 @@ router.get("/news-risk/latest", async (req, res): Promise<void> => {
         updatedAt: null,
       };
     }
-    res.json({ ...serializeReport(rows[0]), news });
+    // The report scored the stored calendar's next 24h; say whether that
+    // calendar actually reaches that far, so a CLEAR from an empty or
+    // out-of-date table is not read as an all-clear.
+    const calendarCoverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+    res.json({ ...serializeReport(rows[0]), news, calendarCoverage, reportAge: newsRiskReportAge(rows[0].createdAt, Date.now()) });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /news-risk/latest failed");
     res.status(400).json({ error: "Invalid request" });
   }
 });
 
-void sql; // keep import used if future query needs it
 export default router;

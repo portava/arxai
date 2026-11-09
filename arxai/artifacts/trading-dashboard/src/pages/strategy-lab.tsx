@@ -3,16 +3,129 @@ import { Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageShell } from "@/components/ss/PageShell";
-import { StatusPill } from "@/components/ss/StatusPill";
+import { StatusPill, type StatusKind } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, ErrorState } from "@/components/ss/States";
 
 interface Experiment {
   experimentId: string; title: string; status: string; symbol: string;
   resultSummary: {
     scenariosRun?: number; totalTrades?: number; totalNet?: number; aggregateWinRate?: number;
-    ranking?: { scenarioId: string; netPnl: number; winRate: number }[];
+    ranking?: { scenarioId: string; netPnl: number; winRate: number; trades?: number; replayRunId?: string }[];
+    perScenario?: { scenarioId: string; replayRunId: string; trades: number }[];
+    /** Scenarios that were not found and not replayed (newer servers). */
+    notReplayed?: string[];
     recommendations?: { type: string; message: string }[];
   };
+}
+
+type RankingRow = { scenarioId: string; netPnl: number; winRateText: string; rank: number };
+type Recommendation = { type: string; message: string };
+
+/**
+ * Best/worst over replayed scenarios with known nets (at least two). Equal
+ * nets are not a comparison: when every net is the same none is best or
+ * worst, and a tie at the top or bottom names every tied scenario.
+ */
+function bestWorstLines(ranked: { scenarioId: string; netPnl: number }[], suffix: string): Recommendation[] {
+  const nets = ranked.map((r) => r.netPnl);
+  const top = Math.max(...nets), bottom = Math.min(...nets);
+  if (top === bottom) {
+    return [{ type: "SCENARIOS_TIED", message: `All ${ranked.length} replayed scenarios had the same net (${top}), so none is best or worst.` }];
+  }
+  const named = (word: string, net: number) => {
+    const ids = ranked.filter((r) => r.netPnl === net).map((r) => r.scenarioId);
+    return ids.length === 1
+      ? `${word} scenario: ${ids[0]} with net ${net}${suffix}`
+      : `${word} scenarios (tied): ${ids.join(", ")} with net ${net}${suffix}`;
+  };
+  return [
+    { type: "BEST_SCENARIO", message: named("Best", top) },
+    { type: "WORST_SCENARIO", message: named("Worst", bottom) },
+  ];
+}
+
+/**
+ * Ranking and recommendations as the card shows them. A scenario that was
+ * never replayed (replayRunId "") has no result: older stored summaries
+ * ranked its placeholder (net 0, wr 0%) and could name it best/worst, so it
+ * is listed separately and best/worst are re-read over replayed scenarios
+ * only. A scenario with zero trades has no win rate.
+ */
+export function strategyLabResults(summary: Experiment["resultSummary"]): {
+  rows: RankingRow[]; notReplayed: string[]; recommendations: { type: string; message: string }[];
+} {
+  const per = Array.isArray(summary?.perScenario) ? summary.perScenario : [];
+  const perById = new Map(per.map((p) => [p.scenarioId, p]));
+  const notReplayed = new Set<string>(Array.isArray(summary?.notReplayed) ? summary.notReplayed : []);
+  for (const p of per) if (p.replayRunId === "") notReplayed.add(p.scenarioId);
+  for (const r of summary?.ranking ?? []) if (r.replayRunId === "") notReplayed.add(r.scenarioId);
+  const replayedRanking = (summary?.ranking ?? []).filter((r) => !notReplayed.has(r.scenarioId));
+  const netsKnown = replayedRanking.every((r) => isNum(r.netPnl));
+  const rows = replayedRanking.map((r, i) => {
+    const trades = isNum(r.trades) ? r.trades : perById.get(r.scenarioId)?.trades;
+    const winRateText = trades === 0 ? "no trades" : isNum(r.winRate) ? `wr ${r.winRate}%` : `wr ${DASH}`;
+    // Equal nets share a rank (1, 1, 3): their order is only input order.
+    const rank = netsKnown ? 1 + replayedRanking.filter((o) => o.netPnl > r.netPnl).length : i + 1;
+    return { scenarioId: r.scenarioId, netPnl: r.netPnl, winRateText, rank };
+  });
+  const stored = summary?.recommendations ?? [];
+  // A summary that ranked a never-replayed scenario (no notReplayed field)
+  // has best/worst lines that may name it; re-read them from the replayed rows.
+  const rerank = notReplayed.size > 0 && !Array.isArray(summary?.notReplayed);
+  // Best/worst need at least two replayed results: one scenario compared with
+  // nothing is neither (older summaries named it both, a loss as "Best"). The
+  // pair collapses into one line saying there is nothing to compare.
+  const comparable = replayedRanking.length >= 2;
+  // Equal nets at the top or bottom (older summaries named one of them by
+  // input order): the best/worst lines are re-read so every tied one is named.
+  const tied = comparable && netsKnown && (() => {
+    const nets = replayedRanking.map((r) => r.netPnl);
+    const top = Math.max(...nets), bottom = Math.min(...nets);
+    return nets.filter((n) => n === top).length > 1 || nets.filter((n) => n === bottom).length > 1;
+  })();
+  let collapsed = false;
+  const recommendations: Recommendation[] = [];
+  for (const r of stored) {
+    const bestOrWorst = r.type === "BEST_SCENARIO" || r.type === "WORST_SCENARIO";
+    if (!bestOrWorst) { recommendations.push(r); continue; }
+    if (!comparable) {
+      if (collapsed) continue;
+      collapsed = true;
+      const only = replayedRanking[0];
+      recommendations.push(only
+        ? { type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${only.scenarioId}, net ${only.netPnl}), so there is nothing to compare.` }
+        : { type: "NO_SCENARIO_REPLAYED", message: "No scenario in this experiment was replayed, so there is nothing to compare." });
+      continue;
+    }
+    if (tied || (rerank && netsKnown)) {
+      if (collapsed) continue;
+      collapsed = true;
+      recommendations.push(...bestWorstLines(replayedRanking, rerank ? " (over replayed scenarios only)" : ""));
+      continue;
+    }
+    if (!rerank) { recommendations.push(r); continue; }
+    const pick = r.type === "BEST_SCENARIO" ? replayedRanking[0]! : replayedRanking[replayedRanking.length - 1]!;
+    const word = r.type === "BEST_SCENARIO" ? "Best" : "Worst";
+    recommendations.push({ type: r.type, message: `${word} scenario: ${pick.scenarioId} with net ${pick.netPnl} (over replayed scenarios only)` });
+  }
+  return { rows, notReplayed: [...notReplayed], recommendations };
+}
+
+// The service stores PENDING → RUNNING → COMPLETED | FAILED (upper case).
+// Map each to a pill kind whose icon and accessible label match the text
+// shown; anything unrecognised is disclosed as unknown, never as pending.
+function experimentStatusPill(status: string): { kind: StatusKind; label: string; ariaLabel: string } {
+  const raw = (status ?? "").trim();
+  switch (raw.toUpperCase()) {
+    case "COMPLETED": return { kind: "ACTIVE", label: "COMPLETED", ariaLabel: "status: completed" };
+    case "RUNNING": return { kind: "PENDING", label: "RUNNING", ariaLabel: "status: running" };
+    case "FAILED": return { kind: "BLOCKED", label: "FAILED", ariaLabel: "status: failed" };
+    case "PENDING": return { kind: "PENDING", label: "PENDING", ariaLabel: "status: pending" };
+    default: {
+      const shown = raw === "" ? "UNKNOWN" : raw.toUpperCase();
+      return { kind: "INACTIVE", label: shown, ariaLabel: `status: unknown (${raw === "" ? "none reported" : raw})` };
+    }
+  }
 }
 
 export default function StrategyLab() {
@@ -24,9 +137,17 @@ export default function StrategyLab() {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch("/api/strategy-lab/experiments?limit=20").then(x => x.json());
-      setExperiments(r.experiments ?? []);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
+      setErr("");
+      const res = await fetch("/api/strategy-lab/experiments?limit=20");
+      let r: { experiments?: unknown; error?: unknown } = {};
+      try { r = await res.json(); } catch { r = {}; }
+      if (!res.ok) throw new Error(typeof r.error === "string" ? r.error : `HTTP ${res.status}`);
+      if (!Array.isArray(r.experiments)) throw new Error("Response did not include an experiments list.");
+      setExperiments(r.experiments as Experiment[]);
+    } catch (e) {
+      setExperiments([]);
+      setErr(`Could not load experiments: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
 
@@ -50,7 +171,7 @@ export default function StrategyLab() {
       {err && <ErrorState description={err} onRetry={load} />}
       {loading && <LoadingState label="Loading experiments…" />}
 
-      {!loading && experiments.length === 0 && (
+      {!loading && !err && experiments.length === 0 && (
         <EmptyState
           title="No experiments yet"
           description="Strategy Lab compares playbook setups across replay scenarios. All results are simulation only and do not guarantee future performance."
@@ -64,29 +185,39 @@ export default function StrategyLab() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="font-semibold text-sm">{e.title}</div>
-                <StatusPill status={e.status === "completed" ? "ACTIVE" : "PENDING"} label={e.status.toUpperCase()} size="xs" />
+                {(() => {
+                  const pill = experimentStatusPill(e.status);
+                  return <StatusPill status={pill.kind} label={pill.label} ariaLabel={pill.ariaLabel} size="xs" />;
+                })()}
               </div>
               <div className="text-xs text-muted-foreground font-mono mt-1">{e.experimentId}</div>
               {e.resultSummary?.scenariosRun != null && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-sm">
-                  <Stat label="Scenarios" value={e.resultSummary.scenariosRun} />
-                  <Stat label="Total trades" value={e.resultSummary.totalTrades ?? 0} />
-                  <Stat label="Net" value={e.resultSummary.totalNet ?? 0} />
-                  <Stat label="Win rate" value={`${e.resultSummary.aggregateWinRate ?? 0}%`} />
+                  <ExperimentStats summary={e.resultSummary} />
                 </div>
               )}
-              {(e.resultSummary?.ranking ?? []).length > 0 && (
-                <div className="mt-3 text-xs">
-                  <div className="font-semibold mb-1">Setup ranking</div>
-                  <ul className="space-y-0.5">{e.resultSummary.ranking!.map((r, i) => <li key={i}>#{i + 1} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, wr {r.winRate}%</li>)}</ul>
-                </div>
-              )}
-              {(e.resultSummary?.recommendations ?? []).length > 0 && (
-                <div className="mt-3 text-xs">
-                  <div className="font-semibold mb-1">Recommendations <span className="font-normal text-muted-foreground">(replay-based, sample size limited)</span></div>
-                  {e.resultSummary.recommendations!.map((r, i) => <div key={i}><span className="font-mono bg-muted px-1 mr-1 rounded">{r.type}</span>{r.message}</div>)}
-                </div>
-              )}
+              {(() => {
+                const res = strategyLabResults(e.resultSummary);
+                return (
+                  <>
+                    {(res.rows.length > 0 || res.notReplayed.length > 0) && (
+                      <div className="mt-3 text-xs" data-testid="strategy-lab-ranking">
+                        <div className="font-semibold mb-1">Setup ranking</div>
+                        <ul className="space-y-0.5">{res.rows.map((r, i) => <li key={i}>#{r.rank} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, {r.winRateText}</li>)}</ul>
+                        {res.notReplayed.length > 0 && (
+                          <div className="text-muted-foreground mt-1">Not replayed (scenario not found): <span className="font-mono">{res.notReplayed.join(", ")}</span> — no result, not ranked.</div>
+                        )}
+                      </div>
+                    )}
+                    {res.recommendations.length > 0 && (
+                      <div className="mt-3 text-xs" data-testid="strategy-lab-recommendations">
+                        <div className="font-semibold mb-1">Recommendations <span className="font-normal text-muted-foreground">(replay-based, sample size limited)</span></div>
+                        {res.recommendations.map((r, i) => <div key={i}><span className="font-mono bg-muted px-1 mr-1 rounded">{r.type}</span>{r.message}</div>)}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         ))}
@@ -95,11 +226,37 @@ export default function StrategyLab() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+const DASH = "—";
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+// Missing fields render "—", never a measured 0. Scenarios that were not
+// found on the server (replayRunId "") are not counted as replayed. A win
+// rate over zero trades does not exist. Replay net is the sum of
+// (price move × position size) across trades — not account currency.
+function ExperimentStats({ summary }: { summary: Experiment["resultSummary"] }) {
+  const listed = summary.scenariosRun;
+  const per = Array.isArray(summary.perScenario) ? summary.perScenario : null;
+  const replayed = per ? per.filter((p) => typeof p.replayRunId === "string" && p.replayRunId.length > 0).length : null;
+  const trades = isNum(summary.totalTrades) ? summary.totalTrades : null;
+  const scenariosLabel = replayed != null ? "Scenarios replayed" : "Scenarios listed";
+  const scenariosValue = replayed != null && per ? `${replayed} of ${per.length}` : isNum(listed) ? String(listed) : DASH;
+  const winRate = trades != null && trades > 0 && isNum(summary.aggregateWinRate) ? `${summary.aggregateWinRate}%` : DASH;
   return (
-    <div className="border border-border rounded-md p-2">
+    <>
+      <Stat id="scenarios" label={scenariosLabel} value={scenariosValue} />
+      <Stat id="trades" label="Total trades" value={trades != null ? String(trades) : DASH} />
+      <Stat id="net" label="Replay net" value={isNum(summary.totalNet) ? String(summary.totalNet) : DASH} hint="price units × size, not account currency" />
+      <Stat id="winrate" label="Win rate" value={winRate} hint={trades === 0 ? "no trades" : undefined} />
+    </>
+  );
+}
+
+function Stat({ id, label, value, hint }: { id: string; label: string; value: string; hint?: string }) {
+  return (
+    <div className="border border-border rounded-md p-2" data-testid={`strategy-lab-stat-${id}`}>
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold tabular-nums">{value}</div>
+      <div className="text-base font-semibold tabular-nums" data-stat-value>{value}</div>
+      {hint && <div className="text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }

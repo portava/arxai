@@ -1,6 +1,8 @@
 import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { Gauge, CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react";
-import { relativeTime } from "@/lib/feed-confidence";
+import { isFutureTime, relativeTime } from "@/lib/feed-confidence";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { useStatePricePrecision } from "./chartPricePrecisionStore";
 
 // ChartDiagnosticsPanel — Chart Brain v2 Admin Diagnostics mode body.
 //
@@ -19,17 +21,13 @@ function ms(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "—" : `${Math.round(n)}ms`;
 }
 
-function fmtPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const decimals = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(decimals);
-}
 
+// candleStats.changePct is already a percent on the server
+// ((changeAbs / prev.close) * 100), so it prints as-is — never ×100 again.
 function pct(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   const sign = n > 0 ? "+" : "";
-  return `${sign}${(n * 100).toFixed(2)}%`;
+  return `${sign}${n.toFixed(2)}%`;
 }
 
 // Quality → human-readable failure category. Never exposes internal gate names,
@@ -56,6 +54,8 @@ function qualityLabel(quality: string | null | undefined): { text: string; cls: 
 }
 
 export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
+  // Same digits as the chart's price axis for this symbol (shared rule).
+  const pricePrecision = useStatePricePrecision(state);
   if (!state) {
     return (
       <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500">
@@ -113,8 +113,17 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
             label="Candle count (bars)"
             value={stats.barsAnalyzed > 0 ? String(stats.barsAnalyzed) : "—"}
           />
-          <DiagRow label="Last candle" value={relativeTime(truth.lastCandleTime)} />
-          <DiagRow label="Latest price" value={fmtPrice(stats.lastClose)} />
+          {/* A future candle time is the forming bar's scheduled close, not an
+              arrival — same wording as the feed badge (FeedConfidenceBadge). */}
+          <DiagRow
+            label="Last candle"
+            value={
+              isFutureTime(truth.lastCandleTime)
+                ? `Forming bar · closes ${relativeTime(truth.lastCandleTime)}`
+                : relativeTime(truth.lastCandleTime)
+            }
+          />
+          <DiagRow label="Latest price" value={formatInstrumentPrice(stats.lastClose, pricePrecision)} />
           <DiagRow label="Feed latency" value={ms(truth.latencyMs)} />
           <DiagRow label="AI-usable" value={state.aiUsable ? "Yes" : "No"} />
           {truth.message && truth.message !== "Feed nominal" && (
@@ -158,9 +167,9 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
           <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3">
             <Stat label="Direction" value={stats.direction} />
             <Stat label="Change %" value={pct(stats.changePct)} />
-            <Stat label="Range" value={fmtPrice(stats.range)} />
-            <Stat label="ATR" value={fmtPrice(stats.atr)} />
-            <Stat label="Avg range" value={fmtPrice(stats.avgRange)} />
+            <Stat label="Range" value={formatInstrumentPrice(stats.range, pricePrecision)} />
+            <Stat label="ATR" value={formatInstrumentPrice(stats.atr, pricePrecision)} />
+            <Stat label="Avg range" value={formatInstrumentPrice(stats.avgRange, pricePrecision)} />
             <Stat label="Bars analyzed" value={String(stats.barsAnalyzed)} />
           </div>
         </div>

@@ -33,9 +33,12 @@ import { DERIV_SYNTHETIC_SYMBOLS } from "./derivProvider.js";
 import {
   parseActiveSymbols,
   validateKnownMap,
+  validateProfilePrecision,
   type DerivDiscoverySnapshot,
   type DerivMapValidation,
+  type DerivPrecisionMismatch,
 } from "./derivSymbolDiscovery.js";
+import { knownPricePrecision } from "../chart/symbolProfile.js";
 
 const DEFAULT_WS_URL = "wss://ws.derivws.com/websockets/v3";
 
@@ -127,6 +130,7 @@ class DerivWsClient {
   // caller via the snapshot timestamp, never by nulling the last-known view.
   private lastDiscovery: DerivDiscoverySnapshot | null = null;
   private lastDiscoveryValidation: DerivMapValidation | null = null;
+  private lastPrecisionMismatches: DerivPrecisionMismatch[] = [];
   // Warn-dedupe: mismatch warnings fire at most once per connect session.
   private discoveryMismatchWarnedThisConnect = false;
   // Account identity retained from THIS session's authorize response (audit
@@ -165,6 +169,7 @@ class DerivWsClient {
    *  Null when discovery has not run or returned an empty payload (an empty
    *  payload is not evidence the venue lacks our ids). */
   getLastDiscoveryValidation(): DerivMapValidation | null { return this.lastDiscoveryValidation; }
+  getLastPrecisionMismatches(): DerivPrecisionMismatch[] { return this.lastPrecisionMismatches; }
   /** Account identity retained from THIS session's authorize, or null when no
    *  authorize has succeeded this session. Null must be treated as UNKNOWN by
    *  every consumer — the demo-only virtual gate refuses it. */
@@ -601,6 +606,16 @@ class DerivWsClient {
     }
     const validation = validateKnownMap(symbols, DERIV_SYNTHETIC_SYMBOLS);
     this.lastDiscoveryValidation = validation;
+    // Display-precision drift (report-only): the static symbolProfile digits
+    // vs the venue's published pip. Never auto-corrected — fixing the profile
+    // is a reviewed change — but an operator can see the drift.
+    this.lastPrecisionMismatches = validateProfilePrecision(symbols, DERIV_SYNTHETIC_SYMBOLS, knownPricePrecision);
+    if (this.lastPrecisionMismatches.length > 0 && !this.discoveryMismatchWarnedThisConnect) {
+      logger.warn(
+        { mismatches: this.lastPrecisionMismatches },
+        "Deriv discovery: symbolProfile price precision disagrees with the venue pip (report-only; NOT auto-corrected)",
+      );
+    }
     if (this.discoveryMismatchWarnedThisConnect) return;
     if (validation.missingFromVenue.length === 0 && validation.unknownAtVenue.length === 0) return;
     this.discoveryMismatchWarnedThisConnect = true;

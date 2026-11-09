@@ -280,6 +280,25 @@ describe("useChartDeepHistory", () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it("a failed first back-page is reported, never counted as loaded history", async () => {
+    fetchChartHistory.mockRejectedValueOnce(new Error("network down"));
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loadedAny).toBe(false);
+    expect(result.current.loadError).toMatch(/could not be loaded/);
+    expect(result.current.providerCapped).toBe(false);
+  });
+
+  it("an empty page does not count as loaded older bars", async () => {
+    fetchChartHistory.mockResolvedValueOnce(page({ candles: [], hasMoreHistory: false, nextBefore: null, coverageDays: null }));
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.loadedAny).toBe(false);
+    expect(result.current.loadError).toBeNull();
+  });
+
   it("reset aborts and invalidates pending work even for the same series", async () => {
     const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
     fetchChartHistory.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);

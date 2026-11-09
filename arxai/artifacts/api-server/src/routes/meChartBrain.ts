@@ -30,6 +30,7 @@ import {
   type EleanorDraftIntent,
 } from "../lib/assistant/eleanorDraftRead.js";
 import { buildSetupFingerprint } from "../lib/chart/setupFingerprint.js";
+import { buildReceiptState } from "../lib/chart/recordEleanorRead.js";
 import {
   createDecisionReceipt,
   getUserReceipt,
@@ -129,7 +130,9 @@ router.post(
     // Build (or reuse the short-cached) Chart Intelligence State + an honest
     // deterministic draft read for this symbol/timeframe. The builder degrades
     // to an honest empty/insufficient state on a dirty feed — never fabricates.
-    const state = await buildChartIntelligenceState(symbol, timeframe, limit);
+    // Enriched with this user's own broker quote, as the Eleanor read the user
+    // saw was, so the receipt records that read and not a gated "syncing" one.
+    const state = await buildReceiptState({ userId, symbol, timeframe, limit });
     const draftRead = buildEleanorDraftRead(
       state,
       intent as EleanorDraftIntent,

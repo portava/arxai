@@ -40,9 +40,11 @@ import {
   readActivePaperAccount, readOpenPaperOrders, readPaperOrdersOpenedSince, sumPaperRealizedSince,
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
-import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
+import { decideContractSize, resolveQuoteToAccountFx, type ResolvedContractSize } from "../mt5/contractSize.js";
 import { routeQuote } from "../data/marketDataRouter.js";
 import { readMt5Quote } from "../data/providers/mt5Provider.js";
+import { PAPER_ACCOUNT_CURRENCY, paperRiskTotals, resolvePaperContract } from "../paperExecution/paperPnl.js";
+import { paperModelEquity, paperRiskEquity, valueOpenPaperPositions, type PaperRiskEquity } from "../paperExecution/paperOpenRisk.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -52,6 +54,7 @@ import {
   type AccountSnapshotFacts,
   type EffectiveLimits,
   type InstrumentModel,
+  type PaperEquityBases,
   type RiskAccount,
   type RiskContext,
   type RiskDecision,
@@ -67,11 +70,45 @@ import {
 
 export * from "./preTrade.js";
 
-/** The paper ledger books P/L as Δprice × lots × 100 (paperTrading pnlFor, paperExecutionMonitor). */
+/**
+ * The paper risk model: Δprice × lots × 100, quoted 1:1 in USD
+ * (paperExecution/paperPnl.ts PAPER_LEDGER_MODEL_CONTRACT_SIZE). Every paper
+ * order was priced at it before the paper venue sized P&L at the instrument's
+ * contract size, and the venue still counts a loss it cannot size at it. The
+ * governor never prices a paper order below it (paperInstrumentModel).
+ */
 export const PAPER_LEDGER_INSTRUMENT: InstrumentModel = {
   contractSize: 100, quoteToAccountFx: 1, volumeStep: 0.01, minVolume: 0.01, maxVolume: null,
   source: "paper_ledger_model",
 };
+
+/**
+ * Instrument model the governor prices a paper order with. The paper venue
+ * books P&L at the instrument's contract size (paperPnl.resolvePaperContract:
+ * the owner's broker spec, else the FX standard lot for a fiat pair) converted
+ * to USD, so a 50-pip stop on 5 lots of EURUSD books −2,500, not the −2.50 the
+ * paper risk model reads. The governor prices loss at stop, notional and
+ * margin at the larger of the two per-lot money values, so it never prices an
+ * order below what the venue books, nor below the paper risk model it used
+ * before contract sizing. A symbol whose contract size or USD rate is unknown
+ * uses the paper risk model, the figure the venue counts its loss at.
+ * Volume step and limits stay the paper model's.
+ */
+export function paperInstrumentModel(symbol: string, contract: ResolvedContractSize, price: number | null): InstrumentModel {
+  if (contract.contractSize == null) return PAPER_LEDGER_INSTRUMENT;
+  const fx = resolveQuoteToAccountFx({
+    symbol, profitCurrency: contract.profitCurrency, accountCurrency: PAPER_ACCOUNT_CURRENCY, closePrice: price ?? Number.NaN,
+  });
+  if (fx.factor == null) return PAPER_LEDGER_INSTRUMENT;
+  const sized = contract.contractSize * fx.factor;
+  const model = PAPER_LEDGER_INSTRUMENT.contractSize! * PAPER_LEDGER_INSTRUMENT.quoteToAccountFx!;
+  if (!Number.isFinite(sized) || !(sized > model)) return PAPER_LEDGER_INSTRUMENT;
+  return {
+    ...PAPER_LEDGER_INSTRUMENT,
+    contractSize: contract.contractSize, quoteToAccountFx: fx.factor,
+    source: `paper_contract:${contract.source ?? "unknown"}`,
+  };
+}
 /** Paper accounts carry no leverage column; margin is modelled at 1:100. */
 export const PAPER_ACCOUNT_LEVERAGE = 100;
 
@@ -114,6 +151,8 @@ export interface RiskFacts {
   daily?: RiskContext["daily"];
   halt?: RiskContext["halt"];
   equityPeak?: RiskContext["equityPeak"];
+  /** Defaults to the loaded paper account's bases, or none when `account` is supplied. */
+  paperEquityBases?: PaperEquityBases | null;
   activity?: TradingActivity | null;
   market?: RiskContext["market"];
   venueRules?: RiskContext["venueRules"];
@@ -213,19 +252,41 @@ async function loadActionInFlight(userId: number, venue: TradeIntent["venue"], n
   }));
 }
 
+// The booked figures ride along with the paper risk count (for the refusals
+// and the risk overview's note) only when they differ by at least half a
+// cent: the two totals are summed from float columns, so equal figures can
+// differ in the last digits. The risk figures themselves are never rounded up.
+const DISCLOSE_DIFFERENCE = 0.005;
+
 // PAPER facts come from the paper book's read side (owner decision 7):
 // paper_orders of the active paper account, never paper_trades (the journal)
 // or trades (legacy / DEMO).
-async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date): Promise<Omit<RiskContext, "limits" | "now">> {
+async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date, quote: RiskQuote | null = null): Promise<Omit<RiskContext, "limits" | "now">> {
   const acct = await readActivePaperAccount(intent.userId, opts.paperAccountId);
-  const account: RiskAccount | null = acct ? {
-    equity: acct.equity, freeMargin: acct.equity - acct.marginUsed,
-    leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
-  } : null;
 
   let positions: RiskPosition[] = [];
   const inFlight: RiskInFlight[] = [];
   let realized: number | null = 0;
+  // The stored balance and equity add up each close's booked P&L. The risk
+  // count takes the lower of two full totals over the same closes, the booked
+  // total and the total at the paper risk model (move × lots × 100;
+  // paperPnl.paperRiskTotals), never a sum of per-close figures. So the
+  // equity every cap is checked against is the booked equity lowered by
+  // min(0, model total − booked total) over every settled order on the
+  // account: never above the booked equity, never above the equity the same
+  // closes gave when every close was counted at the model, and equal to one
+  // of them (it cannot drift below both). Today's total is taken the same way
+  // (sumPaperRealizedSince), with today's booked total carried alongside.
+  // Open positions: each at the lower of its sized and its ×100 value at the
+  // price the paper venue marks it at, and never above the floating P&L the
+  // account stores (paperExecution/paperOpenRisk.ts). Read-only: nothing here
+  // settles an order, so preview mode reads the same figure.
+  let risk: PaperRiskEquity | null = null;
+  let todayBooked: number | null = null;
+  // Every settled order on the account, newest close first.
+  let allCloses: Awaited<ReturnType<typeof readPaperCloses>> = [];
+  // The drawdown rule's two full bases (booked, and the paper risk model).
+  let paperEquityBases: PaperEquityBases | null = null;
   if (acct) {
     const book = { account: acct.id };
     const open = await readOpenPaperOrders(book);
@@ -240,22 +301,120 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
         lots: o.lotSize, at: o.openedAt, kind: "filled" });
     }
     realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
+    const dayStart = startOfTodayUtc(now).getTime();
+    const closes = allCloses = await readPaperCloses(book);
+    const today = paperRiskTotals(closes.filter((c) => c.closedAt.getTime() >= dayStart));
+    if (today.risk < today.booked - DISCLOSE_DIFFERENCE) todayBooked = today.booked;
+    const openValue = await valueOpenPaperPositions(open, {
+      now, userId: intent.userId,
+      quote: quote && intent.symbol ? { symbol: intent.symbol, bid: quote.bid, ask: quote.ask, source: quote.source } : null,
+    });
+    risk = paperRiskEquity(acct, closes, openValue);
+    // The drawdown rule measures each full basis against a peak on the same
+    // basis: the booked equity against the peak recorded from it, and the
+    // equity at the paper risk model against the highest equity at that
+    // model, read from the same closes (never stored). The booked equity
+    // counts open positions at the venue's mark now, as the risk count does:
+    // the stored equity is only as new as the account's last revaluation
+    // (markToMarket), and nothing revalues it before the governor runs. It
+    // takes the lower of the stored floating P&L and the open positions'
+    // sized P&L at the mark, so it is never above the stored equity.
+    // The stored balance is just as old: the Build EE monitor, the
+    // autopilot's opens and closes and the EE manual close settle orders
+    // without a revaluation. So the booked equity is the lower of that figure
+    // and the balance read from the closes (the starting balance plus every
+    // settled close's booked P&L, the account owner's orders only, as
+    // markToMarket derives the stored balance) plus the open positions' sized
+    // P&L at the mark. Each figure is whole on its own basis (a close settled
+    // since the revaluation is in the second only, its stored floating P&L in
+    // the first only), so nothing is counted twice, and the lower one is
+    // never above the stored equity. A difference within the stored
+    // column's float precision is not a close the account has not stored.
+    const model = paperModelEquity(acct, closes, openValue, now);
+    const storedFloating = acct.equity - acct.currentBalance;
+    const openAtMarkLower = openValue.sized < storedFloating;
+    const storedBasis = acct.currentBalance + Math.min(storedFloating, openValue.sized);
+    const ownCloses = closes.filter((c) => (acct.userId == null ? c.userId == null : c.userId === acct.userId));
+    const closesBalance = acct.startingBalance + paperRiskTotals(ownCloses).booked;
+    const closesBasis = closesBalance + openValue.sized;
+    const fromCloses = closesBasis < storedBasis - DISCLOSE_DIFFERENCE - Math.abs(acct.currentBalance) * 2 ** -23;
+    paperEquityBases = {
+      bookedEquity: fromCloses ? closesBasis : storedBasis,
+      storedEquity: acct.equity, storedAt: acct.updatedAt ?? null,
+      bookedBalance: fromCloses ? closesBalance : acct.currentBalance,
+      ...(fromCloses ? { storedBalance: acct.currentBalance } : {}),
+      bookedOpenValuedAtStop: fromCloses || openAtMarkLower ? [...openValue.valuedAtStop] : [],
+      modelEquity: model.equity, modelPeakEquity: model.peakEquity, modelPeakAt: model.peakAt,
+      modelOpenValuedAtStop: model.openValuedAtStop,
+      source: `paper_account:${acct.id}`,
+    };
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
+  const riskEquity = risk ? risk.equity : null;
+  const account: RiskAccount | null = acct ? {
+    equity: riskEquity, freeMargin: riskEquity! - acct.marginUsed,
+    leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
+    ...(riskEquity! < acct.equity - DISCLOSE_DIFFERENCE ? { bookedEquity: acct.equity } : {}),
+  } : null;
+  const floatingLower = risk != null && risk.floating < risk.bookedFloating - DISCLOSE_DIFFERENCE;
 
   let activity: TradingActivity | null = null;
   if (acct) {
     try {
       const book = { account: acct.id };
-      const closes = await readPaperCloses(book, { limit: ACTIVITY_CLOSES });
-      activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
-        positions.length ? await countPaperOpenedSinceStillOpen(book, startOfTodayUtc(now)) : 0,
-        now, `paper_orders:account:${acct.id}`);
+      const recentCloses = await readPaperCloses(book, { limit: ACTIVITY_CLOSES });
+      const openedToday = positions.length ? await countPaperOpenedSinceStillOpen(book, startOfTodayUtc(now)) : 0;
+      // The losing streak, the cooldown and the last-hour checks read the
+      // newest closes' signs (pnl). Today's trade count and the week's P/L
+      // cover every close in their window, from the full close list read
+      // above: the week's P/L is the lower of the week's booked and model
+      // totals. As on DEMO and LIVE (loadBrokerFacts), the week's P/L counted
+      // is the lower of that whole-week risk count and the risk count of the
+      // newest ACTIVITY_CLOSES closes within the week (they differ only when
+      // more than ACTIVITY_CLOSES closed in the week and the older ones net
+      // positive), so the weekly cap never counts less loss than the newest
+      // closes show; both figures are carried so the refusal can name them.
+      const summary = summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
+        openedToday, now, `paper_orders:account:${acct.id}`);
+      const dayStart = startOfTodayUtc(now).getTime();
+      const weekStart = now.getTime() - 7 * 86_400_000;
+      const weekCloses = allCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const week = paperRiskTotals(weekCloses);
+      const newestInWeek = recentCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const newest = paperRiskTotals(newestInWeek);
+      const newestLower = newestInWeek.length > 0 && newest.risk < week.risk - 0.005;
+      const counted = newestLower ? newest : week;
+      activity = {
+        ...summary,
+        tradesToday: openedToday + allCloses.filter((c) => c.closedAt.getTime() >= dayStart).length,
+        weekRealizedPnl: Number(counted.risk.toFixed(2)),
+        ...(counted.risk < counted.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(counted.booked.toFixed(2)) } : {}),
+        ...(newestLower ? {
+          allWeekRealizedPnl: Number(week.risk.toFixed(2)),
+          weekNewestCloses: {
+            counted: newestInWeek.length,
+            since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt.getTime()))),
+            ofTotal: Math.max(weekCloses.length, newestInWeek.length),
+          },
+        } : {}),
+      };
     } catch { activity = null; }
   }
 
+  // Each symbol at the contract size the paper venue books it at, never below
+  // the paper risk model (paperInstrumentModel). The USD rate of a pair quoted
+  // in the base currency (USDJPY) needs a price: the quote for the order's
+  // symbol, else the order's entry, else an open position's entry.
   const instruments: Record<string, InstrumentModel> = {};
-  for (const s of new Set([intent.symbol, ...positions.map((p) => p.symbol)])) instruments[s] = PAPER_LEDGER_INSTRUMENT;
+  const quoteMid = quote
+    ? (quote.bid != null && quote.ask != null ? (quote.bid + quote.ask) / 2 : quote.bid ?? quote.ask ?? null)
+    : null;
+  for (const s of new Set([intent.symbol, ...positions.map((p) => p.symbol)])) {
+    if (!s) { instruments[s] = PAPER_LEDGER_INSTRUMENT; continue; }
+    const px = (s === intent.symbol ? quoteMid ?? intent.entryPrice ?? null : null)
+      ?? positions.find((p) => p.symbol === s)?.entryPrice ?? null;
+    instruments[s] = paperInstrumentModel(s, await resolvePaperContract(intent.userId, s), px);
+  }
 
   return {
     account,
@@ -266,7 +425,13 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     broker: acct
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
-    daily: { realizedPnl: realized, floatingPnl: acct ? acct.equity - acct.currentBalance : null },
+    paperEquityBases,
+    daily: {
+      realizedPnl: realized, floatingPnl: risk ? risk.floating : null,
+      ...(todayBooked != null && realized != null ? { bookedRealizedPnl: todayBooked } : {}),
+      ...(floatingLower ? { bookedFloatingPnl: risk!.bookedFloating } : {}),
+      ...(floatingLower && risk!.openValuedAtStop.length ? { openValuedAtStop: risk!.openValuedAtStop } : {}),
+    },
     activity,
   };
 }
@@ -402,10 +567,20 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     : await db.select({ s: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8` })
         .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, startOfTodayUtc(now))));
 
-  // Trading activity for rule 13, from the same ledgers as realized P/L.
+  // Trading activity for rule 13, from the same ledgers as realized P/L. The
+  // losing streak, the cooldown and the last-hour checks read the newest
+  // ACTIVITY_CLOSES closes' signs. Today's trade count and the week's P/L
+  // cover every close in their window, from an unbounded COUNT and SUM over
+  // the same ledger, so an account that closed more than ACTIVITY_CLOSES
+  // trades in a week or a day never drops its older closes. The week's P/L
+  // counted is the lower of the whole week's and the newest closes' within
+  // the week (they differ only when more than ACTIVITY_CLOSES closed in the
+  // week), so the weekly cap never counts less loss than they show; both are
+  // carried so the refusal can name them.
   let activity: TradingActivity | null = null;
   try {
     const day = startOfTodayUtc(now);
+    const weekStart = new Date(now.getTime() - 7 * 86_400_000);
     const closes = intent.venue === "LIVE"
       ? (await livePositionLedger.select(
         { closedAt: livePositionColumns.closedAt, pnl: livePositionColumns.floatingPl },
@@ -418,9 +593,40 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
       : (await db.select({ closedAt: tradesTable.closedAt, pnl: tradesTable.pnl })
           .from(tradesTable).where(and(eq(tradesTable.userId, userId), sql`${tradesTable.closedAt} is not null`))
           .orderBy(desc(tradesTable.closedAt)).limit(ACTIVITY_CLOSES));
-    activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
-      sided.filter((p) => p.at >= day).length, now,
-      intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const openedToday = sided.filter((p) => p.at >= day).length;
+    const summary = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
+      openedToday, now, intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const closedSince = async (since: Date): Promise<{ pnl: number; n: number }> => {
+      const [row] = intent.venue === "LIVE"
+        ? await livePositionLedger.select(
+          { pnl: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)::float8`, n: sql<number>`count(*)::int` },
+          { where: and(eq(livePositionColumns.userId, userId), gte(livePositionColumns.closedAt, since)) },
+        )
+        : await db.select({ pnl: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8`, n: sql<number>`count(*)::int` })
+            .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, since)));
+      const pnl = Number(row?.pnl ?? 0);
+      const n = Number(row?.n ?? 0);
+      if (!Number.isFinite(pnl) || !Number.isFinite(n)) throw new Error("closed-trade totals are not numbers");
+      return { pnl, n };
+    };
+    const week = await closedSince(weekStart);
+    const today = await closedSince(day);
+    const weekAll = Number(week.pnl.toFixed(2));
+    const newestInWeek = closes.filter((c) => c.closedAt!.getTime() >= weekStart.getTime());
+    const newestLower = summary.weekRealizedPnl < weekAll - 0.005 && newestInWeek.length > 0;
+    activity = {
+      ...summary,
+      tradesToday: Math.max(summary.tradesToday, openedToday + today.n),
+      weekRealizedPnl: newestLower ? summary.weekRealizedPnl : weekAll,
+      ...(newestLower ? {
+        allWeekRealizedPnl: weekAll,
+        weekNewestCloses: {
+          counted: newestInWeek.length,
+          since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt!.getTime()))),
+          ofTotal: Math.max(week.n, newestInWeek.length),
+        },
+      } : {}),
+    };
   } catch { activity = null; }
 
   // Instrument model per symbol: broker spec first, else the strict FX lot;
@@ -494,7 +700,7 @@ export async function loadQuote(userId: number, symbol: string): Promise<RiskQuo
     try { conn = await getUserActiveConnection(userId); } catch { conn = null; }
     if (conn) {
       const own = readMt5Quote(symbol, { bridgeConnectionId: conn.id });
-      if (own.quote) return toRiskQuote(own.quote, `${EXECUTION_PRICE_SOURCE}:mt5_broker:bridge:${conn.id}`);
+      if (own?.quote) return toRiskQuote(own.quote, `${EXECUTION_PRICE_SOURCE}:mt5_broker:bridge:${conn.id}`);
     }
     // Otherwise the router's serving quote (the chart's and the paper venue's price).
     const r = await routeQuote(symbol);
@@ -515,10 +721,19 @@ async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promis
 }
 
 /** Raise the account's recorded equity high-water mark; it never falls. */
+// The high-water mark keeps recording the account's booked equity: a paper
+// account whose caps are checked against a lower risk-count equity
+// (bookedEquity set) still raises its mark from the booked figure (the
+// stored paper_accounts.equity). On PAPER the drawdown rule measures the
+// booked equity with open positions at the current price against it, and the
+// equity at the paper risk model against that model's own peak
+// (PaperEquityBases), so no figure on one basis is compared with a peak on
+// the other.
 async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
-  if (!account || account.equity == null || !Number.isFinite(account.equity) || account.equity <= 0) return;
+  const equity = account?.bookedEquity ?? account?.equity ?? null;
+  if (!account || equity == null || !Number.isFinite(equity) || equity <= 0) return;
   await db.insert(userEquityPeaksTable).values({
-    userId: intent.userId, venue: intent.venue, accountKey: account.source, peakEquity: account.equity,
+    userId: intent.userId, venue: intent.venue, accountKey: account.source, peakEquity: equity,
   }).onConflictDoUpdate({
     target: [userEquityPeaksTable.userId, userEquityPeaksTable.venue, userEquityPeaksTable.accountKey],
     set: {
@@ -543,7 +758,7 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     ? f.quote
     : intent.action === "OPEN" ? await loadQuote(intent.userId, intent.symbol) : null;
   const loaded = intent.venue === "PAPER"
-    ? await loadPaperFacts(intent, opts, now)
+    ? await loadPaperFacts(intent, opts, now, quote)
     : await loadBrokerFacts(intent, opts, now, quote);
   const account = f.account !== undefined ? f.account : loaded.account;
   const equityPeak = f.equityPeak !== undefined
@@ -576,6 +791,9 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     market: f.market ?? null,
     venueRules: f.venueRules ?? null,
     allocation: f.allocation !== undefined ? f.allocation : loaded.allocation ?? null,
+    // The loaded paper account's bases belong to the loaded account only.
+    paperEquityBases: f.paperEquityBases !== undefined ? f.paperEquityBases
+      : f.account !== undefined ? null : loaded.paperEquityBases ?? null,
   };
 }
 
@@ -621,6 +839,10 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
             account: ctx.account,
             equityPeak: ctx.equityPeak
               ? { ...ctx.equityPeak, since: ctx.equityPeak.since?.toISOString() ?? null }
+              : null,
+            paperEquityBases: ctx.paperEquityBases
+              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null,
+                storedAt: ctx.paperEquityBases.storedAt?.toISOString() ?? null }
               : null,
             accountSnapshot: ctx.accountSnapshot
               ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }

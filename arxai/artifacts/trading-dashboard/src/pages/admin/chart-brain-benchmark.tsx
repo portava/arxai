@@ -2,8 +2,10 @@
 //
 // Aggregates REAL decision receipts, outcomes, and agent-governance traces
 // into 15 benchmark scores plus trend, weak areas, recent failed reads,
-// successful no-trades, and speed/feed warnings. No fabricated scores: a
-// dimension renders "insufficient data" when the backend returns null.
+// successful no-trades, and coverage/speed/feed warnings. No fabricated
+// scores: when the backend returns null, the card shows the backend's reason
+// ("Insufficient data …" or "Not measured: …"). A failed load shows
+// "Could not load benchmark", never an empty card.
 //
 // Access: lives under /admin so RouteAccessGuard already requires an
 // effective-admin session; AdminDiagnosticsGate is defence-in-depth for the
@@ -72,7 +74,9 @@ function ScoreCard({ s }: { s: ChartBenchmarkScore }) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-txt-muted">
-          {insufficient ? "Insufficient data" : s.note}
+          {/* A null score carries the server's reason (too little data, or
+              not measured at all); show it rather than a generic label. */}
+          {s.note || (insufficient ? "Insufficient data" : "")}
         </span>
         <span className="text-[10px] text-txt-muted">n={s.sampleSize}</span>
       </div>
@@ -223,7 +227,7 @@ function BenchmarkBody() {
           {benchmark.warnings.length > 0 ? (
             <Alert className="border-warning/50 bg-warning/5">
               <Gauge className="h-4 w-4 text-warning" />
-              <AlertTitle className="text-warning">Speed &amp; feed warnings</AlertTitle>
+              <AlertTitle className="text-warning">Coverage, speed &amp; feed warnings</AlertTitle>
               <AlertDescription>
                 <ul className="ml-4 list-disc space-y-1 text-warning/90">
                   {benchmark.warnings.map((w, i) => (
@@ -242,8 +246,8 @@ function BenchmarkBody() {
                 Benchmark scores
               </CardTitle>
               <CardDescription>
-                Each dimension is a real number or “insufficient data” — never
-                fabricated.
+                Each dimension is a real number, or says why it has none (too
+                little data, or not measured) — never fabricated.
               </CardDescription>
             </CardHeader>
             <CardContent>

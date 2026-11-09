@@ -79,3 +79,20 @@ test("sweep 2026-11-04: watch arming is live-only, permission-checked like the p
   assert.match(src, /acknowledgeEleanorWatch\(userId, target\.id, "close"/);
   assert.match(src, /pickWatchesToCancel\(activeRows, scope/);
 });
+
+test("sweep 2026-11-04: watch arming is live-only, permission-checked like the pipeline, confirmed before insert, and expires", async () => {
+  const src = await read("../../../routes/meAssistant.ts");
+  const armStart = src.indexOf("if (accountMode !== \"live\") {");
+  const insertAt = src.indexOf("await db.insert(eleanorWatchInstructionsTable).values(");
+  assert.ok(armStart > 0 && insertAt > armStart, "live-only refusal precedes the insert");
+  assert.match(src, /Watches run on your live account only in this build; switch to live to arm one\./);
+  const perm = src.indexOf("eleanorWatchPermissionBlock(parsed.kind, settings)");
+  assert.ok(perm > armStart && perm < insertAt);
+  const confirm = src.indexOf("settings?.eleanorRequireExtraConfirmation !== false && body.confirm !== true", armStart);
+  assert.ok(confirm > armStart && confirm < insertAt, "extra confirmation is asked before the watch row exists");
+  assert.match(src, /export const DEFAULT_WATCH_TTL_MINUTES = 24 \* 60;/);
+  assert.match(src, /classification: "MISSING_VOLUME", message: `How much \$\{parsed\.symbol\} should I/);
+  assert.match(src, /isCloseAlertAnswer\(text\)/);
+  assert.match(src, /acknowledgeEleanorWatch\(userId, target\.id, "close"/);
+  assert.match(src, /pickWatchesToCancel\(activeRows, scope/);
+});

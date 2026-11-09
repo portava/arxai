@@ -18,10 +18,12 @@ import { requireUser } from "../lib/auth/middleware.js";
 
 // Build TT — FULL TESTER ACCESS overlay.
 // canExecuteRealBrokerOrder STAYS FALSE until placement layer + MT5 are wired.
-async function buildTesterAccessOverlay() {
-  let mt5Connected = false;
+// mt5Connected is null when the broker status read failed: the connection
+// could not be checked, which is not the same as "not connected".
+export async function buildTesterAccessOverlay() {
+  let mt5Connected: boolean | null = false;
   if (selectBrokerKind() === "mt5") {
-    try { mt5Connected = !!(await getBrokerProvider().status()).connected; } catch { mt5Connected = false; }
+    try { mt5Connected = !!(await getBrokerProvider().status()).connected; } catch { mt5Connected = null; }
   }
   return {
     fullTesterAccess: true,
@@ -33,7 +35,9 @@ async function buildTesterAccessOverlay() {
     canExecuteRealBrokerOrder: false, // gated by placeLiveOrderGuarded() — never bypassed
     mt5Connected,
     brokerExecutionAvailable: false,
-    reason: mt5Connected
+    reason: mt5Connected === null
+      ? "Could not check the MT5 bridge: the broker status read failed, so whether it is connected is unknown."
+      : mt5Connected
       ? "Live broker execution requires the guarded order router (BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED)."
       : "MT5 bridge not connected yet",
   };
@@ -95,11 +99,15 @@ function rowToRiskLockResponse(row: typeof riskLocksTable.$inferSelect) {
   };
 }
 
-async function loadActiveLocks() {
+async function loadActiveLocks(userId: number) {
   // Filter at SELECT time: a lock is "active" if isActive AND (no end_time OR end_time still in the future).
+  // Owner-scoped (audit H3): this user's locks plus legacy rows with no owner
+  // (platform-era locks nobody can be excluded from). Another user's lock never
+  // counts here — the same rule trading readiness and the live pipeline use.
   const rows = await db.select().from(riskLocksTable)
     .where(and(
       eq(riskLocksTable.isActive, true),
+      or(eq(riskLocksTable.userId, userId), isNull(riskLocksTable.userId)),
       or(isNull(riskLocksTable.endTime), gte(riskLocksTable.endTime, new Date())),
     ))
     .orderBy(desc(riskLocksTable.startTime));
@@ -113,7 +121,7 @@ export async function gatherInputsAndEvaluate(userId: number) {
     db.select().from(tradesTable)
       .where(and(eq(tradesTable.userId, userId), gte(tradesTable.createdAt, startOfTodayUtc())))
       .orderBy(desc(tradesTable.createdAt)),
-    loadActiveLocks(),
+    loadActiveLocks(userId),
     // Per-user bridge tokens are the ONLY valid EA auth (the legacy
     // MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint), so
     // "broker credentials configured" = THIS user has an active token.
@@ -198,9 +206,9 @@ router.post("/permission/evaluate", requireUser, async (req, res) => {
   }
 });
 
-router.get("/risk-locks", async (req, res) => {
+router.get("/risk-locks", requireUser, async (req, res) => {
   try {
-    const rows = await loadActiveLocks();
+    const rows = await loadActiveLocks(req.authUser!.id);
     return res.json({ locks: rows.map(rowToRiskLockResponse) });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /risk-locks failed");
@@ -208,15 +216,16 @@ router.get("/risk-locks", async (req, res) => {
   }
 });
 
-router.post("/risk-locks", async (req, res) => {
+router.post("/risk-locks", requireUser, async (req, res) => {
   try {
+    const userId = req.authUser!.id;
     const body = CreateRiskLockBody.parse(req.body);
 
     // Idempotency / race guard: if an active lock of the same type already
     // exists (and hasn't naturally expired), return it instead of creating a
     // duplicate. Prevents UI double-clicks or concurrent rule triggers from
     // polluting the table.
-    const existingActive = await loadActiveLocks();
+    const existingActive = await loadActiveLocks(userId);
     const dup = existingActive.find((row) => row.lockType === body.lockType);
     if (dup) {
       return res.json(rowToRiskLockResponse(dup));
@@ -227,6 +236,7 @@ router.post("/risk-locks", async (req, res) => {
     const endTime = minutes !== null ? new Date(startTime.getTime() + minutes * 60_000) : null;
 
     const [inserted] = await db.insert(riskLocksTable).values({
+      userId,
       lockType: body.lockType,
       reason: body.reason,
       startTime,

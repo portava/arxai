@@ -5,6 +5,7 @@ import type {
   ViewportMode,
   HealthSummary,
   BridgeDiagnosticSummary,
+  RuntimeFetchStatus,
 } from "./runtimeContextTypes";
 import { getErrors, scrubString } from "./errorBuffer";
 
@@ -85,6 +86,20 @@ export interface CollectInputs {
   bridge?: BridgeDiagnosticSummary | null;
   health?: HealthSummary | null;
   serverRoleHint?: RuntimeContext["serverRoleHint"];
+  /** How the latest bridge read went; ignored when `bridge` is present. */
+  bridgeStatus?: RuntimeFetchStatus;
+  /** How the latest health read went; ignored when `health` is present. */
+  healthStatus?: RuntimeFetchStatus;
+}
+
+/** A server boolean, or null when the field is absent / not a boolean. */
+function readBool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+function fetchStatus(present: boolean, hint: RuntimeFetchStatus | undefined): RuntimeFetchStatus {
+  if (present) return "loaded";
+  return hint === "loading" ? "loading" : "unavailable";
 }
 
 export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
@@ -95,30 +110,47 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
   const visibleBadges = readVisibleBadges();
   const disabledControls = readDisabledControls();
 
-  // Derive trading-mode flags from the bridge summary (server is source of truth).
-  const liveTradingDisabled = !(input.bridge?.liveTradingEnabled ?? false);
-  const brokerExecutionDisabled = !(input.bridge?.brokerExecutionEnabled ?? false);
-  const brokerReadOnly = input.bridge?.brokerReadOnly ?? true;
-  const mt5Deferred = input.bridge?.bridgeMode === "deferred" || input.bridge?.bridgeMode === "unknown";
-  const mt5BridgeConnected = input.bridge?.bridgeMode === "connected";
-  const heartbeatPresent = input.bridge?.heartbeatPresent ?? false;
-  const heartbeatAgeSeconds = input.bridge?.heartbeatAgeSeconds ?? null;
-  const paperOnly = input.bridge?.paperOnly ?? true;
-  const simulatorMode = input.bridge?.bridgeMode === "simulator" || input.bridge?.bridgeMode === "deferred";
+  // Derive trading-mode flags from the bridge summary (server is source of
+  // truth). Without a summary (loading, failed request, missing field) each
+  // flag is null = unknown; absent data is never turned into a safe default.
+  const bridge = input.bridge ?? null;
+  // The summary may say its live / execution / read-only / demo-only flags are
+  // fixed values that never read the live master switch, live arming or the
+  // account mode. Those flags are then not read here (null), and neither is
+  // the demo/simulator surface derived from the caller's own bridge: a LIVE
+  // Shared account with no personal EA is not "in simulator mode".
+  const postureUnmeasured = bridge?.executionPostureMeasured === false;
+  const liveTradingEnabled = postureUnmeasured ? null : readBool(bridge?.liveTradingEnabled);
+  const brokerExecutionEnabled = postureUnmeasured ? null : readBool(bridge?.brokerExecutionEnabled);
+  const liveTradingDisabled = liveTradingEnabled === null ? null : !liveTradingEnabled;
+  const brokerExecutionDisabled = brokerExecutionEnabled === null ? null : !brokerExecutionEnabled;
+  const brokerReadOnly = postureUnmeasured ? null : readBool(bridge?.brokerReadOnly);
+  const mt5Deferred = bridge?.bridgeMode === "deferred" || bridge?.bridgeMode === "unknown";
+  const mt5BridgeConnected = bridge?.bridgeMode === "connected";
+  // bridgeMode "unknown": the server could not read the EA connection, so its
+  // heartbeatPresent:false is not an observed absence — the heartbeat is unknown.
+  const bridgeUnread = bridge?.bridgeMode === "unknown";
+  const heartbeatPresent = bridgeUnread ? null : readBool(bridge?.heartbeatPresent);
+  const heartbeatAgeSeconds = bridgeUnread ? null : bridge?.heartbeatAgeSeconds ?? null;
+  const paperOnly = postureUnmeasured ? null : readBool(bridge?.paperOnly);
+  const simulatorMode = bridge && !postureUnmeasured ? bridge.bridgeMode === "simulator" || bridge.bridgeMode === "deferred" : null;
 
   const tradingMode: RuntimeContext["tradingMode"] =
-    !liveTradingDisabled ? "live"
-      : mt5BridgeConnected && brokerReadOnly ? "broker-readonly"
-        : simulatorMode ? "simulator"
-          : paperOnly ? "paper" : "unknown";
+    liveTradingDisabled === null ? "unknown"
+      : !liveTradingDisabled ? "live"
+        : mt5BridgeConnected && brokerReadOnly === true ? "broker-readonly"
+          : simulatorMode === true ? "simulator"
+            : paperOnly === true ? "paper" : "unknown";
 
   const activeSafetyLocks: string[] = [];
-  if (liveTradingDisabled) activeSafetyLocks.push("LIVE TRADING DISABLED");
-  if (brokerExecutionDisabled) activeSafetyLocks.push("BROKER EXECUTION DISABLED");
-  if (brokerReadOnly) activeSafetyLocks.push("BROKER READ-ONLY");
-  if (mt5Deferred) activeSafetyLocks.push("MT5 DEFERRED");
-  if (paperOnly) activeSafetyLocks.push("DEMO ONLY");
-  if (simulatorMode) activeSafetyLocks.push("SIMULATOR MODE");
+  if (liveTradingDisabled === true) activeSafetyLocks.push("LIVE TRADING DISABLED");
+  if (brokerExecutionDisabled === true) activeSafetyLocks.push("BROKER EXECUTION DISABLED");
+  if (brokerReadOnly === true) activeSafetyLocks.push("BROKER READ-ONLY");
+  // An unread EA connection is treated as deferred (mt5Deferred) but is not
+  // an observed deferred bridge, so its lock says it is unread.
+  if (mt5Deferred) activeSafetyLocks.push(bridgeUnread ? "MT5 BRIDGE UNREAD (TREATED AS DEFERRED)" : "MT5 DEFERRED");
+  if (paperOnly === true) activeSafetyLocks.push("DEMO ONLY");
+  if (simulatorMode === true) activeSafetyLocks.push("SIMULATOR MODE");
 
   return {
     capturedAt: new Date().toISOString(),
@@ -136,11 +168,14 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     liveTradingDisabled,
     brokerExecutionDisabled,
     brokerReadOnly,
+    executionPostureUnmeasured: postureUnmeasured,
     mt5Deferred,
     mt5BridgeConnected,
     heartbeatPresent,
     heartbeatAgeSeconds,
-    emergencyStopActive: false, // surfaced by bridge if/when server exposes it
+    // No endpoint this collector reads reports the platform emergency stop or
+    // the kill switch, so its state is unknown here — never a measured "off".
+    emergencyStopActive: null,
     readiness: input.health && input.health.readinessReachable ? "unknown" : "unknown",
     serverRoleHint: input.serverRoleHint ?? "unknown",
     recentErrors: getErrors(),
@@ -149,7 +184,9 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     recentAssistantQuestions: recentQuestions.slice(),
     missingKnowledgeFallbacks: recentMissing.slice(),
     health: input.health ?? null,
-    bridge: input.bridge ?? null,
+    bridge,
+    bridgeStatus: fetchStatus(bridge !== null, input.bridgeStatus),
+    healthStatus: fetchStatus(input.health != null, input.healthStatus),
   };
 }
 

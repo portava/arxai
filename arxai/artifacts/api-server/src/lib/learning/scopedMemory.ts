@@ -55,8 +55,34 @@ function cleanScopes(scopes: OwnedScope[] | undefined, owner: number): ScopeRef[
 // ── Writes ────────────────────────────────────────────────────────────────
 
 export interface EdgeOutcome {
-  symbol: string; signalName: string; action: string; result: string; pnl: number; tradeId: number;
+  symbol: string; signalName: string; action: string; result: string;
+  /** null = the trade's P&L could not be sized: it is not added to netPnl or avgPnl. */
+  pnl: number | null;
+  tradeId: number;
   deltaEdge: number; deltaConf: number; deltaRisk: number;
+}
+
+/**
+ * How many sized samples an edge's avgPnl is the mean of, or null when the
+ * row cannot tell. There is no column for it (no schema change); applyEdge
+ * keeps avgPnl = netPnl / sized, so it is read back as netPnl / avgPnl. With
+ * netPnl and avgPnl both 0 the sized samples sum to exactly 0 or there are
+ * none. A sized win adds more than 0 and a sized loss less than 0, so only a
+ * breakeven or other result, or a win offset by a loss, can sum to 0; without
+ * those there is no sized sample yet.
+ */
+function sizedSamplesOf(e: Pick<StrategyEdge, "sampleCount" | "winCount" | "lossCount" | "breakEvenCount" | "netPnl" | "avgPnl">): number | null {
+  const { sampleCount, winCount, lossCount, breakEvenCount, netPnl, avgPnl } = e;
+  if (!Number.isFinite(netPnl) || !Number.isFinite(avgPnl)) return null;
+  if (avgPnl !== 0) {
+    const n = Math.round(netPnl / avgPnl);
+    // net_pnl and avg_pnl are stored as real (float4): allow its rounding.
+    if (n < 1 || n > sampleCount || Math.abs(n * avgPnl - netPnl) > 1e-3 * Math.abs(netPnl) + 1e-6) return null;
+    return n;
+  }
+  if (netPnl !== 0) return null;
+  const other = sampleCount - winCount - lossCount - breakEvenCount;
+  return breakEvenCount === 0 && other === 0 && (winCount === 0 || lossCount === 0) ? 0 : null;
 }
 
 async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boolean): Promise<{ row: StrategyEdge; created: boolean }> {
@@ -79,7 +105,10 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
       contributors: platform ? 1 : null,
       symbol: o.symbol, strategyName: o.signalName, signalName: o.signalName, action: o.action,
       sampleCount: 1, winCount: isWin ? 1 : 0, lossCount: isLoss ? 1 : 0, breakEvenCount: isBE ? 1 : 0,
-      netPnl: o.pnl, avgPnl: o.pnl,
+      // NOT NULL columns with no count of unsized samples: an edge first seen
+      // on a trade whose P&L is not known starts at 0, which sizedSamplesOf
+      // reads back as "no sized sample yet".
+      netPnl: o.pnl ?? 0, avgPnl: o.pnl ?? 0,
       confidenceAdjustment: clamp(o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
       riskAdjustment: clamp(o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
       edgeScore: clamp(o.deltaEdge, EDGE_MIN, EDGE_MAX),
@@ -88,13 +117,24 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
     return { row: row!, created: true };
   }
   const sampleCount = existing.sampleCount + 1;
-  const netPnl = existing.netPnl + o.pnl;
+  // A trade whose P&L is not known adds nothing to netPnl and leaves avgPnl
+  // as it was (it used to add a measured 0 and pull the average toward 0).
+  // A sized trade averages over the sized samples only: dividing by
+  // sampleCount would count every earlier unsized sample as a 0 again.
+  const netPnl = o.pnl == null ? existing.netPnl : existing.netPnl + o.pnl;
+  let avgPnl = existing.avgPnl;
+  if (o.pnl != null) {
+    const sized = sizedSamplesOf(existing);
+    // When the row cannot tell, divide by every sample as before: that can
+    // only pull the average toward 0, never make it look larger than it is.
+    avgPnl = netPnl / (sized == null ? sampleCount : sized + 1);
+  }
   const [row] = await db.update(strategyEdgesTable).set({
     sampleCount,
     winCount: existing.winCount + (isWin ? 1 : 0),
     lossCount: existing.lossCount + (isLoss ? 1 : 0),
     breakEvenCount: existing.breakEvenCount + (isBE ? 1 : 0),
-    netPnl, avgPnl: netPnl / sampleCount,
+    netPnl, avgPnl,
     confidenceAdjustment: clamp(existing.confidenceAdjustment + o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
     riskAdjustment: clamp(existing.riskAdjustment + o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
     edgeScore: clamp(existing.edgeScore + o.deltaEdge, EDGE_MIN, EDGE_MAX),

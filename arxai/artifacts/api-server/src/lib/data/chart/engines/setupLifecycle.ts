@@ -13,7 +13,8 @@
 
 import type { NormalizedChartCandle } from "../candleNormalization.js";
 import type { ChartTimeframe } from "../timeframes.js";
-import { atr, clamp, decimalsFor, round } from "./chartMath.js";
+import { atr, clamp, round } from "./chartMath.js";
+import { chartPriceDecimals, validPriceDecimals } from "./chartPriceDecimals.js";
 import type {
   ChartCandleIntentRead,
   ChartLevelsRead,
@@ -115,6 +116,9 @@ export function computeSetupLifecycle(
   trend: ChartTrendRead,
   levels: ChartLevelsRead,
   candleIntent: ChartCandleIntentRead,
+  /** The instrument's display precision (chartPriceDecimals); when omitted it
+   *  is resolved from the bars' symbol profile and quoted digits. */
+  priceDecimals?: number | null,
 ): ChartSetupRead {
   const tradeType = tradeTypeFor(timeframe);
   const n = closed.length;
@@ -129,7 +133,10 @@ export function computeSetupLifecycle(
   const lastClose = closed[n - 1]!.close;
   const atrVal = atr(closed, Math.min(14, n - 1)) ?? 0;
   const band = Math.max(atrVal * 0.6, lastClose * 1e-4);
-  const decimals = decimalsFor(lastClose);
+  // The invalidation level is rounded and printed at the instrument's
+  // precision — the magnitude rule turned EURUSD 1.08523 into 1.0852 and
+  // printed XAUUSD 2392.50 as "2392.5".
+  const decimals = validPriceDecimals(priceDecimals) ?? chartPriceDecimals(closed);
 
   // Directional setups only. A range/mixed read with no edge is no setup.
   let direction: ChartSetupDirection;
@@ -193,8 +200,8 @@ export function computeSetupLifecycle(
       : round(actionLevel.price + band, decimals);
   const invalidationCondition =
     direction === "bullish"
-      ? `A decisive close below ${invalidationPrice} invalidates the long setup.`
-      : `A decisive close above ${invalidationPrice} invalidates the short setup.`;
+      ? `A decisive close below ${invalidationPrice.toFixed(decimals)} invalidates the long setup.`
+      : `A decisive close above ${invalidationPrice.toFixed(decimals)} invalidates the short setup.`;
 
   // Stage resolution.
   let stage: ChartSetupStage;
@@ -226,6 +233,6 @@ export function computeSetupLifecycle(
     expiresInBars,
     invalidationCondition,
     invalidationPrice,
-    note: `${direction} ${tradeType} setup at ${actionLevel.kind} ${actionLevel.price} — stage ${stage}.`,
+    note: `${direction} ${tradeType} setup at ${actionLevel.kind} ${actionLevel.price.toFixed(decimals)} — stage ${stage}.`,
   };
 }

@@ -45,6 +45,8 @@ import {
 } from "@/components/ui/table";
 import { Gauge, Filter, History, SlidersHorizontal, TrendingUp } from "lucide-react";
 import { useAssistantName } from "@/lib/assistant-name";
+import { formatInstrumentPrice, observedPriceDecimals } from "@/lib/instrumentPriceFormat";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function pct(n: number | null | undefined): string {
@@ -54,6 +56,18 @@ function pct(n: number | null | undefined): string {
 function num(n: number | null | undefined, digits = 0): string {
   if (n == null) return "—";
   return n.toFixed(digits);
+}
+/**
+ * A replay's planned levels at the instrument's display precision (the chart
+ * and mission rule): at least the symbol's own digits (5 for FX pairs, 3 for
+ * JPY pairs, else 2) and never fewer than the row's levels actually carry —
+ * never a fixed 5 decimals (XAUUSD 2345.12 is not "2345.12000").
+ */
+function levelPrice(symbol: string, n: number | null | undefined, rowLevels: ReadonlyArray<number | null | undefined>): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const bare = symbol.toUpperCase().replace(/^.*:/, "").replace(/[^A-Z]/g, "");
+  const seen = observedPriceDecimals([n, ...rowLevels]);
+  return formatInstrumentPrice(n, Math.max(candleDisplayPrecision([], bare), seen ?? 0));
 }
 
 const THRESHOLD_FIELDS: {
@@ -147,6 +161,7 @@ function MetricsTab() {
             <StatCard label="Tracked" value={num(m.totals.tracked)} />
             <StatCard label="Resolved" value={num(m.totals.resolved)} />
             <StatCard label="Pending" value={num(m.totals.pending)} sub="Awaiting real evidence" />
+            <StatCard label="Unresolved" value={num(m.totals.unresolved)} sub="Marked unresolved — not graded, not counted as pending" />
             <StatCard label="Graded" value={num(m.totals.graded)} />
             <StatCard label="Win rate" value={pct(m.rates.winRate)} />
             <StatCard label="TP rate" value={pct(m.rates.tpRate)} />
@@ -164,9 +179,17 @@ function MetricsTab() {
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <RankTable title="Best symbols" rows={m.bestSymbols} />
-            <RankTable title="Worst symbols" rows={m.worstSymbols} />
+            <RankTable
+              title="Worst symbols"
+              rows={m.worstSymbols}
+              emptyText={m.bestSymbols.length > 0 ? "No graded symbol has a lower win rate than those under Best, so none is listed as worst." : undefined}
+            />
             <RankTable title="Best sessions" rows={m.bestSessions} />
-            <RankTable title="Worst sessions" rows={m.worstSessions} />
+            <RankTable
+              title="Worst sessions"
+              rows={m.worstSessions}
+              emptyText={m.bestSessions.length > 0 ? "No graded session has a lower win rate than those under Best, so none is listed as worst." : undefined}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -191,13 +214,13 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
-function RankTable({ title, rows }: { title: string; rows: { key: string; graded: number; wins: number; winRate: number; avgPnlR?: number | null }[] }) {
+function RankTable({ title, rows, emptyText }: { title: string; rows: { key: string; graded: number; wins: number; winRate: number; avgPnlR?: number | null }[]; emptyText?: string }) {
   return (
-    <Card>
+    <Card data-testid={`rank-${title.replace(/\s+/g, "-").toLowerCase()}`}>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="text-sm text-txt-secondary">No graded signals yet.</div>
+          <div className="text-sm text-txt-secondary">{emptyText ?? "No graded signals yet."}</div>
         ) : (
           <Table>
             <TableHeader>
@@ -227,7 +250,7 @@ function RankTable({ title, rows }: { title: string; rows: { key: string; graded
   );
 }
 
-function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number }[] }) {
+function BucketTable({ title, rows }: { title: string; rows: { bucket: string; total: number; wins: number; losses: number; winRate: number | null }[] }) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
@@ -305,7 +328,10 @@ function MissedTab() {
         <Card><CardContent className="py-6 text-sm text-txt-secondary">No missed opportunities recorded yet.</CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {replays.map((r) => (
+          {replays.map((r) => {
+            const levels = [r.whatEleanorSaw.plannedEntry, r.whatEleanorSaw.plannedStop, r.whatEleanorSaw.plannedTarget];
+            const px = (n: number | null | undefined) => levelPrice(r.symbol, n, levels);
+            return (
             <Card key={r.outcomeId} data-testid={`missed-${r.outcomeId}`}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-2">
@@ -323,9 +349,9 @@ function MissedTab() {
                   <KV k="Edge" v={num(r.whatEleanorSaw.edge, 1)} />
                   <KV k="Flame stage" v={r.whatEleanorSaw.flameStage ?? "—"} />
                   <KV k="News nearby" v={r.whatEleanorSaw.newsNearby ? "Yes" : "No"} />
-                  <KV k="Planned entry" v={num(r.whatEleanorSaw.plannedEntry, 5)} />
-                  <KV k="Planned stop" v={num(r.whatEleanorSaw.plannedStop, 5)} />
-                  <KV k="Planned target" v={num(r.whatEleanorSaw.plannedTarget, 5)} />
+                  <KV k="Planned entry" v={px(r.whatEleanorSaw.plannedEntry)} />
+                  <KV k="Planned stop" v={px(r.whatEleanorSaw.plannedStop)} />
+                  <KV k="Planned target" v={px(r.whatEleanorSaw.plannedTarget)} />
                 </div>
                 <div className="space-y-1 text-sm">
                   <div className="text-xs font-medium uppercase text-txt-secondary">How it moved</div>
@@ -336,7 +362,8 @@ function MissedTab() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

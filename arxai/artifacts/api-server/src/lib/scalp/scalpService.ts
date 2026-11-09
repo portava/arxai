@@ -25,7 +25,7 @@ import {
 } from "../marketScanner.js";
 import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { isCurrentBuild } from "../truth/marketReadEvidence.js";
-import { evaluateScalp } from "./scalpEngine.js";
+import { evaluateScalp, NO_DIRECTION_NO_TRADE_REASON, STOP_IN_NOISE_NO_TRADE_REASON } from "./scalpEngine.js";
 import {
   loadSpecInput,
   loadAccountInput,
@@ -116,7 +116,12 @@ function coerceAction(a: string): ScalpScannerInput["recommendedAction"] {
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null };
+  newsContext?: {
+    riskLevel?: string | null;
+    eventRiskUnchecked?: boolean;
+    eventRiskNotConfigured?: boolean;
+    scheduledEventRisk?: string | null;
+  };
 };
 
 /**
@@ -154,7 +159,8 @@ function oppToScalpPatternImpact(
   };
 }
 
-function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
+/** Exported for the truth-accuracy regression test (production mapping). */
+export function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
   return {
     bias: coerceBias(opp.bias),
     recommendedAction: coerceAction(opp.recommendedAction),
@@ -172,6 +178,16 @@ function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput {
     // (not omitted) when absent — the engine fail-closes either way.
     sufficiency: opp.sufficiency ?? null,
     newsRisk: mapNewsRisk(opp.newsContext?.riskLevel),
+    // A failed news check is not LOW risk: carry it so the engine fails closed.
+    ...(opp.newsContext?.eventRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
+    // No calendar configured: news was not checked. Technicals-only by design
+    // (the engine does not fail closed), but the card must not show LOW.
+    ...(opp.newsContext?.eventRiskUnchecked !== true && opp.newsContext?.eventRiskNotConfigured === true
+      ? { newsRiskNotConfigured: true } : {}),
+    // No calendar looked at scheduled events (not a failed check, so the engine
+    // does not fail closed on it): display only, so the card never shows the
+    // default LOW band as an observed reading.
+    ...(opp.newsContext?.scheduledEventRisk === "not_checked" ? { newsRiskNotChecked: true } : {}),
     generatedAt: opp.generatedAt,
   };
 }
@@ -267,6 +283,10 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
   }
 
   result.marketEvidence = market.evidence ? { ...market.evidence, userId } : null;
+  // The timeframe this Focus read was actually evaluated on, so the client keys
+  // the lifted verdict under the right chart timeframe (never a 1m cell for an
+  // M5 read) without a second hard-coded copy of SCALP_TIMEFRAME.
+  result.timeframe = SCALP_TIMEFRAME;
   return await attachScalpAdvisory(result);
 }
 
@@ -453,10 +473,72 @@ async function buildRankInputs(
 }
 
 export function rankUnder(inputs: RankInput[], mode: ScalpMode): ScalpResult[] {
-  return inputs
-    .map((i) => evaluateScalp({ ...i.base, mode }))
+  return rankEvaluated(inputs.map((i) => evaluateScalp({ ...i.base, mode })));
+}
+
+function rankEvaluated(evaluated: ScalpResult[]): ScalpResult[] {
+  return evaluated
     .filter(isActionable)
     .sort((a, b) => b.qualityScore - a.qualityScore);
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Why the Builder has no pick, from what was actually evaluated. A market
+ * with no live read, no fresh price, not enough verified candles or no broker
+ * specs (AWAITING_DATA), that is closed / not tradeable, or whose scheduled
+ * news risk could not be checked (newsRiskUnchecked: the engine fails closed
+ * on it) was never checked against the user's goal, so "nothing matches your
+ * target" (and "try a smaller target") is only said when at least one market
+ * was evaluated on live data.
+ */
+export function builderNoTradeReason(
+  evaluated: ScalpResult[],
+  goal: "target" | "settings",
+): string {
+  const goalText = goal === "target" ? "your target" : "your settings";
+  const n = evaluated.length;
+  if (n === 0) {
+    return `No market in this group returned a live read just now, so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}. Try again shortly.`;
+  }
+  const awaiting = evaluated.filter((r) => r.status === "AWAITING_DATA");
+  const noLivePrice = awaiting.filter((r) => r.rejectReason === "NO_SCANNER_READ" || r.rejectReason === "NOT_LIVE").length;
+  const fewCandles = awaiting.filter((r) => r.rejectReason === "INSUFFICIENT_DATA").length;
+  const noSpecs = awaiting.filter((r) => r.rejectReason === "NO_SPECS").length;
+  const noDataOther = awaiting.length - noLivePrice - fewCandles - noSpecs;
+  const notTradeable = evaluated.filter(
+    (r) => r.status === "MARKET_CLOSED" || r.status === "SYMBOL_NOT_TRADEABLE",
+  ).length;
+  // Turned down by the news gate itself: its scheduled-news check did not
+  // run. Every reject carries the scanner's newsRiskUnchecked flag, but the
+  // news gate only runs after the direction, stop-noise and spread checks; a
+  // market rejected by one of those (no direction, stop in noise,
+  // SPREAD_TOO_WIDE) was evaluated and would be rejected with the calendar up.
+  const newsUnchecked = evaluated.filter(
+    (r) => r.status === "NO_CLEAN_SCALP" && r.newsRiskUnchecked === true
+      && r.noTradeReason !== NO_DIRECTION_NO_TRADE_REASON
+      && r.noTradeReason !== STOP_IN_NOISE_NO_TRADE_REASON,
+  ).length;
+  const checked = n - awaiting.length - notTradeable - newsUnchecked;
+  const newsWhy = "the economic calendar or news lookup did not answer";
+  if (checked === 0) {
+    const why: string[] = [];
+    if (noLivePrice > 0) why.push(`${noLivePrice} had no live price`);
+    if (fewCandles > 0) why.push(`${fewCandles} did not have enough verified candles`);
+    if (noSpecs > 0) why.push(`${noSpecs} had no broker symbol details`);
+    if (noDataOther > 0) why.push(`${noDataOther} had no live price or broker specs`);
+    if (notTradeable > 0) why.push(`${plural(notTradeable, "is", "are")} closed or not tradeable`);
+    if (newsUnchecked > 0) why.push(`${newsUnchecked} could not be checked for scheduled news because ${newsWhy}`);
+    return `None of the ${plural(n, "market", "markets")} in this group could be evaluated right now (${why.join(", ")}), so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}.`;
+  }
+  const skipped = n - checked;
+  const newsNote = newsUnchecked > 0
+    ? ` ${plural(newsUnchecked, "market", "markets")} could not be checked for scheduled news because ${newsWhy}, so ${newsUnchecked === 1 ? "it was" : "they were"} not offered.`
+    : "";
+  return `${checked} of ${plural(n, "market", "markets")} had live data to evaluate${skipped > 0 ? ` (${skipped} could not be evaluated)` : ""}; none gave a clean scalp for ${goalText} right now.${newsNote} Try a wider market group or a different mode${goal === "target" ? ", or a smaller target" : ""}.`;
 }
 
 export interface ScalpRankArgs {
@@ -514,7 +596,8 @@ export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<
     targetProfitAmount: args.targetProfitAmount ?? null,
     riskPersonality: args.riskPersonality ?? null,
   });
-  const ranked = rankUnder(inputs, args.mode);
+  const evaluated = inputs.map((i) => evaluateScalp({ ...i.base, mode: args.mode }));
+  const ranked = rankEvaluated(evaluated);
   const primary = ranked[0] ?? null;
   const alternatives = ranked.slice(1, 4);
   // Agent Ecosystem advisory (Phase 0) — same bounded, advisory-only attach as
@@ -527,6 +610,6 @@ export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<
     scanned: inputs.length,
     noTradeReason: primary
       ? null
-      : "No clean scalp matches your target right now. Try a wider market group, a different mode, or a smaller target.",
+      : builderNoTradeReason(evaluated, args.targetProfitAmount != null ? "target" : "settings"),
   };
 }

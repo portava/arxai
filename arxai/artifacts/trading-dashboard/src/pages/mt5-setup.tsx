@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BridgeDiagnosticsPanel } from "@/components/mt5/BridgeDiagnosticsPanel";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
 import { BridgeV2FeedStatus } from "@/components/mt5/BridgeV2FeedStatus";
+import { classifyHeartbeatAgeMs, classifyHeartbeatAgeSeconds, heartbeatAgeMsFrom, type HeartbeatFreshness } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type SecretsStatus = {
   provider: string;
@@ -19,7 +20,7 @@ type SecretsStatus = {
   readOnlyReady: boolean;
   liveTradingAllowedFlag: { set: boolean; value: boolean; note: string };
 };
-type ConnectionCheck = {
+export type ConnectionCheck = {
   provider: string;
   connected: boolean;
   environment: string;
@@ -35,8 +36,72 @@ type ConnectionCheck = {
     symbolCount: number; positionCount: number; orderCount: number;
   };
   errors: string[];
+  /** Time of this connection-check request — NOT a heartbeat. */
   lastCheckedAt: string;
+  /** The EA's own last heartbeat as the provider read it (null = none). Older servers omit it. */
+  lastHeartbeatAt?: string | null;
+  heartbeatAgeSeconds?: number | null;
+  /** Band under the shared heartbeat policy (fresh < 15 s, degraded < 60 s, offline). */
+  heartbeatFreshness?: HeartbeatFreshness;
 };
+
+const FRESHNESS_RANK: Record<HeartbeatFreshness, number> = { fresh: 3, degraded: 2, offline: 1, unknown: 0 };
+
+export type BridgeHeartbeatView = {
+  state: "connected" | "delayed" | "offline" | "waiting" | "unconfirmed";
+  label: string;
+  /** "Last heartbeat" value: the EA's heartbeat time, never the request time. */
+  lastHeartbeat: string;
+};
+
+/**
+ * What the setup page may say about the EA heartbeat. Uses the EA's own
+ * heartbeat time from the server and the shared heartbeat policy, taking the
+ * worse of the server's band and the band at `nowMs` (the client only
+ * downgrades). `lastCheckedAt` is the request time and is never shown as a
+ * heartbeat.
+ *
+ * The age is the server's own measurement (`heartbeatAgeSeconds`, server
+ * clock) plus the time this browser has waited since it sent the request
+ * (`sentAtMs`, browser clock), so a browser clock that runs ahead of or
+ * behind the server neither hides a fresh heartbeat nor freezes the age.
+ * Counting from the send time means the request's transit, the server's own
+ * work after it measured the age and any wait for other reads can only
+ * overstate the age, never make the heartbeat look fresher. Only an older
+ * server that sends no age falls back to `nowMs - lastHeartbeatAt`.
+ */
+export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: number, sentAtMs: number = nowMs): BridgeHeartbeatView {
+  if (!conn) return { state: "waiting", label: "Waiting for heartbeat", lastHeartbeat: "—" };
+  if (conn.lastHeartbeatAt === undefined) {
+    // Server did not report a heartbeat time: it cannot be shown or banded.
+    return {
+      state: conn.connected ? "unconfirmed" : "waiting",
+      label: conn.connected ? "Heartbeat time not reported" : "Waiting for heartbeat",
+      lastHeartbeat: "Not reported",
+    };
+  }
+  if (conn.lastHeartbeatAt === null) {
+    return { state: "waiting", label: "Waiting for heartbeat", lastHeartbeat: "None received" };
+  }
+  const serverAgeS = conn.heartbeatAgeSeconds;
+  const ageMs = typeof serverAgeS === "number" && Number.isFinite(serverAgeS) && serverAgeS >= 0
+    ? serverAgeS * 1000 + Math.max(0, nowMs - sentAtMs)
+    : heartbeatAgeMsFrom(conn.lastHeartbeatAt, nowMs);
+  const local = classifyHeartbeatAgeMs(ageMs);
+  const server = conn.heartbeatFreshness ?? local;
+  const band: HeartbeatFreshness = FRESHNESS_RANK[server] <= FRESHNESS_RANK[local] ? server : local;
+  const t = new Date(conn.lastHeartbeatAt);
+  const ageKnown = ageMs != null && Number.isFinite(ageMs) && ageMs >= 0;
+  const ageS = ageKnown ? Math.floor(ageMs / 1000) : null;
+  const ageText = ageS != null ? `${ageS}s ago` : "age unknown";
+  const lastHeartbeat = Number.isFinite(t.getTime()) ? `${t.toLocaleTimeString()} (${ageText})` : "Not reported";
+  if (!conn.connected || band === "offline") {
+    return { state: "offline", label: ageS != null ? `Offline — last heartbeat ${ageS}s ago` : "Offline — heartbeat age unknown", lastHeartbeat };
+  }
+  if (band === "fresh") return { state: "connected", label: "Connected", lastHeartbeat };
+  if (band === "degraded") return { state: "delayed", label: `Heartbeat delayed (${ageS}s ago)`, lastHeartbeat };
+  return { state: "unconfirmed", label: "Heartbeat age unknown", lastHeartbeat };
+}
 type BrokerStatus = {
   status: { kind: string; connected: boolean; environment: string; notes: string[] };
 };
@@ -740,26 +805,44 @@ type DemoOpenPosition = {
 type DemoPositionsSnapshot = {
   ok: boolean;
   lastSyncAt: string | null;
+  /**
+   * False when this user's MT5 positions could not be read (the EA feed is
+   * install-wide, not stamped with a user). The position counts are then null
+   * and an empty list is not "no open positions".
+   */
+  positionsMeasured?: boolean;
+  positionsNote?: string | null;
   openPositions: DemoOpenPosition[];
   reconciliation: {
-    mt5OpenPositionCount: number;
-    arxMatchedPositionCount: number;
-    arxOrphanPositionCount: number;
-    filledCommandHistoryCount: number;
-    inSync: boolean;
+    mt5OpenPositionCount: number | null;
+    arxMatchedPositionCount: number | null;
+    arxOrphanPositionCount: number | null;
+    filledCommandHistoryCount: number | null;
+    inSync: boolean | null;
   };
 };
 
-function OpenDemoPositionsCard() {
+/** A count the server did not measure is "not checked", never 0. */
+function demoCount(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? String(n) : "not checked";
+}
+
+export function OpenDemoPositionsCard() {
   const { toast } = useToast();
   const [snap, setSnap] = useState<DemoPositionsSnapshot | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ok" | "failed">("loading");
   const [refreshing, setRefreshing] = useState(false);
 
-  async function load() {
+  async function load(): Promise<boolean> {
     setRefreshing(true);
     const s = await jget<DemoPositionsSnapshot>("/api/me/demo-positions-snapshot");
-    setSnap(s);
+    // A failed or malformed read is "could not be loaded" — never an empty
+    // snapshot with zero counts.
+    const ok = s != null && Array.isArray(s.openPositions) && s.reconciliation != null;
+    setSnap(ok ? s : null);
+    setLoadState(ok ? "ok" : "failed");
     setRefreshing(false);
+    return ok;
   }
   useEffect(() => {
     void load();
@@ -769,10 +852,21 @@ function OpenDemoPositionsCard() {
 
   const positions = snap?.openPositions ?? [];
   const recon = snap?.reconciliation;
-  const orphanCount = recon?.arxOrphanPositionCount ?? 0;
+  const measured = snap != null && snap.positionsMeasured !== false;
+  const orphanCount = measured && typeof recon?.arxOrphanPositionCount === "number" ? recon.arxOrphanPositionCount : null;
   const lastSync = snap?.lastSyncAt ? new Date(snap.lastSyncAt) : null;
   const ageSec = lastSync ? Math.round((Date.now() - lastSync.getTime()) / 1000) : null;
   const stale = ageSec != null && ageSec > 30;
+  const lastSyncLabel =
+    loadState === "loading"
+      ? "checking…"
+      : snap == null
+        ? "could not be loaded"
+        : !measured
+          ? "not read"
+          : lastSync
+            ? `${ageSec}s ago`
+            : "not reported";
 
   return (
     <Card className="border-2 border-success/30 bg-success/5" data-testid="card-open-demo-positions">
@@ -781,35 +875,51 @@ function OpenDemoPositionsCard() {
           <ListChecks className="w-4 h-4" /> Open Demo Positions (MT5)
         </CardTitle>
         <CardDescription>
-          Live snapshot of every open position on your MT5 DEMO account, joined to ARX demo
-          commands by broker ticket. Your EA syncs this every few seconds.{" "}
+          Open positions from the last positions sync of your MT5 DEMO account, joined to ARX
+          demo commands by broker ticket. Your EA posts this sync every few seconds while it is
+          attached.{" "}
           <strong>DEMO ONLY.</strong>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <Badge variant="outline" data-testid="badge-open-positions-count">
-            MT5 open: {recon?.mt5OpenPositionCount ?? 0}
+            MT5 open: {measured ? demoCount(recon?.mt5OpenPositionCount) : "not checked"}
           </Badge>
-          <Badge variant="outline">ARX matched: {recon?.arxMatchedPositionCount ?? 0}</Badge>
+          <Badge variant="outline" data-testid="badge-open-positions-matched">
+            ARX matched: {measured ? demoCount(recon?.arxMatchedPositionCount) : "not checked"}
+          </Badge>
           <Badge
             className={
-              orphanCount > 0
-                ? "bg-warning/15 text-warning border-warning/30"
-                : "bg-success/15 text-success border-success/30"
+              orphanCount == null
+                ? ""
+                : orphanCount > 0
+                  ? "bg-warning/15 text-warning border-warning/30"
+                  : "bg-success/15 text-success border-success/30"
             }
+            variant={orphanCount == null ? "outline" : undefined}
             data-testid="badge-open-positions-orphans"
           >
-            Orphan (not from ARX): {orphanCount}
+            Orphan (not from ARX): {demoCount(orphanCount)}
           </Badge>
-          <Badge variant="outline">ARX fill history: {recon?.filledCommandHistoryCount ?? 0}</Badge>
-          <span className="text-muted-foreground">
-            Last sync: {lastSync ? `${ageSec}s ago` : "never"}
+          <Badge variant="outline" data-testid="badge-open-positions-fill-history">
+            ARX fill history: {snap ? demoCount(recon?.filledCommandHistoryCount) : "not checked"}
+          </Badge>
+          <span className="text-muted-foreground" data-testid="text-open-positions-last-sync">
+            Last sync: {lastSyncLabel}
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void load().then(() => toast({ title: "Positions snapshot refreshed" }))}
+            onClick={() =>
+              void load().then((ok) =>
+                toast(
+                  ok
+                    ? { title: "Positions snapshot refreshed" }
+                    : { title: "Positions snapshot could not be loaded", variant: "destructive" },
+                ),
+              )
+            }
             disabled={refreshing}
             data-testid="button-refresh-open-positions"
           >
@@ -828,7 +938,7 @@ function OpenDemoPositionsCard() {
           </Alert>
         )}
 
-        {orphanCount > 0 && (
+        {orphanCount != null && orphanCount > 0 && (
           <Alert className="border-warning/40 bg-warning/10">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle className="text-warning">
@@ -842,8 +952,20 @@ function OpenDemoPositionsCard() {
           </Alert>
         )}
 
-        {positions.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic">
+        {loadState === "failed" ? (
+          <p className="text-xs text-warning" data-testid="text-open-positions-load-failed">
+            The demo positions snapshot could not be loaded, so whether any demo positions are
+            open is unknown.
+          </p>
+        ) : snap != null && !measured ? (
+          <p className="text-xs text-warning" data-testid="text-open-positions-not-measured">
+            Your demo positions could not be checked, so they are not listed here.
+            {snap.positionsNote ? ` ${snap.positionsNote}` : ""}
+          </p>
+        ) : loadState === "loading" ? (
+          <p className="text-xs text-muted-foreground italic">Checking your demo positions…</p>
+        ) : positions.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic" data-testid="text-open-positions-empty">
             No open positions on the MT5 demo account.
           </p>
         ) : (
@@ -864,7 +986,7 @@ function OpenDemoPositionsCard() {
               <tbody>
                 {positions.map((p, i) => {
                   const matched = p.matchStatus === "MATCHED_TO_ARX_COMMAND";
-                  const pnl = p.floatingPnL ?? 0;
+                  const pnl = p.floatingPnL;
                   return (
                     <tr
                       key={p.brokerTicket ?? `pos-${i}`}
@@ -876,11 +998,11 @@ function OpenDemoPositionsCard() {
                       <td className="py-1 pr-2">{p.side ?? "—"}</td>
                       <td className="py-1 pr-2">{p.volume ?? "—"}</td>
                       <td className="py-1 pr-2 font-mono text-[10px]">{p.entryPrice ?? "—"}</td>
-                      <td className={`py-1 pr-2 font-mono text-[10px] ${pnl >= 0 ? "text-success" : "text-danger"}`}>
-                        {pnl.toFixed(2)}
+                      <td className={`py-1 pr-2 font-mono text-[10px] ${pnl == null ? "" : pnl >= 0 ? "text-success" : "text-danger"}`}>
+                        {pnl != null ? pnl.toFixed(2) : "—"}
                       </td>
                       <td className="py-1 pr-2 font-mono text-[10px]">
-                        {(p.stopLoss ?? 0)} / {(p.takeProfit ?? 0)}
+                        {p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}
                       </td>
                       <td className="py-1 pr-2">
                         {matched ? (
@@ -1436,6 +1558,26 @@ type DemoBridgeDebugResponse = {
   diagnoses: string[];
 };
 
+/**
+ * Debug-panel heartbeat label under the shared heartbeat policy. The server's
+ * `heartbeatFresh` is the legacy 60 s presence ("online") flag, so it must not
+ * be printed as "fresh": a 40 s old heartbeat is degraded under the policy the
+ * rest of the app (and /mt5/status) uses. The client only downgrades — a
+ * server "not online" verdict is never upgraded by the local band.
+ */
+export function describeDebugHeartbeat(bridge: { heartbeatAgeSeconds: number | null; heartbeatFresh: boolean }): {
+  label: "fresh" | "delayed" | "stale" | "age unknown";
+  tone: "text-success" | "text-warning" | "text-danger";
+} {
+  if (bridge.heartbeatAgeSeconds == null) return { label: "age unknown", tone: "text-danger" };
+  if (!bridge.heartbeatFresh) return { label: "stale", tone: "text-danger" };
+  const band = classifyHeartbeatAgeSeconds(bridge.heartbeatAgeSeconds);
+  if (band === "fresh") return { label: "fresh", tone: "text-success" };
+  if (band === "degraded") return { label: "delayed", tone: "text-warning" };
+  if (band === "offline") return { label: "stale", tone: "text-danger" };
+  return { label: "age unknown", tone: "text-danger" };
+}
+
 function DemoBridgeDebugCard() {
   const { toast } = useToast();
   const [data, setData] = useState<DemoBridgeDebugResponse | null>(null);
@@ -1544,9 +1686,10 @@ function DemoBridgeDebugCard() {
             {data.bridge.heartbeatAgeSeconds != null
               ? `${data.bridge.heartbeatAgeSeconds}s ago`
               : "never"}{" "}
-            <span className={data.bridge.heartbeatFresh ? "text-success" : "text-danger"}>
-              ({data.bridge.heartbeatFresh ? "fresh" : "stale"})
-            </span>
+            {(() => {
+              const hb = describeDebugHeartbeat(data.bridge);
+              return <span className={hb.tone}>({hb.label})</span>;
+            })()}
           </div>
 
           <div className="text-txt-secondary">EA account</div>
@@ -1702,6 +1845,10 @@ function PlatformMasterBridgeCard() {
 export default function MT5SetupWizardPage() {
   const [secrets, setSecrets] = useState<SecretsStatus | null>(null);
   const [conn, setConn] = useState<ConnectionCheck | null>(null);
+  // Browser time the connection check was sent, and a 1 s clock, so the
+  // heartbeat age keeps counting (and the label decays) between refreshes.
+  const [connSentAt, setConnSentAt] = useState<number>(() => Date.now());
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [bstat, setBstat] = useState<BrokerStatus | null>(null);
   const [acct, setAcct] = useState<BrokerAccount | null>(null);
   const [posCount, setPosCount] = useState<number | null>(null);
@@ -1710,6 +1857,9 @@ export default function MT5SetupWizardPage() {
 
   async function refreshAll() {
     setRefreshing(true);
+    // Taken before the connection check is sent, not after all six reads
+    // finish: the shown heartbeat age may then run a little high, never low.
+    const sentAt = Date.now();
     const [s, c, b, a, p, o] = await Promise.all([
       jget<{ requiredSecrets: SecretsStatus["requiredSecrets"]; missingSecrets: string[]; readOnlyReady: boolean; liveTradingAllowedFlag: SecretsStatus["liveTradingAllowedFlag"]; provider: string }>("/api/broker/secrets-status"),
       jget<ConnectionCheck>("/api/broker/connection-check"),
@@ -1720,6 +1870,8 @@ export default function MT5SetupWizardPage() {
     ]);
     setSecrets(s as SecretsStatus | null);
     setConn(c);
+    setConnSentAt(sentAt);
+    setNowMs(Date.now());
     setBstat(b);
     setAcct(a);
     setPosCount(p?.count ?? null);
@@ -1727,8 +1879,13 @@ export default function MT5SetupWizardPage() {
     setRefreshing(false);
   }
   useEffect(() => { void refreshAll(); }, []);
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
 
   const heartbeatWaiting = !conn?.connected;
+  const hb = describeBridgeHeartbeat(conn, nowMs, connSentAt);
   const accountWaiting = !conn?.checks?.accountReadable;
   const liveLocked = true; // server-enforced; this page never unlocks it
 
@@ -1764,11 +1921,11 @@ export default function MT5SetupWizardPage() {
               <Plug className="w-5 h-5 text-primary" />
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Bridge</div>
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  {conn?.connected ? (
-                    <><span className="inline-block w-2 h-2 rounded-full bg-success animate-pulse" /> Connected</>
+                <div className="text-sm font-semibold flex items-center gap-2" data-testid="bridge-heartbeat-state">
+                  {hb.state === "connected" ? (
+                    <><span className="inline-block w-2 h-2 rounded-full bg-success animate-pulse" /> {hb.label}</>
                   ) : (
-                    <><span className="inline-block w-2 h-2 rounded-full bg-warning" /> Waiting for heartbeat</>
+                    <><span className={`inline-block w-2 h-2 rounded-full ${hb.state === "offline" ? "bg-danger" : "bg-warning"}`} /> {hb.label}</>
                   )}
                 </div>
               </div>
@@ -1779,7 +1936,7 @@ export default function MT5SetupWizardPage() {
             </div>
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground">Last heartbeat</div>
-              <div className="text-sm font-mono">{conn?.lastCheckedAt ? new Date(conn.lastCheckedAt).toLocaleTimeString() : "—"}</div>
+              <div className="text-sm font-mono" data-testid="bridge-last-heartbeat">{hb.lastHeartbeat}</div>
             </div>
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground">Open positions</div>
@@ -1999,7 +2156,14 @@ export default function MT5SetupWizardPage() {
 
           <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
             {heartbeatWaiting && <div className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-warning" /> Heartbeat: <strong className="text-warning">waiting</strong> — start the EA on a chart to see this flip.</div>}
-            {!heartbeatWaiting && <div className="flex items-center gap-2"><ShieldCheck className="w-3.5 h-3.5 text-success" /> Heartbeat received. Last check at {conn?.lastCheckedAt}.</div>}
+            {!heartbeatWaiting && (
+              <div className="flex items-center gap-2" data-testid="bridge-heartbeat-line" data-state={hb.state}>
+                {hb.state === "connected"
+                  ? <ShieldCheck className="w-3.5 h-3.5 text-success" />
+                  : <AlertTriangle className={`w-3.5 h-3.5 ${hb.state === "offline" ? "text-danger" : "text-warning"}`} />}
+                Heartbeat: {hb.label}. Last heartbeat {hb.lastHeartbeat}; checked at {conn?.lastCheckedAt}.
+              </div>
+            )}
             {accountWaiting && <div className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-warning" /> Account data: <strong className="text-warning">waiting</strong> — make sure MT5 is logged into your broker.</div>}
             {conn?.errors && conn.errors.length > 0 && <div className="text-danger">errors: {conn.errors.join("; ")}</div>}
           </div>

@@ -22,6 +22,11 @@ import { logger } from "../logger.js";
 
 const MIN_SAMPLE = 3; // below this a score is "insufficient data" (null)
 const WINDOW_DAYS = 30;
+// Row caps per query. Each query asks for one row more than its cap so a
+// window that holds more rows than were read is reported, not hidden.
+const RECEIPT_CAP = 2000;
+const OUTCOME_CAP = 4000;
+const TRACE_CAP = 2000;
 const TREND_DAYS = 14;
 // Speed budgets (ms). A read is "slow" when state build OR governance runtime
 // exceeds these. Deliberately generous — these are honest soft warnings, not
@@ -148,6 +153,12 @@ interface SnapshotView {
   stateBuildMs: number | null;
 }
 
+/**
+ * Feed/speed facts recorded on a receipt. They live in the receipt's
+ * chartTruthSnapshot (truthState / stale / aiUsable; see decisionReceipts.ts);
+ * intelligenceSnapshot holds none of them. No snapshot records the state-build
+ * time today, so stateBuildMs is null unless a receipt carries speedState.
+ */
 function readSnapshot(raw: unknown): SnapshotView {
   const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const speed = (s["speedState"] && typeof s["speedState"] === "object"
@@ -162,7 +173,24 @@ function readSnapshot(raw: unknown): SnapshotView {
   };
 }
 
-const GOOD_QUALITY = new Set(["clean", "high", "strong", "good", "prime"]);
+// Receipts store the trade-readiness grade (ChartQualityLabel: A+ | A | B | C |
+// D | F | unrated). "unrated" means no grade was given, so it is not counted.
+const GOOD_QUALITY = new Set(["A+", "A"]);
+const UNRATED_QUALITY = "unrated";
+
+// The risk sentence (marketSentenceEngine sentenceRisk) is stored on EVERY
+// receipt, including its all-clear line "Risk looks normal for this read — …".
+// Only its warning forms ("Risk is high / too high / elevated / moderate …")
+// count as a flag; any other text earns no credit.
+const RISK_WARNING_SENTENCE = /^Risk is (?:high|too high|elevated|moderate)\b/;
+export function riskSentenceIsWarning(text: string | null | undefined): boolean {
+  return typeof text === "string" && RISK_WARNING_SENTENCE.test(text.trim());
+}
+
+/** A dimension the stored data cannot measure: null, with the reason. */
+function notMeasured(key: BenchmarkScoreKey, note: string): BenchmarkScore {
+  return { key, label: LABELS[key], score: null, sampleSize: 0, note };
+}
 const SCALP_INTENTS = new Set(["is-this-a-scalp"]);
 const HIGH_CONF = 65;
 
@@ -171,8 +199,9 @@ const HIGH_CONF = 65;
 /**
  * Compute the Chart Brain benchmark across all users (admin surface). The caller
  * MUST enforce admin access — this function performs no role check itself.
- * Fail-open: on any storage error it returns an honest empty result rather than
- * throwing, so the dashboard degrades to "no data yet" instead of erroring.
+ * On a storage error it THROWS: an unreadable window is "could not be loaded",
+ * never an empty "no activity" scorecard. The route turns the throw into an
+ * error response, which the dashboard shows as "Could not load benchmark".
  */
 export async function computeChartBrainBenchmark(opts?: {
   windowDays?: number;
@@ -193,7 +222,7 @@ export async function computeChartBrainBenchmark(opts?: {
       label: LABELS[key],
       score: null,
       sampleSize: 0,
-      note: "No chart-brain activity recorded yet.",
+      note: `No chart-brain reads recorded in the last ${windowDays} days.`,
     })),
     trend: [],
     weakAreas: [],
@@ -212,28 +241,54 @@ export async function computeChartBrainBenchmark(opts?: {
         .from(chartDecisionReceiptsTable)
         .where(gte(chartDecisionReceiptsTable.createdAt, since))
         .orderBy(desc(chartDecisionReceiptsTable.createdAt))
-        .limit(2000),
+        .limit(RECEIPT_CAP + 1),
       db
         .select()
         .from(chartDecisionOutcomesTable)
         .where(gte(chartDecisionOutcomesTable.createdAt, since))
         .orderBy(desc(chartDecisionOutcomesTable.createdAt))
-        .limit(4000),
+        .limit(OUTCOME_CAP + 1),
       db
         .select()
         .from(agentGovernanceTracesTable)
         .where(gte(agentGovernanceTracesTable.createdAt, since))
         .orderBy(desc(agentGovernanceTracesTable.createdAt))
-        .limit(2000),
+        .limit(TRACE_CAP + 1),
     ]);
   } catch (err) {
-    logger.warn({ err }, "benchmarkScore: aggregation query failed (fail-open empty)");
-    return empty();
+    logger.warn({ err }, "benchmarkScore: aggregation query failed");
+    throw new Error(
+      "Chart Brain benchmark could not be loaded: the receipts, outcomes or governance traces could not be read.",
+      { cause: err },
+    );
+  }
+
+  // Coverage: say plainly when a window holds more rows than were read, so a
+  // capped count is never shown as the window's total.
+  const coverageWarnings: string[] = [];
+  if (receipts.length > RECEIPT_CAP) {
+    receipts = receipts.slice(0, RECEIPT_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${RECEIPT_CAP} receipts; only the newest ${RECEIPT_CAP} were read, so the Receipts total and every score cover those ${RECEIPT_CAP} only.`,
+    );
+  }
+  if (outcomes.length > OUTCOME_CAP) {
+    outcomes = outcomes.slice(0, OUTCOME_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${OUTCOME_CAP} outcomes and reviews; only the newest ${OUTCOME_CAP} were read, so older results are missing from the totals and scores.`,
+    );
+  }
+  if (traces.length > TRACE_CAP) {
+    traces = traces.slice(0, TRACE_CAP);
+    coverageWarnings.push(
+      `This ${windowDays}-day window holds more than ${TRACE_CAP} governance traces; only the newest ${TRACE_CAP} were read, so the Gov. traces total and the speed score cover those ${TRACE_CAP} only.`,
+    );
   }
 
   if (receipts.length === 0) {
     const e = empty();
     e.totalTraces = traces.length;
+    e.warnings = coverageWarnings;
     return e;
   }
 
@@ -262,7 +317,7 @@ export async function computeChartBrainBenchmark(opts?: {
   let slowReads = 0;
   let speedKnown = 0;
   for (const r of receipts) {
-    const snap = readSnapshot(r.intelligenceSnapshot);
+    const snap = readSnapshot(r.chartTruthSnapshot);
     if (snap.aiUsable !== null || snap.stale !== null) {
       feedKnown++;
       if (snap.aiUsable === true && snap.stale !== true) feedClean++;
@@ -331,7 +386,7 @@ export async function computeChartBrainBenchmark(opts?: {
 
       if (verdict === "LOSS" || verdict === "NO_TRADE_MISSED") {
         badResults++;
-        if (r.vetoed || (r.riskWarning && r.riskWarning.trim().length > 0)) {
+        if (r.vetoed === true || riskSentenceIsWarning(r.riskWarning)) {
           badResultsFlagged++;
         }
       }
@@ -351,28 +406,36 @@ export async function computeChartBrainBenchmark(opts?: {
   }
   const tradeResolved = wins + losses + breakeven;
 
-  // ── 4. Structure read — share of reads with a good quality label ──────────
+  // ── 4. Structure read — share of graded reads rated A+ or A ───────────────
   let qualityKnown = 0;
   let qualityGood = 0;
   for (const r of receipts) {
-    if (r.qualityLabel) {
+    const q = r.qualityLabel?.trim();
+    if (q && q !== UNRATED_QUALITY) {
       qualityKnown++;
-      if (GOOD_QUALITY.has(r.qualityLabel.toLowerCase())) qualityGood++;
+      if (GOOD_QUALITY.has(q)) qualityGood++;
     }
   }
 
-  // ── 10. Agent agreement — receipts with no agent conflict ─────────────────
-  const agentAgree = receipts.filter((r) => !r.agentConflict).length;
+  // ── 10. Agent agreement — only reads where agents were consulted ──────────
+  // courtResult is null when no specialist agent influenced the read; such a
+  // read has agentConflict=false by default, which is not agreement.
+  const consulted = receipts.filter((r) => r.courtResult != null);
+  const agentAgree = consulted.filter((r) => r.agentConflict !== true).length;
+  const notConsulted = receipts.length - consulted.length;
+  const notConsultedNote =
+    notConsulted > 0 ? ` ${notConsulted} of ${receipts.length} reads had no agents consulted and are not counted.` : "";
+  const agentAgreement = ratioScore(
+    "agent_agreement",
+    agentAgree,
+    consulted.length,
+    `${agentAgree}/${consulted.length} reads where specialist agents were consulted had them in agreement.${notConsultedNote}`,
+  );
+  if (agentAgreement.score === null) agentAgreement.note += notConsultedNote;
 
-  // ── 11. Eleanor explanation quality — complete explanations ──────────────────
-  let eleanorComplete = 0;
-  for (const r of receipts) {
-    const hasRead = !!(r.eleanorFinalRead && r.eleanorFinalRead.trim().length > 0);
-    const hasContext =
-      !!(r.whatWouldChange && r.whatWouldChange.trim()) ||
-      !!(r.invalidation && r.invalidation.trim());
-    if (hasRead && hasContext) eleanorComplete++;
-  }
+  // ── 11. Eleanor explanation quality — not measured ───────────────────────────
+  // No explanation is graded. Every read stores a headline and a
+  // what-would-change line, so their presence says nothing about quality.
 
   // ── 14. Similar-setup usefulness — reads with prior matching history ───────
   // History availability proxy: a read is "supported" when at least one EARLIER
@@ -395,7 +458,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "feed_truth",
       feedClean,
       feedKnown,
-      `${feedClean}/${feedKnown} reads on a clean, AI-usable feed.`,
+      `${feedClean}/${feedKnown} reads were on a clean, AI-usable feed (from each receipt's chart-truth snapshot).`,
     ),
     ratioScore(
       "reliability",
@@ -407,13 +470,15 @@ export async function computeChartBrainBenchmark(opts?: {
       "speed",
       speedFast,
       speedDen,
-      `${speedFast}/${speedDen} reads/governance runs within speed budget.`,
+      speedKnown === 0
+        ? `${speedFast}/${speedDen} governance runs finished within ${GOV_RUNTIME_BUDGET_MS}ms. Read build times are not recorded on receipts, so reads are not counted.`
+        : `${speedFast}/${speedDen} within budget: ${speedKnown - slowReads}/${speedKnown} reads built within ${STATE_BUILD_BUDGET_MS}ms and ${traces.length - slowGov}/${traces.length} governance runs finished within ${GOV_RUNTIME_BUDGET_MS}ms.`,
     ),
     ratioScore(
       "structure_read",
       qualityGood,
       qualityKnown,
-      `${qualityGood}/${qualityKnown} reads had a clean structure quality.`,
+      `${qualityGood}/${qualityKnown} graded reads were rated A+ or A by the trade-readiness grader.`,
     ),
     ratioScore(
       "timing",
@@ -425,7 +490,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "risk_detection",
       badResultsFlagged,
       badResults,
-      `${badResultsFlagged}/${badResults} losing/missed reads were pre-flagged by risk.`,
+      `${badResultsFlagged}/${badResults} losing or missed reads were vetoed or carried a risk warning at decision time.`,
     ),
     ratioScore(
       "scalp_accuracy",
@@ -439,23 +504,16 @@ export async function computeChartBrainBenchmark(opts?: {
       highConfTrades,
       `${highConfWins}/${highConfTrades} high-confidence entries won.`,
     ),
-    ratioScore(
+    // P/L quality is whatever the user sent with POST …/outcome; nothing checks
+    // it against broker fills, so it cannot earn points as "broker-known".
+    notMeasured(
       "exit_realism",
-      plKnown,
-      plResolved,
-      `${plKnown}/${plResolved} resolved trades had broker-known P/L.`,
+      `Not measured: P/L quality on outcomes is entered by the user and not checked against broker fills. ${plKnown} of ${plResolved} resolved trades were reported by the user as having known P/L.`,
     ),
-    ratioScore(
-      "agent_agreement",
-      agentAgree,
-      receipts.length,
-      `${agentAgree}/${receipts.length} reads had agents in agreement.`,
-    ),
-    ratioScore(
+    agentAgreement,
+    notMeasured(
       "eleanor_explanation_quality",
-      eleanorComplete,
-      receipts.length,
-      `${eleanorComplete}/${receipts.length} reads had a complete ${DEFAULT_ASSISTANT_NAME} explanation.`,
+      "Not measured: Eleanor's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.",
     ),
     ratioScore(
       "no_trade_discipline",
@@ -547,8 +605,8 @@ export async function computeChartBrainBenchmark(opts?: {
     }
   }
 
-  // ── speed / feed warnings (honest, evidence-backed) ───────────────────────
-  const warnings: string[] = [];
+  // ── coverage / speed / feed warnings (honest, evidence-backed) ───────────
+  const warnings: string[] = [...coverageWarnings];
   if (feedKnown >= MIN_SAMPLE) {
     const stalePct = Math.round(((feedKnown - feedClean) / feedKnown) * 100);
     if (stalePct >= 25) {

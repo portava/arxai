@@ -87,10 +87,13 @@ export interface UnifiedAccountModeResponse {
 
   userAllocation: {
     hasAllocation: boolean;
-    currentBalance: number;
+    // null = not available / not measured, as in /me/account-shell's
+    // allocation: no allocation row or virtual account means no balance,
+    // and nothing records margin for this view. Never a placeholder $0.
+    currentBalance: number | null;
     assignedStartingBalance: number | null;
-    equity: number;
-    marginUsed: number;
+    equity: number | null;
+    marginUsed: number | null;
   };
 
   userRiskCaps: {
@@ -239,7 +242,7 @@ router.get("/me/account-mode", requireUser, async (req: Request, res) => {
 
     const allocation = accountShell.allocation;
     const hasAllocation =
-      allocation.currentBalance > 0 || allocation.assignedStartingBalance != null;
+      (allocation.currentBalance ?? 0) > 0 || allocation.assignedStartingBalance != null;
 
     const userFrozenStatus = {
       isFrozen:

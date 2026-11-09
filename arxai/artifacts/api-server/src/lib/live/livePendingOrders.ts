@@ -3,7 +3,9 @@
 //
 // There is no EA snapshot of working pending orders yet, so this list is built
 // from the command ledger (arx_live_commands): a PLACE_LIVE_PENDING_ORDER whose
-// last EA result reported a broker order ticket. It is read-only and per-user.
+// last EA result reported a broker order ticket. It is per-user. Rows ARX can
+// cancel / modify (LIVE_ACKNOWLEDGED) say so (`controllable`); a broker-
+// confirmed modify from ARX overlays its price / SL / TP (livePendingControl.ts).
 //
 // What "working" means here, and why each exclusion is honest:
 //   • status LIVE_FILLED / LIVE_ACKNOWLEDGED / LIVE_PARTIALLY_FILLED with a broker
@@ -17,10 +19,11 @@
 // screen can say the order may since have filled, expired or been removed in
 // the terminal.
 import { db, arxLiveCommandsTable } from "@workspace/db";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 
 import { WORKING_PENDING_STATUSES, selectWorkingPendingOrders, type LivePendingOrderView } from "./livePendingOrdersView.js";
+import { MODIFY_LIVE_PENDING_ORDER, PENDING_CONTROL_COMMAND_TYPES, PENDING_CONTROL_IN_FLIGHT_STATUSES, currentPendingLevels } from "./livePendingControl.js";
 export { WORKING_PENDING_STATUSES, selectWorkingPendingOrders, type LivePendingOrderView };
 
 /** The user's working live pending orders (last 30 days of ledger rows). */
@@ -57,5 +60,36 @@ export async function listMyLivePendingOrders(userId: number, nowMs: number = Da
     );
     for (const p of pos) if (p.brokerTicket) positionTickets.add(String(p.brokerTicket));
   }
-  return selectWorkingPendingOrders(recent, positionTickets, nowMs);
+  // Cancel / modify from ARX: the latest broker-confirmed modify of each order
+  // (its tracked levels) and any control still in flight.
+  const ids = recent.map((r) => r.commandId);
+  const latestModify = new Map<string, { price: number | null; stopLoss: number | null; takeProfit: number | null }>();
+  const inFlight = new Set<string>();
+  if (ids.length > 0) {
+    const target = sql<string>`${arxLiveCommandsTable.payload} ->> 'targetCommandId'`;
+    const controls = await db.select({
+      commandType: arxLiveCommandsTable.commandType,
+      status: arxLiveCommandsTable.status,
+      payload: arxLiveCommandsTable.payload,
+      target,
+    }).from(arxLiveCommandsTable)
+      .where(and(
+        eq(arxLiveCommandsTable.userId, userId),
+        inArray(arxLiveCommandsTable.commandType, [...PENDING_CONTROL_COMMAND_TYPES]),
+        inArray(target, ids),
+      ))
+      .orderBy(desc(arxLiveCommandsTable.id))
+      .limit(500);
+    const byId = new Map(recent.map((r) => [r.commandId, r]));
+    for (const c of controls) {
+      if (!c.target) continue;
+      if ((PENDING_CONTROL_IN_FLIGHT_STATUSES as readonly string[]).includes(c.status)) inFlight.add(c.target);
+      const orig = byId.get(c.target);
+      if (orig && c.commandType === MODIFY_LIVE_PENDING_ORDER && c.status === "LIVE_FILLED" && !latestModify.has(c.target)) {
+        const lv = currentPendingLevels(orig, { payload: c.payload });
+        latestModify.set(c.target, { price: lv.price, stopLoss: lv.stopLoss, takeProfit: lv.takeProfit });
+      }
+    }
+  }
+  return selectWorkingPendingOrders(recent, positionTickets, nowMs, { latestModify, inFlight });
 }

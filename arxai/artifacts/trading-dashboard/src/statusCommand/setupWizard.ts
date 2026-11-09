@@ -43,7 +43,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Understand the current ARX mode",
       shortExplanation: "ARX runs in demo, simulator, broker-readonly, or live mode. The current mode is shown on every page.",
       currentStatus: known ? "complete" : "attention",
-      statusText: `Current mode: ${mode.toUpperCase()}`,
+      statusText: !known && ctx.executionPostureUnmeasured
+        ? "Current mode: not read by this step. Read your account mode from the page header."
+        : `Current mode: ${mode.toUpperCase()}`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain my current ARX mode",
       completionCondition: "You can read the current mode from the page header.",
@@ -57,8 +59,14 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-locks",
       title: "Review active safety locks",
       shortExplanation: "Safety locks are protective. They keep ARX from sending real orders until every gate is verified server-side.",
-      currentStatus: locks.length > 0 ? "info" : "attention",
-      statusText: locks.length > 0 ? `Active locks: ${locks.join(", ")}` : "No safety locks detected from the client view.",
+      currentStatus: ctx.executionPostureUnmeasured ? "attention" : locks.length > 0 ? "info" : "attention",
+      statusText: ctx.executionPostureUnmeasured
+        ? `The live-trading, broker-execution and read-only locks are not read by this page (the diagnostic summary reports fixed values).${locks.length > 0 ? ` Bridge state: ${locks.join(", ")}.` : ""}`
+        : locks.length > 0
+        ? `Active locks: ${locks.join(", ")}`
+        : ctx.liveTradingDisabled === null
+          ? "Safety locks could not be read from the server."
+          : "No safety locks detected from the client view.",
       assistantQuestion: "Explain my active safety locks",
       completionCondition: "You can name the locks and why each is on.",
     });
@@ -66,14 +74,17 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
 
   // 3. Check simulator/demo mode
   {
-    const ok = ctx.paperOnly || ctx.simulatorMode;
+    const unread = ctx.paperOnly === null && ctx.simulatorMode === null;
+    const ok = ctx.paperOnly === true || ctx.simulatorMode === true;
     const x = r("/demo-trading", "Demo Trading");
     steps.push({
       id: "wz-demo-sim",
       title: "Check simulator / demo mode",
       shortExplanation: "Simulator/demo is the safe practice surface. Nothing reaches a real broker.",
       currentStatus: ok ? "complete" : "attention",
-      statusText: ok ? "Demo/simulator mode is active." : "Demo/simulator not detected.",
+      statusText: ok ? "Demo/simulator mode is active."
+        : unread && ctx.executionPostureUnmeasured ? "Not read: the diagnostic summary only describes your own MT5 bridge. Your account mode in the page header is the authority."
+        : unread ? "Demo/simulator mode could not be read from the server." : "Demo/simulator not detected.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I practice in demo?",
       completionCondition: "Demo Trading is open and you've reviewed the execution controls.",
@@ -89,7 +100,9 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       title: "Check MT5 bridge status",
       shortExplanation: "The bridge is deferred by default. Even if connected, broker stays read-only until execution is cleared server-side.",
       currentStatus: mode === "connected" ? "complete" : mode === "deferred" ? "info" : "attention",
-      statusText: `Bridge mode: ${mode}`,
+      statusText: mode === "unknown"
+        ? ctx.bridge ? "Bridge state could not be read (the server could not read the EA connection)." : "Bridge state could not be read."
+        : `Bridge mode: ${mode}`,
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain the MT5 bridge status",
       completionCondition: "You know the current bridge mode and what it means.",
@@ -104,8 +117,10 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-heartbeat",
       title: "Check heartbeat",
       shortExplanation: "A recent EA heartbeat is the only proof the bridge is alive.",
-      currentStatus: present ? "complete" : ctx.mt5Deferred ? "info" : "blocked",
-      statusText: present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
+      currentStatus: present === null ? "attention" : present ? "complete" : ctx.mt5Deferred ? "info" : "blocked",
+      statusText: present === null
+        ? ctx.bridge?.bridgeMode === "unknown" ? "Heartbeat not checked — the EA connection could not be read." : "Heartbeat status could not be read from the server."
+        : present ? `Heartbeat present (${ctx.heartbeatAgeSeconds ?? "?"}s ago)` : ctx.mt5Deferred ? "Heartbeat not expected — bridge deferred." : "No recent heartbeat.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Where do I check the heartbeat?",
       completionCondition: "You've opened MT5 Status and confirmed the heartbeat timestamp.",
@@ -119,8 +134,12 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-broker-mode",
       title: "Review broker mode",
       shortExplanation: "Broker is read-only by default. You can see balance/positions, but ARX cannot send orders.",
-      currentStatus: ctx.brokerReadOnly ? "info" : "attention",
-      statusText: ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
+      currentStatus: ctx.brokerReadOnly === true ? "info" : "attention",
+      statusText: ctx.brokerReadOnly === null
+        ? ctx.executionPostureUnmeasured
+          ? "Broker mode is not read by this page (the diagnostic summary reports a fixed read-only value)."
+          : "Broker mode could not be read from the server."
+        : ctx.brokerReadOnly ? "Broker is read-only." : "Broker is NOT read-only — investigate.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain broker read-only mode",
       completionCondition: "You understand what read-only allows and prevents.",
@@ -164,8 +183,12 @@ export function buildSetupWizard(ctx: RuntimeContext): WizardStep[] {
       id: "wz-emergency",
       title: "Confirm Emergency Stop behavior",
       shortExplanation: "The kill switch halts everything — demo, simulator, and live. It always wins.",
-      currentStatus: ctx.emergencyStopActive ? "blocked" : "info",
-      statusText: ctx.emergencyStopActive ? "Emergency Stop is ENGAGED." : "Emergency Stop not engaged.",
+      currentStatus: ctx.emergencyStopActive === true ? "blocked" : ctx.emergencyStopActive === false ? "info" : "attention",
+      statusText: ctx.emergencyStopActive === true
+        ? "Emergency Stop is ENGAGED."
+        : ctx.emergencyStopActive === false
+          ? "Emergency Stop not engaged."
+          : "Emergency Stop state not checked here — open the Emergency page to read it.",
       pageRoute: x.route, pageLabel: x.label,
       assistantQuestion: "Explain Emergency Stop",
       completionCondition: "You've read the Emergency procedure for engaging and clearing.",

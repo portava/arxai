@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { EdgeBehaviourBasis } from "./edgeBehaviourBasis";
 import type { EdgeReportStatus } from "./edgeReportStatus";
 
 export interface EdgeReport {
@@ -34,4 +35,5 @@ export interface EdgeReport {
   status: EdgeReportStatus;
   aiSummary: string;
   createdAt: string;
+  behaviourBasis?: EdgeBehaviourBasis;
 }

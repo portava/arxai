@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 import {
   computeHeatVerdict,
   type HeatVerdictInput,
@@ -212,4 +213,54 @@ test("advisory-only boundary: verdict carries advisoryOnly:true and NO execution
   ]) {
     assert.ok(!keys.includes(banned), `verdict must not expose ${banned}`);
   }
+});
+
+
+// ── Owner screenshot 2026-10-27 (heat list on /market-scanner) ───────────────
+// "Volatility 75 Index … Price 4m ago · News 2m ago · Calendar never" and a
+// green "Global Calm" built from headlines alone with the calendar gap hidden.
+
+test("synthetic verdict claims no news or calendar time and carries the shared synthetic sentence", () => {
+  const v = computeHeatVerdict(
+    input({ scope: "synthetic", key: "V75", displayName: "Volatility 75 Index",
+      // Even if a caller passed connected sources, a synthetic verdict never uses them.
+      news: connectedNews, calendar: connectedCalendar }),
+  );
+  assert.equal(v.newsUpdatedAt, null);
+  assert.equal(v.calendarUpdatedAt, null);
+  assert.ok(v.reason.includes(SYNTHETIC_EVENT_RISK_LABEL));
+  assert.ok(v.reason.toLowerCase().includes("price action only"));
+});
+
+test("a disconnected source never carries a 'checked at' time (view filter / provider down)", () => {
+  const v = computeHeatVerdict(input({
+    news: { ...connectedNews, connected: false },
+    calendar: { ...connectedCalendar, connected: false },
+  }));
+  assert.equal(v.newsUpdatedAt, null);
+  assert.equal(v.calendarUpdatedAt, null);
+  assert.equal(v.newsSource.updatedAt, null);
+  assert.equal(v.calendarSource.updatedAt, null);
+});
+
+test("global, headlines connected, calendar not configured, no price → partial (never 'price only'), names the calendar gap", () => {
+  const v = computeHeatVerdict(input({
+    scope: "global", key: "global", displayName: "Global Markets",
+    price: noPrice, news: { ...connectedNews, riskScore: 0.05 }, calendar: missingCalendar,
+  }));
+  assert.equal(v.intensity, "calm");
+  assert.equal(v.sourceStatus, "partial");
+  assert.notEqual(v.sourceStatus, "price_only");
+  assert.equal(v.confidence, "low");
+  assert.match(v.reason, /headlines only \(no price feed\)/);
+  assert.ok(v.reason.includes("Calendar unavailable."));
+  assert.equal(v.newsUpdatedAt, connectedNews.updatedAt);
+  assert.equal(v.calendarUpdatedAt, null);
+});
+
+test("price + headlines with the calendar missing is partial, not 'price only'", () => {
+  const v = computeHeatVerdict(input({ scope: "symbol", key: "EURUSD", calendar: missingCalendar }));
+  assert.equal(v.sourceStatus, "partial");
+  assert.match(v.reason, /from price and headlines only/);
+  assert.ok(v.reason.includes("Calendar unavailable."));
 });

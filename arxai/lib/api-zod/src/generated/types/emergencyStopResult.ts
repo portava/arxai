@@ -5,9 +5,13 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { EmergencyStopResultScope } from "./emergencyStopResultScope";
 
 export interface EmergencyStopResult {
   success: boolean;
   message: string;
+  /** Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted. */
   closedTrades: number;
+  /** PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch. */
+  scope?: EmergencyStopResultScope;
 }

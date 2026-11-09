@@ -37,7 +37,7 @@ import {
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
-import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { heartbeatAgeSecondsFrom, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { loadPlatformSettings, platformStopReport, platformStopWith, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { getMyArming } from "../lib/live/liveArming.js";
@@ -169,12 +169,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         brokerName: pinnedBridge.brokerName,
         eaVersion: pinnedBridge.eaVersion,
         lastHeartbeatAt: pinnedBridge.lastHeartbeat?.toISOString() ?? null,
-        heartbeatAgeSeconds: pinnedBridge.lastHeartbeat
-          ? Math.max(
-              0,
-              Math.floor((Date.now() - new Date(pinnedBridge.lastHeartbeat).getTime()) / 1000),
-            )
-          : null,
+        // Shared heartbeat policy: a heartbeat dated after the server's clock
+        // has no verifiable age, so it is null, never 0.
+        heartbeatAgeSeconds: heartbeatAgeSecondsFrom(pinnedBridge.lastHeartbeat, Date.now()),
         readOnlyMode: pinnedBridge.readOnlyMode,
         tokenRevokedAt: pinnedBridge.tokenRevokedAt?.toISOString() ?? null,
         // Task #30 — EA host clock drift surface (admin-only). SEVERE drift
@@ -255,6 +252,8 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable);
 
+  const installStop = await platformStopWith(sw);
+
   await tryAudit(req, {
     adminId: admin.id,
     adminRole: admin.role,
@@ -276,7 +275,7 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       brokerCredentialsOnServer: false,
     },
     globalSwitches: {
-      // Effective master switch: env OR DB-armed. Treat THIS as the "is
+      // Effective master switch: env AND DB-armed. Treat THIS as the "is
       // live execution actually enabled?" signal for downstream logic.
       serverMasterSwitchEnabled: masterSwitch,
       // Source breakdown so the UI can distinguish "armed by admin via UI"
@@ -296,8 +295,13 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       killSwitchEngagedAt: sw.emergencyStop.engagedAt,
       killSwitchReason: sw.emergencyStop.reason,
       // Either install-wide stop (platformStop()); the fields above name the
-      // platform emergency stop this handler writes.
-      ...platformStopReport(await platformStopWith(sw)),
+      // platform emergency stop this handler writes. platformStopReadable is
+      // false when either stop could not be read (it then counts as engaged);
+      // platformStopDetail names each engaged source's stored reason, "state
+      // unreadable" / "settings missing" when it was not read.
+      ...platformStopReport(installStop),
+      platformStopReadable: installStop.readable,
+      platformStopDetail: installStop.detail,
     },
     liveAccount: {
       pinnedBridge: bridgeForUi,
@@ -378,15 +382,22 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       "admin_live_shared_readiness_failed_safely",
     );
     const envOnly = (() => { try { return liveBrokerExecutionEnabled(); } catch { return false; } })();
+    // Every value below is a fail-closed stand-in, NOT a reading: the kill
+    // switch reads "engaged", counts and exposure read 0 so older consumers
+    // never see "safe". `readable: false` on each section (and `degraded`)
+    // tells a client to show "could not be loaded" instead of these values.
     res.status(200).json({
       ok: true,
       degraded: true,
       degradedReason: "READINESS_QUERY_FAILED",
       message:
-        "Live Shared readiness data is temporarily unavailable. Live dispatch remains blocked while readiness cannot be evaluated.",
+        "Live Shared readiness could not be loaded (a server query failed). The kill switch, arm state, bridge, approved users and open exposure are unknown, not zero. This report does not block or allow live dispatch; each dispatch runs its own gates.",
       architecture: { model: "EA_PULL", brokerCredentialsOnServer: false },
       globalSwitches: {
-        serverMasterSwitchEnabled: envOnly,
+        readable: false,
+        // Effective switch = env AND the operator arm, and the arm was not
+        // read: never report it on (the env value alone is below).
+        serverMasterSwitchEnabled: false,
         serverMasterSwitchEnvOnly: envOnly,
         liveBrokerExecutionArmedDb: false,
         liveBrokerExecutionArmedAt: null,
@@ -404,8 +415,11 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         platformStopEngaged: true,
         platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
         platformStopReason: null,
+        platformStopReadable: false,
+        platformStopDetail: { platform_emergency_stop: "state unreadable", safety_core_kill_switch: "state unreadable" },
       },
       liveAccount: {
+        readable: false,
         pinnedBridge: null,
         detector: { detected: false, primaryReason: "READINESS_DEGRADED" },
         detectedAccountNumber: null,
@@ -413,8 +427,8 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         detectedServerName: null,
         gate: { decision: "BLOCKED", primaryReason: "READINESS_DEGRADED" },
       },
-      approvedUsers: { approvedCount: 0, activeCount: 0, rows: [] },
-      openExposure: { totalOpenLots: 0, totalFloatingPlUsd: 0, openPositionsCount: 0 },
+      approvedUsers: { readable: false, approvedCount: 0, activeCount: 0, rows: [] },
+      openExposure: { readable: false, totalOpenLots: 0, totalFloatingPlUsd: 0, openPositionsCount: 0 },
       recentCommands: [],
       recentAudit: [],
       arxLiveCommandsCount: 0,
@@ -498,6 +512,12 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
         (arming?.killSwitchEngaged ?? false) || (await platformStopWith(sw)).engaged,
       bridgeAccountType: detector.bridge.accountType ?? null,
       bridgeHeartbeatAgeSec: detector.bridge.heartbeatAgeSec,
+      // Display only: lets gate 7 say a heartbeat with no age is dated after
+      // the server's clock rather than "No heartbeat received yet".
+      bridgeLastHeartbeatAt:
+        detector.bridge.lastHeartbeat && Number.isFinite(detector.bridge.lastHeartbeat.getTime())
+          ? detector.bridge.lastHeartbeat.toISOString()
+          : null,
       bridgeEaVersion: detector.bridge.eaVersion,
       bridgeEnableLiveExecution: detector.bridge.eaInputs.enableLiveExecution,
       bridgeReadOnlyMode: detector.bridge.eaInputs.readOnlyMode,

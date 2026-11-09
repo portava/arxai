@@ -20,7 +20,10 @@ import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { getUnreadCount } from "../alerts/alertManager.js";
 import { computeFleetHealth } from "../selfTrade/selfTradeSupervisor.js";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
-import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
+import {
+  getCachedIntelligenceContext,
+  type ChartIntelligenceState,
+} from "../data/chart/chartIntelligence.js";
 import { buildChartHandshake } from "../data/chart/chartHandshake.js";
 
 export interface BuildAaciSnapshotInput {
@@ -62,6 +65,20 @@ function mapNewsRisk(raw: unknown): AaciNewsRiskLevel | undefined {
 }
 
 /**
+ * Whether today's paper loss has reached the daily cap trader readiness
+ * reports (GovernorMetrics.dailyLossLimit). A cap of 0 is used up: readiness
+ * reports 0 for a percent cap on a paper risk-count equity at or below 0,
+ * where the Risk Governor refuses every new trade. It is never read as "no
+ * cap". undefined = no daily cap is enforced (null).
+ */
+export function dailyLossHitOf(m: { dailyLossLimit: number | null; dailyPnl: number }): boolean | undefined {
+  const cap = m.dailyLossLimit;
+  if (cap == null) return undefined;
+  if (cap <= 0) return true;
+  return m.dailyPnl <= -Math.abs(cap);
+}
+
+/**
  * Build the AACI Shared Truth Snapshot for a user + symbol context. Fail-open
  * per source. Pure-ish: the only side effects are read-only source reads.
  */
@@ -90,19 +107,28 @@ export async function buildAaciSnapshot(
   // ── Risk Governor (R + risk gate inputs) ──────────────────────────────────
   try {
     const gov = await evaluateReadiness({ persist: false, userId });
-    const lossCap = gov.metrics.dailyLossLimit;
-    const dailyLossHit =
-      lossCap != null && lossCap > 0
-        ? gov.metrics.dailyPnl <= -Math.abs(lossCap)
-        : undefined;
+    const m = gov.metrics;
+    // Readiness could not read the trader's paper book (today's loss count
+    // and open positions are placeholder 0s), the risk-count equity (a
+    // percent cap has no value) or the limits themselves.
+    const unreadParts = m.paperRiskCountUnreadable ?? [];
+    const bookUnread = unreadParts.includes("paper_book");
+    const lossFactsUnread = unreadParts.length > 0 || m.riskLimitsUnreadable === true;
+    // A reached cap stands (a used-up 0 cap, or a read count past the cap: a
+    // placeholder 0 count never reaches a cap above 0); anything else on
+    // unread facts is unknown, never "under the cap".
+    const hit = dailyLossHitOf(m);
+    const dailyLossHit = hit === true ? true : lossFactsUnread ? undefined : hit;
     snapshot.risk = {
       hardPass: gov.hardBlocks.length === 0,
       riskMode: gov.overallStatus,
       dailyLossHit,
+      ...(lossFactsUnread ? { lossFactsUnread: true } : {}),
       marginHealth: clamp100(gov.readinessScore),
       lastUpdated: gov.generatedAt,
     };
-    snapshot.positions.appOpenCount = gov.metrics.openPaperTrades;
+    // An unread paper book's open count is a placeholder 0: leave it unset.
+    if (!bookUnread) snapshot.positions.appOpenCount = m.openPaperTrades;
   } catch (err) {
     logger.warn({ err }, "aaci: risk governor read failed");
     unavailable.push("RiskGovernor");
@@ -147,17 +173,7 @@ export async function buildAaciSnapshot(
         getCachedIntelligenceContext(symbol, tf, 200);
       if (cached) {
         const { state } = cached;
-        snapshot.smartChart = {
-          bias: state.gateOutput.confidentReadAllowed
-            ? (state.decisionState.bias === "bullish"
-                ? "bullish"
-                : state.decisionState.bias === "bearish"
-                  ? "bearish"
-                  : "neutral")
-            : undefined,
-          structureScore: state.gateOutput.chartTruthScore,
-          lastUpdated: state.lastUpdated,
-        };
+        snapshot.smartChart = smartChartFromState(state);
         snapshot.chartHandshake = buildChartHandshake(
           state.gateOutput,
           state.chartTruthScore,
@@ -241,6 +257,54 @@ export async function buildAaciSnapshot(
 
   if (unavailable.length > 0) snapshot.unavailableSystems = unavailable;
   return snapshot;
+}
+
+/**
+ * Map a cached chart-intelligence state onto the snapshot's smartChart block.
+ * Feed timestamps are observations of the feed itself — the newest live tick
+ * the server received and the newest CLOSED candle's close — never the time
+ * the cached state was computed (lastUpdated), so a state built a second ago
+ * over an hours-old feed cannot read as a fresh market feed.
+ */
+export function smartChartFromState(
+  state: ChartIntelligenceState,
+): NonNullable<AaciSharedTruthSnapshot["smartChart"]> {
+  const builtMs = Date.parse(state.lastUpdated);
+  const closedCloseTime = state.latestClosedCandle?.closeTime ?? null;
+  const closedCloseMs = closedCloseTime ? Date.parse(closedCloseTime) : NaN;
+  // A close time after the state was built is a forming bar's schedule, not
+  // an observation: leave the candle age unknown.
+  const lastCandleTime =
+    Number.isFinite(closedCloseMs) && (!Number.isFinite(builtMs) || closedCloseMs <= builtMs)
+      ? closedCloseTime ?? undefined
+      : undefined;
+  return {
+    bias: state.gateOutput.confidentReadAllowed
+      ? (state.decisionState.bias === "bullish"
+          ? "bullish"
+          : state.decisionState.bias === "bearish"
+            ? "bearish"
+            : "neutral")
+      : undefined,
+    structureScore: structureScoreFromState(state),
+    lastTickTime: state.truthState.lastTickTime ?? undefined,
+    lastCandleTime,
+    feedStale: state.stale,
+    lastUpdated: state.lastUpdated,
+  };
+}
+
+/**
+ * Market structure for Market Truth (M): the chart read's structure-clarity
+ * metric (trend regime + mapped levels). The Chart Truth score is data quality
+ * and freshness, not structure, so it is never used here. Structure is unknown
+ * (undefined, so M neither gains nor loses points for it) when the engines
+ * did not populate or the feed is not usable/current for analysis.
+ */
+function structureScoreFromState(state: ChartIntelligenceState): number | undefined {
+  if (!state.marketUnderstanding.populated || !state.aiUsable || state.stale) return undefined;
+  const metric = state.chartReadScore.subMetrics.find((m) => m.key === "structure_clarity");
+  return metric && Number.isFinite(metric.rawScore) ? clamp100(metric.rawScore) : undefined;
 }
 
 function clamp100(n: number): number {

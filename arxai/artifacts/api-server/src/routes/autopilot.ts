@@ -11,6 +11,7 @@ import {
   status, startSession, pauseSession, resumeSession, stopSession,
   runDecisionPipeline, listDecisions, listSessions, getSession,
   humanOverride, markDecision, getStateMachine, getSafetyLocks, generateReport,
+  autopilotPlatformStop,
 } from "../lib/autopilot.js";
 
 const router = Router();
@@ -19,7 +20,9 @@ const Mode = z.enum(["OFF", "OBSERVE_ONLY", "AI_ASSIST", "DEMO_AUTO_SIMULATOR", 
 
 // Autopilot is a SIMULATOR surface; every read is admin/OWNER-only so simulator
 // state never reaches a regular user as if it were live broker truth (Task #408).
-router.get("/autopilot/status", requireAdmin, (_req, res) => res.json(status()));
+// platformStop: the install-wide stops as they bear on the autopilot (display
+// only; the autopilot does not read them, the pre-trade Risk Governor does).
+router.get("/autopilot/status", requireAdmin, async (_req, res) => res.json({ ...status(), platformStop: await autopilotPlatformStop() }));
 router.get("/autopilot/decisions", requireAdmin, (req, res) => res.json({ decisions: listDecisions(Math.min(Number(req.query.limit) || 100, 500)), dataSource: "SIMULATOR" }));
 router.get("/autopilot/state-machine", requireAdmin, (_req, res) => res.json(getStateMachine()));
 router.get("/autopilot/safety-locks", requireAdmin, (_req, res) => res.json({ locks: getSafetyLocks() }));

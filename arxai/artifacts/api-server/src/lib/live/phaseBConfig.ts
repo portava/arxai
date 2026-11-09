@@ -79,6 +79,12 @@ export function buildLiveIdempotencyKey(args: {
   takeProfit?: number | null;
   /** Defaults to current minute. Override only in tests. */
   minuteBucket?: number;
+  /**
+   * Extra identity for commands whose target is not in the fields above (a
+   * pending-order cancel / modify names its order). Absent = the key is
+   * byte-identical to before.
+   */
+  discriminator?: string;
 }): string {
   const bucket = args.minuteBucket ?? Math.floor(Date.now() / 60_000);
   const fields = [
@@ -89,6 +95,7 @@ export function buildLiveIdempotencyKey(args: {
     args.stopLoss != null ? args.stopLoss.toFixed(5) : "_",
     args.takeProfit != null ? args.takeProfit.toFixed(5) : "_",
     bucket,
+    ...(args.discriminator ? [args.discriminator] : []),
   ].join("|");
   return createHash("sha256").update(fields).digest("hex").slice(0, 32);
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { EleanorWatchesStrip, describeWatch } from "./EleanorWatchesStrip";
+import { EleanorWatchesStrip, describeWatch, describeFakeoutShift } from "./EleanorWatchesStrip";
 import type { EleanorWatchView } from "@/lib/instantTradeRouter";
 
 const monitor: EleanorWatchView = {
@@ -81,5 +81,12 @@ describe("EleanorWatchesStrip — fakeout authority", () => {
     render(<EleanorWatchesStrip />);
     expect((await screen.findByTestId("eleanor-watch-5-fakeout")).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByTestId("eleanor-watch-5-fakeout-count").textContent).toBe("· 2 shifts");
+  });
+});
+
+describe("describeFakeoutShift", () => {
+  it("says what was sent, or why it was refused", () => {
+    expect(describeFakeoutShift({ at: "bad", toStopLoss: 1.0935, toTakeProfit: null, ok: true, blocked: null })).toBe("Last fakeout shift: stop → 1.0935 (sent; broker confirms)");
+    expect(describeFakeoutShift({ at: "bad", toStopLoss: null, toTakeProfit: 1.09, ok: false, blocked: "INVALID_STOPS" })).toBe("Fakeout shift refused: target → 1.09 (INVALID_STOPS)");
   });
 });

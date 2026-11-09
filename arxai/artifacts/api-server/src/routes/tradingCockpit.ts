@@ -70,9 +70,13 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     safeCall("unreadAll", () => getUnreadCount(userId), 0),
   ]);
 
-  // Open paper trades from EE (read-only).
-  const openTrades = await safeCall("openPaperTrades", async () => {
-    return db.select({
+  // Open paper trades from EE (read-only). paper_orders.profitLoss is written
+  // only when an order closes (its column default is 0) and mark-to-market
+  // folds floating P&L into the account's equity, not into the order row, so
+  // an open order's P&L is not measured: it is returned as null, never as the
+  // stored 0. A failed read is UNAVAILABLE, never an empty book.
+  const openTradesRead = await safeCall("openPaperTrades", async () => {
+    const rows = await db.select({
       id: paperOrdersTable.id,
       symbol: paperOrdersTable.symbol,
       direction: paperOrdersTable.direction,
@@ -84,7 +88,16 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
       openedAt: paperOrdersTable.openedAt,
       profitLoss: paperOrdersTable.profitLoss,
     }).from(paperOrdersTable).where(and(eq(paperOrdersTable.userId, userId), eq(paperOrdersTable.status, "OPEN"))).orderBy(desc(paperOrdersTable.openedAt)).limit(20);
-  }, []);
+    return rows.map(({ profitLoss: _storedDefault, openedAt, ...o }) => ({
+      ...o,
+      openedAt: openedAt ? new Date(openedAt).toISOString() : null,
+      profitLoss: null,
+      profitLossStatus: "NOT_MEASURED" as const,
+    }));
+  }, null);
+  const openTrades = openTradesRead ?? [];
+  const openPaperTradesStatus = openTradesRead ? "LOADED" as const : "UNAVAILABLE" as const;
+  const OPEN_PAPER_TRADES_NOTE = "Floating P&L is not tracked per open order: the simulator adds it to the paper account's equity only. Each order's P&L is recorded when it closes.";
 
   // Today's performance (light aggregate from paper orders closed today).
   const todayPerformance = await safeCall("todayPerformance", async () => {
@@ -198,6 +211,8 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
     } : null,
     todayPerformance,
     openPaperTrades: openTrades,
+    openPaperTradesStatus,
+    openPaperTradesNote: OPEN_PAPER_TRADES_NOTE,
     coachSummary,
     notifications: {
       unreadAll,

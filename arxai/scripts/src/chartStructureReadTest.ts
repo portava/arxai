@@ -127,7 +127,11 @@ function mk(closes: number[], spread = 0.4): Candle[] {
 {
   const up = mk(Array.from({ length: 60 }, (_, i) => 100 + i));
   const okTrend = quickTrend(up) === "Bullish";
-  const okHtf = higherTimeframeOf("4h") === "1d" && higherTimeframeOf("1d") === "1w";
+  // Canonical HTF codes (the chart layer and the HTF fetch are canonical); a
+  // timeframe is never its own higher timeframe.
+  const okHtf =
+    higherTimeframeOf("4h") === "D1" && higherTimeframeOf("1d") === "W1" &&
+    higherTimeframeOf("M1") === "M15" && higherTimeframeOf("1w") === null;
   record("helpers: quickTrend + higherTimeframeOf", okTrend && okHtf);
 }
 

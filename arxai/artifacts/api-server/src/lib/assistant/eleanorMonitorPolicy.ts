@@ -51,6 +51,8 @@ export interface MonitorAlertState {
   fakeoutAuthority: boolean;
   fakeoutAdjustments: FakeoutAdjustmentRecord[];
   lastFakeoutAdjustAt: string | null;
+  /** Open time (epoch ms) of the bar the last fakeout shift acted on. */
+  lastFakeoutBarAt: number | null;
   /** The position's stop loss when the monitor first saw it; fakeout widening
    *  is capped against THIS level so repeated shifts never compound. */
   originalStopLoss: number | null;
@@ -75,7 +77,7 @@ export interface FakeoutAdjustmentRecord {
 }
 
 export function emptyMonitorState(): MonitorAlertState {
-  return { version: 1, alerts: [], alertsSinceAck: 0, acknowledgedAt: null, lastAlertAt: null, keepCount: 0, fakeoutAuthority: false, fakeoutAdjustments: [], lastFakeoutAdjustAt: null, originalStopLoss: null, quietEvaluations: 0, closeAttempts: 0, nextCloseAttemptAt: null };
+  return { version: 1, alerts: [], alertsSinceAck: 0, acknowledgedAt: null, lastAlertAt: null, keepCount: 0, fakeoutAuthority: false, fakeoutAdjustments: [], lastFakeoutAdjustAt: null, lastFakeoutBarAt: null, originalStopLoss: null, quietEvaluations: 0, closeAttempts: 0, nextCloseAttemptAt: null };
 }
 
 export function parseMonitorState(raw: string | null | undefined): MonitorAlertState {
@@ -96,6 +98,7 @@ export function parseMonitorState(raw: string | null | undefined): MonitorAlertS
         ? src.fakeoutAdjustments.filter((a): a is FakeoutAdjustmentRecord => !!a && typeof a === "object" && typeof (a as FakeoutAdjustmentRecord).at === "string")
         : [],
       lastFakeoutAdjustAt: typeof src.lastFakeoutAdjustAt === "string" ? src.lastFakeoutAdjustAt : null,
+      lastFakeoutBarAt: typeof src.lastFakeoutBarAt === "number" && Number.isFinite(src.lastFakeoutBarAt) ? src.lastFakeoutBarAt : null,
       originalStopLoss: typeof src.originalStopLoss === "number" && Number.isFinite(src.originalStopLoss) ? src.originalStopLoss : null,
       quietEvaluations: Number.isInteger(src.quietEvaluations) && (src.quietEvaluations as number) >= 0 ? (src.quietEvaluations as number) : 0,
       closeAttempts: Number.isInteger(src.closeAttempts) && (src.closeAttempts as number) >= 0 ? (src.closeAttempts as number) : 0,
