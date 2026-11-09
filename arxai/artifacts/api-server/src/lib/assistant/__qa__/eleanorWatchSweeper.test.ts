@@ -28,6 +28,23 @@ test("enabled by default; only an explicit false/0/off/no disables it", () => {
   for (const v of ["false", "0", "off", "no", " FALSE "]) assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: v }), false, v);
 });
 
+test("the pre-rename kill switch still disables the sweeper; an off under either name wins", () => {
+  for (const v of ["false", "0", "off", "no", " FALSE "]) {
+    assert.equal(isSweeperEnabled({ ARX_RUBY_WATCH_SWEEPER_ENABLED: v }), false, `legacy ${v}`);
+    assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: "true", ARX_RUBY_WATCH_SWEEPER_ENABLED: v }), false, `legacy ${v} beats new true`);
+    assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: v, ARX_RUBY_WATCH_SWEEPER_ENABLED: "true" }), false, `new ${v} beats legacy true`);
+  }
+  assert.equal(isSweeperEnabled({ ARX_RUBY_WATCH_SWEEPER_ENABLED: "true" }), true);
+});
+
+test("app.ts starts the sweeper only outside a preview-safe start", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../../../app.ts", import.meta.url), "utf8");
+  const calls = src.split("\n").filter((l) => /startEleanorWatchSweeper\(\)/.test(l) && !/^\s*\/\//.test(l));
+  assert.equal(calls.length, 1, "exactly one start call");
+  assert.match(calls[0]!, /^\s*if \(!isPreviewSafeStart\(\)\) startEleanorWatchSweeper\(\);/);
+});
+
 test("interval: default 10 s, floor 2 s, garbage → default", () => {
   assert.equal(sweeperIntervalMs({}), ELEANOR_SWEEPER_DEFAULT_INTERVAL_MS);
   assert.equal(sweeperIntervalMs({ ARX_ELEANOR_WATCH_SWEEPER_INTERVAL_MS: "30000" }), 30_000);

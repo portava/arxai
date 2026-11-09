@@ -213,8 +213,10 @@ startDemoCommandExpirySweep();
 // (conditional entry/close, reversal alerts, 3-alert executive close) inside each
 // owner's feed scope. Per-user AI_ASSISTED authority + permissions are re-read at
 // fire time; every dispatch runs the full instant-trade gate chain. Kill switch:
-// ARX_ELEANOR_WATCH_SWEEPER_ENABLED=false.
-startEleanorWatchSweeper();
+// ARX_ELEANOR_WATCH_SWEEPER_ENABLED=false (the pre-rename name is honoured too).
+// Like the other autonomous workers it never starts in a preview-safe start: it
+// can dispatch trades, so a paused preview must not evaluate armed watches.
+if (!isPreviewSafeStart()) startEleanorWatchSweeper();
 
 // ── Phase 22D — JSON-only error handler ───────────────────────────────
 // Guarantees the frontend never receives an HTML stack trace. Catches
