@@ -74,6 +74,21 @@ const RenderEvidenceBody = z.object({
   droppedBars: z.number().int().min(0).max(100_000),
   priceRoundTripOk: z.boolean(),
   timeRoundTripOk: z.boolean().nullable(),
+  visibleBarsRoundTripped: z.number().int().min(0).max(100_000),
+  drawings: z.object({
+    checked: z.number().int().min(0).max(10_000),
+    failed: z.number().int().min(0).max(10_000),
+    unplaced: z.number().int().min(0).max(10_000),
+    failedIds: z.array(z.string().max(128)).max(20),
+  }).strict(),
+  projections: z.array(z.object({
+    previewId: z.string().min(1).max(128),
+    symbol: z.string().trim().min(1).max(32),
+    timeframe: z.string().max(8),
+    role: z.string().min(1).max(32),
+    price: z.number().finite(),
+    axisRoundTripOk: z.boolean().nullable(),
+  }).strict()).max(40),
 }).strict();
 
 router.post("/me/chart/render-evidence", requireUser, async (req, res): Promise<void> => {

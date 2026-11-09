@@ -17,13 +17,14 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   analyticsSnapshotsTable,
   db,
   paperAccountsTable,
   paperOrdersTable,
   paperTradeEventsTable,
+  safetyCoreTable,
   postTradeDebriefsTable,
   tradesTable,
   userRiskEventsTable,
@@ -42,6 +43,7 @@ const SYMBOL = "QAPBUSD";
 const SYMBOL_2 = "QAPCUSD"; // a second order on the same symbol and side is a governor duplicate
 const PX = 1.1;
 const u = { a: 0, b: 0 };
+let restoreSafety: () => Promise<void>;
 
 async function userIds(): Promise<number[]> {
   return (await db.select({ id: usersTable.id }).from(usersTable)
@@ -97,6 +99,16 @@ async function events(orderId: number) {
 }
 
 before(async () => {
+  const rows = await db.select().from(safetyCoreTable);
+  assert.ok(rows.length <= 1, "paper-book fixtures require unambiguous Safety Core state");
+  if (rows[0]) {
+    const old = rows[0];
+    await db.update(safetyCoreTable).set({ operationalMode: "PAPER_TRADING", globalState: "NORMAL", killSwitchEngaged: false }).where(eq(safetyCoreTable.id, old.id));
+    restoreSafety = async () => { await db.update(safetyCoreTable).set({ operationalMode: old.operationalMode, globalState: old.globalState, killSwitchEngaged: old.killSwitchEngaged }).where(eq(safetyCoreTable.id, old.id)); };
+  } else {
+    const [row] = await db.insert(safetyCoreTable).values({ operationalMode: "PAPER_TRADING", globalState: "NORMAL", killSwitchEngaged: false }).returning();
+    restoreSafety = async () => { await db.delete(safetyCoreTable).where(eq(safetyCoreTable.id, row!.id)); };
+  }
   await deleteFixtures();
   u.a = await seedUser(EMAIL_A);
   u.b = await seedUser(EMAIL_B);
@@ -104,6 +116,7 @@ before(async () => {
 
 after(async () => {
   await deleteFixtures();
+  await restoreSafety?.();
 });
 
 test("openPaperFill: governed OPEN with venue PAPER, books at the caller's fill price with its event", async () => {
@@ -268,7 +281,10 @@ test("settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only st
   const [rb] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, b.order.id));
   assert.equal(rb!.status, "CANCELLED");
   assert.equal(rb!.closedAt, null, "a rollback is not a close");
-  assert.deepEqual((await events(b.order.id)).map((e) => e.eventType), ["PLACED"]);
+  assert.deepEqual((await events(b.order.id)).map((e) => e.eventType), ["PLACED", "CANCELLED"]);
+  const evidence = await db.execute(sql`SELECT kind FROM vault_events WHERE linked_trade_id=${String(b.order.id)} AND kind IN ('PAPER_ORDER_CANCELLED','PAPER_ORDER_CLOSED')
+    UNION ALL SELECT event_type AS kind FROM audit_events WHERE payload->>'linkedTradeId'=${String(b.order.id)} AND event_type IN ('PAPER_ORDER_CANCELLED','PAPER_ORDER_CLOSED')`);
+  assert.deepEqual(evidence.rows.map(row => row.kind), ['PAPER_ORDER_CANCELLED', 'PAPER_ORDER_CANCELLED']);
 });
 
 test("Build EE monitor: stop/target hits settle through the venue; manual close is governed there", async () => {

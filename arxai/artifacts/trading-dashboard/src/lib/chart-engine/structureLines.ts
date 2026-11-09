@@ -63,6 +63,22 @@ export function clearStructureLines(
   }
 }
 
+/** True when applyStructureLines draws this line (two finite anchors on
+ * different bars). Render-fidelity uses the same rule to pair each drawn
+ * line series with the line it was asked to draw. */
+export function drawableStructureLine(ln: ChartStructureLine): boolean {
+  const a = ln.start, b = ln.end;
+  return Number.isFinite(a.time) && Number.isFinite(a.price) && Number.isFinite(b.time) && Number.isFinite(b.price) && a.time !== b.time;
+}
+
+/** The two points applyStructureLines hands the line series, ascending in time. */
+export function structureLinePoints(ln: ChartStructureLine): { time: number; value: number }[] {
+  const a = ln.start, b = ln.end;
+  return a.time < b.time
+    ? [{ time: a.time, value: a.price }, { time: b.time, value: b.price }]
+    : [{ time: b.time, value: b.price }, { time: a.time, value: a.price }];
+}
+
 /**
  * Clear any previous structural overlay, then draw the supplied lines/markers
  * onto `chart` (lines as their own diagonal series) + `candleSeries` (markers
@@ -85,13 +101,7 @@ export function applyStructureLines(
     // scale. lightweight-charts requires ascending, de-duplicated times.
     const a = ln.start;
     const b = ln.end;
-    if (
-      !Number.isFinite(a.time) || !Number.isFinite(a.price) ||
-      !Number.isFinite(b.time) || !Number.isFinite(b.price) ||
-      a.time === b.time
-    ) {
-      continue;
-    }
+    if (!drawableStructureLine(ln)) continue;
     const points: LineData<UTCTimestamp>[] =
       a.time < b.time
         ? [{ time: a.time as UTCTimestamp, value: a.price }, { time: b.time as UTCTimestamp, value: b.price }]
