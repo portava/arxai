@@ -116,12 +116,6 @@ type = "image"
 title = "/demo-trading — auth gate (demo still routes through auth)"
 
 [[outputs]]
-id = "46zdALT1kzyWIfrYGv7Rf"
-uri = "file://exports/arx-ai.zip"
-type = "unspecified"
-title = "ARX AI codebase (HEAD)"
-
-[[outputs]]
 id = "TkZ2C_pY5Mo6c1y3uUX37"
 uri = "file://.local/paper-inventory.md"
 type = "text"
@@ -182,22 +176,10 @@ type = "unspecified"
 title = "ARX AI Universal Agent EA — v1.54 (MQL5 source)"
 
 [[outputs]]
-id = "FjdRNcYWf_OLQn4xVB6Oz"
-uri = "file://arx-src.tar.gz"
-type = "unspecified"
-title = "ARX AI — source archive (arx-src.tar.gz)"
-
-[[outputs]]
 id = "IunsZrpH4EgZvO52ZP5d2"
 uri = "file://docs/ARX_DEEP_SYSTEM_AUDIT.md"
 type = "text"
 title = "ARX AI — Deep System Audit (graded, read-only)"
-
-[[outputs]]
-id = "sNa9pX8OT6N58OzVBKdLJ"
-uri = "file://arx-src.tar"
-type = "unspecified"
-title = "ARX AI — source archive (arx-src.tar)"
 
 [[outputs]]
 id = "rBe3MX2KMLGRT-FUrw0FX"
@@ -210,18 +192,6 @@ id = "eYebEjrv-Eeuya4QOBUgx"
 uri = "file://dist/arx-ai-project.tar.gz"
 type = "unspecified"
 title = "ARX AI Project (source archive)"
-
-[[outputs]]
-id = "U6k-YO8tYC04QxDxn4Y1t"
-uri = "file://exports/arx-ai-source.tar.gz"
-type = "unspecified"
-title = "ARX AI — source code (tar.gz)"
-
-[[outputs]]
-id = "jR78nQkhyP3huF6gYxVsG"
-uri = "file://exports/arx-ai-source-20260630-195234.tar.gz"
-type = "unspecified"
-title = "ARX AI — source tarball (current main)"
 
 [[outputs]]
 id = "4AviwzZrW6aR_1obBTTTe"

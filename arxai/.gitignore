@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Source dumps and pasted agent prompts do not belong in a public repo
+# (removed 2026-11-09; the history still holds them).
+/arx-src.tar
+/arx-src.tar.gz
+/exports/*.zip
+/exports/*.tar.gz
+/attached_assets/Pasted-*.txt
