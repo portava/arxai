@@ -33,7 +33,7 @@ import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
 import { routeStoredCandleHistory, STORED_HISTORY_SUB_PROVIDER } from "../storedCandleHistory.js";
-import { currentFeedScopeBridge } from "../feedScope.js";
+import { currentFeedScope, currentFeedScopeBridge, fixedFeedScope, runWithFeedScope } from "../feedScope.js";
 import { MULTI_BRIDGE_CONTENTION_NOTE, mt5SeriesContention, readMt5Quote } from "../providers/mt5Provider.js";
 import { getBrokerClockOffset } from "../../brokerHub/brokerClockOffset.js";
 import {
@@ -272,11 +272,19 @@ async function buildChartFeed(
   // is the pin, so the AI, scanner and chart banners built in one request
   // all describe the same series.
   const pinnedBridge = opts.bridgeConnectionId ?? (await currentFeedScopeBridge());
-  let result = await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: pinnedBridge });
-  if (pinnedBridge != null && result.primaryProvider !== "mt5_broker") {
-    const shared = await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null });
-    if (shared.primaryProvider === "mt5_broker") result = shared;
+  // A pinned read runs the chain once with the pin as its scope: the router
+  // tries this bridge's MT5 series, then the platform-wide MT5 series, then
+  // the other providers (marketDataRouter's scope fallback), instead of a
+  // second full chain after a miss.
+  let pinnedResult: Awaited<ReturnType<typeof routeCandles>> | null = null;
+  if (pinnedBridge != null) {
+    const pinScope = fixedFeedScope(pinnedBridge, currentFeedScope()?.userId ?? null);
+    await runWithFeedScope(pinScope, async () => { pinnedResult = await routeCandles(symbol, timeframe, limit); });
   }
+  let result = (pinnedResult as Awaited<ReturnType<typeof routeCandles>> | null)
+    ?? (await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null }));
+  // Nothing live answered: the display chart still shows the market up to its
+  // last stored bar (closed market or a down feed), labelled as stored.
   if (!result.ok && opts.storedHistoryFallback === true) {
     result = await routeStoredCandleHistory(symbol, timeframe, limit, result, { bridgeConnectionId: pinnedBridge });
   }
