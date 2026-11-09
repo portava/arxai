@@ -223,7 +223,11 @@ test("UPDATE, DELETE, TRUNCATE and owner deletion cannot silently remove ordinar
   for(const sql of ["UPDATE research_experiments_v1 SET result_hash=result_hash WHERE id=$1","DELETE FROM research_experiments_v1 WHERE id=$1"])
     await assert.rejects(pool.query(sql,[record.manifest.experimentId]),/RESEARCH_EVIDENCE_APPEND_ONLY/);
   await assert.rejects(pool.query("TRUNCATE research_experiments_v1"),/RESEARCH_EVIDENCE_APPEND_ONLY/);
-  await assert.rejects(pool.query("DELETE FROM users WHERE id=$1",[ctx.authenticatedOwnerId]),(e:any)=>e.code==="23503");
+  // The owner FK is ON DELETE RESTRICT: PostgreSQL 16 reports 23503
+  // (foreign_key_violation), 18 reports 23001 (restrict_violation). Either is
+  // the FK refusing the delete; anything else (or success) fails.
+  await assert.rejects(pool.query("DELETE FROM users WHERE id=$1",[ctx.authenticatedOwnerId]),
+    (e:any)=>(e.code==="23503"||e.code==="23001")&&e.constraint==="research_experiments_v1_owner_id_fkey");
 });
 test("read refuses self-consistent stored payload/hash changes whose engine semantic result disagrees",async()=>{
   const ctx=await context(),record=await store.record(ctx,request());
