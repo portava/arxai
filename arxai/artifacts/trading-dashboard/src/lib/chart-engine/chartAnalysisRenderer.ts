@@ -8,6 +8,7 @@ import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
+import { EMPTY_DRAWING_FIDELITY, type DrawingFidelity } from "./drawingRenderFidelity";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
 export type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Baseline">;
@@ -371,6 +372,10 @@ export class ChartAnalysisRenderer {
       this.drawingPrimitive.setSelection(this.selectedDrawing);
     }
     this.drawingPrimitive?.setData(this.drawings, candles);
+  }
+  /** Read back the painted drawings against their stored anchors (render evidence). */
+  measureDrawings(priceStep: number): DrawingFidelity {
+    return this.drawingPrimitive?.measureRender(priceStep) ?? { ...EMPTY_DRAWING_FIDELITY, unplaced: this.drawings.filter(d => !d.hidden).length };
   }
   selectDrawing(id: string | null): void { this.selectedDrawing = id; this.drawingPrimitive?.setSelection(id); }
   replacePriceSeries(price: PriceSeries, candles: ChartEngineCandle[]): void {

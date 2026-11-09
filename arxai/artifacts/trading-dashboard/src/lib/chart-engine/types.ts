@@ -141,9 +141,31 @@ export interface RenderFidelity {
   barsCompared: number;
   mismatchedBars: number;
   droppedBars: number;
+  /** price→pixel→price on the O/H/L/C (as drawn) of EVERY visible bar. */
   priceRoundTripOk: boolean;
-  /** null when the newest bar is off screen (not measured). */
+  /** time→pixel→time on every visible bar; null when no bar is on screen. */
   timeRoundTripOk: boolean | null;
+  /** Visible bars whose time and drawn prices were round-tripped. */
+  visibleBarsRoundTripped: number;
+  /** Drawings and engine-drawn lines read back against their stored anchors. */
+  drawings: RenderDrawingFidelity;
+  /** AI setup/prediction levels as the chart drew them, read back from the
+   * engine (the server checks each against the payload it issued). */
+  projections: RenderedProjection[];
+}
+
+export interface RenderDrawingFidelity { checked: number; failed: number; unplaced: number; failedIds: string[] }
+
+export interface RenderedProjection {
+  previewId: string;
+  symbol: string;
+  timeframe: string;
+  /** entry | sl | tp | tp2 | risk-zone:min | risk-zone:max | reward-zone:min | reward-zone:max */
+  role: string;
+  /** The price the engine holds for the drawn line (read back, not requested). */
+  price: number;
+  /** price→pixel→price on the drawn line; null when it is off the price scale. */
+  axisRoundTripOk: boolean | null;
 }
 
 export interface ChartEngineAdapter {
