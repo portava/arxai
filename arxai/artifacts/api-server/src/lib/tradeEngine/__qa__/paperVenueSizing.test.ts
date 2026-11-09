@@ -53,6 +53,10 @@ const fakeDb = {
     },
   }),
   delete: () => chain(() => []),
+  // Paper outcomes commit with their evidence in one transaction (the audit
+  // append takes an advisory lock first); the fake runs it on itself.
+  execute: async () => ({ rows: [] }),
+  transaction: async (fn: (tx: unknown) => unknown) => fn(fakeDb),
 };
 mock.module("@workspace/db", { namedExports: { ...realDb, db: fakeDb } });
 

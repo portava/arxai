@@ -20,8 +20,14 @@ mock.module("@workspace/db", {
     db: {
       insert: () => ({ values: () => ({ returning: async () => [{ id: 1 }] }) }),
       select: () => { throw new Error("not used"); },
+      // logRiskEvent writes its row (and, for governor decisions, the vault
+      // and audit mirrors) in one transaction; these events have no mirror.
+      transaction: async (fn: (tx: unknown) => unknown) => fn({
+        insert: () => ({ values: () => ({ returning: async () => [{ id: 1 }] }) }),
+      }),
     },
     userRiskSettingsTable: table(), userRiskEventsTable: table(), userRiskLimitsTable: table(),
+    vaultEventsTable: table(), auditEventsTable: table(),
   },
 });
 mock.module("../../notificationService.js", {

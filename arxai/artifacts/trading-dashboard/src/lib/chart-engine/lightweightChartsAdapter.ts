@@ -36,6 +36,7 @@ import type {
   ChartStructureLine,
   ChartStructureMarker,
   RenderFidelity,
+  RenderedProjection,
 } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
@@ -43,7 +44,9 @@ import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer
 import type { ChartStudy } from "./chartStudies";
 import { closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { heikinAshiBar, heikinAshiSuffix, hollowPoint } from "./heikinAshi";
-import { applyStructureLines, clearStructureLines } from "./structureLines";
+import { applyStructureLines, clearStructureLines, drawableStructureLine, structureLinePoints } from "./structureLines";
+import { heikinAshi } from "./heikinAshi";
+import { EMPTY_DRAWING_FIDELITY, mergeDrawingFidelity, type DrawingFidelity } from "./drawingRenderFidelity";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
@@ -128,6 +131,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private overlayTime: number | null = null;
   private lastPriceLine: IPriceLine | null = null;
   private overlayLines: IPriceLine[] = [];
+  // Which overlay (and which bound of a zone) each overlay price line draws, so
+  // measureRenderFidelity can report AI setup levels as the engine holds them.
+  private overlayLineMeta = new WeakMap<IPriceLine, { overlay: ChartOverlay; bound: "price" | "min" | "max" }>();
+  // Research lines as last requested (paired with researchSeries for read-back).
+  private researchLinesRaw: ChartStructureLine[] = [];
   private markersApi: { detach: () => void } | null = null;
   // Read-only structural overlays (detected trendlines/channels) live on their
   // OWN line series + marker channel, separate from trade-plan price lines, so
@@ -419,6 +427,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.structureMarkersApi = null;
     this.structureLinesRaw = [];
     this.researchSeries = [];
+    this.researchLinesRaw = [];
     this.structureMarkersRaw = [];
     this.structureSnappedTimes = [];
     this.container = null;
@@ -556,6 +565,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         && availableTimes?.has(o.startTime) && availableTimes.has(o.endTime)
           ? [{ id:o.id, start:{time:o.startTime,price:o.price}, end:{time:o.endTime,price:o.price}, color:overlayColor(o), dashed:true, width:1 }]
           : []);
+      this.researchLinesRaw = researchLines;
       this.researchSeries = applyStructureLines(this.chart, series, researchLines, [], {series:this.researchSeries,markersApi:null}).series;
     }
 
@@ -565,19 +575,19 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     }
     this.overlayLines = [];
 
-    const addLine = (price: number | null | undefined, o: ChartOverlay, title: string) => {
+    const addLine = (price: number | null | undefined, o: ChartOverlay, title: string, bound: "price" | "min" | "max" = "price") => {
       if (price == null || !Number.isFinite(price) || price <= 0) return;
       try {
-        this.overlayLines.push(
-          series.createPriceLine({
+        const line = series.createPriceLine({
             price,
             color: overlayColor(o),
             lineWidth: o.lineWidth === 1 ? 1 : 2,
             lineStyle: o.style === "dashed" ? LineStyle.Dashed : LineStyle.Solid,
             axisLabelVisible: true,
             title,
-          }),
-        );
+          });
+        this.overlayLines.push(line);
+        this.overlayLineMeta.set(line, { overlay: o, bound });
       } catch { /* ignore a single bad line */ }
     };
 
@@ -586,8 +596,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       if (o.type === "line") {
         addLine(o.price, o, o.label);
       } else if (o.type === "zone") {
-        addLine(o.priceMin, o, `${o.label} ▽`);
-        addLine(o.priceMax, o, `${o.label} △`);
+        addLine(o.priceMin, o, `${o.label} ▽`, "min");
+        addLine(o.priceMax, o, `${o.label} △`, "max");
       }
     }
 
@@ -984,11 +994,23 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   /**
-   * Measure what the engine actually drew against the source bars it was
-   * given (renderEvidence.ts on the server consumes this). Reads back the
-   * series' own data and compares every bar's time and price fields exactly,
-   * counts source bars it dropped, and round-trips the newest bar through the
-   * price axis (and the time axis when that bar is on screen). Read-only.
+   * Measure what the engine actually drew (renderEvidence.ts on the server
+   * consumes this). Read-only. Four parts:
+   *   1. Bars — read back the series' own data and compare every bar's time and
+   *      drawn price fields exactly with what it should hold: the source candles
+   *      for source-price styles, and for Heikin Ashi a FRESH deterministic
+   *      heikinAshi() of the source candles (not the incremental cache the
+   *      series was fed from). Counts source bars dropped as invalid.
+   *   2. Axes — every VISIBLE bar's time round-trips time→pixel→time to the
+   *      same bar, and each of its drawn prices round-trips price→pixel→price
+   *      within one displayed price step.
+   *   3. Drawings — user drawings (trendlines, levels, rectangles, fibs,
+   *      channels, notes…) read back from the painted geometry against their
+   *      stored anchors, plus the engine-drawn structure/research lines read
+   *      back from their own line series.
+   *   4. Projections — the AI setup/prediction levels as the engine holds them
+   *      (price line options read back), for the server to check against the
+   *      payload it issued.
    */
   measureRenderFidelity(): RenderFidelity | null {
     const series = this.series, chart = this.chart;
@@ -996,36 +1018,46 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     let drawn: readonly unknown[];
     try { drawn = (series as unknown as { data(): readonly unknown[] }).data(); } catch { return null; }
     const mode = this.displayMode;
+    // What each drawn point must equal: the source bar, or its HA transform.
+    const expected: readonly ChartEngineCandle[] = mode === "heikinAshi" ? heikinAshi(this.candles) : this.candles;
     let mismatched = 0;
-    if (mode !== "heikinAshi") {
-      for (let i = 0; i < this.candles.length; i++) {
-        const want = this.candles[i]!, got = drawn[i] as Record<string, unknown> | undefined;
-        if (!got || got["time"] !== want.time) { mismatched++; continue; }
-        const same = mode === "close"
-          ? got["value"] === want.close
-          : got["open"] === want.open && got["high"] === want.high && got["low"] === want.low && got["close"] === want.close;
-        if (!same) mismatched++;
-      }
-      mismatched += Math.max(0, drawn.length - this.candles.length);
+    for (let i = 0; i < expected.length; i++) {
+      const want = expected[i]!, got = drawn[i] as Record<string, unknown> | undefined;
+      if (!got || got["time"] !== want.time) { mismatched++; continue; }
+      const same = mode === "close"
+        ? got["value"] === want.close
+        : got["open"] === want.open && got["high"] === want.high && got["low"] === want.low && got["close"] === want.close;
+      if (!same) mismatched++;
     }
+    mismatched += Math.max(0, drawn.length - expected.length);
+
     const newest = this.candles[this.candles.length - 1]!;
-    const step = this.precision >= 0 ? 10 ** -this.precision : Math.abs(newest.close) * 1e-8;
-    const prices = mode === "close" ? [newest.close] : [newest.open, newest.high, newest.low, newest.close];
-    let priceRoundTripOk = true;
-    for (const price of prices) {
+    const step = this.priceStep();
+    const roundTrip = (price: number): boolean => {
       try {
         const y = series.priceToCoordinate(price);
         const back = y == null ? null : series.coordinateToPrice(y);
-        if (back == null || !Number.isFinite(back) || Math.abs(back - price) > step) priceRoundTripOk = false;
-      } catch { priceRoundTripOk = false; }
-    }
+        return back != null && Number.isFinite(back) && Math.abs(back - price) <= step;
+      } catch { return false; }
+    };
+    const pricesOf = (bar: ChartEngineCandle) => mode === "close" ? [bar.close] : [bar.open, bar.high, bar.low, bar.close];
+    let priceRoundTripOk = true;
     let timeRoundTripOk: boolean | null = null;
+    let visible = 0;
     try {
-      const x = chart.timeScale().timeToCoordinate(newest.time as UTCTimestamp);
-      if (x != null && x >= 0 && x <= chart.timeScale().width()) {
-        timeRoundTripOk = chart.timeScale().coordinateToTime(x) === newest.time;
+      const ts = chart.timeScale(), width = ts.width();
+      for (const bar of expected) {
+        const x = ts.timeToCoordinate(bar.time as UTCTimestamp);
+        if (x == null || x < 0 || x > width) continue;
+        visible++;
+        if (ts.coordinateToTime(x) !== bar.time) timeRoundTripOk = false;
+        else if (timeRoundTripOk == null) timeRoundTripOk = true;
+        if (!pricesOf(bar).every(roundTrip)) priceRoundTripOk = false;
       }
     } catch { timeRoundTripOk = false; }
+    // Nothing on screen: still prove the price axis on the newest drawn bar.
+    if (!visible && !pricesOf(expected[expected.length - 1]!).every(roundTrip)) priceRoundTripOk = false;
+
     return {
       displayMode: mode,
       newestBarTime: newest.time,
@@ -1034,7 +1066,82 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       droppedBars: Math.max(0, this.lastInputBars - this.lastSanitizedBars),
       priceRoundTripOk,
       timeRoundTripOk,
+      visibleBarsRoundTripped: visible,
+      drawings: mergeDrawingFidelity(
+        this.analysis?.measureDrawings(step) ?? EMPTY_DRAWING_FIDELITY,
+        // A focused smart annotation intentionally hides structure (not drawn).
+        this.smartAnnotation ? EMPTY_DRAWING_FIDELITY : this.measureLineSeries(this.structureLinesRaw, this.structureSeries, step),
+        this.measureLineSeries(this.researchLinesRaw, this.researchSeries, step),
+      ),
+      projections: this.measureProjections(step),
     };
+  }
+
+  /** One displayed price step (the axis precision), the round-trip tolerance. */
+  private priceStep(): number {
+    const newest = this.candles[this.candles.length - 1];
+    return this.precision >= 0 ? 10 ** -this.precision : Math.abs(newest?.close ?? 1) * 1e-8;
+  }
+
+  /** Engine-drawn two-point lines (structure / research): each line series
+   * must hold exactly the requested points, and its points must round-trip
+   * the axes. A requested line with no series is a failure, not a pass. */
+  private measureLineSeries(lines: readonly ChartStructureLine[], drawnSeries: readonly ISeriesApi<"Line">[], step: number): DrawingFidelity {
+    const chart = this.chart;
+    const wanted = lines.filter(drawableStructureLine);
+    if (!chart || (!wanted.length && !drawnSeries.length)) return { ...EMPTY_DRAWING_FIDELITY };
+    const out: DrawingFidelity = { checked: 0, failed: 0, unplaced: 0, failedIds: [] };
+    const loaded = new Set(this.candles.map(c => c.time));
+    const n = Math.max(wanted.length, drawnSeries.length);
+    for (let i = 0; i < n; i++) {
+      const line = wanted[i], s = drawnSeries[i];
+      out.checked++;
+      let ok = line != null && s != null;
+      try {
+        if (ok) {
+          const want = structureLinePoints(line!);
+          const got = (s as unknown as { data(): readonly Record<string, unknown>[] }).data();
+          ok = got.length === 2 && got.every((p, k) => p["time"] === want[k]!.time && p["value"] === want[k]!.value);
+          const ts = chart.timeScale(), width = ts.width();
+          for (const p of want) {
+            if (!ok) break;
+            const y = s!.priceToCoordinate(p.value);
+            const back = y == null ? null : s!.coordinateToPrice(y);
+            if (y != null && (back == null || Math.abs(back - p.value) > step)) ok = false;
+            const x = loaded.has(p.time) ? ts.timeToCoordinate(p.time as UTCTimestamp) : null;
+            if (ok && x != null && x >= 0 && x <= width && ts.coordinateToTime(x) !== p.time) ok = false;
+          }
+        }
+      } catch { ok = false; }
+      if (!ok) { out.failed++; if (out.failedIds.length < 20) out.failedIds.push(line?.id ?? `series-${i}`); }
+    }
+    return out;
+  }
+
+  /** AI setup/prediction levels as drawn: each preview overlay price line's
+   * price read back from the engine, with an axis round-trip. */
+  private measureProjections(step: number): RenderedProjection[] {
+    const series = this.series;
+    if (!series) return [];
+    const out: RenderedProjection[] = [];
+    for (const line of this.overlayLines) {
+      const meta = this.overlayLineMeta.get(line);
+      const o = meta?.overlay;
+      const previewId = o?.metadata?.["previewId"], role = o?.metadata?.["role"];
+      if (!o || o.source !== "preview" || typeof previewId !== "string" || typeof role !== "string") continue;
+      let price: number, axisRoundTripOk: boolean | null = null;
+      try {
+        price = line.options().price;
+        const y = series.priceToCoordinate(price);
+        if (y != null) { const back = series.coordinateToPrice(y); axisRoundTripOk = back != null && Math.abs(back - price) <= step; }
+      } catch { continue; }
+      out.push({
+        previewId, symbol: o.symbol, timeframe: o.timeframe ?? "", price, axisRoundTripOk,
+        role: meta!.bound === "price" ? role : `${role}:${meta!.bound}`,
+      });
+      if (out.length >= 40) break;
+    }
+    return out;
   }
 
   priceToCoordinate(price: number): number | null {
