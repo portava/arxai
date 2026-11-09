@@ -68,7 +68,7 @@ describe("strategy engine payload", () => {
     const bars = gbmBars(4000, 5) as Candle[];
     let directional = 0;
     for (let i = 300; i < bars.length; i += 37) {
-      const s = runStrategyScan("EURUSD", bars.slice(i - 250, i), 0, "forex", { timeframe: "M15" });
+      const s = runStrategyScan("EURUSD", bars.slice(i - 250, i), 0, "synthetic", { timeframe: "M15" });
       assert.ok(s.calibration, "calibration always present");
       assert.equal(typeof s.calibration.n, "number");
       assert.equal(s.calibratedProbability, null);
