@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { ROOT } from "./_lib.js";
 import assert from "node:assert/strict";
 import {
   LEGACY_BOOK, PAPER_JOURNAL, PAPER_VENUE, PIPELINE, checkBookShape, checkSinglePaperBook, scanFile,
@@ -123,4 +126,13 @@ const real = checkSinglePaperBook();
 assert.ok(real.ok, real.violations.join("\n"));
 n++;
 
+
+
+// The new atomic writer cannot become an exported or unaudited bypass.
+const atomicVenue = readFileSync(join(ROOT, "artifacts/api-server/src", PAPER_VENUE), "utf8");
+assert.ok(shape(atomicVenue.replace("async function bookPaperOrder", "export async function bookPaperOrder")).some(v => v.includes("atomic booking")));
+assert.ok(shape(atomicVenue.replace("!risk.allowed || risk.auditEventId == null", "false")).some(v => v.includes("atomic booking")));
+assert.ok(shape(atomicVenue.replace('action: "OPEN"', 'action: "CLOSE"')).some(v => v.includes("openPaperOrder")));
+
+n += 3;
 console.log(`single-paper-book: ${n} fixtures passed`);

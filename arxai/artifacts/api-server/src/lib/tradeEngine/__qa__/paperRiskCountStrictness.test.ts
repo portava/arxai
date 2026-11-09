@@ -63,6 +63,17 @@ const realHalt = await import("../../safety/tradingHalt.js");
 mock.module("../../safety/tradingHalt.js", {
   namedExports: { ...realHalt, loadTradingHalt: async () => NO_HALT, loadBrokerControlHalt: async () => NO_HALT },
 });
+// The Safety Core permits paper entries (PAPER_TRADING / NORMAL): the case is
+// the risk count, not the paper-mode gate (safety/entryPolicy.ts).
+const realSwitches = await import("../../safety/platformSwitches.js");
+mock.module("../../safety/platformSwitches.js", {
+  namedExports: {
+    ...realSwitches,
+    readPaperEntryPosture: async () => ({
+      readable: true, present: true, engaged: false, operationalMode: "PAPER_TRADING", globalState: "NORMAL",
+    }),
+  },
+});
 // The fake ignores WHERE, so the fixture's paper_orders are the settled
 // orders only; the open-order reads return none.
 const realBook = await import("../paperBookReader.js");

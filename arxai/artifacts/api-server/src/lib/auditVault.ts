@@ -4,7 +4,7 @@
 // Provides:
 //   - A Postgres-backed EventStorePort (audit_events table)
 //   - A SHADOW_MODE shadow adapter, instantiated once per process
-//   - shadowCapture(): the only function the rest of the app calls. Runs the
+//   - shadowCapture(): best-effort diagnostics. Runs the
 //     Vault Data Quality + Privacy Guard pipeline (redact → compress → quality
 //     scan → poison scan → training-eligibility verdict) BEFORE persisting,
 //     and is fail-safe: failures are swallowed and logged via pino.
@@ -14,7 +14,8 @@
 //     escalates the system to DEGRADED_MODE (record-only escalation).
 //
 // CRITICAL safety properties (per spec):
-//   - vault failures must NOT affect main app behavior
+//   - shadow diagnostics never block the app; governed decisions and paper
+//     mutations use appendAuditInTransaction and roll back on audit failure
 //   - vault cannot place / approve trades or override governors
 //   - corrections are new events, not edits
 //   - secrets / API keys / tokens are redacted before persistence
@@ -22,7 +23,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { db, auditEventsTable } from "@workspace/db";
-import { asc, desc, eq, gt } from "drizzle-orm";
+import { asc, desc, eq, gt, sql } from "drizzle-orm";
 import { eventSourced as ev } from "@workspace/domain/black-box-vault";
 import { logger } from "./logger.js";
 
@@ -92,6 +93,37 @@ const pgStore: ev.EventStorePort = {
     return rows.length;
   },
 };
+
+export type AuditTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Mandatory audit for governed decisions/bookings. Failure aborts the caller's transaction.
+ * The shadow capture path uses the same lock to serialize these writers across
+ * processes. Legacy raw audit_events inserts do not yet participate in it.
+ */
+export async function appendAuditInTransaction(tx: AuditTransaction, draft: ev.AuditEventDraft): Promise<ev.AuditEvent> {
+  return appendPreparedAuditInTransaction(tx, applyGuardPipeline(draft).cleanedDraft);
+}
+
+// Only called with an already guarded draft (including a privacy-failure stub).
+// Reapplying the guard would erase compression/redaction/failure evidence.
+async function appendPreparedAuditInTransaction(tx: AuditTransaction, cleaned: ev.AuditEventDraft): Promise<ev.AuditEvent> {
+  await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
+  await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(1095915606, 1)`);
+  if (forceFailRemaining > 0) {
+    forceFailRemaining -= 1;
+    throw new Error("forced-failure (debug fault injection)");
+  }
+  const [previous] = await tx.select({ eventId: auditEventsTable.eventId }).from(auditEventsTable).orderBy(desc(auditEventsTable.id)).limit(1);
+  const event = ev.sealEvent(cleaned, previous?.eventId ?? null, { clock, rand, hash });
+  await tx.insert(auditEventsTable).values(event);
+  return event;
+}
+
+async function captureToDatabase(draft: ev.AuditEventDraft): Promise<ev.AuditTrailWriteResult> {
+  const event = await db.transaction(tx => appendPreparedAuditInTransaction(tx, draft));
+  return { ok: true, event, error: null };
+}
 
 // ── Shadow adapter (single process-wide instance) ─────────────────────────
 const shadow = ev.createShadowAdapter({
@@ -210,7 +242,7 @@ async function tryDrainPending(): Promise<void> {
       },
     };
     const guarded = applyGuardPipeline(recoveredDraft);
-    const r = await shadow.capture(guarded.cleanedDraft).catch((err: unknown) => ({
+    const r = await captureToDatabase(guarded.cleanedDraft).catch((err: unknown) => ({
       ok: false as const, event: null, error: String(err),
     }));
     if (!r.ok) return;
@@ -268,7 +300,7 @@ export function shadowCapture(draft: ev.AuditEventDraft): Promise<ev.AuditTrailW
         "vault guard pipeline threw — fail-closed stub will be persisted (raw payload DROPPED)");
       cleaned = failClosedStub(draft, err);
     }
-    const result = await shadow.capture(cleaned).catch((err: unknown) => {
+    const result = await captureToDatabase(cleaned).catch((err: unknown) => {
       logger.warn({ err: String(err), draftType: draft.eventType }, "audit vault SHADOW capture exception (swallowed)");
       return { ok: false as const, event: null, error: String(err) };
     });

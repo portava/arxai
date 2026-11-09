@@ -8,14 +8,14 @@
 //   • TIME_PARADOX               — generatedAtIso > createdAt (skew > 60s)
 //                                   or generatedAtIso > now + 60s
 //   • DANGLING_REPLAY            — linkedTradeId/linkedSignalId references no
-//                                   row in trades / vault for the active window
+//                                   row in the referenced trade book
 //   • DUPLICATE_ID               — exact (kind, summary, generatedAtIso) seen
 //                                   more than once within the scan window
 //   • STALE_OR_FROZEN_DATA       — > N events share the same generatedAtIso
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { db, vaultEventsTable, tradesTable, type VaultEventRow } from "@workspace/db";
-import { desc, gte } from "drizzle-orm";
+import { db, vaultEventsTable, tradesTable, paperOrdersTable, type VaultEventRow } from "@workspace/db";
+import { desc, gte, inArray } from "drizzle-orm";
 
 export type IntegritySeverity = "INFO" | "WARN" | "CRITICAL";
 
@@ -63,6 +63,20 @@ export interface VaultIntegrityReport {
   reasons: string[];
 }
 
+function referencePayload(row: VaultEventRow): Record<string, unknown> {
+  return row.payload != null && typeof row.payload === "object" && !Array.isArray(row.payload)
+    ? row.payload as Record<string, unknown> : {};
+}
+
+// Both books use PostgreSQL int4 IDs. Malformed or out-of-range references
+// must be reported as missing rather than breaking the scanner's SQL cast.
+function referencedIds(rows: VaultEventRow[], paper: boolean): number[] {
+  return [...new Set(rows.filter(row => (referencePayload(row).entityType === "paper_order") === paper)
+    .map(row => row.linkedTradeId)
+    .filter((id): id is string => id != null && /^[1-9]\d*$/.test(id))
+    .map(Number).filter(id => Number.isSafeInteger(id) && id <= 2_147_483_647))];
+}
+
 export async function scanVaultIntegrity(opts: { limit?: number; sinceIso?: string } = {}): Promise<VaultIntegrityReport> {
   const lim = Math.min(2000, Math.max(1, opts.limit ?? 500));
   const rows = opts.sinceIso
@@ -84,9 +98,17 @@ export async function scanVaultIntegrity(opts: { limit?: number; sinceIso?: stri
   const seenKey = new Map<string, number>();
   const isoCounts = new Map<string, number>();
 
-  // Pull trade IDs in window for dangling reference detection.
-  const tradeRows = await db.select({ id: tradesTable.id }).from(tradesTable).limit(10_000);
+  // Fetch only IDs referenced by this bounded vault window, from the correct
+  // book. A legacy trade with the same numeric ID cannot validate a paper row.
+  const legacyRefs = referencedIds(rows, false);
+  const paperRefs = referencedIds(rows, true);
+  const tradeRows = legacyRefs.length
+    ? await db.select({ id: tradesTable.id }).from(tradesTable).where(inArray(tradesTable.id, legacyRefs)) : [];
+  const paperRows = paperRefs.length
+    ? await db.select({ id: paperOrdersTable.id, userId: paperOrdersTable.userId }).from(paperOrdersTable)
+        .where(inArray(paperOrdersTable.id, paperRefs)) : [];
   const tradeIds = new Set(tradeRows.map((r) => String(r.id)));
+  const paperOwners = new Map(paperRows.map(row => [String(row.id), row.userId]));
 
   for (const r of rows) {
     const ref = `vault:${r.id}`;
@@ -140,10 +162,22 @@ export async function scanVaultIntegrity(opts: { limit?: number; sinceIso?: stri
     }
 
     // ── dangling reference for linked trade IDs ─────────────────────────
-    if (r.linkedTradeId && !tradeIds.has(r.linkedTradeId)) {
-      flags.push(mk(newId(), ref, "DANGLING_REPLAY", "WARN",
-        `vault row ${r.id} references unknown trade '${r.linkedTradeId}'`,
-        [`linkedTradeId=${r.linkedTradeId}`]));
+    if (r.linkedTradeId) {
+      const payload = referencePayload(r);
+      if (payload.entityType === "paper_order") {
+        const exists = paperOwners.has(r.linkedTradeId);
+        // Explicit null owners are supported for legacy simulator rows. A
+        // missing owner is not proof of an ownerless order.
+        const ownerMatches = Object.hasOwn(payload, "userId")
+          && payload.userId === paperOwners.get(r.linkedTradeId);
+        if (!exists || !ownerMatches) flags.push(mk(newId(), ref, "DANGLING_REPLAY", "WARN",
+          `vault row ${r.id} references ${!exists ? "unknown" : "differently owned"} paper order '${r.linkedTradeId}'`,
+          [`entityType=paper_order`, `linkedTradeId=${r.linkedTradeId}`, !exists ? "paper order missing" : "paper order owner does not match vault evidence"]));
+      } else if (!tradeIds.has(r.linkedTradeId)) {
+        flags.push(mk(newId(), ref, "DANGLING_REPLAY", "WARN",
+          `vault row ${r.id} references unknown trade '${r.linkedTradeId}'`,
+          [`linkedTradeId=${r.linkedTradeId}`]));
+      }
     }
 
     // ── duplicate-id detector (rows with identical kind+summary+iso) ────
