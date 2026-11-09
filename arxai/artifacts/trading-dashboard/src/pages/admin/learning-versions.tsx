@@ -17,6 +17,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PageShell } from "@/components/ss/PageShell";
 import { useAssistantName } from "@/lib/assistant-name";
+import { ValidationEvidencePanel } from "@/components/admin/ValidationEvidencePanel";
 
 const apiFetch = (url: string) =>
   fetch(url, { credentials: "include" }).then((r) => r.json());
@@ -254,6 +255,9 @@ export default function AdminLearningVersionsPage() {
           ))}
         </div>
       )}
+
+      {/* Real-data validation evidence (read-only, hash-verified) */}
+      <ValidationEvidencePanel />
 
       {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
