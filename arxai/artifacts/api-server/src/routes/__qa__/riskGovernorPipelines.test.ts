@@ -1,3 +1,8 @@
+// The AI-entry hold is ON by default (lib/safety/entryPolicy.ts) and blocks
+// every generated entry before the rules this suite exercises. Opt out
+// explicitly here; the hold itself is proven in safety/__qa__/aiEntryHold.test.ts
+// and end to end by the 'hold at its default' case below.
+process.env.ARX_AI_ENTRY_HOLD_ENABLED = "false";
 import { enabledBrokerControlsFixture } from "../../lib/safety/__qa__/brokerControlsFixture.js";
 enabledBrokerControlsFixture();
 // Pre-trade Risk Governor — end-to-end proof on a real database.
@@ -386,6 +391,31 @@ test("B demo Eleanor: a sound Eleanor draft passes the governor and moves on to 
   assert.equal(ev.row.decision, "pass");
   assert.equal(ev.intent["origin"], "eleanor");
   assert.equal(ev.intent["venue"], "PAPER");
+});
+
+test("B demo Eleanor: with the AI-entry hold at its default (on), a sound Eleanor draft is held and nothing is booked", async () => {
+  await resetPaper(u.a);
+  await seedBridge(u.a);
+  const prev = process.env.ARX_AI_ENTRY_HOLD_ENABLED;
+  delete process.env.ARX_AI_ENTRY_HOLD_ENABLED;
+  try {
+    const draft = await createActionDraft({
+      userId: u.a, actionType: "OPEN", tradeKey: null, requestedMode: "SIMULATED",
+      symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.095, takeProfit: 1.11, source: "ai_suggested",
+    });
+    assert.ok(draft.ok);
+    const result = await confirmAction({ userId: u.a, actionId: draft.action.id, confirmedMode: "SIMULATED" });
+    assert.equal(result.ok, false);
+    const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
+    assert.equal(row!.status, "rejected");
+    assert.match(row!.rejectionReason ?? "", /AI_ENTRY_POLICY_PENDING/);
+    assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0, "nothing booked");
+    const ev = await latestEvent(u.a);
+    assert.equal(ev.intent["origin"], "eleanor");
+    assert.ok(ev.blockedBy.includes("trading_halt"));
+  } finally {
+    if (prev === undefined) delete process.env.ARX_AI_ENTRY_HOLD_ENABLED; else process.env.ARX_AI_ENTRY_HOLD_ENABLED = prev;
+  }
 });
 
 // ── Trade Action Center → the governed venue queues (Tier 1 Trade Engine) ──

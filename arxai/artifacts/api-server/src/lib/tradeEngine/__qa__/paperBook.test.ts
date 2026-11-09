@@ -1,3 +1,7 @@
+// The AI-entry hold is ON by default (lib/safety/entryPolicy.ts) and blocks
+// every generated entry before the rules this suite exercises. Opt out
+// explicitly here; the hold itself is proven in safety/__qa__/aiEntryHold.test.ts.
+process.env.ARX_AI_ENTRY_HOLD_ENABLED = "false";
 // One paper book (docs/TIER1_PAPER_BOOK.md), on a real database.
 //
 //   paper_orders / paper_trade_events are written only by the PAPER venue:
