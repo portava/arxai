@@ -7,7 +7,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 type Q = { data?: unknown; isLoading?: boolean; isError?: boolean; dataUpdatedAt?: number; errorUpdatedAt?: number; refetch?: () => void };
-const h = vi.hoisted(() => ({ status: {} as Q, vault: {} as Q }));
+const OPERATOR = { role: "OWNER", isAdmin: true, isInvestor: false, isTrader: false, isLoading: false, homePath: "/" };
+const h = vi.hoisted(() => ({ status: {} as Q, vault: {} as Q, role: {} as Record<string, unknown> }));
 const mutation = () => ({ mutate: () => undefined, isPending: false });
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -21,6 +22,8 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetSystemVaultQueryKey: () => ["/api/system/vault"],
   getGetSystemStateTransitionsQueryKey: () => ["/api/system/state-transitions"],
 }));
+
+vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => h.role }));
 
 const { default: Emergency } = await import("./emergency");
 
@@ -54,6 +57,7 @@ const headline = () => screen.getByTestId("safety-core-headline").textContent ??
 beforeEach(() => {
   h.status = { data: baseStatus(), isLoading: false, isError: false, dataUpdatedAt: Date.now() };
   h.vault = { data: { events: [] }, isLoading: false, isError: false };
+  h.role = OPERATOR;
 });
 afterEach(() => cleanup());
 
@@ -172,6 +176,14 @@ describe("Control Tower — status read failures", () => {
     renderPage();
     expect(headline()).toBe("KILL SWITCH ENGAGED");
     expect(screen.getByTestId("status-stale")).toBeTruthy();
+  });
+
+  it("a trader sees an operators-only note, never a vault error or vault rows", () => {
+    h.role = { ...OPERATOR, role: "USER", isAdmin: false, isTrader: true };
+    h.vault = { data: undefined, isLoading: false, isError: true };
+    renderPage();
+    expect(screen.getByTestId("vault-operator-only").textContent).toMatch(/operators only/);
+    expect(screen.queryByTestId("vault-load-error")).toBeNull();
   });
 
   it("a failed vault read is 'could not be loaded', not 'No vault events yet.'", () => {

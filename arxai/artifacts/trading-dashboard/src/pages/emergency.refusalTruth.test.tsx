@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   modeError: null as unknown,
   resetError: null as unknown,
   toasts: [] as Array<{ title?: string; description?: string }>,
+  role: { role: "OWNER", isAdmin: true, isInvestor: false, isTrader: false, isLoading: false, homePath: "/" },
 }));
 
 function mutation(getError: () => unknown) {
@@ -44,6 +45,8 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: (t: { title?: string; description?: string }) => { h.toasts.push(t); } }),
 }));
+
+vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => h.role }));
 
 const { default: Emergency } = await import("./emergency");
 

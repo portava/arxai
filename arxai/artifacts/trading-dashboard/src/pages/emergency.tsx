@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useProductRole } from "@/hooks/useProductRole";
 import {
   useGetSystemStatus,
   useSetSystemMode,
@@ -640,7 +641,11 @@ function TransitionsList({ transitions }: { transitions: StateTransitionEntry[] 
 
 export default function Emergency() {
   const statusQ = useGetSystemStatus({ query: { queryKey: getGetSystemStatusQueryKey(), refetchInterval: 5000 } });
-  const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000 } });
+  // The vault is install-wide (other traders' decisions), so the API serves it
+  // to operators only; a trader's page never asks for it.
+  const { isAdmin, isLoading: roleLoading } = useProductRole();
+  const canReadVault = isAdmin && !roleLoading;
+  const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000, enabled: canReadVault } });
   const transitionsQ = useGetSystemStateTransitions({ limit: 50 }, { query: { queryKey: getGetSystemStateTransitionsQueryKey({ limit: 50 }), refetchInterval: 10000 } });
 
   if (!statusQ.data && statusQ.isError) {
@@ -736,7 +741,7 @@ export default function Emergency() {
             <TabsList>
               <TabsTrigger value="vault" data-testid="tab-vault">
                 Vault Events
-                {vaultQ.data && (
+                {canReadVault && vaultQ.data && (
                   <Badge variant="secondary" className="ml-2">{vaultQ.data.events.length}</Badge>
                 )}
               </TabsTrigger>
@@ -748,7 +753,13 @@ export default function Emergency() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="vault" className="mt-4">
-              {vaultQ.isLoading ? (
+              {roleLoading ? (
+                <Skeleton className="h-20 w-full" />
+              ) : !isAdmin ? (
+                <p className="text-sm text-muted-foreground p-4 text-center" data-testid="vault-operator-only">
+                  Vault events are visible to operators only.
+                </p>
+              ) : vaultQ.isLoading ? (
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
                 </div>
