@@ -11,7 +11,8 @@ const read = (rel: string) => readFile(new URL(rel, import.meta.url), "utf8");
 test("app starts the Eleanor watch sweeper", async () => {
   const app = await read("../../../app.ts");
   assert.match(app, /import \{ startEleanorWatchSweeper \} from "\.\/lib\/assistant\/eleanorWatchSweeper";/);
-  assert.match(app, /^startEleanorWatchSweeper\(\);/m);
+  // Started like the other autonomous workers: never in a preview-safe start.
+  assert.match(app, /^if \(!isPreviewSafeStart\(\)\) startEleanorWatchSweeper\(\);/m);
 });
 
 test("the command route arms watches only when the sweeper is enabled, and delegates evaluation", async () => {

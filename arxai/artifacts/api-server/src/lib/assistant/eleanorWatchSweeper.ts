@@ -42,6 +42,10 @@ export const withSweepAdvisoryLock: SweepLock = async (fn) => {
   }
 };
 
+// Kill-switch variables (read by isSweeperEnabled, which runs at module load).
+export const ELEANOR_SWEEPER_ENABLED_ENV = "ARX_ELEANOR_WATCH_SWEEPER_ENABLED";
+export const LEGACY_SWEEPER_ENABLED_ENV = "ARX_RUBY_WATCH_SWEEPER_ENABLED";
+
 export interface EleanorSweeperStatus {
   enabled: boolean;
   running: boolean;
@@ -67,9 +71,15 @@ const status: EleanorSweeperStatus = {
 };
 let timer: NodeJS.Timeout | null = null;
 
+// The worker was renamed on 2026-11-05. A kill switch an operator already set
+// under the pre-rename variable must keep working, so BOTH names are read and
+// an "off" under either one wins. Only an explicit off disables it.
 export function isSweeperEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const v = (env["ARX_ELEANOR_WATCH_SWEEPER_ENABLED"] ?? "true").trim().toLowerCase();
-  return !(v === "false" || v === "0" || v === "off" || v === "no");
+  const isOff = (raw: string | undefined): boolean => {
+    const v = (raw ?? "").trim().toLowerCase();
+    return v === "false" || v === "0" || v === "off" || v === "no";
+  };
+  return !isOff(env[ELEANOR_SWEEPER_ENABLED_ENV]) && !isOff(env[LEGACY_SWEEPER_ENABLED_ENV]);
 }
 
 export function sweeperIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
