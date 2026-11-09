@@ -1,4 +1,4 @@
-// AI-entry hold (PR #102), landed switched OFF (owner decision 2026-11-08).
+// AI-entry hold (PR #102). ON by default with an explicit opt-out (owner decision 2026-11-09).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -9,15 +9,31 @@ const GENERATED = ["eleanor", "automation", "strategy"] as const;
 const NOT_GENERATED = ["manual", "api", "system"] as const;
 const PROTECTIVE = ["CLOSE", "PARTIAL_CLOSE", "MODIFY"] as const;
 
-test("default OFF: unset, empty or any other value never holds anything", () => {
-  for (const env of [{}, { [AI_ENTRY_HOLD_ENV]: "" }, { [AI_ENTRY_HOLD_ENV]: "false" }, { [AI_ENTRY_HOLD_ENV]: "0" }, { [AI_ENTRY_HOLD_ENV]: "enabled" }]) {
-    assert.equal(aiEntryHoldEnabled(env), false);
+test("default ON: unset, empty, true-ish or unrecognised values all hold generated entries (fails closed)", () => {
+  for (const env of [{}, { [AI_ENTRY_HOLD_ENV]: "" }, { [AI_ENTRY_HOLD_ENV]: "true" }, { [AI_ENTRY_HOLD_ENV]: "1" }, { [AI_ENTRY_HOLD_ENV]: "enabled" }, { [AI_ENTRY_HOLD_ENV]: "disable" }]) {
+    assert.equal(aiEntryHoldEnabled(env), true, JSON.stringify(env));
+    for (const origin of GENERATED) assert.equal(aiEntryPolicyReason({ action: "OPEN", origin }, { env }), AI_ENTRY_POLICY_PENDING);
+  }
+});
+
+test("explicit opt-out: false/0/off/no in any case switches the hold off", () => {
+  for (const v of ["false", "FALSE", "0", "off", " no "]) {
+    const env = { [AI_ENTRY_HOLD_ENV]: v };
+    assert.equal(aiEntryHoldEnabled(env), false, v);
     for (const origin of GENERATED) assert.equal(aiEntryPolicyReason({ action: "OPEN", origin }, { env, generatedEntry: true }), null);
   }
 });
 
-test("ON accepts true/1/on/yes in any case", () => {
-  for (const v of ["true", "TRUE", "1", "on", " yes "]) assert.equal(aiEntryHoldEnabled({ [AI_ENTRY_HOLD_ENV]: v }), true);
+test("the process default (no env argument) follows the same rule", () => {
+  const prev = process.env[AI_ENTRY_HOLD_ENV];
+  try {
+    delete process.env[AI_ENTRY_HOLD_ENV];
+    assert.equal(aiEntryHoldEnabled(), true);
+    process.env[AI_ENTRY_HOLD_ENV] = "false";
+    assert.equal(aiEntryHoldEnabled(), false);
+  } finally {
+    if (prev === undefined) delete process.env[AI_ENTRY_HOLD_ENV]; else process.env[AI_ENTRY_HOLD_ENV] = prev;
+  }
 });
 
 test("ON: generated entries are held; protective actions and manual entries are not", () => {

@@ -4,10 +4,10 @@
 // policy. Manual entries and every protective action (CLOSE, PARTIAL_CLOSE,
 // MODIFY) keep their own governor rules and are never held here.
 //
-// Owner decision 2026-11-08: land the hold SWITCHED OFF. It is enabled only by
-// ARX_AI_ENTRY_HOLD_ENABLED=true (also 1/on/yes); unset or anything else leaves
-// order flow exactly as it was. Read on every call, so a restart is not needed
-// in a process whose environment changes.
+// Owner decision 2026-11-09: the hold is ON BY DEFAULT. Only an explicit
+// opt-out, ARX_AI_ENTRY_HOLD_ENABLED=false (also 0/off/no), switches it off;
+// unset, empty or any unrecognised value keeps it on (fails closed). Read on
+// every call, so a restart is not needed in a process whose environment changes.
 //
 // The hold is independent of the trader's discipline settings: it is raised as
 // a trading_halt, which a trader override can never clear.
@@ -20,7 +20,7 @@ export const AI_ENTRY_POLICY_PENDING =
 const GENERATED_ORIGINS: ReadonlySet<TradeIntent["origin"]> = new Set(["eleanor", "automation", "strategy"]);
 
 export function aiEntryHoldEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return /^(1|true|on|yes)$/i.test((env[AI_ENTRY_HOLD_ENV] ?? "").trim());
+  return !/^(0|false|off|no)$/i.test((env[AI_ENTRY_HOLD_ENV] ?? "").trim());
 }
 
 /**

@@ -810,7 +810,7 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     ctx = await buildRiskContext(intent, opts);
     limits = ctx.limits;
     decision = evaluatePreTradeRisk(intent, ctx);
-    // AI-entry hold (default OFF, see safety/entryPolicy.ts). Raised as a
+    // AI-entry hold (default ON, see safety/entryPolicy.ts). Raised as a
     // trading_halt so no trader override can clear it; protective actions
     // never reach it.
     const holdReason = aiEntryPolicyReason(intent, { generatedEntry: opts.generatedEntry });
