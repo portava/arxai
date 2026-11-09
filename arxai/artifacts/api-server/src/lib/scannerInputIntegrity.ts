@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "./data/marketDataRouter.js";
 import type { Candle } from "./data/types.js";
-import { normalizeCandles, sourceModeFromProvider } from "./data/chart/candleNormalization.js";
+import { normalizeCandles, sourceModeFromProvider, timeBasis } from "./data/chart/candleNormalization.js";
 import { normalizeChartTimeframe, timeframeMs } from "./data/chart/timeframes.js";
 import { classifyQuoteFreshness } from "./data/freshness.js";
 
@@ -77,8 +77,12 @@ export function prepareScannerCandles(
   const toCandle = (bar: (typeof closed)[number], time: string): Candle => ({
     time, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume,
   });
+  // rawClosed keeps the provider's own stamp. Polygon and Twelve Data stamp
+  // bars at the open (2026-11-01 clock audit); other assistant_real feeds
+  // stamp the close. Read it from the normalizer so the two cannot drift.
+  const stampsClose = timeBasis(source) === "close";
   return {
-    rawClosed: closed.map((bar) => toCandle(bar, source.startsWith("assistant_real") ? bar.closeTime : bar.openTime)),
+    rawClosed: closed.map((bar) => toCandle(bar, stampsClose ? bar.closeTime : bar.openTime)),
     openClosed: closed.map((bar) => toCandle(bar, bar.openTime)),
     // Anchor to the actual accepted provider bar, including session opens such
     // as :30. UTC flooring can falsely age an H1 bar before its next bar closes.

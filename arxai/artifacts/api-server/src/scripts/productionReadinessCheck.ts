@@ -40,12 +40,14 @@ async function all(checks: Array<Promise<boolean>>): Promise<boolean> {
 export async function migrationChecks(): Promise<Check[]> {
   const out: Check[] = [];
   const add = async (name: string, ok: Promise<boolean>, what: string) => out.push({ name, ok: await ok, detail: what });
-  await add("2026-10-24_trading_on_by_default", (async () =>
-    /LIVE/.test(String(await columnDefault("global_trading_settings", "platform_mode")))
-    && /false/.test(String(await columnDefault("global_trading_settings", "emergency_kill_switch")))
-    && /true/.test(String(await columnDefault("global_trading_settings", "demo_enabled")))
-    && /true/.test(String(await columnDefault("global_trading_settings", "live_enabled"))))(),
-    "global_trading_settings defaults: platform_mode LIVE, live_enabled true, emergency_kill_switch false");
+  // 2026-10-24_trading_on_by_default set LIVE defaults; the owner decision of
+  // 2026-11-04 replaced them with fail-closed defaults, so that is what a
+  // current install must show.
+  await add("2026-11-04_global_trading_settings_fail_closed", (async () =>
+    /OFF/.test(String(await columnDefault("global_trading_settings", "platform_mode")))
+    && /false/.test(String(await columnDefault("global_trading_settings", "demo_enabled")))
+    && /false/.test(String(await columnDefault("global_trading_settings", "live_enabled"))))(),
+    "global_trading_settings defaults: platform_mode OFF, demo_enabled false, live_enabled false");
   await add("2026-10-24_owner_columns", all([
     hasColumn("weekly_improvement_plans", "user_id"), hasColumn("performance_symbol_snapshots", "user_id"),
     hasColumn("ai_performance_snapshots", "user_id"), hasIndex("weekly_improvement_plans_user_week_uq"),

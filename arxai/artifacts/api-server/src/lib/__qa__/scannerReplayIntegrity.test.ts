@@ -38,6 +38,7 @@ mock.module("../data/marketDataRouter.js", { namedExports: { ...realRouter,
     quote: { symbol, bid: 1.106, ask: 1.1061, spread: 0.0001, timestamp: new Date(quoteTime).toISOString() },
     provenance: provenance(symbol), attempts: [], userMessage: "Constructed correctness fixture", adminDetail: "" }),
 } });
+const { timeBasis } = await import("../data/chart/candleNormalization.js");
 const { scanSymbolTimeframe, scanOnceSnapshot, effectiveOpportunityScore } = await import("../marketScanner.js");
 const { toInput } = await import("../signalIntelligence/opportunityMapService.js");
 const { __resetRegimeStateForTests } = await import("../regime/marketRegimeAuthority.js");
@@ -47,7 +48,7 @@ function bars(tf: ChartTimeframe = "M5", lastClose = BASE, count = 60): Candle[]
   const interval = timeframeMs(tf);
   return Array.from({ length: count }, (_, i) => {
     const price = 1.1 + i * 0.0001 + (i % 3) * 0.00001;
-    return { time: new Date(lastClose - (count - i) * interval + (provider.startsWith("assistant_real:") ? interval : 0)).toISOString(),
+    return { time: new Date(lastClose - (count - i) * interval + (timeBasis(provider) === "close" ? interval : 0)).toISOString(),
       open: price, high: price + 0.0002, low: price - 0.0001, close: price + 0.0001, volume: 100 + i % 4 };
   });
 }
@@ -60,7 +61,7 @@ beforeEach(() => {
 });
 afterEach(() => { mock.timers.reset(); resetState(); });
 
-for (const source of ["mt5_broker", "assistant_real:twelve_data"]) {
+for (const source of ["mt5_broker", "assistant_real:twelve_data", "assistant_real:finnhub"]) {
   for (const suffix of ["forming", "future"] as const) {
     test(`${source}: ${suffix} suffix cannot promote stale closed history`, async () => {
       provider = source;
@@ -68,7 +69,7 @@ for (const source of ["mt5_broker", "assistant_real:twelve_data"]) {
       const closed = bars("M5", BASE - 3 * interval);
       install(closed);
       const before = await scanSymbolTimeframe("EURUSD", "M5");
-      const stamp = BASE + (suffix === "future" ? 10 * interval : 0) + (source.startsWith("assistant_real:") ? interval : 0);
+      const stamp = BASE + (suffix === "future" ? 10 * interval : 0) + (timeBasis(source) === "close" ? interval : 0);
       install([...closed, tail(stamp, closed.at(-1)!)]);
       const after = await scanSymbolTimeframe("EURUSD", "M5");
       assert.ok(before && after);

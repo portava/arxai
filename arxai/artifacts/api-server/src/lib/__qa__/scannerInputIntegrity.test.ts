@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { prepareScannerCandles, scannerQuoteFor, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { timeBasis } from "../data/chart/candleNormalization.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
 const now = Date.parse("2026-10-26T12:02:00Z"), interval = 300_000;
@@ -8,17 +9,17 @@ const closedOpen = Date.parse("2026-10-26T11:55:00Z");
 function bars(provider = "mt5_broker", count = 60): MarketCandlesResult {
   return { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: provider,
     attempts: [], userMessage: "", adminDetail: "", candles: Array.from({ length: count }, (_, i) => ({
-      time: new Date(closedOpen - (count - 1 - i) * interval + (provider.startsWith("assistant_real") ? interval : 0)).toISOString(),
+      time: new Date(closedOpen - (count - 1 - i) * interval + (timeBasis(provider) === "close" ? interval : 0)).toISOString(),
       open: 1.1, high: 1.12, low: 1.09, close: 1.11, volume: 100,
     })) };
 }
 function quote(): MarketQuoteResult { return { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: "mt5_broker", attempts: [], userMessage: "", adminDetail: "", quote: { symbol: "EURUSD", timestamp: new Date(now).toISOString(), bid: 1.11, ask: 1.1102, spread: 0.0002 } }; }
 
 test("excludes forming and future bars; closed timestamps follow the actual provider convention", () => {
-  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data"]) {
+  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data", "assistant_real:finnhub"]) {
     const result = bars(provider);
     const original = structuredClone(result);
-    result.candles.push({ ...result.candles[59]!, time: new Date(closedOpen + interval + (provider.startsWith("assistant_real") ? interval : 0)).toISOString(), close: 1.119 });
+    result.candles.push({ ...result.candles[59]!, time: new Date(closedOpen + interval + (timeBasis(provider) === "close" ? interval : 0)).toISOString(), close: 1.119 });
     result.candles.push({ ...result.candles[59]!, time: new Date(now + 86400_000).toISOString() });
     const prepared = prepareScannerCandles(result, "EURUSD", "M5", now)!;
     assert.equal(prepared.rawClosed.length, 60);

@@ -43,6 +43,8 @@ test("pending build remains shared past TTL; completion never resets original ti
   const first = getCachedOpportunityMap(request);
   mock.timers.setTime(START + 10_001);
   const later = getCachedOpportunityMap(request);
+  // The cache starts the core on the next microtask; let both reads reach it.
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls.length, 1, "an expired result window must not duplicate active work");
   gate.resolve(original);
   const results = await Promise.all([first, later]);
@@ -109,7 +111,9 @@ test("resolved cache eviction cannot detach an active build for the same finite 
   const first = getCachedOpportunityMap(request);
   const others = UNIVERSE_IDS.flatMap((universe) => CHART_TIMEFRAMES.map((timeframe) => ({ universe, timeframe })))
     .filter((a) => a.universe !== request.universe || a.timeframe !== request.timeframe).slice(0, 65);
-  await Promise.all(others.map(getCachedOpportunityMap));
+  // One at a time, so each finishes and becomes an evictable resolved entry;
+  // 65 of them overflow the 64-entry cap while the gated build is still active.
+  for (const other of others) await getCachedOpportunityMap(other);
   const later = getCachedOpportunityMap(request);
   assert.equal(calls.filter((a) => a.universe === request.universe && a.timeframe === request.timeframe).length, 1);
   gate.resolve(fixture(request));
