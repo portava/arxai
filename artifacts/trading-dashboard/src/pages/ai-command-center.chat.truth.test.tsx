@@ -8,7 +8,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
-vi.mock("@/components/ruby/RubyAccountHealthStrip", () => ({ RubyAccountHealthStrip: () => null }));
+vi.mock("@/components/eleanor/EleanorAccountHealthStrip", () => ({ EleanorAccountHealthStrip: () => null }));
 
 const { default: AICommandCenterPage } = await import("./ai-command-center");
 const { default: AiMentorPage } = await import("./ai-mentor");

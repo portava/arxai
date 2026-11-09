@@ -8,7 +8,7 @@ This must apply globally to every place a manual trade can be placed, including 
 1. Scanner trade modal
 2. Main Trade page
 3. Market scanner result cards
-4. Ruby trade suggestion cards
+4. Eleanor trade suggestion cards
 5. Cockpit trading controls
 6. Chart trading controls
 7. Live bridge test panel
@@ -80,13 +80,13 @@ If SL/TP are blank, show this message above the Confirm button:
 This warning is informational only. It must not require another click.
 
 Side/bias behavior:
-If Ruby’s setup bias does not match the selected trade side, show one of these warnings above Confirm:
+If Eleanor’s setup bias does not match the selected trade side, show one of these warnings above Confirm:
 
-“Ruby’s setup bias is SELL, but this ticket is set to BUY.”
+“Eleanor’s setup bias is SELL, but this ticket is set to BUY.”
 
 or
 
-“Ruby’s setup bias is BUY, but this ticket is set to SELL.”
+“Eleanor’s setup bias is BUY, but this ticket is set to SELL.”
 
 This warning is informational only unless the user changes the side. It must not create another confirmation step.
 
@@ -138,7 +138,7 @@ Testing required:
 2. Confirm the button says “Confirm,” not “Review.”
 3. Open the main Trade page and confirm it also uses Confirm.
 4. Open any chart trading controls and confirm they also use Confirm.
-5. Open Ruby trade suggestion flow and confirm it also uses Confirm.
+5. Open Eleanor trade suggestion flow and confirm it also uses Confirm.
 6. Open any quick BUY/SELL flow and confirm it uses Confirm Buy or Confirm Sell as the final action.
 7. Leave SL/TP blank and confirm the button can still activate if all other required checks pass.
 8. Confirm the SL/TP warning is inline only and does not create another modal.

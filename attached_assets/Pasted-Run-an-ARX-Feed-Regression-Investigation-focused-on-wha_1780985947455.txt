@@ -219,7 +219,7 @@ Do not claim MT5 is feeding charts until EA actually pushes quotes/candles.
 2. If Smart Chart gates are too strict:
 Adjust gates so:
 - real delayed data can still show chart with delayed badge
-- Ruby only gives limited read
+- Eleanor only gives limited read
 - trade confidence remains blocked
 - chart display does not go blank unnecessarily
 
@@ -227,7 +227,7 @@ Adjust gates so:
 Allow partial timeframe display:
 - show available timeframe
 - badge missing H1/H4
-- Ruby says confidence limited
+- Eleanor says confidence limited
 - do not block the whole symbol if M15 exists but H1/H4 missing
 
 4. If symbol mapping is broken:
@@ -260,20 +260,20 @@ Final behavior should be:
 If Volatility has Deriv data:
 - selectable
 - chart opens
-- Ruby can read if feed clean
+- Eleanor can read if feed clean
 - tradeability still depends on broker/Deriv/bridge support
 
 If EURUSD has delayed fallback data:
 - selectable if real data exists
 - chart opens with Delayed badge
-- Ruby says limited read
+- Eleanor says limited read
 - no strong trade confidence
 
 If XAUUSD has real fallback data but no MT5 broker candles:
 - selectable
 - chart opens
 - badge says fallback/delayed if applicable
-- Ruby says broker chart feed not active if needed
+- Eleanor says broker chart feed not active if needed
 - trade button depends on broker mapping and risk gates
 
 If a market has no real data whatsoever:
@@ -298,7 +298,7 @@ Add/update tests:
 3. MT5 heartbeat alone does not mark candles live.
 4. Missing MT5 candle push produces clear MT5_MARKET_DATA_INACTIVE reason.
 5. Real delayed fallback data still opens chart with Delayed badge.
-6. aiUsable=false blocks confident Ruby read but does not necessarily blank the chart.
+6. aiUsable=false blocks confident Eleanor read but does not necessarily blank the chart.
 7. Missing H1/H4 limits confidence but does not hide M15 chart if M15 exists.
 8. Symbol alias mapping works for XAUUSD, US30, US100, V75.
 9. Cache key separates symbol/timeframe/provider.
@@ -314,7 +314,7 @@ Run:
 - chart data tests
 - Smart Chart tests
 - symbol mapping tests
-- Ruby read tests
+- Eleanor read tests
 - typecheck
 - CI guards if feasible
 

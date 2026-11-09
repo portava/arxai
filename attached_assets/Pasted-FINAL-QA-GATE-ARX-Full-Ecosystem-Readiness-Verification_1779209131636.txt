@@ -17,13 +17,13 @@ Verify:
 6. 10-user cap is server-enforced.
 7. User privacy isolation passes.
 8. Saved features are private per user.
-9. Ruby intelligence works.
-10. Ruby memory is user-scoped.
-11. Ruby voice cannot bypass confirmation.
+9. Eleanor intelligence works.
+10. Eleanor memory is user-scoped.
+11. Eleanor voice cannot bypass confirmation.
 12. Scanner works.
 13. Watchlist works.
 14. Watch calendar/alerts work or missing pieces are clearly documented.
-15. Economic/impact calendar connects to Ruby/scanner where available.
+15. Economic/impact calendar connects to Eleanor/scanner where available.
 16. Alerts are private and non-spammy.
 17. Demo trading works without live commands.
 18. Personal MT5 stays separate.

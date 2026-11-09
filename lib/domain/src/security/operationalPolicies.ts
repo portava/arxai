@@ -25,7 +25,7 @@ export type RateLimitedAction =
   | "REQUEST_ACCESS"
   | "ADMIN_ACTION"
   | "ADMIN_ACTION_FAILED"
-  | "RUBY_PROMPT"
+  | "ELEANOR_PROMPT"
   | "LIVE_COMMAND_RETRY"
   | "SCANNER_TO_TRADE"
   | "SELF_TRADE_RETRY"
@@ -39,7 +39,7 @@ export const RATE_LIMITED_ACTION_KEYS: readonly RateLimitedAction[] = [
   "REQUEST_ACCESS",
   "ADMIN_ACTION",
   "ADMIN_ACTION_FAILED",
-  "RUBY_PROMPT",
+  "ELEANOR_PROMPT",
   "LIVE_COMMAND_RETRY",
   "SCANNER_TO_TRADE",
   "SELF_TRADE_RETRY",
@@ -77,7 +77,7 @@ export const DEFAULT_RATE_LIMIT_POLICY: RateLimitPolicy = {
   REQUEST_ACCESS: { limit: 3, windowMs: 30 * MIN, cooldownMs: 60 * MIN, adminVisible: true, failOpen: true },
   ADMIN_ACTION: { limit: 60, windowMs: 1 * MIN, cooldownMs: 2 * MIN, adminVisible: true, failOpen: false },
   ADMIN_ACTION_FAILED: { limit: 5, windowMs: 10 * MIN, cooldownMs: 30 * MIN, adminVisible: true, failOpen: false },
-  RUBY_PROMPT: { limit: 30, windowMs: 1 * MIN, cooldownMs: 2 * MIN, adminVisible: true, failOpen: false },
+  ELEANOR_PROMPT: { limit: 30, windowMs: 1 * MIN, cooldownMs: 2 * MIN, adminVisible: true, failOpen: false },
   LIVE_COMMAND_RETRY: { limit: 5, windowMs: 1 * MIN, cooldownMs: 5 * MIN, adminVisible: true, failOpen: false },
   SCANNER_TO_TRADE: { limit: 20, windowMs: 1 * MIN, cooldownMs: 2 * MIN, adminVisible: true, failOpen: false },
   SELF_TRADE_RETRY: { limit: 6, windowMs: 1 * MIN, cooldownMs: 5 * MIN, adminVisible: true, failOpen: false },

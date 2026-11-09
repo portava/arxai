@@ -142,7 +142,7 @@ interface Eval {
   ruleBasisNote: string | null;
   /** Why an ACTIVE challenge whose booked figures meet every pass rule is not PASSED; null otherwise. */
   passBlockedReason: string | null;
-  // The fields below are for callers that report per basis (Ruby's
+  // The fields below are for callers that report per basis (Eleanor's
   // getPropFirmModeStatus); the /evaluate response does not carry them.
   /** True when the two bases count some closed trade differently (the messages then name a basis). */
   basisDiffers: boolean;
@@ -210,7 +210,7 @@ const bookedFigure = (o: ChallengeOrder): number => o.profitLoss;
 const modelFigure = (o: ChallengeOrder): number => o.exitPrice == null
   ? o.profitLoss
   : paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
-// The basis clauses the rule messages end with (exported so Ruby can tell
+// The basis clauses the rule messages end with (exported so Eleanor can tell
 // which basis an /evaluate message speaks for: its own clause, or both).
 export const BOOKED_CLAUSE = "each closed trade counted at its booked P&L";
 export const MODEL_CLAUSE = "each closed trade counted at the paper risk model, price move × lots × 100";
@@ -270,7 +270,7 @@ function consistencyOf(dayPnls: number[]): { share: number; totalPositive: numbe
   return { share: totalPositive > 0 ? top / totalPositive : 0, totalPositive };
 }
 
-/** The disclosure for closes whose P&L could not be sized, in the Ruby prop-firm tool's words. */
+/** The disclosure for closes whose P&L could not be sized, in the Eleanor prop-firm tool's words. */
 export function unsizedChallengeClosesNote(unsized: Array<{ symbol: string }>): string | null {
   const n = unsized.length;
   if (n === 0) return null;
@@ -303,7 +303,7 @@ type ChallengeRow = typeof propChallengesTable.$inferSelect;
 /**
  * The prop-challenge rules, checked on one challenge and its paper account's
  * orders (oldest first, as /evaluate reads them) at the instant `now`. Pure:
- * it reads and writes nothing. /evaluate runs it and stores the result; Ruby's
+ * it reads and writes nothing. /evaluate runs it and stores the result; Eleanor's
  * getPropFirmModeStatus runs it on the same rows so it reports the breaches,
  * basis clauses and verdict /evaluate would give, never a looser one.
  */

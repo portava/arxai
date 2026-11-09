@@ -45,8 +45,8 @@
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
 
-  /* ARX semantic accents — bg-ruby / text-success / border-warning etc. */
-  --color-ruby: hsl(var(--ruby));
+  /* ARX semantic accents — bg-eleanor / text-success / border-warning etc. */
+  --color-eleanor: hsl(var(--eleanor));
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
   --color-danger: hsl(var(--danger));
@@ -153,9 +153,9 @@
   --chart-3: 156 77% 58%;
   --chart-4: 43 100% 65%;
   --chart-5: 354 100% 65%;
-  /* ARX semantic accents — usable as arbitrary values e.g. text-[hsl(var(--ruby))] */
+  /* ARX semantic accents — usable as arbitrary values e.g. text-[hsl(var(--eleanor))] */
   --arx-blue: 213 100% 59%;
-  --ruby: 192 100% 60%;
+  --eleanor: 192 100% 60%;
   --success: 156 77% 58%;
   --warning: 43 100% 65%;
   --danger: 354 100% 65%;

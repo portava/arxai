@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Loader2, ShieldCheck, Info, Radio, RadioTower } from "lucide-react";
-import { RubySetupReason, type SignalContext } from "./RubySetupReason";
+import { EleanorSetupReason, type SignalContext } from "./EleanorSetupReason";
 import type { ScannerSetupReasonWithheld } from "./scannerResultAction";
 import {
   assessStopLoss,
@@ -264,7 +264,7 @@ export function ScannerTradeModal({
   /**
    * Set when the server's final read for the source row withheld its raw
    * action ("No trade" / "Avoid for now"). The Summary then shows that note
-   * and the final read's reasons instead of asking Ruby to explain the raw
+   * and the final read's reasons instead of asking Eleanor to explain the raw
    * BUY / SELL signal. Display only: nothing an order sends reads it.
    */
   setupReasonWithheld?: ScannerSetupReasonWithheld | null;
@@ -806,7 +806,7 @@ export function ScannerTradeModal({
         onOpenChange={(o) => { if (!o) onClose(); }}
         defaultSymbol={signal.symbol}
         defaultSide={direction}
-        rubyExplanationSummary={signal.reasonForTrade ?? null}
+        eleanorExplanationSummary={signal.reasonForTrade ?? null}
         feedWarning={liveFeedWarning}
       />
     );
@@ -841,7 +841,7 @@ export function ScannerTradeModal({
           defaultSymbol={signal.symbol}
           defaultSide={direction}
           sourcePage="MARKET_SCANNER_LIVE"
-          rubyExplanationSummary={signal.reasonForTrade ?? null}
+          eleanorExplanationSummary={signal.reasonForTrade ?? null}
           feedWarning={liveFeedWarning}
         />
 
@@ -891,7 +891,7 @@ export function ScannerTradeModal({
               )}
             </div>
           ) : (
-            <RubySetupReason signal={signal} dense />
+            <EleanorSetupReason signal={signal} dense />
           )}
 
           <SectionLabel>Historical Check</SectionLabel>

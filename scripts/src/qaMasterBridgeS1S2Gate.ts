@@ -56,7 +56,7 @@ async function main() {
   const ADMIN_PAGE = readSafe(join(ROOT, "artifacts/trading-dashboard/src/pages/admin/master-bridge.tsx"));
   const ADMIN_ROUTES = readSafe(join(ROOT, "artifacts/api-server/src/routes/adminTrading.ts"));
   const SCANNER_MODAL = readSafe(join(ROOT, "artifacts/trading-dashboard/src/components/scanner/ScannerTradeModal.tsx"));
-  const RUBY = readSafe(join(ROOT, "artifacts/trading-dashboard/src/components/scanner/RubySetupReason.tsx"));
+  const ELEANOR = readSafe(join(ROOT, "artifacts/trading-dashboard/src/components/scanner/EleanorSetupReason.tsx"));
   const ME_TRADES = readSafe(join(ROOT, "artifacts/api-server/src/routes/meTrades.ts"));
   const APP_TSX = readSafe(join(ROOT, "artifacts/trading-dashboard/src/App.tsx"));
   const SYS_PROMPT = readSafe(join(ROOT, "artifacts/api-server/src/lib/assistant/systemPrompt.ts"));
@@ -239,15 +239,15 @@ async function main() {
     "ScannerTradeModal forwards sourcePage=MARKET_SCANNER + sourceSignalId — server applies routing",
   );
 
-  // ── 12. Ruby explains master bridge routing ──────────────────────────
-  const rubyExplains =
-    /master.bridge|Master Bridge|shared master/i.test(RUBY) &&
-    /routing-status/i.test(RUBY);
+  // ── 12. Eleanor explains master bridge routing ──────────────────────────
+  const eleanorExplains =
+    /master.bridge|Master Bridge|shared master/i.test(ELEANOR) &&
+    /routing-status/i.test(ELEANOR);
   const sysPromptHasGuidance = /master.bridge|shared.master|Centralized Master/i.test(SYS_PROMPT);
   record(
-    "12_RUBY_explains_master_bridge",
-    rubyExplains && sysPromptHasGuidance,
-    "RubySetupReason fetches /api/me/routing-status + systemPrompt has master-bridge guidance",
+    "12_ELEANOR_explains_master_bridge",
+    eleanorExplains && sysPromptHasGuidance,
+    "EleanorSetupReason fetches /api/me/routing-status + systemPrompt has master-bridge guidance",
   );
 
   // ── 13. Duplicate tap does not create duplicate master orders ────────

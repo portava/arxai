@@ -11,7 +11,7 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetTimingBrainMultiQueryKey: () => ["timing-multi"],
 }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => {}] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: EconomicCalendarPage } = await import("./economic-calendar");
 

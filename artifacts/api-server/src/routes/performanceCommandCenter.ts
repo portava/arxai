@@ -3,6 +3,7 @@
 // SAFETY: Reporting only. NEVER places trades. NEVER calls MT5. NEVER changes
 // canPlaceTrades. liveTradingStatus is hardcoded "DISABLED" everywhere.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { Router, type Request, type Response } from "express";
 import {
   computeCalendarMonth, computeDayDetail, computeRangeSummary,
@@ -57,7 +58,7 @@ const LIVE_DAY_NOTE =
   "This is a live account. ARX does not total live trades by day yet, so this day's live P&L, " +
   "win rate, profit factor and rating are not shown. They are not zero.";
 const LIVE_MEMORY_NOTE =
-  "This is a live account. Ruby's memory is built from paper trades only and live trades are not totalled here, " +
+  `This is a live account. ${DEFAULT_ASSISTANT_NAME}'s memory is built from paper trades only and live trades are not totalled here, ` +
   "so no win rate, P&L or equity curve is shown. They are not zero.";
 
 function parseRange(q: unknown): RangeKey {
@@ -210,7 +211,7 @@ router.get("/performance/decision-quality", async (req: Request, res: Response) 
 // 9. GET /api/performance/ai-command-center
 router.get("/performance/ai-command-center", async (req: Request, res: Response) => {
   try {
-    // Ruby's Memory is built from the paper book (all closed paper_orders);
+    // Eleanor's Memory is built from the paper book (all closed paper_orders);
     // a LIVE_SHARED session gets the same withheld, mode-tagged envelope as
     // the calendar instead of paper win rate / P&L under a live account.
     const currentAccountMode = await sessionAccountMode(req);

@@ -141,7 +141,7 @@ export const arxLiveCommandsTable = pgTable("arx_live_commands", {
 
   sourcePage: text("source_page").notNull().default("LIVE_TRADE_TICKET"),
   // e.g. LIVE_TRADE_TICKET | MARKET_SCANNER_LIVE | OPEN_LIVE_POSITIONS_CLOSE | LIVE_POSITION_MODIFY
-  rubyExplanationSummary: text("ruby_explanation_summary"),
+  eleanorExplanationSummary: text("eleanor_explanation_summary"),
 
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   brokerTicket: text("broker_ticket"),

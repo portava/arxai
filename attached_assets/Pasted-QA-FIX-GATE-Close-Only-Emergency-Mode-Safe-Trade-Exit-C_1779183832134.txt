@@ -13,7 +13,7 @@ Verify:
 5. Close-only blocks new pending orders.
 6. Close-only blocks one-click opening.
 7. Close-only blocks scanner-to-open trade.
-8. Close-only blocks Ruby voice open-trade execution.
+8. Close-only blocks Eleanor voice open-trade execution.
 9. Close-only allows safe close requests only for verified user-owned positions.
 10. Close-only allows partial close only if partial close is supported and safe.
 11. Close requests require confirmation.
@@ -29,8 +29,8 @@ Verify:
 21. Admin can cancel queued open commands before dispatch.
 22. Admin cannot force unsafe close/dispatch outside safety gates.
 23. Normal users see clean close-only messages and not backend code labels.
-24. Ruby explains close-only, blocked close, pending close, and needs-review states accurately.
-25. Ruby does not claim a trade closed unless system status confirms it.
+24. Eleanor explains close-only, blocked close, pending close, and needs-review states accurately.
+25. Eleanor does not claim a trade closed unless system status confirms it.
 26. Audit logs are created for close-only changes, blocked opens, close requests, duplicate close ignores, and NEEDS_REVIEW exits.
 27. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, or sensitive bridge payloads are exposed in UI, logs, routes, prompts, or responses.
 28. No live trade is fired during QA.

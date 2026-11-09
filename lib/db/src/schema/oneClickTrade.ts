@@ -63,10 +63,10 @@ export const userOneClickSettingsTable = pgTable(
     reduceOnlyCloseAllowed: boolean("reduce_only_close_allowed")
       .notNull().default(true),
 
-    // ── Ruby AI command-execution settings ─────────────────────────────
-    // OFF by default. When OFF, Ruby may still ANSWER analysis questions
-    // but the instant-trade router refuses any source ∈ {ruby_text,
-    // ruby_voice} request with `RUBY_TRADING_NOT_ENABLED`. Approved
+    // ── Eleanor AI command-execution settings ─────────────────────────────
+    // OFF by default. When OFF, Eleanor may still ANSWER analysis questions
+    // but the instant-trade router refuses any source ∈ {eleanor_text,
+    // eleanor_voice} request with `ELEANOR_TRADING_NOT_ENABLED`. Approved
     // operators may flip this on from the live-trading settings page.
     // The three allow* flags are AND-gated against this master toggle
     // and against the per-action source check at the route layer.
@@ -75,55 +75,55 @@ export const userOneClickSettingsTable = pgTable(
     defaultAiTradeSymbol: text("default_ai_trade_symbol"),
     defaultAiTradeVolume: doublePrecision("default_ai_trade_volume"),
     defaultAiOrderType: text("default_ai_order_type"),
-    allowRubyOpenCommands: boolean("allow_ruby_open_commands")
+    allowEleanorOpenCommands: boolean("allow_eleanor_open_commands")
       .notNull().default(false),
-    allowRubyCloseCommands: boolean("allow_ruby_close_commands")
+    allowEleanorCloseCommands: boolean("allow_eleanor_close_commands")
       .notNull().default(true),
-    allowRubyModifyCommands: boolean("allow_ruby_modify_commands")
+    allowEleanorModifyCommands: boolean("allow_eleanor_modify_commands")
       .notNull().default(true),
 
-    // ── Ruby execution-authority model (Task #319) ─────────────────────
-    // The SOURCE OF TRUTH for whether Ruby may execute. Modes:
-    //   OFF         — Ruby answers analysis only; the instant-trade router
-    //                 refuses any ruby_text/ruby_voice source.
-    //   ADVISE_ONLY — Ruby may propose a trade but never executes; the user
+    // ── Eleanor execution-authority model (Task #319) ─────────────────────
+    // The SOURCE OF TRUTH for whether Eleanor may execute. Modes:
+    //   OFF         — Eleanor answers analysis only; the instant-trade router
+    //                 refuses any eleanor_text/eleanor_voice source.
+    //   ADVISE_ONLY — Eleanor may propose a trade but never executes; the user
     //                 still confirms and submits manually.
-    //   AI_ASSISTED — Ruby executes ALLOWED commands through the existing
+    //   AI_ASSISTED — Eleanor executes ALLOWED commands through the existing
     //                 instant-trade → 16-gate pipeline WITHOUT the extra
-    //                 confirmation prompt (when rubyRequireExtraConfirmation
+    //                 confirmation prompt (when eleanorRequireExtraConfirmation
     //                 is false). It NEVER bypasses any backend gate.
     //   AI_AUTO     — reserved for autonomous find/open/manage/close. DEFINED
     //                 but NOT enabled in this build; the auth layer refuses
-    //                 execution under AI_AUTO with RUBY_AI_AUTO_NOT_ENABLED.
+    //                 execution under AI_AUTO with ELEANOR_AI_AUTO_NOT_ENABLED.
     // Legacy `aiInstantTradeCommandsEnabled` is kept in sync (true iff
     // authority === 'AI_ASSISTED') so older readers stay consistent.
-    rubyExecutionAuthority: text("ruby_execution_authority")
+    eleanorExecutionAuthority: text("eleanor_execution_authority")
       .notNull().default("OFF"),
-    // When true (default), Ruby surfaces a confirm step even in AI_ASSISTED.
+    // When true (default), Eleanor surfaces a confirm step even in AI_ASSISTED.
     // Setting false is the user's explicit opt-in to one-gesture execution.
-    rubyRequireExtraConfirmation: boolean("ruby_require_extra_confirmation")
+    eleanorRequireExtraConfirmation: boolean("eleanor_require_extra_confirmation")
       .notNull().default(true),
 
     // Per-action permissions (AND-gated against authority + the existing
     // open/close/modify allow flags). Risk-reducing actions default ON;
     // risk-adding actions default OFF.
-    allowRubyBreakEven: boolean("allow_ruby_break_even").notNull().default(true),
-    allowRubyPartialClose: boolean("allow_ruby_partial_close").notNull().default(true),
-    allowRubyMonitor: boolean("allow_ruby_monitor").notNull().default(true),
-    allowRubyWatchEnter: boolean("allow_ruby_watch_enter").notNull().default(false),
-    allowRubyWatchClose: boolean("allow_ruby_watch_close").notNull().default(true),
-    allowRubyScalpScanner: boolean("allow_ruby_scalp_scanner").notNull().default(false),
+    allowEleanorBreakEven: boolean("allow_eleanor_break_even").notNull().default(true),
+    allowEleanorPartialClose: boolean("allow_eleanor_partial_close").notNull().default(true),
+    allowEleanorMonitor: boolean("allow_eleanor_monitor").notNull().default(true),
+    allowEleanorWatchEnter: boolean("allow_eleanor_watch_enter").notNull().default(false),
+    allowEleanorWatchClose: boolean("allow_eleanor_watch_close").notNull().default(true),
+    allowEleanorScalpScanner: boolean("allow_eleanor_scalp_scanner").notNull().default(false),
 
-    // Per-Ruby caps — enforced IN ADDITION to (never instead of) the
+    // Per-Eleanor caps — enforced IN ADDITION to (never instead of) the
     // per-market max-lot, master-live, and 16-gate limits. Null = no
-    // Ruby-specific cap (account limits still apply).
-    maxRubyLotPerTrade: doublePrecision("max_ruby_lot_per_trade"),
-    maxRubyOpenPositions: integer("max_ruby_open_positions"),
-    maxRubyDailyTrades: integer("max_ruby_daily_trades"),
+    // Eleanor-specific cap (account limits still apply).
+    maxEleanorLotPerTrade: doublePrecision("max_eleanor_lot_per_trade"),
+    maxEleanorOpenPositions: integer("max_eleanor_open_positions"),
+    maxEleanorDailyTrades: integer("max_eleanor_daily_trades"),
     // JSON arrays. Null = inherit the account symbol allowlist / all asset
-    // classes. Non-null = a stricter Ruby-only subset.
-    allowedRubySymbols: text("allowed_ruby_symbols"),
-    allowedRubyAssetClasses: text("allowed_ruby_asset_classes"),
+    // classes. Non-null = a stricter Eleanor-only subset.
+    allowedEleanorSymbols: text("allowed_eleanor_symbols"),
+    allowedEleanorAssetClasses: text("allowed_eleanor_asset_classes"),
 
     // Task #353 — Bridge-type-aware armed one-click trading.
     // oneClickArmed is the new bridge-type-aware armed state. When true,
@@ -156,19 +156,19 @@ export const ONE_CLICK_AUDIT_ACTIONS = [
   "SUBMIT_DEMO_ONE_CLICK", "SUBMIT_LIVE_ONE_CLICK",
   // Phase: global instant-trade router (BUY/SELL/CLOSE/CLOSE_ALL/MODIFY)
   // surfaces from anywhere in the app (trade page, scanner, chart,
-  // watchlist, position card, dashboard, alert, ruby_text, ruby_voice).
+  // watchlist, position card, dashboard, alert, eleanor_text, eleanor_voice).
   "INSTANT_EXECUTE_ACCEPTED", "INSTANT_EXECUTE_REJECTED",
   "INSTANT_CLOSE_ACCEPTED", "INSTANT_CLOSE_REJECTED",
   "INSTANT_CLOSE_ALL_ACCEPTED", "INSTANT_CLOSE_ALL_REJECTED",
   "INSTANT_VALIDATE",
-  "RUBY_TRADE_COMMAND_PARSED", "RUBY_TRADE_COMMAND_VAGUE_REJECTED",
+  "ELEANOR_TRADE_COMMAND_PARSED", "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED",
   "AI_INSTANT_TRADE_ENABLED", "AI_INSTANT_TRADE_DISABLED",
-  // Task #319 — Ruby execution-authority model + bounded executor.
-  "RUBY_AUTHORITY_UPDATED",
-  "RUBY_COMMAND_RECORDED", "RUBY_COMMAND_BLOCKED", "RUBY_COMMAND_DUPLICATE",
-  "RUBY_COMMAND_DISPATCHED", "RUBY_COMMAND_FAILED", "RUBY_COMMAND_CANCELLED",
-  "RUBY_WATCH_ARMED", "RUBY_WATCH_FIRED", "RUBY_WATCH_CANCELLED",
-  "RUBY_WATCH_SKIPPED",
+  // Task #319 — Eleanor execution-authority model + bounded executor.
+  "ELEANOR_AUTHORITY_UPDATED",
+  "ELEANOR_COMMAND_RECORDED", "ELEANOR_COMMAND_BLOCKED", "ELEANOR_COMMAND_DUPLICATE",
+  "ELEANOR_COMMAND_DISPATCHED", "ELEANOR_COMMAND_FAILED", "ELEANOR_COMMAND_CANCELLED",
+  "ELEANOR_WATCH_ARMED", "ELEANOR_WATCH_FIRED", "ELEANOR_WATCH_CANCELLED",
+  "ELEANOR_WATCH_SKIPPED",
   // Task #353 — Bridge-type-aware armed one-click trading.
   "ONE_CLICK_ARMED", "ONE_CLICK_DISARMED", "ONE_CLICK_AUTO_DISARMED",
 ] as const;

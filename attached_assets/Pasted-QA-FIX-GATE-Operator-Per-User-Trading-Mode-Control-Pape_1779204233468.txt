@@ -36,8 +36,8 @@ Verify:
 25. P/L and trade history remain labeled or filtered by mode.
 26. User A cannot view or change User B mode.
 27. Normal users see clean mode labels and explanations.
-28. Ruby explains only the current user’s mode.
-29. Ruby cannot change mode or bypass safety gates.
+28. Eleanor explains only the current user’s mode.
+29. Eleanor cannot change mode or bypass safety gates.
 30. Bulk mode tools cannot set users to LIVE unless each user passes readiness.
 31. Audit logs are created for mode changes, failed live readiness, and blocked live attempts.
 32. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.

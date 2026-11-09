@@ -302,7 +302,7 @@ test("applyTrendlineLearning records the detection AND nudges within the ceiling
 
     const { forexIndices } = await buildTrendlineReliability(WIRE_USER);
     assert.notEqual(forexIndices.reliabilityScore, null, "history yields a reliability score");
-    assert.ok(forexIndices.rubyConfidenceAdjustment > 0, "all-win history nudges confidence up");
+    assert.ok(forexIndices.eleanorConfidenceAdjustment > 0, "all-win history nudges confidence up");
 
     // A real confirmed verdict (the pure contract is the source of the ceiling).
     const verdict = resolveTrendlineTruth([wireTl()], wireCtx(), wireDisp());

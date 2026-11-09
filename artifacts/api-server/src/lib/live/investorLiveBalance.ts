@@ -2,7 +2,7 @@
 //
 // PURPOSE (Task #430)
 //   Every balance surface (Dashboard, Open Trades, account summary, Admin
-//   investor table, Ruby, risk engine, wallet/allocation) must agree on the
+//   investor table, Eleanor, risk engine, wallet/allocation) must agree on the
 //   same live equity number and never label stale data as live. Today the
 //   pieces are computed in several places that can drift:
 //     • liveAccountSnapshot.ts        — floating P/L + freshness (pure adapter)
@@ -316,7 +316,7 @@ export function composeInvestorBalance(
  * per-user/role-scoped I/O, then delegates the math to composeInvestorBalance.
  *
  * Isolation: live positions are only read + included when the resolved account
- * mode is LIVE_SHARED (same gate as the SSE stream and Ruby). A non-live user
+ * mode is LIVE_SHARED (same gate as the SSE stream and Eleanor). A non-live user
  * never receives live floating P/L.
  */
 /** The non-live balance inputs (admin-allocated principal, reserved risk, and

@@ -558,7 +558,7 @@ Fields:
 * topNegativeContributorsJson
 * economicImpactJson
 * marketImpactJson
-* rubyExplanation
+* eleanorExplanation
 * nextWeekWatchlistJson
 * freshnessStatus
 * reconciliationStatus
@@ -924,7 +924,7 @@ Admin UI should allow:
 * add note/reason
 * audit the assignment
 
-If trade was opened by Ruby/Scanner with a strategy context, auto-assign it to that pool if available.
+If trade was opened by Eleanor/Scanner with a strategy context, auto-assign it to that pool if available.
 
 If no strategy context exists, status = UNASSIGNED and discrepancy created.
 
@@ -1233,7 +1233,7 @@ At the end of every week, each investor should see a simple but informative dash
 * economic/news conditions that affected their account
 * current drawdown
 * whether their risk profile performed within expected range
-* what Ruby/ARX is watching next week
+* what Eleanor/ARX is watching next week
 * locked deposit status if relevant
 
 The explanation must connect the chain:
@@ -1263,7 +1263,7 @@ Dashboard sections:
 * Top Negative Contributors
 * Risk & Drawdown Status
 * Deposit Lock Status
-* What Ruby Is Watching Next Week
+* What Eleanor Is Watching Next Week
 
 Do not invent reasons.
 Use available market, trade, scanner, news, economic, pool, NAV, and broker data.
@@ -2209,7 +2209,7 @@ Required regression tests:
 * Andraie.co@gmail.com remains trader/user only if already split
 * separate admin account still accesses admin controls
 * scanner still works
-* Ruby still works
+* Eleanor still works
 * live bridge status still works
 * open position visibility still works
 * retcode display still works

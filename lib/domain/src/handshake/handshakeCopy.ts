@@ -31,7 +31,7 @@ function copyFamily(type: HandshakeType): CopyFamily {
     case "WEEKLY_REPORT":
       return "investor";
     case "TRADE_PREVIEW":
-    case "RUBY_EXECUTION":
+    case "ELEANOR_EXECUTION":
       return "execution";
     case "SMART_CHART_OVERLAY":
     case "SIGNAL_INTELLIGENCE":

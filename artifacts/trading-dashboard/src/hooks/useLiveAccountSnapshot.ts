@@ -225,7 +225,7 @@ function isServerUnavailable(snap: LiveAccountSnapshot): boolean {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 /**
  * Shared live account snapshot hook.  All surfaces — Dashboard, Open Trades,
- * Ruby panel — must use this hook so every surface always shows identical
+ * Eleanor panel — must use this hook so every surface always shows identical
  * numbers sourced from the same SSE stream / polling fallback.
  */
 export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {

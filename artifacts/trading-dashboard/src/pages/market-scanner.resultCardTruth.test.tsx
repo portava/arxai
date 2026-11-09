@@ -150,11 +150,11 @@ vi.mock("@/components/ui/select", () => ({
 
 // ---- Heavy scanner / live child surfaces → inert stubs ---------------------
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
-// Records the signal each card hands Ruby's Setup Reason, so a test can see
+// Records the signal each card hands Eleanor's Setup Reason, so a test can see
 // what the panel would be asked to explain.
-const rubySignals: Array<Record<string, unknown>> = [];
-vi.mock("@/components/scanner/RubySetupReason", () => ({
-  RubySetupReason: ({ signal }: { signal: Record<string, unknown> }) => { rubySignals.push(signal); return null; },
+const eleanorSignals: Array<Record<string, unknown>> = [];
+vi.mock("@/components/scanner/EleanorSetupReason", () => ({
+  EleanorSetupReason: ({ signal }: { signal: Record<string, unknown> }) => { eleanorSignals.push(signal); return null; },
 }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
 // Records the props the Trade Setup / BUY / SELL buttons open the ticket with.
@@ -171,15 +171,15 @@ vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => nu
 vi.mock("@/components/scanner/ScannerChartPanel", () => ({ ScannerChartPanel: () => null }));
 vi.mock("@/components/live/TradeHealthPanel", () => ({ TradeHealthPanel: () => null }));
 vi.mock("@/components/scanner/ScannerHeaderSummary", () => ({ ScannerHeaderSummary: () => null }));
-vi.mock("@/components/scanner/RubyScalpFocusCard", () => ({ RubyScalpFocusCard: () => null }));
-vi.mock("@/components/scanner/RubyScalpRanking", () => ({ RubyScalpRanking: () => null }));
-vi.mock("@/components/scanner/RubyMarketReadCard", () => ({ RubyMarketReadCard: () => null }));
+vi.mock("@/components/scanner/EleanorScalpFocusCard", () => ({ EleanorScalpFocusCard: () => null }));
+vi.mock("@/components/scanner/EleanorScalpRanking", () => ({ EleanorScalpRanking: () => null }));
+vi.mock("@/components/scanner/EleanorMarketReadCard", () => ({ EleanorMarketReadCard: () => null }));
 vi.mock("@/components/scanner/TimingIntelligenceCard", () => ({ TimingIntelligenceCard: () => null }));
 vi.mock("@/components/scanner/ScannerReadGate", () => ({ ScannerReadGate: () => null }));
 vi.mock("@/components/scanner/BroadScanOpportunityMap", () => ({ BroadScanOpportunityMap: ({ onPick, marketGroup }: { onPick: (symbol: string) => void; marketGroup: string }) => { pickCallbacks.push(onPick); mapGroups.push(marketGroup); return null; } }));
-vi.mock("@/components/scanner/RubyScalpBuilder", () => ({ RubyScalpBuilder: () => null }));
-vi.mock("@/components/scanner/RubyScalpBasketPanel", () => ({ RubyScalpBasketPanel: () => null }));
-vi.mock("@/components/scanner/RubyScalpReviewPanel", () => ({ RubyScalpReviewPanel: () => null }));
+vi.mock("@/components/scanner/EleanorScalpBuilder", () => ({ EleanorScalpBuilder: () => null }));
+vi.mock("@/components/scanner/EleanorScalpBasketPanel", () => ({ EleanorScalpBasketPanel: () => null }));
+vi.mock("@/components/scanner/EleanorScalpReviewPanel", () => ({ EleanorScalpReviewPanel: () => null }));
 
 
 import MarketScanner from "./market-scanner";
@@ -192,7 +192,7 @@ beforeEach(() => {
   globalFeed = envelope("all", ["EURUSD"]);
   pendingRead = null;
   mockRealIsAdmin = false;
-  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0; rubySignals.length = 0; modalProps.length = 0;
+  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0; eleanorSignals.length = 0; modalProps.length = 0;
   vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
 });
@@ -207,14 +207,14 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(screen.getByTestId("scanner-grade-withheld-EURUSD").textContent).toMatch(/87/);
   });
 
-  it("does not ask Ruby to explain a buy setup under 'No trade'; shows the final read's reasons", async () => {
+  it("does not ask Eleanor to explain a buy setup under 'No trade'; shows the final read's reasons", async () => {
     rowOverrides = { finalRead: { label: "NO_TRADE", headline: "No trade", reasons: ["Major event nearby. Volatility may spike."] } };
     globalFeed = envelope("all", ["EURUSD"]);
     render(<MarketScanner />); await settle();
     expect(screen.getByTestId("scanner-action-EURUSD").textContent).toBe("No trade");
-    // Ruby's Setup Reason would be sent recommendedAction BUY + HOT_SETUP and
+    // Eleanor's Setup Reason would be sent recommendedAction BUY + HOT_SETUP and
     // answer "This looks like a possible buy setup." in a green box.
-    expect(rubySignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
+    expect(eleanorSignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
     const note = screen.getByTestId("scanner-final-read-note-EURUSD").textContent ?? "";
     expect(note).toMatch(/No trade/);
     expect(note).toMatch(/Major event nearby/);
@@ -225,7 +225,7 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     rowOverrides = { finalRead: { label: "AVOID_FOR_NOW" } };
     globalFeed = envelope("all", ["EURUSD"]);
     render(<MarketScanner />); await settle();
-    expect(rubySignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
+    expect(eleanorSignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
     expect(screen.getByTestId("scanner-final-read-note-EURUSD").textContent).toMatch(/Avoid for now/);
   });
 
@@ -237,7 +237,7 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(screen.getByText("Hot setup")).toBeTruthy();
     expect(screen.getByText("ELITE 87")).toBeTruthy();
     expect(screen.queryByTestId("scanner-final-read-note-EURUSD")).toBeNull();
-    const sent = rubySignals.filter((s) => s.symbol === "EURUSD");
+    const sent = eleanorSignals.filter((s) => s.symbol === "EURUSD");
     expect(sent.length).toBeGreaterThan(0);
     expect(sent[sent.length - 1].recommendedAction).toBe("BUY");
     expect(sent[sent.length - 1].statusBadge).toBe("HOT_SETUP");
@@ -245,7 +245,7 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
 });
 
 // Review pass 2: the card now says "No trade", but its Trade Setup / BUY /
-// SELL buttons still open the ticket, whose Summary asked Ruby to explain the
+// SELL buttons still open the ticket, whose Summary asked Eleanor to explain the
 // raw BUY + HOT_SETUP signal ("This looks like a possible buy setup."). The
 // ticket is told the final read withheld the setup reason, so it shows the
 // same note as the card. The signal itself (what an order records) is unchanged.

@@ -43,7 +43,7 @@ Required outcome:
 5. Add a safe “Live Not Yet Available” state:
    Users can still:
    - browse scanner
-   - use Ruby
+   - use Eleanor
    - place demo trades
    - view EA heartbeat
    - view risk tools

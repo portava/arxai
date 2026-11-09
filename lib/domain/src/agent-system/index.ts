@@ -106,7 +106,7 @@ export * from "./learning-camp/learningCamp.engine";
 
 // Agent Ecosystem (Phase 0 integration) — advisory influence engine that turns
 // earned agent trust + lifecycle health into a BOUNDED, advisory-only score
-// adjustment for the real Scanner / Risk / Scalp / Ruby surfaces. PURE.
+// adjustment for the real Scanner / Risk / Scalp / Eleanor surfaces. PURE.
 export * from "./advisory/agentAdvisory.engine";
 
 // Agent Ecosystem (Layer 3) — operational Governance Court, Traffic Controller

@@ -21,8 +21,8 @@ Verify:
 13. Close-only changes create audit events.
 14. Reconciliation scans/resolutions create audit events.
 15. User approval/allocation/risk changes create audit events.
-16. Ruby help/trading requests create safe audit events.
-17. Ruby voice trade guardrails create safe audit events.
+16. Eleanor help/trading requests create safe audit events.
+17. Eleanor voice trade guardrails create safe audit events.
 18. Duplicate callback ignored creates audit event.
 19. Stuck reservation/release creates audit event.
 20. Admin audit views/searches/exports are themselves audited.
@@ -33,7 +33,7 @@ Verify:
 25. Export does not include bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads.
 26. Export files are protected and not publicly accessible.
 27. No-live-command QA evidence can be exported or viewed.
-28. Ruby explains audit/activity only within the user’s permission level.
+28. Eleanor explains audit/activity only within the user’s permission level.
 29. requireAdmin output is production-safe.
 30. bridge evidence masking uses the centralized masking chokepoint.
 31. CI/probes cover secret leakage where practical.

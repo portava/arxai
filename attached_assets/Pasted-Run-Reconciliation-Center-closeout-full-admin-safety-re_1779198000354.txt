@@ -31,8 +31,8 @@ Verify Reconciliation Center:
 19. Link attribution requires reason.
 20. Manual resolution requires reason.
 21. Every action writes admin audit log.
-22. Admin Ruby explanation works without exposing secrets/tokens.
-23. Per-user Ruby explanation works without exposing other-user/admin-only data.
+22. Admin Eleanor explanation works without exposing secrets/tokens.
+23. Per-user Eleanor explanation works without exposing other-user/admin-only data.
 24. No secrets leak.
 25. No live trade auto-fires.
 26. arx_live_commands count before/after is unchanged.

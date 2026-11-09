@@ -38,7 +38,7 @@ const {
   shapeShadowOutcomeUpdate,
   persistShadowDecision,
   updateShadowOutcome,
-  persistRubyChatPrediction,
+  persistEleanorChatPrediction,
 } = await import("../shadowPersistence.js");
 
 function fixtureDecision(overrides: Partial<ShadowDecision> = {}): ShadowDecision {
@@ -71,7 +71,7 @@ function fixtureDecision(overrides: Partial<ShadowDecision> = {}): ShadowDecisio
 test("module imports cleanly from api-server/src/lib and exports the wiring surface", () => {
   assert.equal(typeof persistShadowDecision, "function");
   assert.equal(typeof updateShadowOutcome, "function");
-  assert.equal(typeof persistRubyChatPrediction, "function");
+  assert.equal(typeof persistEleanorChatPrediction, "function");
   assert.equal(typeof shapeShadowDecisionRow, "function");
   assert.equal(typeof shapeShadowOutcomeUpdate, "function");
   assert.equal(SYNTHETIC_SIMULATOR_SOURCE, "SYNTHETIC_SIMULATOR");
@@ -166,7 +166,7 @@ test("shapeShadowDecisionRow maps the decision and labels the source SYNTHETIC_S
 
 test("the synthetic label can never collide with the real-evidence source taxonomy", () => {
   assert.notEqual(SYNTHETIC_SIMULATOR_SOURCE, "scanner");
-  assert.notEqual(SYNTHETIC_SIMULATOR_SOURCE, "ruby_chat");
+  assert.notEqual(SYNTHETIC_SIMULATOR_SOURCE, "eleanor_chat");
   assert.match(SYNTHETIC_SIMULATOR_SOURCE, /SYNTHETIC/);
 });
 

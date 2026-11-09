@@ -30,7 +30,7 @@ const ROSTER: TrafficAgentSnapshot[] = [
   { agentKey: "STRUCT", name: "Market Structure AI", department: "MARKET_STRUCTURE", currentStatus: "ACTIVE", authorityWeight: 0.5 },
   { agentKey: "SCANNER", name: "Scanner AI", department: "SCANNER", currentStatus: "ACTIVE", authorityWeight: 0.5 },
   { agentKey: "REVIEW", name: "Trade Review AI", department: "REVIEW", currentStatus: "ACTIVE", authorityWeight: 0.4 },
-  { agentKey: "RUBY", name: "Ruby", department: "RUBY_HOUSEHOLD", currentStatus: "ACTIVE", authorityWeight: 0.5 },
+  { agentKey: "ELEANOR", name: "Eleanor", department: "ELEANOR_HOUSEHOLD", currentStatus: "ACTIVE", authorityWeight: 0.5 },
   { agentKey: "FACTORY", name: "Agent Factory", department: "AGENT_OPERATIONS", currentStatus: "ACTIVE", authorityWeight: 0.3 },
 ];
 
@@ -63,7 +63,7 @@ function participating(r: ReturnType<typeof routeAgents>): Set<string> {
   check("19: live runs RISK", parts.has("RISK"));
   check("19: live does NOT run SCANNER", !parts.has("SCANNER"));
   check("19: live does NOT run SCALP", !parts.has("SCALP"));
-  check("19: live does NOT run RUBY_HOUSEHOLD", !parts.has("RUBY_HOUSEHOLD"));
+  check("19: live does NOT run ELEANOR_HOUSEHOLD", !parts.has("ELEANOR_HOUSEHOLD"));
   check("19: live sets executionPriority", r.executionPriority === true);
   check("19: live bypasses deep analysis", r.bypassDeepAnalysis === true);
   check("19: live latency budget is tiny", r.latencyBudgetMs <= 50);

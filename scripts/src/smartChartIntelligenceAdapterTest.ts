@@ -10,7 +10,7 @@ import {
   buildSmartChartIntelligence,
   type SmartChartExternalContext,
 } from "../../artifacts/api-server/src/lib/data/chart/smartChartIntelligence.js";
-import type { RubyChartContext } from "../../artifacts/api-server/src/lib/data/chart/rubyChartContext.js";
+import type { EleanorChartContext } from "../../artifacts/api-server/src/lib/data/chart/eleanorChartContext.js";
 import type { ChartIntelligenceState } from "../../artifacts/api-server/src/lib/data/chart/chartIntelligence.js";
 import type { ChartGateOutput } from "../../artifacts/api-server/src/lib/data/chart/chartGateOutput.js";
 
@@ -92,7 +92,7 @@ function makeState(over: Record<string, unknown> = {}): ChartIntelligenceState {
   } as unknown as ChartIntelligenceState;
 }
 
-function makeCtx(gate: ChartGateOutput, state: ChartIntelligenceState, over: Partial<RubyChartContext> = {}): RubyChartContext {
+function makeCtx(gate: ChartGateOutput, state: ChartIntelligenceState, over: Partial<EleanorChartContext> = {}): EleanorChartContext {
   return {
     symbol: "EURUSD",
     displaySymbol: "EUR/USD",
@@ -105,14 +105,14 @@ function makeCtx(gate: ChartGateOutput, state: ChartIntelligenceState, over: Par
     trustLine: gate.confidentReadAllowed
       ? "Verified M5 candles · Live feed · Mirror synced · AACI verified"
       : "M5 candles syncing · Feed stale · Mirror degraded · AACI unverified",
-    blockReason: gate.confidentReadAllowed ? null : "Chart data is syncing. Ruby will read once candles are verified.",
+    blockReason: gate.confidentReadAllowed ? null : "Chart data is syncing. Eleanor will read once candles are verified.",
     aaciChartHandshakeOverall: gate.confidentReadAllowed ? "PASS" : "FAIL",
     gateOutput: gate,
     state,
     candles: [],
     htfCandles: [],
     ...over,
-  } as unknown as RubyChartContext;
+  } as unknown as EleanorChartContext;
 }
 
 const NOW = 1_700_000_000_000;

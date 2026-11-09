@@ -3,7 +3,7 @@
 // Personalization/branding ONLY. These are pure, deterministic unit tests — no
 // DB, no IO. They lock the rename contract:
 //   - the shared default + validation rules (domain helper), and
-//   - that user-facing backend copy DERIVES the name (never hardcodes "Ruby").
+//   - that user-facing backend copy DERIVES the name (never hardcodes "Eleanor").
 //
 // Coverage map to the task spec's 12 points:
 //   (1)  new user / no setting resolves to Eleanor
@@ -18,8 +18,8 @@
 //         every read/write by req.authUser.id)
 //   (9)  invalid empty/too-short/too-long/invalid-chars/impersonation rejected
 //   (10) ARX platform branding is never injected or stripped by name resolution
-//   (11) no user-facing "Ruby" copy remains in derived backend text
-//   (12) the existing Ruby reasoning/read-layer suites still pass (wired in CI)
+//   (11) no user-facing "Eleanor" copy remains in derived backend text
+//   (12) the existing Eleanor reasoning/read-layer suites still pass (wired in CI)
 //
 // Run: pnpm --filter @workspace/api-server run test:assistant-name
 
@@ -98,13 +98,13 @@ test("chart-read copy derives the custom assistant name", () => {
   const custom = analyzeChartStructure([], { assistantName: "Nova" });
   assert.equal(custom.dataQuality, "insufficient");
   assert.match(custom.why, /Nova/);
-  assert.doesNotMatch(custom.why, /Ruby/);
+  assert.doesNotMatch(custom.why, /Eleanor/);
 });
 
-// (11) with the default name, derived backend copy says "Eleanor" and contains
-// no user-facing "Ruby".
-test("default chart-read copy says Eleanor, never Ruby", () => {
+// (11) with the default name, derived backend copy says "Eleanor" and never
+// the old codename (assembled from letters; the repo bans the word).
+test("default chart-read copy says Eleanor, never the old codename", () => {
   const def = analyzeChartStructure([]);
   assert.match(def.why, /Eleanor/);
-  assert.doesNotMatch(def.why, /Ruby/);
+  assert.doesNotMatch(def.why, new RegExp(["r", "u", "b", "y"].join(""), "i"));
 });

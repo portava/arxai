@@ -43,11 +43,11 @@ type Notification = {
   createdAt?: string | null;
 };
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* silent */ }
 }
 
@@ -94,18 +94,18 @@ function categorize(n: Notification): CategoryKey {
   if (t.includes("hold_time") || t.includes("near_breakeven") || title.includes("holding longer") || title.includes("intraday window")) return "duration";
   if (src === "risk" || t.includes("risk") || t.includes("kill") || t.includes("governor") || t.includes("cooldown") || t.includes("drawdown")) return "risk";
   if (src === "mt5" || t.includes("mt5") || t.includes("bridge") || t.includes("broker") || t.includes("heartbeat")) return "mt5";
-  if (src === "ai" || t.includes("ruby") || t.includes("signal") || t.includes("scanner") || t.includes("market") || t.includes("opportunity")) return "market";
+  if (src === "ai" || t.includes("eleanor") || t.includes("signal") || t.includes("scanner") || t.includes("market") || t.includes("opportunity")) return "market";
   if (src === "trade" || t.includes("trade_") || t.includes("position") || t.includes("fill") || t.includes("close")) return "execution";
   if (t.includes("calendar") || t.includes("news") || t.includes("event") || t.includes("cpi") || t.includes("fomc")) return "market";
   return "system";
 }
 
 // User-facing tabs mapped onto categories/severity.
-type TabKey = "all" | "urgent" | "risk" | "trades" | "scanner" | "calendar" | "ruby" | "account";
+type TabKey = "all" | "urgent" | "risk" | "trades" | "scanner" | "calendar" | "eleanor" | "account";
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "all", label: "All" }, { key: "urgent", label: "Urgent" }, { key: "risk", label: "Risk" },
   { key: "trades", label: "Trades" }, { key: "scanner", label: "Scanner" }, { key: "calendar", label: "Calendar" },
-  { key: "ruby", label: "Assistant" }, { key: "account", label: "Account" },
+  { key: "eleanor", label: "Assistant" }, { key: "account", label: "Account" },
 ];
 function tabSource(n: Notification): string {
   const t = String(n.notificationType ?? "").toLowerCase();
@@ -116,7 +116,7 @@ function tabSource(n: Notification): string {
   if (src === "risk" || categorize(n) === "risk") return "risk";
   if (src === "mt5" || categorize(n) === "mt5") return "account";
   if (t.includes("scanner") || t.includes("signal") || t.includes("scalp")) return "scanner";
-  if (src === "ai" || t.includes("ruby") || t.includes("review") || t.includes("lesson") || t.includes("remind")) return "ruby";
+  if (src === "ai" || t.includes("eleanor") || t.includes("review") || t.includes("lesson") || t.includes("remind")) return "eleanor";
   const c = categorize(n);
   if (c === "execution" || c === "duration") return "trades";
   return "account";
@@ -267,7 +267,7 @@ export default function Alerts() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
+          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
           <button onClick={() => setSettingsOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
@@ -311,7 +311,7 @@ export default function Alerts() {
         </div>
       </div>
 
-      {/* Ruby read + severity */}
+      {/* Eleanor read + severity */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-[#A855F7]/25 bg-card p-4 lg:col-span-2">
           <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#A855F7]" /><h3 className="text-sm font-semibold text-[#A855F7]">{name}’s Alert Read</h3></div>
@@ -333,7 +333,7 @@ export default function Alerts() {
             </>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+            <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-2.5 py-1.5 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
             <button onClick={() => setTab("urgent")} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground hover:border-primary/40"><AlertTriangle className="h-3.5 w-3.5" /> Review Urgent</button>
             <button onClick={markAllRead} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground hover:border-primary/40 disabled:opacity-50"><CheckCheck className="h-3.5 w-3.5" /> Mark all read</button>
           </div>
@@ -369,7 +369,7 @@ export default function Alerts() {
               return (
                 <button key={key} onClick={() => setTab(key)}
                   className={cn("shrink-0 rounded-lg border px-3 py-1.5 text-sm", tab === key ? "border-primary bg-primary text-white" : "border-border bg-card text-txt-secondary hover:text-foreground")}>
-                  {key === "ruby" ? name : label} <span className={cn("ml-1 text-xs", tab === key ? "text-white/80" : "text-txt-muted")}>{c}</span>
+                  {key === "eleanor" ? name : label} <span className={cn("ml-1 text-xs", tab === key ? "text-white/80" : "text-txt-muted")}>{c}</span>
                 </button>
               );
             })}
@@ -461,7 +461,7 @@ export default function Alerts() {
 
                 {/* Context-aware actions */}
                 <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button onClick={openRubyLiveChat} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-ruby/15 border border-ruby/40 px-3 py-2 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+                  <button onClick={openEleanorLiveChat} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-eleanor/15 border border-eleanor/40 px-3 py-2 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
                   {src === "calendar" && <button onClick={() => navigate("/economic-calendar")} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:border-primary/40"><CalendarDays className="h-3.5 w-3.5" /> View Calendar</button>}
                   {src === "scanner" && !String(selected?.notificationType ?? "").startsWith("heat_") && <button onClick={() => navigate("/market-scanner")} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:border-primary/40"><Search className="h-3.5 w-3.5" /> Open Scanner</button>}
                   {src === "scanner" && String(selected?.notificationType ?? "").startsWith("heat_") && <button onClick={() => navigate("/market-heat-map")} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:border-primary/40"><Globe className="h-3.5 w-3.5" /> Heat Map</button>}
@@ -523,7 +523,7 @@ export default function Alerts() {
             <QF label="Unread" count={counts.unread} active={statusFilter === "unread"} onClick={() => setStatusFilter(statusFilter === "unread" ? "all" : "unread")} />
             <QF label="Urgent" count={counts.urgent} active={tab === "urgent"} onClick={() => setTab(tab === "urgent" ? "all" : "urgent")} />
             <QF label="Risk" count={counts.byTab["risk"] ?? 0} active={tab === "risk"} onClick={() => setTab(tab === "risk" ? "all" : "risk")} />
-            <QF label={`${name} Reminders`} count={counts.byTab["ruby"] ?? 0} active={tab === "ruby"} onClick={() => setTab(tab === "ruby" ? "all" : "ruby")} />
+            <QF label={`${name} Reminders`} count={counts.byTab["eleanor"] ?? 0} active={tab === "eleanor"} onClick={() => setTab(tab === "eleanor" ? "all" : "eleanor")} />
             <QF label="Scanner Signals" count={counts.byTab["scanner"] ?? 0} active={tab === "scanner"} onClick={() => setTab(tab === "scanner" ? "all" : "scanner")} />
           </div>
           <button onClick={() => { setTab("all"); setStatusFilter("all"); setQuery(""); }} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-txt-secondary hover:border-primary/40"><X className="h-3.5 w-3.5" /> Clear Filters</button>

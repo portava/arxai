@@ -14,7 +14,7 @@
 
 export const BRIDGE_V2_LIFECYCLE_STATES = [
   // ── pre-broker (no money at risk; purely ARX-side) ──
-  "REQUESTED", // user/Ruby/agent asked for an action
+  "REQUESTED", // user/Eleanor/agent asked for an action
   "QUEUED", // drafted + accepted into the dispatch queue (ARX side)
   "SENT_TO_BRIDGE", // claimed by the EA poll / mirrored into transport
   // ── broker handshake ──

@@ -4,7 +4,7 @@ Goal:
 Users may download ARX or visit the app site, but they cannot create an account unless they have a valid one-time registration key. Registration keys must be generated and managed by admins only.
 
 Important:
-Preserve all existing ARX wiring, auth routes, admin permissions, live-trading safety logic, Ruby logic, MT5 bridge logic, scanner logic, user roles, and existing onboarding flows. Do not break existing users. This is a registration gate only.
+Preserve all existing ARX wiring, auth routes, admin permissions, live-trading safety logic, Eleanor logic, MT5 bridge logic, scanner logic, user roles, and existing onboarding flows. Do not break existing users. This is a registration gate only.
 
 Build this as a full backend + frontend feature.
 
@@ -382,7 +382,7 @@ The feature is complete only when:
 - No raw key is stored, logged, or returned after generation.
 - All alternate signup paths are protected.
 - Tests pass.
-- Existing ARX trading, Ruby, MT5 bridge, scanner, dashboard, and admin wiring remain intact.
+- Existing ARX trading, Eleanor, MT5 bridge, scanner, dashboard, and admin wiring remain intact.
 
 After implementation, report:
 1. Files changed.

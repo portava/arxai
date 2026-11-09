@@ -63,7 +63,7 @@ export interface AgentContribution {
   authorityWeight: number;
   /** Effective influence after status gating (0-1). */
   effectiveInfluence: number;
-  /** Neutral machine reason; UI / Ruby humanize it for end users. */
+  /** Neutral machine reason; UI / Eleanor humanize it for end users. */
   reason: string;
 }
 
@@ -88,7 +88,7 @@ export interface AdvisoryResult {
   contributions: AgentContribution[];
   /** Plain, surfaced cautions from muted / demoted / opposing agents. */
   cautions: string[];
-  /** One-line neutral summary; UI / Ruby humanize for end users. */
+  /** One-line neutral summary; UI / Eleanor humanize for end users. */
   summary: string;
   /** How many agents actually moved the score (effectiveInfluence > 0). */
   influencingAgentCount: number;
@@ -147,7 +147,7 @@ export function statusInfluenceMultiplier(status: string): number {
 /**
  * Compute the bounded advisory adjustment for one candidate signal. Pure and
  * deterministic. Returns the adjusted score plus a per-agent contribution
- * breakdown for admin traces and plain-English Ruby summaries.
+ * breakdown for admin traces and plain-English Eleanor summaries.
  */
 export function computeAgentAdvisory(input: AdvisoryInput): AdvisoryResult {
   const maxTotal = input.maxTotalAdjustment ?? DEFAULT_MAX_TOTAL;
@@ -202,7 +202,7 @@ export function computeAgentAdvisory(input: AdvisoryInput): AdvisoryResult {
 
     const delta = clamp(raw, -maxPerAgent, maxPerAgent);
 
-    // Derive a visible stance for the breakdown / Ruby copy.
+    // Derive a visible stance for the breakdown / Eleanor copy.
     let stance: AgentStance = "NEUTRAL";
     let reason: string;
     if (effectiveInfluence === 0) {

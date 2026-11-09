@@ -118,29 +118,29 @@ The MVP is paper-mode-only, so this section is **future-state**. When `LIVE_TRAD
 4. **No replay/practice trade may hit `routes/trades.ts` or `routes/mt5.ts`.** Replay routes (`replayLab.ts`, `replayLabSim.ts`) are call-graph-isolated from execution routes (architecturally enforced today; CI guard for this is a future addition).
 5. **The kill-switch button is always one click away** from any page (Topbar-mounted; Build B).
 
-**Ruby AI-Assisted execution (Task #319) — bounded executor, not a second path.**
-Ruby is no longer strictly read-only: a user may grant
-`rubyExecutionAuthority = AI_ASSISTED` to let the assistant place/manage **live**
-trades. This does **not** create a new execution route. Every Ruby trade action
+**Eleanor AI-Assisted execution (Task #319) — bounded executor, not a second path.**
+Eleanor is no longer strictly read-only: a user may grant
+`eleanorExecutionAuthority = AI_ASSISTED` to let the assistant place/manage **live**
+trades. This does **not** create a new execution route. Every Eleanor trade action
 funnels through the SAME instant-trade router → live command pipeline → Phase B
-18-gate dispatch as a manual trade (source `ruby_text`/`ruby_voice`).
+18-gate dispatch as a manual trade (source `eleanor_text`/`eleanor_voice`).
 `AI_ASSISTED` skips ONLY the extra app-side confirmation prompt (rule 1's
 "explicit user gesture" is satisfied by the user's prior, persisted, per-action
 authority grant) — it never skips a backend gate, per-user approval,
-allocation, or kill-switch check. Ruby actions are additionally bounded by
-per-action permissions, per-Ruby caps (lot/open-positions/daily-trades), and a
+allocation, or kill-switch check. Eleanor actions are additionally bounded by
+per-action permissions, per-Eleanor caps (lot/open-positions/daily-trades), and a
 symbol/asset-class allowlist, and are recorded in the append-only
-`ruby_commands` ledger (pending-dedupe + idempotency; watches fire exactly once
+`eleanor_commands` ledger (pending-dedupe + idempotency; watches fire exactly once
 via CAS). `AI_AUTO` is defined in the model but **not enabled**.
 
-**Ruby's *reported* safety state is derived, not hardcoded.** What Ruby *says*
+**Eleanor's *reported* safety state is derived, not hardcoded.** What Eleanor *says*
 about the account's live-state (`liveLocked` / `safetyMode` / `readOnlyMode` /
 `allowOrderExecution`) is derived per-user from `getEnvelope()` (via the shared
 `deriveAssistantEnvelope` helper, fail-closed to `FAIL_CLOSED_ENVELOPE` =
 off/locked on any read failure) on every conversational surface, the
 `getTradingMode` / `getPaperSafetyStatus` tools, the `read-chart` /
 `explain-signal` reads, the realtime voice bootstrap, and the system prompt —
-never a static `paper_only` constant. This changes only what Ruby *reports*,
+never a static `paper_only` constant. This changes only what Eleanor *reports*,
 never what it is *allowed to do*: the order-guard chain, the 18-gate Phase B
 dispatch, and the explicit per-trade confirmation choreography are untouched, and
 read/advisory surfaces still place no orders (they additionally force

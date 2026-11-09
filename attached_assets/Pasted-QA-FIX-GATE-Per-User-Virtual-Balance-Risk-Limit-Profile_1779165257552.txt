@@ -23,8 +23,8 @@ Verify:
 15. Trades are blocked when daily loss limit is reached.
 16. Trades are blocked when account is paused/restricted.
 17. Trades are blocked when the symbol is not allowed.
-18. Ruby only references the current user’s private account data.
-19. Ruby does not reveal shared master global balance, other users, or admin-only data.
+18. Eleanor only references the current user’s private account data.
+19. Eleanor does not reveal shared master global balance, other users, or admin-only data.
 20. P/L calendar uses only the current user’s personal trade data.
 21. Uncertain or unmapped master executions are marked NEEDS_REVIEW and excluded from normal user balance calculations.
 22. Admin receives visibility into NEEDS_REVIEW allocation issues.

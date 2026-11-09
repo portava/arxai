@@ -2,10 +2,10 @@
 //
 // SINGLE SOURCE OF TRUTH for "how should this symbol/timeframe's read + setup be
 // PRESENTED right now, and which trade AFFORDANCES may the UI offer?". Scanner,
-// Ruby (chat + chart), the chart panel, the trade ticket, the manual ticket,
+// Eleanor (chat + chart), the chart panel, the trade ticket, the manual ticket,
 // backtest cards, alerts, and AI-setup cards all consume THIS verdict so they can
 // never contradict each other (e.g. the scanner header says "historical only /
-// feed not confirmed" while Ruby's footer says "Live-confirmed · execution-ready"
+// feed not confirmed" while Eleanor's footer says "Live-confirmed · execution-ready"
 // for the same symbol+timeframe).
 //
 // It COMPOSES `evaluateMarketDataSufficiency` (the closed-bar/feed verdict) and
@@ -366,7 +366,7 @@ export function evaluateTradeHealthReadiness(
     structureConfidence,
     setupHealth,
     executionBlockedReason,
-    // Normalize to ONE display token ("M15"→"15m") so Ruby (canonical codes) and
+    // Normalize to ONE display token ("M15"→"15m") so Eleanor (canonical codes) and
     // the Scanner (UI aliases) emit an IDENTICAL trust line for the same tf.
     timeframe: normalizeReadinessTimeframe(input.timeframe),
   });

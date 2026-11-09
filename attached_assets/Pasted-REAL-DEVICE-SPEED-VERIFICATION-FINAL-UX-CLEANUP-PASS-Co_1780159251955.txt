@@ -39,7 +39,7 @@ Target UX:
 5. Chart skeleton visible: under 1 second.
 6. Scanner market selection visual feedback: under 300ms.
 7. Trade button feedback: under 100ms.
-8. Ruby thinking indicator: under 100ms.
+8. Eleanor thinking indicator: under 100ms.
 9. If final data takes longer, show loading/pending state immediately.
 
 PART 1 — Test the real preview like a user
@@ -51,7 +51,7 @@ Test these pages:
 1. Cockpit
 2. Trade, if still present
 3. Scanner
-4. Ruby / AI
+4. Eleanor / AI
 5. More / Settings
 6. Admin page as owner/admin
 7. Any normal-user bottom nav item
@@ -86,7 +86,7 @@ Test:
 5. Confirm search input is usable fast.
 6. Confirm selected symbol appears fast.
 7. Confirm quote/chart/results load progressively.
-8. Confirm Ruby does not block Scanner.
+8. Confirm Eleanor does not block Scanner.
 9. Confirm notifications do not block Scanner.
 10. Confirm bridge status does not block Scanner.
 11. Confirm no page-level error boundary appears.
@@ -105,7 +105,7 @@ If Scanner takes multiple seconds because of:
 2. candles
 3. bridge health
 4. notification count
-5. Ruby
+5. Eleanor
 6. news
 7. history
 8. backtest
@@ -119,7 +119,7 @@ Investigate and fix:
 
 1. Heavy global imports.
 2. Chart library loaded outside Scanner.
-3. Ruby voice/speech modules loaded before needed.
+3. Eleanor voice/speech modules loaded before needed.
 4. Admin-only modules loaded for normal users.
 5. Hidden tabs loading before selected.
 6. Notification badge blocking route render.
@@ -161,7 +161,7 @@ For trade controls:
 4. Confirm button shows pending immediately.
 5. UI shows “Confirming with broker…” while waiting.
 6. UI does not claim success before MT5 confirmation.
-7. Ruby does not block the trade flow.
+7. Eleanor does not block the trade flow.
 8. Scanner results do not block the trade flow.
 
 Do not fake execution.
@@ -209,7 +209,7 @@ Keep active rules:
 2. DEMO/LIVE only
 3. MT5 bridge rules
 4. Scanner priority
-5. Ruby rules
+5. Eleanor rules
 6. performance targets
 7. live safety gates
 8. route containment rules
@@ -237,7 +237,7 @@ Verify:
 2. Login works.
 3. Cockpit loads quickly.
 4. Scanner loads quickly.
-5. Ruby loads quickly.
+5. Eleanor loads quickly.
 6. More loads quickly.
 7. Normal users cannot access blocked routes.
 8. Admin/owner can access admin routes.

@@ -1,7 +1,7 @@
 // Task #785 — Unified live-readiness DB-backed builder.
 //
 // ONE resolver that powers every live-capable surface (chart/manual ticket,
-// scanner, Eleanor/Ruby, AI Trading, Profit Mission, Scalp, Flare, trade order
+// scanner, Eleanor/Eleanor, AI Trading, Profit Mission, Scalp, Flare, trade order
 // page, and the live dispatch preflight). It does NOT invent its own readiness
 // logic — it COMPOSES the existing single sources of truth:
 //   * buildApprovedTraderLiveState  — identity, approval, full live activation,

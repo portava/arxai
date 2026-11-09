@@ -81,7 +81,7 @@ Check:
 - partial close handling
 - rejected/failed command handling
 - reconnect/heartbeat resync behavior
-- whether scanner or Ruby created duplicate optimistic rows
+- whether scanner or Eleanor created duplicate optimistic rows
 - whether open positions are keyed incorrectly by symbol instead of ticket/deal/order
 - whether closed positions are not receiving close events
 - whether stale rows are included in open P/L calculations
@@ -106,7 +106,7 @@ Create an audited reconciliation function that:
 - is idempotent: running it multiple times cannot keep changing the same rows
 
 4. Add stale protection to all UI totals.
-Open Trades, Dashboard, allocation headroom, scanner live trade count, Ruby live summaries, and admin user exposure must not count stale/phantom rows as real open live positions.
+Open Trades, Dashboard, allocation headroom, scanner live trade count, Eleanor live summaries, and admin user exposure must not count stale/phantom rows as real open live positions.
 
 Use one shared truth function, not duplicated frontend math.
 

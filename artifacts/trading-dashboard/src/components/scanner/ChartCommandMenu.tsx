@@ -9,7 +9,7 @@
 //  - Trade/plan entries render ONLY when the account can actually trade
 //    (`canTrade`). Draft-level entries render only when a draft exists
 //    (`hasDraft`). No dead buttons: an entry that cannot act is never shown.
-//  - Ruby reads, decision receipts and agent-disagreement entries call EXISTING
+//  - Eleanor reads, decision receipts and agent-disagreement entries call EXISTING
 //    read-only endpoints. They can never move price, fire a trade, or read
 //    another user's data.
 //  - Replay (review/learning) renders only in review mode (`isReviewMode`).
@@ -39,7 +39,7 @@ import {
 
 export type ChartCommandAnchor = { x: number; y: number; price: number };
 
-export type RubyChartIntent =
+export type EleanorChartIntent =
   | "analyze"
   | "is-this-a-buy"
   | "why-not-now"
@@ -59,7 +59,7 @@ interface ChartCommandMenuProps {
   onWatchZone: (price: number) => void;
   onPriceAlert: (direction: "above" | "below", price: number) => void;
   onSetDraftLevel: (kind: "SL" | "TP", price: number) => void;
-  onAskRuby: (intent: RubyChartIntent, price: number) => void;
+  onAskEleanor: (intent: EleanorChartIntent, price: number) => void;
   onShowReceipt: () => void;
   onReplay: () => void;
   onClose: () => void;
@@ -77,7 +77,7 @@ export function ChartCommandMenu({
   onWatchZone,
   onPriceAlert,
   onSetDraftLevel,
-  onAskRuby,
+  onAskEleanor,
   onShowReceipt,
   onReplay,
   onClose,
@@ -176,37 +176,37 @@ export function ChartCommandMenu({
         </>
       ) : null}
 
-      {/* ── Ask Ruby (read-only) ────────────────────────────────────────── */}
+      {/* ── Ask Eleanor (read-only) ────────────────────────────────────────── */}
       <Item
         icon={<Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />}
         label={`Ask ${name} about this candle`}
         tone="text-fuchsia-200"
-        onClick={() => onAskRuby("analyze", anchor.price)}
+        onClick={() => onAskEleanor("analyze", anchor.price)}
       />
       <Item
         icon={<Lightbulb className="h-3.5 w-3.5 text-amber-300" />}
         label="Explain this candle"
-        onClick={() => onAskRuby("is-this-a-buy", anchor.price)}
+        onClick={() => onAskEleanor("is-this-a-buy", anchor.price)}
       />
       <Item
         icon={<HelpCircle className="h-3.5 w-3.5 text-sky-300" />}
         label="Why not now?"
-        onClick={() => onAskRuby("why-not-now", anchor.price)}
+        onClick={() => onAskEleanor("why-not-now", anchor.price)}
       />
       <Item
         icon={<Lightbulb className="h-3.5 w-3.5 text-sky-300" />}
         label={`What would change ${name}'s mind?`}
-        onClick={() => onAskRuby("what-changes-my-mind", anchor.price)}
+        onClick={() => onAskEleanor("what-changes-my-mind", anchor.price)}
       />
       <Item
         icon={<ShieldAlert className="h-3.5 w-3.5 text-rose-300" />}
         label="What invalidates this?"
-        onClick={() => onAskRuby("what-invalidates", anchor.price)}
+        onClick={() => onAskEleanor("what-invalidates", anchor.price)}
       />
       <Item
         icon={<Users className="h-3.5 w-3.5 text-indigo-300" />}
         label="Show agent disagreement"
-        onClick={() => onAskRuby("agent-consensus", anchor.price)}
+        onClick={() => onAskEleanor("agent-consensus", anchor.price)}
       />
       <Item
         icon={<ReceiptText className="h-3.5 w-3.5 text-teal-300" />}

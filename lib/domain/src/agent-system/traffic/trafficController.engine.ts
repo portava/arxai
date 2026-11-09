@@ -20,7 +20,7 @@ export type TrafficMode =
   | "LIVE_EXECUTION"
   | "SCALP"
   | "SCANNER"
-  | "RUBY_EXPLANATION"
+  | "ELEANOR_EXPLANATION"
   | "LEARNING"
   | "AGENT_CREATION"
   | "DEEP_REVIEW";
@@ -63,7 +63,7 @@ export interface AgentRoutingDecision {
   runMode: AgentRunMode;
   /** True when this agent will actually contribute (RUN or FAST_CHECK). */
   participating: boolean;
-  /** Neutral machine reason; Ruby/UI humanize it. */
+  /** Neutral machine reason; Eleanor/UI humanize it. */
   reason: string;
   /** Set when suppressed because another agent already covers its department. */
   duplicateOfAgentKey?: string;
@@ -95,7 +95,7 @@ const LATENCY_BUDGET_MS: Record<TrafficMode, number> = {
   LIVE_EXECUTION: 50,
   SCALP: 150,
   SCANNER: 400,
-  RUBY_EXPLANATION: 1500,
+  ELEANOR_EXPLANATION: 1500,
   LEARNING: 0, // background — off the hot path entirely
   AGENT_CREATION: 0, // background — never during active execution
   DEEP_REVIEW: 3000,
@@ -132,10 +132,10 @@ const MODE_ROUTING: Record<
     run: new Set(["SCANNER", "MARKET_STRUCTURE", "RISK"]),
     fastCheck: new Set(["ENTRY"]),
   },
-  // §10.4 — deep user question: Ruby + Structure + Risk + Review + specialists.
-  RUBY_EXPLANATION: {
+  // §10.4 — deep user question: Eleanor + Structure + Risk + Review + specialists.
+  ELEANOR_EXPLANATION: {
     run: new Set([
-      "RUBY_HOUSEHOLD", "MARKET_STRUCTURE", "RISK", "REVIEW",
+      "ELEANOR_HOUSEHOLD", "MARKET_STRUCTURE", "RISK", "REVIEW",
       "ENTRY", "EXIT", "SCALP", "SCANNER", "EXECUTION",
     ]),
     fastCheck: new Set(),

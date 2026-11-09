@@ -10,7 +10,7 @@ import type { UseChartSetupPreview } from "@/hooks/useChartSetupPreview";
 import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
 import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
-// ChartSetupPreviewPanel — Task #374 control + legend surface for an AI/Ruby
+// ChartSetupPreviewPanel — Task #374 control + legend surface for an AI/Eleanor
 // "drawn" trade setup. PURE VISUALISATION + a user-initiated draw trigger and an
 // optional, role-gated "Use this setup" ticket prefill. It NEVER places,
 // modifies, or closes a trade — a drawing is a preview, not an order.

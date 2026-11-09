@@ -34,7 +34,7 @@ export function setChartSymbol(rawSymbol: string) {
   // Redirect off-universe writes to V75 before they ever reach the bus.
   const s = approvedChartSymbol(rawSymbol);
   // PART 3 — instrument the symbol-switch propagation. Every listener
-  // (chart, trade panel, ticket, Ruby) fires synchronously inside the
+  // (chart, trade panel, ticket, Eleanor) fires synchronously inside the
   // dispatchEvent below, so the end-mark is captured *after* every
   // useState setter has scheduled a render. The actual paint is measured
   // via markRenderComplete on the next animation frame — that's the

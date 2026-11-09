@@ -51,7 +51,7 @@ export const userAdvancedPermissionsTable = pgTable(
     // (auto-close is ALERT_ONLY at the trading layer; this is the UI
     // surface that lets an admin even consider exposing it).
     aiAutoCloseEnabled: boolean("ai_auto_close_enabled").notNull().default(false),
-    rubyVoiceEnabled: boolean("ruby_voice_enabled").notNull().default(true),
+    eleanorVoiceEnabled: boolean("eleanor_voice_enabled").notNull().default(true),
     newsIntelligenceEnabled: boolean("news_intelligence_enabled").notNull().default(true),
     historicalBacktestEnabled: boolean("historical_backtest_enabled").notNull().default(true),
 

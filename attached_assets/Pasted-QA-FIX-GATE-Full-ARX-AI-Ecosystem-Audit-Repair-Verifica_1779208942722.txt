@@ -17,19 +17,19 @@ Verify:
 6. Beta cap of 10 is server-enforced.
 7. User privacy isolation passes.
 8. Logout/login clears cached state.
-9. Saved symbols/watchlist/alerts/Ruby memory are private per user.
-10. Ruby understands app features.
-11. Ruby uses current user context only.
-12. Ruby learning/memory is user-scoped.
-13. Ruby does not expose other users/admin/secrets.
-14. Ruby voice cannot bypass confirmation or safety.
+9. Saved symbols/watchlist/alerts/Eleanor memory are private per user.
+10. Eleanor understands app features.
+11. Eleanor uses current user context only.
+12. Eleanor learning/memory is user-scoped.
+13. Eleanor does not expose other users/admin/secrets.
+14. Eleanor voice cannot bypass confirmation or safety.
 15. Scanner direct symbol search works.
-16. Scanner Ruby market explanation works.
+16. Scanner Eleanor market explanation works.
 17. Scanner-to-trade uses confirmation and safety gates.
 18. Watchlist works.
 19. Watch calendar/alert system works or missing parts are clearly listed.
-20. Economic calendar connects to scanner/Ruby where available.
-21. Impact calendar connects to scanner/Ruby where available.
+20. Economic calendar connects to scanner/Eleanor where available.
+21. Impact calendar connects to scanner/Eleanor where available.
 22. Alerts are private and do not spam/duplicate.
 23. Demo trading works without live commands.
 24. Personal MT5 setup remains separate.

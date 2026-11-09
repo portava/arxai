@@ -14,7 +14,7 @@ export const aaciDecisions = pgTable(
     decisionId: text("decision_id").notNull(),
     // Owning user (per-user isolation). Null only for system/admin diagnostics.
     userId: integer("user_id"),
-    actorType: text("actor_type").notNull(), // user/ruby/self_trade_agent/admin/system
+    actorType: text("actor_type").notNull(), // user/eleanor/self_trade_agent/admin/system
     actorId: text("actor_id"),
     symbol: text("symbol"),
     timeframe: text("timeframe"),

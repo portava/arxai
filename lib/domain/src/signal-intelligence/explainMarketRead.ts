@@ -1,4 +1,4 @@
-// explainMarketRead — composes a RubyMarketEdgeSignal into ONE plain-English
+// explainMarketRead — composes a EleanorMarketEdgeSignal into ONE plain-English
 // explanation (Simple + Advanced) that always answers: what is happening, why,
 // why this market, why this direction, why now, early/ready/late, entry zone,
 // risk, what confirms, what invalidates, what to do next.
@@ -16,8 +16,8 @@ import type {
   MarketRegime,
   NewsRiskLevel,
   PriceZone,
-  RubyMarketEdgeSignal,
-  RubyMarketReadExplanation,
+  EleanorMarketEdgeSignal,
+  EleanorMarketReadExplanation,
   SignalDirection,
   SignalEvidenceItem,
   SignalLifecycleStage,
@@ -112,7 +112,7 @@ function timeframeWord(tf: string): string {
   return t;
 }
 
-function structureSentence(signal: RubyMarketEdgeSignal): string {
+function structureSentence(signal: EleanorMarketEdgeSignal): string {
   const name = signal.displayName || signal.symbol;
   const n = signal.structureWindow;
   const tf = timeframeWord(signal.timeframe);
@@ -288,7 +288,7 @@ interface Derived {
   levelsWithheld: string | null;
 }
 
-function derive(signal: RubyMarketEdgeSignal): Derived {
+function derive(signal: EleanorMarketEdgeSignal): Derived {
   const newsL: NewsRiskLevel = "none"; // overwritten below if carried
   const edge = Math.round(signal.edgeScore);
   // Banded from the rounded number the copy prints, so "(30/100)" and its
@@ -342,7 +342,7 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
  * live-feed tag, scanner geometry), never a guessed cause: on a live feed with
  * enough candles the honest fact is that no scanner entry/stop is attached.
  */
-function levelsWithheldReasonFor(d: Derived, signal: RubyMarketEdgeSignal): string | null {
+function levelsWithheldReasonFor(d: Derived, signal: EleanorMarketEdgeSignal): string | null {
   if (d.entryZ || d.watchZ || d.sl || d.inval) return null;
   if (!d.hasData) return "there aren't enough confirmed live candles for this read yet";
   if (!d.liveFeed) return "the data behind this read isn't a confirmed live feed";
@@ -361,7 +361,7 @@ function capitalize(s: string): string {
 // Names the minimum-evidence sub-rules that failed, from the same rule inputs
 // and thresholds the producer applied (freshnessEvidence.minimumEvidenceShortfall).
 // No direction is reported by its own no-trade branch, so it is not repeated.
-function evidenceShortfallText(signal: RubyMarketEdgeSignal): string[] {
+function evidenceShortfallText(signal: EleanorMarketEdgeSignal): string[] {
   if (signal.evidence.meetsMinimum) return [];
   const supporting = signal.evidence.for.length;
   const net = Math.round(signal.evidence.netScore);
@@ -412,7 +412,7 @@ function unmeasuredText(d: Derived): string {
 // News risk is not a typed field on the signal; it is folded into evidence
 // ("Elevated news/event risk"). Detect it from the against-evidence so the copy
 // stays honest without inventing a level.
-function newsRiskFromEvidence(d: Derived, signal: RubyMarketEdgeSignal): NewsRiskLevel {
+function newsRiskFromEvidence(d: Derived, signal: EleanorMarketEdgeSignal): NewsRiskLevel {
   const hit = signal.evidence.against.find((i) => i.key === "news_risk");
   if (!hit) return "none";
   return hit.weight >= 18 ? "critical" : "high";
@@ -691,8 +691,8 @@ function buildMode(
 // ── Public seam ───────────────────────────────────────────────────────────────
 
 export function explainMarketRead(
-  signal: RubyMarketEdgeSignal,
-): RubyMarketReadExplanation {
+  signal: EleanorMarketEdgeSignal,
+): EleanorMarketReadExplanation {
   const d = derive(signal);
   d.newsL = newsRiskFromEvidence(d, signal);
   d.levelsWithheld = levelsWithheldReasonFor(d, signal);

@@ -1,4 +1,4 @@
-Update the One-Click Live Trading Mode so trades execute instantly from anywhere in the ARX AI app, including Ruby AI text commands and Ruby voice commands.
+Update the One-Click Live Trading Mode so trades execute instantly from anywhere in the ARX AI app, including Eleanor AI text commands and Eleanor voice commands.
 
 Goal:
 Approved users/operators should be able to place and close trades instantly from any trading surface in the app without a second confirmation modal, without a required stop loss, and without repeated live-money warning popups.
@@ -13,14 +13,14 @@ This applies to:
 - Dashboard/Cockpit
 - Alerts
 - Calendar/watch alerts
-- Ruby AI chat
-- Ruby voice command system
+- Eleanor AI chat
+- Eleanor voice command system
 - Any future trade-capable widget
 
 Important safety boundary:
 Do not bypass backend approval, server live execution flag, live readiness, kill switch, max lot, daily loss limit, account approval, symbol allowlist, or bridge freshness.
 Do not enable AI autonomous trading by default.
-Ruby may execute instantly only when the user gives a clear direct trade command or when the user has explicitly enabled AI command execution mode.
+Eleanor may execute instantly only when the user gives a clear direct trade command or when the user has explicitly enabled AI command execution mode.
 
 Build this as a global instant execution system.
 
@@ -40,7 +40,7 @@ Backend:
 Every trade-capable UI must call the same instant router instead of creating separate modal flows.
 
 Trade intent shape:
-- source: "trade_panel" | "scanner" | "chart" | "watchlist" | "position_card" | "dashboard" | "alert" | "ruby_text" | "ruby_voice"
+- source: "trade_panel" | "scanner" | "chart" | "watchlist" | "position_card" | "dashboard" | "alert" | "eleanor_text" | "eleanor_voice"
 - action: "BUY" | "SELL" | "CLOSE" | "CLOSE_ALL" | "MODIFY_SL_TP"
 - symbol
 - volume
@@ -53,7 +53,7 @@ Trade intent shape:
 - oneClick: true
 - aiCommand: boolean
 - rawUserCommand optional
-- parsedByRuby optional
+- parsedByEleanor optional
 
 2. Instant execution behavior
 
@@ -66,7 +66,7 @@ When oneClickLiveTradingEnabled=true:
 - Chart trade buttons execute instantly.
 - Watchlist trade buttons execute instantly.
 - Position-card close buttons execute instantly.
-- Ruby command trades execute instantly when AI command trading is enabled.
+- Eleanor command trades execute instantly when AI command trading is enabled.
 
 Do not show:
 - per-trade confirmation modal
@@ -83,11 +83,11 @@ Keep only small persistent status badges:
 - KILL SWITCH ACTIVE
 - CLOSE ONLY
 
-3. Ruby AI command execution
+3. Eleanor AI command execution
 
-Add Ruby AI trade command support.
+Add Eleanor AI trade command support.
 
-Ruby should understand direct commands like:
+Eleanor should understand direct commands like:
 - “Buy EURUSD 0.01”
 - “Sell EURUSD 0.01”
 - “Open a market buy on EURUSD with 0.01 lots”
@@ -100,7 +100,7 @@ Ruby should understand direct commands like:
 - “Buy Volatility 75 1s with 0.01”
 - “Sell XAUUSD 0.02”
 
-Ruby must convert the user command into a structured trade intent.
+Eleanor must convert the user command into a structured trade intent.
 
 If the command has enough information:
 - execute instantly through the global instant trade router
@@ -112,10 +112,10 @@ If the command is missing required information:
   defaultSymbol
   defaultVolume
   defaultOrderType
-- if still missing critical information, Ruby should ask only for the missing value, not show a trade warning.
+- if still missing critical information, Eleanor should ask only for the missing value, not show a trade warning.
 
 Example:
-User: “Ruby, buy EURUSD”
+User: “Eleanor, buy EURUSD”
 If defaultVolume is 0.01, execute immediately.
 If no defaultVolume exists, ask:
 “What lot size should I use?”
@@ -127,31 +127,31 @@ Add user/operator setting:
 - defaultAiTradeVolume
 - defaultAiTradeSymbol
 - defaultAiOrderType
-- allowRubyCloseCommands: boolean
-- allowRubyOpenCommands: boolean
-- allowRubyModifyCommands: boolean
+- allowEleanorCloseCommands: boolean
+- allowEleanorOpenCommands: boolean
+- allowEleanorModifyCommands: boolean
 
 Default:
 - aiInstantTradeCommandsEnabled=false
-- allowRubyCloseCommands=true for approved users
-- allowRubyOpenCommands=false until manually enabled by approved operator
-- allowRubyModifyCommands=true for approved users
+- allowEleanorCloseCommands=true for approved users
+- allowEleanorOpenCommands=false until manually enabled by approved operator
+- allowEleanorModifyCommands=true for approved users
 
 Approved operator/admin can enable AI instant trade commands from live trading settings.
 
 When enabled:
-- Ruby text commands can instantly place trades.
-- Ruby voice commands can instantly place trades.
-- Ruby can close trades instantly by voice/text.
-- Ruby must never place a trade from vague conversation.
-- Ruby executes only clear direct trading instructions.
+- Eleanor text commands can instantly place trades.
+- Eleanor voice commands can instantly place trades.
+- Eleanor can close trades instantly by voice/text.
+- Eleanor must never place a trade from vague conversation.
+- Eleanor executes only clear direct trading instructions.
 
 5. Prevent accidental AI trades without adding confirmation popups
 
 Do not use confirmation modals.
 
 Instead use command clarity rules:
-Ruby may execute only if the command has clear action intent:
+Eleanor may execute only if the command has clear action intent:
 - buy
 - sell
 - open
@@ -162,16 +162,16 @@ Ruby may execute only if the command has clear action intent:
 - set take profit
 - modify order
 
-Ruby must not execute from vague questions like:
+Eleanor must not execute from vague questions like:
 - “What should I trade?”
 - “Is EURUSD good?”
 - “Do you think I should buy?”
 - “Where is this going?”
 - “Find me a setup”
 
-For vague questions, Ruby should answer/analyze only.
+For vague questions, Eleanor should answer/analyze only.
 
-For clear commands, Ruby executes instantly if all backend gates pass.
+For clear commands, Eleanor executes instantly if all backend gates pass.
 
 6. Backend live execution requirements stay strict
 
@@ -180,7 +180,7 @@ The instant execute endpoint must require:
 - user approved for master live trading
 - user.liveTradingEnabled=true
 - user.oneClickLiveTradingEnabled=true
-- if source is ruby_text or ruby_voice: aiInstantTradeCommandsEnabled=true
+- if source is eleanor_text or eleanor_voice: aiInstantTradeCommandsEnabled=true
 - serverLiveExecutionEnabled=true
 - kill switch inactive
 - real LIVE bridge, not MOCK
@@ -250,21 +250,21 @@ One-Click Mode must be the fast terminal-style flow.
 On iPhone Safari:
 - BUY and SELL buttons must be large and always easy to tap.
 - CLOSE buttons must be visible on position cards.
-- Ruby bubble must not cover BUY, SELL, CLOSE, volume, SL, TP, or order type controls.
+- Eleanor bubble must not cover BUY, SELL, CLOSE, volume, SL, TP, or order type controls.
 - Bottom nav must not cover buttons.
 - No horizontal scrolling.
 - Trade status badge must stay compact.
 - No giant red warning modal.
 
-11. Ruby response after instant trade
+11. Eleanor response after instant trade
 
-After Ruby executes a command, respond briefly:
+After Eleanor executes a command, respond briefly:
 - “Buy sent: EURUSD 0.01”
 - “Sell sent: EURUSD 0.01”
 - “Close sent: EURUSD position”
 - “Close all sent”
 
-If rejected, Ruby should say the exact blocker:
+If rejected, Eleanor should say the exact blocker:
 - “Blocked: account not approved.”
 - “Blocked: server dispatch is not armed.”
 - “Blocked: kill switch active.”
@@ -285,7 +285,7 @@ Log every instant trade action:
 - volume
 - stop loss value or null
 - take profit value or null
-- raw Ruby command if applicable
+- raw Eleanor command if applicable
 - parsed trade intent if applicable
 - oneClickLiveTradingEnabled
 - aiInstantTradeCommandsEnabled
@@ -310,13 +310,13 @@ Add/update tests proving:
 - Watchlist BUY/SELL executes instantly.
 - Position CLOSE executes instantly.
 - CLOSE ALL executes instantly when enabled.
-- Ruby text command “Buy EURUSD 0.01” executes instantly when AI command trading is enabled.
-- Ruby voice command routes to the same instant trade router.
-- Ruby vague analysis questions do not execute trades.
+- Eleanor text command “Buy EURUSD 0.01” executes instantly when AI command trading is enabled.
+- Eleanor voice command routes to the same instant trade router.
+- Eleanor vague analysis questions do not execute trades.
 - Blank stop loss is allowed.
 - Blank take profit is allowed.
 - Unapproved user cannot execute instant live trades.
-- aiInstantTradeCommandsEnabled=false blocks Ruby open commands.
+- aiInstantTradeCommandsEnabled=false blocks Eleanor open commands.
 - serverLiveExecutionEnabled=false blocks live open orders.
 - Kill switch blocks new open orders.
 - Max lot blocks oversized orders.
@@ -325,7 +325,7 @@ Add/update tests proving:
 
 Do not auto-arm live trading.
 Do not bypass backend safety gates.
-Do not let Ruby trade from vague suggestions.
+Do not let Eleanor trade from vague suggestions.
 Do not enable AI autonomous trading by default.
 Do not create duplicate trade pages.
-The final result should be true one-click trading from anywhere in the app, including direct Ruby voice/text trade commands, for approved users only.
+The final result should be true one-click trading from anywhere in the app, including direct Eleanor voice/text trade commands, for approved users only.

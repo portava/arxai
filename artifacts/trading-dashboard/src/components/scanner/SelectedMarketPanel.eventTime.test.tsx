@@ -11,7 +11,7 @@ import { calendarEventWhen } from "@/lib/calendarCoverage";
 
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: null }) }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["5m", vi.fn()] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/live/TradabilityBadge", () => ({ TradabilityBadge: () => null }));
 vi.mock("@/components/live/LiveTradeTicket", () => ({ LiveTradeTicket: () => null }));
 vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => null }));

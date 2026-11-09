@@ -5,7 +5,7 @@
 // COLOUR the existing Scanner Truth read?". The detector (api-server) produces
 // the raw `DetectedPattern[]`; this contract folds them — together with the
 // caller's ALREADY-DECIDED feed/sufficiency/chart-read facts — into one
-// `PatternTruthVerdict` that the Scanner, Ruby, and Scalp Builder all consume so
+// `PatternTruthVerdict` that the Scanner, Eleanor, and Scalp Builder all consume so
 // they can never contradict each other about a pattern.
 //
 // This module is PURE: no IO, no DB, no HTTP, no clock, no role/privilege input.
@@ -184,7 +184,7 @@ export interface PatternTruthVerdict {
   confidenceCapReason: string | null;
   scannerTruthImpact: PatternScannerImpact;
   /** Plain-language explanation (pre feed-honesty neutralization at the surface). */
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -290,7 +290,7 @@ export function resolvePatternTruth(
         edgeAdjustment: 0,
         supportive: false,
       },
-      rubyExplanation: "No clear chart pattern on this timeframe yet.",
+      eleanorExplanation: "No clear chart pattern on this timeframe yet.",
       warnings,
     };
   }
@@ -409,7 +409,7 @@ export function resolvePatternTruth(
   const confidence = Math.min(clampConfidence(dominant.confidence), confidenceCeiling);
   const quality = minQuality(dominant.quality, qualityCeiling);
 
-  const rubyExplanation = buildPatternExplanation({
+  const eleanorExplanation = buildPatternExplanation({
     dominant,
     status,
     labelHint,
@@ -444,7 +444,7 @@ export function resolvePatternTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation,
+    eleanorExplanation,
     warnings: dedupe([...warnings, ...dominant.failureModes]),
   };
 }

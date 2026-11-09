@@ -45,7 +45,7 @@ import { checkChartTruthServiceBypass } from "./check-chart-truth-service-bypass
 import { checkReconciledGhostExposure } from "./check-reconciled-ghost-exposure.js";
 import { checkBridgeV2Truth } from "./check-bridge-v2-truth.js";
 import { checkModeScopeNoInvestorSnapshot } from "./check-mode-scope-no-investor-snapshot.js";
-import { checkRubyDerivedSafetyEnvelope } from "./check-ruby-derived-safety-envelope.js";
+import { checkEleanorDerivedSafetyEnvelope } from "./check-eleanor-derived-safety-envelope.js";
 import { checkMockProviderLiveFeed } from "./check-mock-provider-live-feed.js";
 import { checkSyntheticFloorProdDefaultDeny } from "./check-synthetic-floor-prod-default-deny.js";
 import { checkCooldownAdvisoryLock } from "./check-cooldown-advisory-lock.js";
@@ -142,7 +142,7 @@ const checks: Array<() => CheckResult> = [
   checkReconciledGhostExposure,
   checkBridgeV2Truth,
   checkModeScopeNoInvestorSnapshot,
-  checkRubyDerivedSafetyEnvelope,
+  checkEleanorDerivedSafetyEnvelope,
   checkMockProviderLiveFeed,
   checkSyntheticFloorProdDefaultDeny,
   checkCooldownAdvisoryLock,

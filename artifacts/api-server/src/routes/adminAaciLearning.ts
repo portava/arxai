@@ -122,7 +122,7 @@ const reasonSchema = z.string().trim().min(3).max(500);
  * effective role to USER (stashing the real role on `realRole`), so checking the
  * effective role makes admin-previewing-as-user land in the 403 branch — these
  * are operator surfaces (incl. state-changing approve/reject/rollback) that must
- * not be reachable while previewing. Mirrors the adminRubyQuality / adminFundBook
+ * not be reachable while previewing. Mirrors the adminEleanorQuality / adminFundBook
  * pattern. (resolveProductRole reads the real role and is intentionally NOT used
  * here so preview cannot retain operator access.)
  */

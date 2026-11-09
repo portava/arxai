@@ -42,7 +42,7 @@ export interface RiskEnforcementInput {
   requestedPrice?: number | null;
   stopLoss?: number | null;
   takeProfit?: number | null;
-  /** Who originated the draft (user, Ruby, decision engine). */
+  /** Who originated the draft (user, Eleanor, decision engine). */
   origin?: IntentOrigin;
   /** The trade a modify acts on, so the Position Guardian can tell a widened stop from a tightened one. */
   position?: { side: "BUY" | "SELL"; entryPrice: number | null; stopLoss: number | null; lotSize: number } | null;

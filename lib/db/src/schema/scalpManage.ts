@@ -1,6 +1,6 @@
 import { pgTable, serial, integer, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 
-// Task #79 — Ruby Flame Scalp Phase 2: failed-flame lockout.
+// Task #79 — Eleanor Flame Scalp Phase 2: failed-flame lockout.
 //
 // When a flame FAILS on a symbol in a given direction, we park a short-lived,
 // per-user lockout so the engine downgrades an otherwise-actionable read on

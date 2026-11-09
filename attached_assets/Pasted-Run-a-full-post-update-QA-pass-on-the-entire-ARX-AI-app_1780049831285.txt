@@ -4,12 +4,12 @@ Do not start new feature work yet. First verify that the latest changes actually
 
 Scope:
 1. Confirm the app starts cleanly with no frontend, backend, build, or runtime errors.
-2. Confirm the environment update completed successfully and did not break any existing routes, APIs, auth, dashboard pages, scanner pages, Ruby chat, MT5 bridge pages, admin tools, user tools, or trading-mode logic.
+2. Confirm the environment update completed successfully and did not break any existing routes, APIs, auth, dashboard pages, scanner pages, Eleanor chat, MT5 bridge pages, admin tools, user tools, or trading-mode logic.
 3. Check console logs, backend logs, network errors, database errors, and failed API calls.
 4. Verify DEMO and LIVE are the only active production-facing trading modes.
 5. Confirm Paper Trading is fully removed from user-facing UI and inactive backend mode logic, without removing live-trade safety controls.
-6. Verify Ruby still works, does not expose backend/internal function names to users, and explains market information in plain English plus useful technical analysis.
-7. Verify scanner speed, scanner results, market selection, Ruby explanation window, and direct trade actions still function.
+6. Verify Eleanor still works, does not expose backend/internal function names to users, and explains market information in plain English plus useful technical analysis.
+7. Verify scanner speed, scanner results, market selection, Eleanor explanation window, and direct trade actions still function.
 8. Verify admin controls still work for user approval, allocation, freeze/unfreeze, live/demo permission, and shared bridge visibility.
 9. Verify Andraie.co@gmail.com admin access is recognized correctly according to current app rules.
 10. Verify bottom navigation, page spacing, mobile layout, scrolling, menus, and collapsed sections are not broken.

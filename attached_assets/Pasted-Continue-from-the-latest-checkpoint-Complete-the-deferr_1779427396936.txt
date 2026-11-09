@@ -4,21 +4,21 @@ Before editing:
 - Inspect the current codebase.
 - Confirm the latest checkpoint state.
 - Confirm the bottom mobile AI nav button points to /ai-command-center, not the old route.
-- Confirm scanner, Ruby, live/demo/paper state labels, bottom nav spacing, and trade guard status still work.
+- Confirm scanner, Eleanor, live/demo/paper state labels, bottom nav spacing, and trade guard status still work.
 
 TASK U3 — /ai-command-center 4-tab refactor
 Refactor /ai-command-center into a clean, simple 4-tab user-facing command center:
 
 Tabs:
 1. Chat
-   - Ruby live chat
-   - Ruby typing/thinking state with animated dots
+   - Eleanor live chat
+   - Eleanor typing/thinking state with animated dots
    - Voice/listen controls if already present
    - Saved conversation access if already present
 
 2. Market Read
    - Selected market/symbol explanation
-   - Scanner-linked Ruby market insight
+   - Scanner-linked Eleanor market insight
    - Plain-language explanation of trend, volatility, risk, structure, indicators, and available news/current-event context
 
 3. Commands
@@ -35,7 +35,7 @@ Requirements:
 - Keep the UI simple-first and mobile-friendly.
 - Do not remove existing features.
 - Move clutter into tabs, collapsible areas, or clean cards.
-- Make the page feel like Ruby’s main command center, not a developer panel.
+- Make the page feel like Eleanor’s main command center, not a developer panel.
 - The MobileBottomNav AI button must route here.
 
 TASK U5 — dashboard.tsx simple-first reorganization
@@ -47,7 +47,7 @@ Keep all existing features, but reduce clutter:
   - live/demo/paper mode
   - account balance/equity/margin/free margin/margin level if available
   - active open trades with real-time P/L money value if available
-  - Ruby status/quick insight
+  - Eleanor status/quick insight
   - scanner summary
 - Move advanced, admin, diagnostic, or rarely used sections into collapsible cards/tabs.
 - Remove repetitive wording and duplicate alerts.
@@ -81,8 +81,8 @@ Check:
 - scanner search works
 - symbol groups collapse/expand
 - selected symbol changes market focus
-- Ruby explanation panel appears
-- Ruby typing/thinking animation appears while responding
+- Eleanor explanation panel appears
+- Eleanor typing/thinking animation appears while responding
 - trade buttons do not bypass confirmations
 - blocked live/shared-master states show plain-language reasons
 - no internal function names appear in normal user UI
@@ -96,7 +96,7 @@ Safety rules:
 - Keep per-user isolation intact.
 
 Acceptance criteria:
-- /ai-command-center is a clean 4-tab Ruby command center.
+- /ai-command-center is a clean 4-tab Eleanor command center.
 - Mobile AI nav points to /ai-command-center.
 - Dashboard is simpler without losing features.
 - ScannerTradeModal uses the safest compatible instant-router path or gives a clear blocked reason.

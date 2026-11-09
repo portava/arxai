@@ -252,11 +252,11 @@ Verify voice is not just a decorative shell:
 - Voice errors render honestly.
 - Voice does not claim execution until backend confirms it.
 - Voice state does not remain “listening/thinking/executed” after failure.
-- Voice identity says Eleanor, not Ruby, unless legacy naming remains intentionally internal.
+- Voice identity says Eleanor, not Eleanor, unless legacy naming remains intentionally internal.
 
 Fix naming drift:
 - User-facing assistant should be Eleanor.
-- Remove or subdue Ruby labels from user-facing chat/voice if they still appear.
+- Remove or subdue Eleanor labels from user-facing chat/voice if they still appear.
 - Internal module names may remain if changing them would be risky, but user-facing copy must be Eleanor.
 
 Part G — Central brain coherence
@@ -332,7 +332,7 @@ Final report must include:
 5. Execution path proof for trade commands
 6. Blocked-state proof
 7. Voice truth status
-8. Ruby/Eleanor naming drift found and fixed
+8. Eleanor/Eleanor naming drift found and fixed
 9. Mock/demo/fake AI leaks found
 10. Files changed
 11. Tests/guards added or updated

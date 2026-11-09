@@ -60,7 +60,7 @@ On completion, create or update:
 - risk profile
 - account status
 - onboarding status
-- Ruby context scope
+- Eleanor context scope
 - notification preferences
 - one-click defaults OFF
 - dashboard route preference
@@ -112,10 +112,10 @@ Use simple labels:
 
 Avoid code-heavy labels.
 
-8. Ruby onboarding awareness
-Ruby should understand the user’s onboarding/account status.
+8. Eleanor onboarding awareness
+Eleanor should understand the user’s onboarding/account status.
 
-Ruby can explain:
+Eleanor can explain:
 - how to start in demo mode
 - why the user is waiting for approval
 - why live trading is blocked
@@ -124,7 +124,7 @@ Ruby can explain:
 - what the next step is
 - what account mode the user selected
 
-Ruby must not reveal:
+Eleanor must not reveal:
 - other users
 - full shared master balance
 - admin-only data
@@ -216,7 +216,7 @@ Add or update tests for:
 - one-click defaults OFF after onboarding
 - user cannot access another user’s onboarding/account setup
 - account mode switching does not mix demo/live/shared data
-- Ruby only explains current user onboarding status
+- Eleanor only explains current user onboarding status
 - notifications are private per user
 - non-admin cannot approve themselves
 - no secrets exposed

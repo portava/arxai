@@ -15,7 +15,7 @@ Do not:
 - Change MT5 execution permissions.
 - Change kill switches.
 - Change admin approval rules.
-- Change Ruby intelligence.
+- Change Eleanor intelligence.
 - Change scanner calculations.
 - Change trade execution logic.
 - Redesign unrelated pages.
@@ -56,7 +56,7 @@ User features:
 - Trade ticket
 - Open trades
 - Market Scanner
-- Ruby AI
+- Eleanor AI
 - Risk Command Center
 - Alerts/watchlist
 - Trade history/activity
@@ -85,7 +85,7 @@ Add a compact admin-only health overview showing:
 - Backend online/offline
 - MT5 bridge connected/disconnected/stale
 - Scanner feed status
-- Ruby service status
+- Eleanor service status
 - Auth status
 - Database status
 - Recent app errors
@@ -103,7 +103,7 @@ For regular users, show only simple safe states:
 - “Broker execution disabled”
 - “Simulator available”
 - “Scanner available”
-- “Ruby available”
+- “Eleanor available”
 - “MT5 data unavailable” if disconnected
 
 Do not show backend internals.
@@ -116,7 +116,7 @@ Verify or add clean backend logging for:
 - failed request access
 - failed password reset request
 - failed scanner fetch
-- failed Ruby request
+- failed Eleanor request
 - failed MT5 bridge read
 - failed open trades/account metrics read
 - failed audit/ledger/reconciliation read
@@ -154,7 +154,7 @@ Required before beta:
 - Admin role protected
 - Invite flow works
 - Scanner visible
-- Ruby available
+- Eleanor available
 - Risk rules active
 - Trade ticket opens
 - No live execution unless explicitly approved

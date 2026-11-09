@@ -5,7 +5,7 @@ The screenshot shows backend performance is green, but the job is NOT complete b
 1. Full Playwright UI timing sweep
 2. Part 10 manual live-trade latency recorder
 3. Admin search debounce upgrade
-4. Ruby TTS await-discipline check
+4. Eleanor TTS await-discipline check
 
 Objective:
 Complete the missing UI-side and interaction-speed work without breaking the existing green backend QA results.
@@ -48,29 +48,29 @@ C. Scanner
 - symbol search input responds quickly
 - market list collapses and expands quickly
 - selecting a market updates the selected market panel
-- Ruby explanation window appears for selected market
+- Eleanor explanation window appears for selected market
 - no backend/internal function names are exposed to users
 - no Paper/PAPER wording appears anywhere
 
-D. Ruby Chat
-- Ruby chat opens
+D. Eleanor Chat
+- Eleanor chat opens
 - text message sends
-- “Ruby is thinking…” or animated three-dot typing state appears immediately
+- “Eleanor is thinking…” or animated three-dot typing state appears immediately
 - response returns
-- Ruby response is plain English plus useful technical analysis
-- Ruby does not dump raw backend data
-- Ruby does not expose route names, internal functions, database fields, enum names, or hidden system details
-- Ruby does not say Paper Trading
-- Ruby only explains DEMO or LIVE
+- Eleanor response is plain English plus useful technical analysis
+- Eleanor does not dump raw backend data
+- Eleanor does not expose route names, internal functions, database fields, enum names, or hidden system details
+- Eleanor does not say Paper Trading
+- Eleanor only explains DEMO or LIVE
 
-E. Ruby Voice / TTS
-Find the correct Ruby voice/TTS component path.
+E. Eleanor Voice / TTS
+Find the correct Eleanor voice/TTS component path.
 Do not assume the old path is correct.
 Search the repo for:
 - TTS
 - text to speech
 - speech synthesis
-- Ruby voice
+- Eleanor voice
 - auto listen
 - voice input
 - voice output
@@ -84,8 +84,8 @@ Then verify:
 - microphone button responds
 - voice capture starts
 - voice capture stops when the user stops talking
-- if Ruby does not understand, she asks the user to repeat
-- Ruby can respond out loud when voice response is enabled
+- if Eleanor does not understand, she asks the user to repeat
+- Eleanor can respond out loud when voice response is enabled
 - TTS requests are awaited correctly
 - UI does not hang while TTS is processing
 - text response appears even if TTS fails
@@ -174,10 +174,10 @@ Scanner:
 - tab switch: under 250ms
 - symbol search response: under 150ms
 - selected market panel update: under 300ms
-- Ruby explanation loading state: under 100ms
-- Ruby explanation first useful text: target under 2500ms, with loading state immediately
+- Eleanor explanation loading state: under 100ms
+- Eleanor explanation first useful text: target under 2500ms, with loading state immediately
 
-Ruby:
+Eleanor:
 - chat open: under 300ms
 - send message to typing indicator: under 100ms
 - text response visible: target under 3000ms when model/API is available
@@ -232,16 +232,16 @@ Add or update tests proving:
 - empty search clears correctly
 - permissions remain protected
 
-Part 5 — Ruby TTS Await Discipline
+Part 5 — Eleanor TTS Await Discipline
 
-Find the real Ruby TTS/voice path and fix it.
+Find the real Eleanor TTS/voice path and fix it.
 
 Requirements:
 - text response must not be blocked by audio generation
 - audio generation must be awaited only where needed
-- if TTS fails, Ruby text still works
+- if TTS fails, Eleanor text still works
 - if microphone permission is denied, show clean message
-- if speech recognition fails, Ruby asks user to repeat
+- if speech recognition fails, Eleanor asks user to repeat
 - prevent duplicate TTS calls for the same response
 - prevent overlapping playback unless user intentionally interrupts
 - stop playback when user leaves chat or disables voice
@@ -263,7 +263,7 @@ It should record timing for:
 - broker response received
 - UI updated
 - trade appears in history/open positions
-- Ruby explanation/log updated
+- Eleanor explanation/log updated
 
 Important:
 Automated tests must not place real live trades.
@@ -309,7 +309,7 @@ After fixes, run:
 - test:onboarding
 - backend perf sweep
 - new Playwright UI timing sweep
-- Ruby TTS/voice tests
+- Eleanor TTS/voice tests
 - admin debounce tests
 - scanner UI timing tests
 - trade ticket timing tests
@@ -322,7 +322,7 @@ Return a clear report with:
 2. What was completed now
 3. Files changed
 4. UI timing table for every tested action
-5. Ruby TTS/voice result
+5. Eleanor TTS/voice result
 6. Admin debounce result
 7. Trade ticket/open/close timing result
 8. Scanner timing result
@@ -339,8 +339,8 @@ Acceptance Criteria:
 - App loads fast
 - UI feels instant after button presses
 - Scanner responds quickly
-- Ruby shows typing immediately
-- Ruby voice/TTS works or fails gracefully
+- Eleanor shows typing immediately
+- Eleanor voice/TTS works or fails gracefully
 - Trade ticket opens quickly
 - Live preflight is fast
 - Admin controls are responsive

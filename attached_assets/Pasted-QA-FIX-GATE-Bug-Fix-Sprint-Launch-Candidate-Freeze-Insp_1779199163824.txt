@@ -24,9 +24,9 @@ Verify:
 16. Normal users cannot see shared master global totals.
 17. User A cannot see User B data.
 18. Admin pages/APIs remain protected.
-19. Ruby uses only current-user context for normal users.
-20. Ruby admin context only works for authenticated admins.
-21. Ruby voice cannot bypass trade confirmation.
+19. Eleanor uses only current-user context for normal users.
+20. Eleanor admin context only works for authenticated admins.
+21. Eleanor voice cannot bypass trade confirmation.
 22. Voice trade commands prepare/confirm instead of silently executing.
 23. Kill switches still block live commands.
 24. Close-only still blocks new opens and allows only safe verified exits.

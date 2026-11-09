@@ -11,7 +11,7 @@ Do not change:
 - trade execution logic
 - live/demo permissions
 - admin approval toggles
-- Ruby brain/intelligence
+- Eleanor brain/intelligence
 - scanner calculations
 - login/auth
 - open-trade P/L calculations
@@ -32,7 +32,7 @@ Primary Tools:
 1. Cockpit / Dashboard
 2. Trade
 3. Open Trades / Positions
-4. AI / Ruby
+4. AI / Eleanor
 5. Market Scanner
 6. Risk Command Center
 7. Alerts / Watchlist
@@ -66,12 +66,12 @@ Do not delete features. Only reorganize navigation and labels.
 
 PART 2 — AI main page top tabs
 
-On the AI / Ruby main page, add top tabs that mirror all AI-related menu items from the side panel.
+On the AI / Eleanor main page, add top tabs that mirror all AI-related menu items from the side panel.
 
 Any AI-related option currently in the side menu should also be available as a tab at the top of the AI main page so users can reach AI tools quickly without opening the side menu.
 
 Examples of AI page top tabs, depending on what already exists:
-- Ruby
+- Eleanor
 - Market Read
 - Symbols
 - Results
@@ -93,7 +93,7 @@ AI tab behavior:
 - Keep the current market focus synced across AI tabs.
 - Do not stack the AI tabs vertically.
 - Do not create a huge page.
-- Keep search, symbols, Ruby explanation, scanner results, and advanced tools organized inside their matching tab.
+- Keep search, symbols, Eleanor explanation, scanner results, and advanced tools organized inside their matching tab.
 
 PART 3 — Clean naming
 
@@ -108,7 +108,7 @@ Avoid labels like:
 - API names
 
 Good labels:
-- Ruby
+- Eleanor
 - Market Read
 - Symbols
 - Scanner
@@ -140,4 +140,4 @@ Do not finish until:
 7. AI tabs do not stack vertically.
 8. Active menu item and active AI tab are clear.
 9. Selected symbol/market focus remains synced across AI tabs where possible.
-10. No unrelated trading, MT5, auth, Ruby brain, scanner, or backend execution systems were changed.
+10. No unrelated trading, MT5, auth, Eleanor brain, scanner, or backend execution systems were changed.

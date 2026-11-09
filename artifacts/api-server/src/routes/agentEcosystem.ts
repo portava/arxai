@@ -147,7 +147,7 @@ router.get("/admin/agent-ecosystem/learning-camp", async (req, res) => {
 //   GET /api/admin/agent-ecosystem/advisory-traces?surface=SCANNER|RISK|SCALP&limit=N
 //     Returns the most recent agent-advisory traces (one per symbol+timeframe per
 //     surface) recorded as the desk's agents re-weighted real Scanner ranking,
-//     Risk grading, Scalp scoring, and Ruby reads. Visibility only — these are
+//     Risk grading, Scalp scoring, and Eleanor reads. Visibility only — these are
 //     advisory snapshots, never an execution input. Admin/OWNER only.
 
 const ADVISORY_SURFACES: ReadonlySet<string> = new Set(["SCANNER", "RISK", "SCALP"]);
@@ -165,7 +165,7 @@ router.get("/admin/agent-ecosystem/advisory-traces", async (req, res) => {
 
 // ── Layer 3 governance trace + household recommendations (admin/OWNER) ────────
 //
-//   GET /api/admin/agent-ecosystem/governance-traces?surface=SCANNER|RISK|SCALP|RUBY&limit=N
+//   GET /api/admin/agent-ecosystem/governance-traces?surface=SCANNER|RISK|SCALP|ELEANOR&limit=N
 //     Returns the most recent FULL governance reviews (one per symbol+timeframe
 //     per surface): the authority-weighted outcome, bounded governanceScore vs
 //     advisoryScore, every challenge with its raising agent + weight, the winning
@@ -177,7 +177,7 @@ router.get("/admin/agent-ecosystem/advisory-traces", async (req, res) => {
 //     reviews (deduped per agentKey+action, keeping the most recent context).
 //     Advisory only — applied solely via the existing audited admin lifecycle flow.
 
-const GOVERNANCE_SURFACES: ReadonlySet<string> = new Set(["SCANNER", "RISK", "SCALP", "RUBY"]);
+const GOVERNANCE_SURFACES: ReadonlySet<string> = new Set(["SCANNER", "RISK", "SCALP", "ELEANOR"]);
 
 router.get("/admin/agent-ecosystem/governance-traces", async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
@@ -191,7 +191,7 @@ router.get("/admin/agent-ecosystem/governance-traces", async (req, res) => {
 });
 
 // Durable, paginated proof that governance was actually involved in real app
-// actions (scanner scans, Ruby reads, scalp reads, and live submit/close bypass
+// actions (scanner scans, Eleanor reads, scalp reads, and live submit/close bypass
 // markers). Reads the persisted `agent_governance_traces` table — admin-only.
 router.get("/admin/agent-ecosystem/governance-trace-log", async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;

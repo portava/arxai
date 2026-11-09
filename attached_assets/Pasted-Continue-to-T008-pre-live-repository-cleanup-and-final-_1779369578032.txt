@@ -5,7 +5,7 @@ Do not rebuild from scratch. Do not change the live shared-account trading archi
 Current state:
 - Phase A/B/C/T006/T007 live shared-account system is production-ready under default-deny.
 - T007 activation cockpit exists.
-- Manual/scanner/Ruby live shared flows exist.
+- Manual/scanner/Eleanor live shared flows exist.
 - Live command dispatch remains blocked until operator activation and all gates pass.
 - T007 QA found pre-existing scripts-package type/rootDir issues unrelated to T007.
 
@@ -70,7 +70,7 @@ Verify:
 - Execution always re-validates.
 - Manual live shared flow still validates first.
 - Scanner live shared flow still validates first.
-- Ruby cannot execute without confirmation.
+- Eleanor cannot execute without confirmation.
 - Regular users only see their own records.
 - Admin sees all shared live records.
 - No frontend path directly queues live commands.

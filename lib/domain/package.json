@@ -41,7 +41,7 @@
     "./agent-system": "./src/agent-system/index.ts",
     "./handshake": "./src/handshake/index.ts",
     "./execution-preview": "./src/execution-preview/index.ts",
-    "./ruby-quality": "./src/ruby-quality/index.ts",
+    "./eleanor-quality": "./src/eleanor-quality/index.ts",
     "./conditional-execution": "./src/conditional-execution/index.ts",
     "./shadow-lab": "./src/shadow-lab/index.ts",
     "./agent-promotion": "./src/agent-promotion/index.ts",

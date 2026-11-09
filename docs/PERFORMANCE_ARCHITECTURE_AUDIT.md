@@ -82,7 +82,7 @@ Per-route attributes: **first-load deps** (route shell), **on-mount API calls**,
 |---|---|---|---|---|---|
 | `/` Cockpit (`dashboard.tsx`) | account-shell, risk/status, allocation, alerts/unread-count | risk/alerts polls (paused on hidden) | yes | low | low |
 | `/market-scanner` (Scanner) | universes, status, opportunities, candles, positions/all, pending-drafts | scanner 5s, positions 10s, selected-market 30s, deriv 15s (all paused on hidden) | yes | low (distinct keys) | **medium** (priority surface) |
-| `/ai-command-center` (Ruby) | conversation/history loaded after shell | none on idle | yes | low | medium (read-only assistant) |
+| `/ai-command-center` (Eleanor) | conversation/history loaded after shell | none on idle | yes | low | medium (read-only assistant) |
 | `/my-trades`, `/positions` | per-user positions | modest poll (paused) | yes | low | low |
 | `/risk-command-center` | risk status/limits, kill switch state | poll (paused) | yes | low | **high** (safety surface) |
 | `/alerts` | alerts list | poll (paused) | yes | low | low |
@@ -114,18 +114,18 @@ On-mount (from `pages/market-scanner.tsx` + `components/scanner/*`):
   after submit until terminal**.
 - `RecentScannerTrades`: `/api/me/demo-commands?limit=100` (5s, paused).
 - `SymbolExplorer`: **no network** — synchronous in-memory registry filter.
-- `RubyChartRead`: manual, on-demand only.
+- `EleanorChartRead`: manual, on-demand only.
 
 Key finding fixed this pass: the candlestick chart used to fully remount on the
 10s positions/pending poll (see PART 6).
 
-### Ruby breakdown
+### Eleanor breakdown
 
-Ruby shell opens from a lazy chunk. Conversation history loads **after** the
-shell. Ruby is **read-only** — every response carries
+Eleanor shell opens from a lazy chunk. Conversation history loads **after** the
+shell. Eleanor is **read-only** — every response carries
 `{safetyMode:"paper_only", liveLocked:true, readOnlyMode:true,
-allowOrderExecution:false}`. The Scanner "Ruby chart read"
-(`RubyChartRead`) is a deterministic, on-demand call to the read-only
+allowOrderExecution:false}`. The Scanner "Eleanor chart read"
+(`EleanorChartRead`) is a deterministic, on-demand call to the read-only
 `/api/me/assistant/explain-signal` / `read-chart` endpoint and never blocks chart
 render or trade Confirm.
 
@@ -158,9 +158,9 @@ the network/backend cost is identical.
 | 8 | Buy/Sell modal open | <1s | profile 30s-stale (cached) | <1s (opens from loaded state) | ✅ met |
 | 9 | Lot input responsiveness | instant | n/a | instant (local state) | ✅ met |
 | 10 | Confirm → pending shown | <100ms | n/a (optimistic pending) | <100ms (pending state set before network) | ✅ met |
-| 11 | Ruby open shell | fast | n/a | <1s (lazy chunk) | ✅ met |
-| 12 | Ruby thinking dots | <100ms | n/a | <100ms (local UI before request) | ✅ met |
-| 13 | Ruby first response | external-bound | provider-bound | shows pending immediately | ✅ met (slow calls show pending) |
+| 11 | Eleanor open shell | fast | n/a | <1s (lazy chunk) | ✅ met |
+| 12 | Eleanor thinking dots | <100ms | n/a | <100ms (local UI before request) | ✅ met |
+| 13 | Eleanor first response | external-bound | provider-bound | shows pending immediately | ✅ met (slow calls show pending) |
 | 14 | More/Settings shell | <1s | settings reads <8ms | <1s | ✅ met |
 | 15 | Nothing feels frozen | — | — | polling paused on hidden; slow calls show pending | ✅ met |
 
@@ -226,7 +226,7 @@ debug 5s, recent trades 5s) already pause on `document.hidden` via
 
 ~150 routes are `React.lazy`. Heavy collapsed panels are already
 `React.lazy`-loaded (see `.agents/memory/perf-lazy-collapsed-heavy-panels.md`).
-Ruby conversation history loads after shell. Admin diagnostics/perf panel is
+Eleanor conversation history loads after shell. Admin diagnostics/perf panel is
 admin-gated and off the normal path. No new safe-defer candidate on the critical
 path was found that wasn't already deferred.
 
@@ -235,7 +235,7 @@ path was found that wasn't already deferred.
 The backend sweep shows the critical read path at 3–10ms with small payloads. The
 live-trade critical path (auth → permission → allocation → kill switch → freeze →
 symbol/lot validation → bridge readiness → MT5 dispatch → ledger → response) is
-unchanged and not on any polling loop. Ruby explanation, news, backtest, and deep
+unchanged and not on any polling loop. Eleanor explanation, news, backtest, and deep
 scan scoring are already off the trade hot path. No backend change made (no
 validation removed, nothing moved to the frontend).
 
@@ -263,7 +263,7 @@ record altered, no financial logic changed, no master-account data exposed.
 ### Redundant UI (PART 10) — cross-referenced, nothing new to remove
 
 Cross-referenced `docs/dormant-systems-audit.md` and `docs/PRUNING_MAP.md`. Prior
-passes already: collapsed normal-user nav to Cockpit·Scanner·Ruby·Risk·More,
+passes already: collapsed normal-user nav to Cockpit·Scanner·Eleanor·Risk·More,
 route-gated all admin/dormant routes (default-deny), moved long disclosure behind
 expanders, collapsed repeated banners into a single chip strip, and hid advanced
 quick-links from non-admins. Most "dead" flags were verified false positives
@@ -300,7 +300,7 @@ changes are additive indexes only.
 
 1. **Health result** — `health:workflows` 6/6 PASS; all three workflows serving;
    auth gate intact; the spec's "workflows failing" claim was stale.
-2. **Architecture map** — §2 (global foundation + per-route table + Scanner/Ruby/
+2. **Architecture map** — §2 (global foundation + per-route table + Scanner/Eleanor/
    trade breakdowns).
 3. **Before/after browser timing (desktop)** — §3 table; all 15 targets met.
 4. **Before/after browser timing (mobile)** — identical backend cost; render path
@@ -311,19 +311,19 @@ changes are additive indexes only.
 7. **Search timing** — instant (synchronous in-memory; no network).
 8. **Modal timing** — Buy/Sell modal opens <1s from loaded state.
 9. **Confirm timing** — pending shown <100ms (optimistic before network).
-10. **Ruby timing** — shell <1s; thinking dots <100ms; slow responses show
+10. **Eleanor timing** — shell <1s; thinking dots <100ms; slow responses show
     pending and never freeze the UI.
 11. **Slowest remaining frontend dependency** — first-paint of the active lazy
     chunk + lightweight-charts init on Scanner (one-time per chart build).
 12. **Slowest remaining backend dependency** — external market-data providers on
-    Ruby/quote fall-through (provider-bound, off the trade path, shows pending);
+    Eleanor/quote fall-through (provider-bound, off the trade path, shows pending);
     largest in-app payload is `/api/me/alerts` (~35KB, still 5ms).
 13. **Duplicate requests removed** — none required; distinct keys + single
     account-mode resolver + dedicated unread-count aggregate already in place.
 14. **Polling changes** — none required; all Scanner loops already pause on
     hidden tab and resync on return.
 15. **Lazy/deferred modules** — already ~150 lazy routes + lazy collapsed heavy
-    panels + after-shell Ruby history; no new critical-path defer found.
+    panels + after-shell Eleanor history; no new critical-path defer found.
 16. **Chart-remount reductions** — the 10s positions/pending poll no longer
     rebuilds the chart; price lines update incrementally (PART 6).
 17. **Indexes added** — 5 composite per-user indexes across `notifications`,
@@ -357,7 +357,7 @@ changes are additive indexes only.
 27. **Recommended next-safe optimization** — consider memoizing scanner result
     cards if a future profile shows re-render cost on large opportunity lists
     (not observed as a problem now).
-28. **Deeper future (high-risk, OUT OF SCOPE)** — streaming/progressive Ruby
+28. **Deeper future (high-risk, OUT OF SCOPE)** — streaming/progressive Eleanor
     responses and server-push (SSE/WebSocket) for positions/quotes to replace
     polling entirely; would touch the assistant + bridge surfaces and needs its
     own task.

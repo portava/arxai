@@ -90,7 +90,7 @@ Fix:
     * live shared ticket
     * scanner selected symbol
     * Live AI Assist selected symbol
-    * Ruby explanation
+    * Eleanor explanation
     * Market Data Router feed
 2. When symbol changes, update all dependent components.
 3. Cancel stale in-flight quote/candle requests for the old symbol.
@@ -119,7 +119,7 @@ Fix symbol dropdown so selecting a symbol updates:
 * quote/feed source
 * SL/TP setup
 * Confirm/Review ticket
-* Ruby explanation
+* Eleanor explanation
 
 No stale old symbol/card should remain after selection.
 

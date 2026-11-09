@@ -23,7 +23,7 @@ Manual trade flow QA:
    - Scanner trade modal
    - Main Trade page
    - Market scanner result cards
-   - Ruby trade suggestion cards
+   - Eleanor trade suggestion cards
    - Cockpit trading controls
    - Chart trading controls
    - Live bridge test panel
@@ -42,7 +42,7 @@ Manual trade flow QA:
    “Stop Loss and Take Profit are not set. Confirm will send this live order without automatic exit protection.”
 11. Confirm BUY validation only runs if BUY-side SL/TP values are entered.
 12. Confirm SELL validation only runs if SELL-side SL/TP values are entered.
-13. Confirm Ruby bias mismatch warning appears inline only and does not create another confirmation step.
+13. Confirm Eleanor bias mismatch warning appears inline only and does not create another confirmation step.
 
 Safety gates:
 Confirm these still run before any live dispatch:
@@ -61,12 +61,12 @@ Confirm these still run before any live dispatch:
 13. Audit logging active
 14. No demo/paper/mock/sim fallback
 
-Ruby/live wording:
+Eleanor/live wording:
 1. Confirm active LIVE surfaces do not say “Test in demo first.”
 2. Confirm active LIVE surfaces say:
    “Decision support only — confirm live readiness and risk before trading.”
-3. Confirm Ruby gives useful structure-based reads, not generic “no edge” only.
-4. Confirm Ruby does not expose backend/internal function names to users.
+3. Confirm Eleanor gives useful structure-based reads, not generic “no edge” only.
+4. Confirm Eleanor does not expose backend/internal function names to users.
 
 Final report:
 1. Are all V75 positions visible and correctly treated as real?

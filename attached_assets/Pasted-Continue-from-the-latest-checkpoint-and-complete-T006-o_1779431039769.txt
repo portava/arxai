@@ -50,7 +50,7 @@ Check these pages/areas:
 - market scanner
 - selected market panel
 - scanner trade modal
-- Ruby chat
+- Eleanor chat
 - /ai-command-center
 - mobile bottom nav
 - side menu
@@ -59,8 +59,8 @@ Check these pages/areas:
 4. /ai-command-center final check
 Verify:
 - 4 tabs exist and work: Chat, Market Read, Commands, Memory
-- Ruby typing/thinking animation works
-- Ruby market explanation panel works
+- Eleanor typing/thinking animation works
+- Eleanor market explanation panel works
 - MobileBottomNav AI button routes to /ai-command-center
 - Page is mobile-friendly and not cluttered
 
@@ -78,7 +78,7 @@ Verify:
 - scanner search works
 - symbol groups/chips are mobile-friendly
 - symbol focus switching works
-- Ruby explains selected market
+- Eleanor explains selected market
 - scanner trade buttons preserve confirmations, stop loss, take profit, order type, risk controls, and approval checks
 - blocked trades show plain-language reasons
 
@@ -107,7 +107,7 @@ Return a concise final report with:
 - Whether live trading remains safely blocked by default
 - Whether demo/simulator still works
 - Final system score out of 100
-- Score explanation based on current trading software expectations, safety posture, mobile UX, scanner/Ruby intelligence, backend readiness, and execution readiness
+- Score explanation based on current trading software expectations, safety posture, mobile UX, scanner/Eleanor intelligence, backend readiness, and execution readiness
 
 Acceptance criteria:
 - Typecheck/build/lint pass if available.
@@ -115,7 +115,7 @@ Acceptance criteria:
 - Normal user UI has no internal-name leaks.
 - Mobile nav and /ai-command-center work.
 - Dashboard is cleaner.
-- Scanner/Ruby flow works.
+- Scanner/Eleanor flow works.
 - Live/shared-master execution remains default-deny and protected.
 - No live trades placed during QA.
 - Final report is clear enough to decide the next development phase.

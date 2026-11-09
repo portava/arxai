@@ -16,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   explainMarketRead,
   type SignalCandle,
   type SignalEngineInput,
@@ -71,7 +71,7 @@ function input(candles: SignalCandle[] | null): SignalEngineInput {
 }
 
 test("owner state: HH/HL structure with a small 20-bar drift never reads 'range-bound … bullish'", () => {
-  const signal = buildRubyMarketEdge(input(ownerLikeSeries()));
+  const signal = buildEleanorMarketEdge(input(ownerLikeSeries()));
   // Documents the two classifiers disagreeing on the same bars.
   assert.equal(signal.earlyTrend.structure, "HH_HL");
   assert.equal(signal.regime, "RANGING");
@@ -91,7 +91,7 @@ test("owner state: HH/HL structure with a small 20-bar drift never reads 'range-
 });
 
 test("a flat band still reads range-bound, and regime and structure agree", () => {
-  const signal = buildRubyMarketEdge(input(flatBand()));
+  const signal = buildEleanorMarketEdge(input(flatBand()));
   assert.equal(signal.earlyTrend.structure, "RANGE");
   const s = explainMarketRead(signal).simple.whatIsHappening;
   assert.match(s, /^V75 is range-bound — price is held in a tight band in the last 118 closed 1m bars/, s);
@@ -99,14 +99,14 @@ test("a flat band still reads range-bound, and regime and structure agree", () =
 });
 
 test("structureWindow is the engine's real input length, null when blind", () => {
-  assert.equal(buildRubyMarketEdge(input(ownerLikeSeries(64))).structureWindow, 64);
-  const blind = buildRubyMarketEdge(input(ownerLikeSeries(10)));
+  assert.equal(buildEleanorMarketEdge(input(ownerLikeSeries(64))).structureWindow, 64);
+  const blind = buildEleanorMarketEdge(input(ownerLikeSeries(10)));
   assert.equal(blind.structureWindow, null);
   assert.match(explainMarketRead(blind).simple.whatIsHappening, /there isn't enough live data yet/);
 });
 
 test("a signal without structureWindow (persisted/older) names no window rather than inventing one", () => {
-  const signal = buildRubyMarketEdge(input(ownerLikeSeries()));
+  const signal = buildEleanorMarketEdge(input(ownerLikeSeries()));
   delete (signal as { structureWindow?: number | null }).structureWindow;
   const s = explainMarketRead(signal).simple.whatIsHappening;
   assert.doesNotMatch(s, /closed 1m bars \(/, s);

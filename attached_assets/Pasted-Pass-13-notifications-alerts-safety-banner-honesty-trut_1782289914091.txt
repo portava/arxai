@@ -13,7 +13,7 @@ Important context from prior passes:
 - pending/conditional orders are draft-only / EA_UPGRADE_REQUIRED.
 - Win/Loss / analytics snapshot uses paper_orders.
 - Money paths are clean; reporting/audit/UI wording are the remaining honesty risks.
-- Do not call the assistant Ruby in report text except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+- Do not call the assistant Eleanor in report text except when quoting legacy code/file names. Report user-facing Eleanor as Eleanor naming drift.
 
 Required proof areas:
 
@@ -171,7 +171,7 @@ Prove:
 - whether Eleanor distinguishes suggestion from user command
 - whether Eleanor exposes pending/rejected/stale states
 - whether Eleanor can honestly explain why live trading is blocked
-- whether legacy Ruby copy is user-facing naming drift
+- whether legacy Eleanor copy is user-facing naming drift
 
 8. Trade lifecycle UI truth
 Audit:
@@ -246,7 +246,7 @@ Find tests/checks/scripts that would catch:
 - conditional draft displayed as executable
 - rejected close not reappearing
 - command timeout lacking user notification
-- user-facing Ruby naming drift
+- user-facing Eleanor naming drift
 - missing “no order was sent” on block messages
 
 Classify coverage:
@@ -293,7 +293,7 @@ Important:
 - Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
 - Give exact file:line proof for every claim.
 - If a claim cannot be proven, mark it Class 5 instead of assuming.
-- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+- Do not call the assistant Eleanor in the report except when quoting legacy code/file names. Report user-facing Eleanor as Eleanor naming drift.
 
 After Pass 13:
 Continue remaining audit sequence unless a Class 2 issue requires pausing for acceptance.

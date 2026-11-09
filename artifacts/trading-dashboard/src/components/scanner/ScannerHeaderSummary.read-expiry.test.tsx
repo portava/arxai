@@ -1,10 +1,10 @@
-// The Ruby Chart Read panel marks a non-gated read expired once its newest
+// The Eleanor Chart Read panel marks a non-gated read expired once its newest
 // closed candle (server `observedAt`) is older than the timeframe's candle
 // budget, or when its time is unknown. The page store keeps the read
 // indefinitely, so the header's Eleanor cell must apply the SAME expiry: an
 // expired read is not a current "Full read".
 //
-// Render proof against the REAL RubyReadStoreProvider, with live truth mocked
+// Render proof against the REAL EleanorReadStoreProvider, with live truth mocked
 // at the hook boundary.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -12,18 +12,18 @@ import { useEffect, type ReactNode } from "react";
 import { render, screen, cleanup } from "@testing-library/react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 import { thresholdsFor } from "@/lib/scannerTruth";
-import type { ChartRead } from "@/lib/rubyReadPanelState";
+import type { ChartRead } from "@/lib/eleanorReadPanelState";
 
 function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live, confirmed candles." },
-      ruby: { detail: "Eleanor can give a full, live read." },
+      eleanor: { detail: "Eleanor can give a full, live read." },
       trading: { verdict: "Blocked", detail: "Trading is restricted on your account." },
     },
     candles: { lastClose: 1.0842, sourceTechnical: "test", count: 200, minRequired: 150, status: "CONFIRMED" },
     consolidated: {
-      rubyReadStatus: "FULL_READ",
+      eleanorReadStatus: "FULL_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "Wait for confirmation.",
       internalReasonCode: "FEED_OK",
@@ -49,13 +49,13 @@ vi.mock("@/hooks/useTradingMode", () => ({
 }));
 
 import { ScannerHeaderSummary } from "./ScannerHeaderSummary";
-import { RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";
+import { EleanorReadStoreProvider, useEleanorReadStore } from "./eleanorReadStore";
 import { SelectedActionStoreProvider } from "./selectedActionStore";
 
 function Seed({ read, children }: { read: ChartRead; children?: ReactNode }) {
-  const ruby = useRubyReadStore();
+  const eleanor = useEleanorReadStore();
   useEffect(() => {
-    ruby.set("EURUSD", "15m", read);
+    eleanor.set("EURUSD", "15m", read);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <>{children}</>;
@@ -63,12 +63,12 @@ function Seed({ read, children }: { read: ChartRead; children?: ReactNode }) {
 
 function renderHeader(read: ChartRead) {
   return render(
-    <RubyReadStoreProvider>
+    <EleanorReadStoreProvider>
       <SelectedActionStoreProvider>
         <Seed read={read} />
         <ScannerHeaderSummary running={false} />
       </SelectedActionStoreProvider>
-    </RubyReadStoreProvider>,
+    </EleanorReadStoreProvider>,
   );
 }
 
@@ -82,7 +82,7 @@ const BASE_READ: ChartRead = {
 };
 
 function eleanorCell(): string {
-  return screen.getByTestId("scanner-header-ruby").textContent ?? "";
+  return screen.getByTestId("scanner-header-eleanor").textContent ?? "";
 }
 
 afterEach(() => {

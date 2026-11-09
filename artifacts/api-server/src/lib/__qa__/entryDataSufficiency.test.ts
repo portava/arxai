@@ -6,7 +6,7 @@
 //   PART A — the live-ENTRY gate adapter (`evaluateEntryDataSufficiency`). It is
 //   BLOCK-ONLY, NEW-ENTRY only, FAIL-CLOSED, and composes the shared engine
 //   THROUGH the chart-state adapter so it can never grant a trade or drift from
-//   the scanner/Ruby/chart verdict. Driven via the injectable `deps.buildState`
+//   the scanner/Eleanor/chart verdict. Driven via the injectable `deps.buildState`
 //   seam so it needs NO provider IO and NO database.
 //
 //   PART B — the backtest reliability badge (`evaluateBacktestDataReliability` +

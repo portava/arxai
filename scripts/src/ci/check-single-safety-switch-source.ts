@@ -27,7 +27,7 @@
 //      (readSafetyCoreSwitch(), or `.killSwitchEngaged` in a file that gets
 //      lib/safetyCore.ts getStatus()). A pre-check reads both through
 //      platformStop() + preCheckStopRefusal() instead; the reviewed readers
-//      left (Ruby's copy of the envelope field, the pure dispatch pre-gate, the
+//      left (Eleanor's copy of the envelope field, the pure dispatch pre-gate, the
 //      audited writers and legacy gates the Risk Governor does not run behind)
 //      are listed below with a reason. A report or readiness view that says
 //      "is trading stopped" reads platformStop() too (platformStopWith() when
@@ -112,7 +112,7 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // the readers left name one stop for a reason given here. A pre-check that
   // refuses an order reads platformStop() + preCheckStopRefusal().
   // (round 5, owner decision 4: the envelope itself reads platformStopWith() and left this list)
-  "lib/assistant/derivedEnvelope.ts": { rules: ["single_stop"], why: "Ruby's read-only projection of the envelope's labelled emergencyKillSwitch field (Ruby never executes); its allowOrderExecution / liveLocked / bannerReason come from the envelope, which derives them from platformStop()" },
+  "lib/assistant/derivedEnvelope.ts": { rules: ["single_stop"], why: "Eleanor's read-only projection of the envelope's labelled emergencyKillSwitch field (Eleanor never executes); its allowOrderExecution / liveLocked / bannerReason come from the envelope, which derives them from platformStop()" },
   "lib/live/liveCommandPipeline.ts": { rules: ["single_stop"], why: "emergencyKillSwitchBlocksDispatch() is the pure dispatch pre-gate decision; its emergencyKillSwitch / safetyCoreKillSwitch inputs come from platformStop() + preCheckStopRefusal() at its one call site" },
   // Legacy gates the pre-trade Risk Governor does not run behind. Round 5
   // (owner decision 3): /mt5 command endpoints, /broker/reconnect and the paper

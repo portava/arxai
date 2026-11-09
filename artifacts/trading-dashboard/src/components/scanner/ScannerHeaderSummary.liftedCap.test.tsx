@@ -204,14 +204,14 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => {
 });
 
 // Imported AFTER the mocks so the components pick up the stubbed hooks.
-import { RubyScalpFocusCard } from "./RubyScalpFocusCard";
+import { EleanorScalpFocusCard } from "./EleanorScalpFocusCard";
 import { ScannerHeaderSummary } from "./ScannerHeaderSummary";
 import { SelectedActionStoreProvider } from "./selectedActionStore";
 
 function tree() {
   return (
     <SelectedActionStoreProvider>
-      <RubyScalpFocusCard symbol="EURUSD" />
+      <EleanorScalpFocusCard symbol="EURUSD" />
       <ScannerHeaderSummary running={false} />
     </SelectedActionStoreProvider>
   );

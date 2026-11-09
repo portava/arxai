@@ -43,7 +43,7 @@ No menu item should:
 - use console.log only
 - point to a removed route
 - point to an unmapped page key
-- show the wrong Eleanor/Ruby help context
+- show the wrong Eleanor/Eleanor help context
 
 ============================================================
 PHASE 1 — BUILD COMPLETE MENU INVENTORY
@@ -57,7 +57,7 @@ PRIMARY:
 - Cockpit
 - Market Scanner
 - Trade
-- Eleanor / Ruby AI
+- Eleanor / Eleanor AI
 - Open Trades
 - Positions
 - Risk
@@ -96,7 +96,7 @@ ADVANCED TRADING:
 - Any other advanced menu items currently in code
 
 ADVANCED AI & STRATEGY:
-- Ruby/Eleanor strategy panels
+- Eleanor/Eleanor strategy panels
 - AI scanner settings
 - mission/agent panels if present
 - any backend AI/Claude/OpenAI tools if exposed
@@ -128,7 +128,7 @@ Also inventory:
 - logout icon
 - search box result actions
 - collapsed sidebar button
-- floating Eleanor/Ruby button
+- floating Eleanor/Eleanor button
 - footer/search controls
 - every page tab
 - every page button/card CTA
@@ -161,7 +161,7 @@ Every menu item needs:
 - role/permission requirement
 - icon
 - active route matching rule
-- Eleanor/Ruby help context key
+- Eleanor/Eleanor help context key
 - status: ready | permission_blocked | coming_soon
 
 Do not rely on loose label matching.
@@ -219,7 +219,7 @@ For each menu item:
 5. Confirm component matches route.
 6. Confirm page API calls are correct.
 7. Confirm no AUTH_REQUIRED unless expected.
-8. Confirm Eleanor/Ruby page context matches loaded page.
+8. Confirm Eleanor/Eleanor page context matches loaded page.
 9. Confirm every major button on that page works.
 10. If function missing, build minimal correct function and wire it.
 
@@ -249,7 +249,7 @@ Market Scanner:
 - scanner page
 - symbol/timeframe scanner
 - candle chart
-- Eleanor/Ruby read
+- Eleanor/Eleanor read
 - broad scan
 - opportunity map
 - feed readiness
@@ -261,7 +261,7 @@ Trade:
 - no live execution bypass
 - disabled state if account trading disabled
 
-Eleanor / Ruby AI:
+Eleanor / Eleanor AI:
 - AI assistant page
 - conversation/help context
 - market read tools
@@ -402,12 +402,12 @@ Operator Command Center:
 - must not appear when clicking unrelated menu item
 
 ============================================================
-PHASE 6 — ELEANOR/RUBY CONTEXT MAPPING
+PHASE 6 — ELEANOR/ELEANOR CONTEXT MAPPING
 ============================================================
 
 Screenshot shows Eleanor saying the screen is Operator Command Center, but the app/sidebar context appears mismatched.
 
-Fix Eleanor/Ruby screen context mapping.
+Fix Eleanor/Eleanor screen context mapping.
 
 Create/repair:
 getPageHelpContext(routeId/path)
@@ -421,7 +421,7 @@ Each page should provide:
 - relevant diagnostics
 - trading permission status
 
-Eleanor/Ruby must not infer page from stale state.
+Eleanor/Eleanor must not infer page from stale state.
 
 On route change:
 - update assistant context to current route/menu item
@@ -486,7 +486,7 @@ For every page, audit and fix:
 - timeframe selector
 - scan buttons
 - prepare trade
-- ask Eleanor/Ruby
+- ask Eleanor/Eleanor
 - open chart
 - open ticket
 - save buttons
@@ -548,7 +548,7 @@ If route names changed, preserve old routes with redirects.
 
 Examples:
 - /scanner -> /market-scanner
-- /ruby -> /eleanor or current AI route
+- /eleanor -> /eleanor or current AI route
 - /ai -> /eleanor or current AI route
 - /manual-ticket -> /trade/manual or current route
 - /profile -> /account if applicable
@@ -568,7 +568,7 @@ For each:
 - page component correct
 - active nav highlight correct
 - auth/permission behavior correct
-- Eleanor/Ruby context correct
+- Eleanor/Eleanor context correct
 - no console errors
 - no AUTH_REQUIRED raw crash
 - no blank page
@@ -605,7 +605,7 @@ The app passes this standard:
 - Admin/operator pages are permission-gated correctly.
 - Non-admin users do not hit raw admin AUTH_REQUIRED crashes.
 - Trader/investor/student roles see appropriate pages.
-- Eleanor/Ruby identifies the correct screen.
+- Eleanor/Eleanor identifies the correct screen.
 - Search results route correctly.
 - No dead buttons.
 - No href="#".
@@ -633,7 +633,7 @@ Return a full audit report:
 9. Missing functions built
 10. Buttons/actions fixed
 11. Admin/operator visibility fixes
-12. Eleanor/Ruby context mapping fixes
+12. Eleanor/Eleanor context mapping fixes
 13. Redirects added
 14. Files changed
 15. Tests run
@@ -641,4 +641,4 @@ Return a full audit report:
 17. Remaining TODOs, if any
 
 Final result:
-Every ARX sidebar/menu selection routes to its correct page/directory, every page action is wired to its correct function/API, missing required functions are built safely, auth/permission handling is correct, Eleanor/Ruby page context is accurate, and no menu item produces a raw AUTH_REQUIRED or dead page.
+Every ARX sidebar/menu selection routes to its correct page/directory, every page action is wired to its correct function/API, missing required functions are built safely, auth/permission handling is correct, Eleanor/Eleanor page context is accurate, and no menu item produces a raw AUTH_REQUIRED or dead page.

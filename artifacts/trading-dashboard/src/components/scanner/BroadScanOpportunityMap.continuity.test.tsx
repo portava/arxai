@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({ actor: 1 as number | null, reads: [] as { para
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: state.actor ? { id: state.actor } : null }) }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ scannerTruth: null }) }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["5m", () => {}], loadScannerTimeframe: () => "5m" }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@workspace/api-client-react", async () => {
   const { useQuery } = await import("@tanstack/react-query");
   return {

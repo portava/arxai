@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
-import { resolveFeedBadgeVerdict } from "@/lib/rubyReadPanelState";
+import { resolveFeedBadgeVerdict } from "@/lib/eleanorReadPanelState";
 import { feedConfidence, capConfidence } from "@/lib/feed-confidence";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 
 // ── Live-chart / trade-panel feed-badge cap honesty (Task #521) ──────────────
 //
-// Task #506 capped the Scanner "Ruby Chart Read" panel's FeedConfidenceBadge by
+// Task #506 capped the Scanner "Eleanor Chart Read" panel's FeedConfidenceBadge by
 // the ONE resolved scanner-truth verdict, and Task #511 locked that for every
 // other badge reachable from the Scanner. This guard extends the SAME honesty to
 // the live-chart header (ARXNativeChart) and the trade-decision surfaces — the
@@ -289,7 +289,7 @@ describe("Feed badge popover — trailing-interval gap (Task #778)", () => {
 // ── Inline trailing-interval gap on the ALWAYS-VISIBLE chip (Task #780) ───────
 //
 // The popover already carries the full "Missing intervals" row (#778). For the
-// Ruby chat feed chip the count must also show inline on the always-visible chip
+// Eleanor chat feed chip the count must also show inline on the always-visible chip
 // (no click), but ONLY when the caller opts in via `showTrailingGap` — every
 // other FeedConfidenceBadge caller keeps the bare chip. The count is suppressed
 // for a current feed (<=1) and reads an honest "—" when unknown.

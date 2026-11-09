@@ -1,6 +1,6 @@
-// parseTradeCommand.ts — Ruby AI text/voice command → InstantTradeIntent.
+// parseTradeCommand.ts — Eleanor AI text/voice command → InstantTradeIntent.
 //
-// Ruby is allowed to act on CLEAR, DIRECT trade commands only. The parser
+// Eleanor is allowed to act on CLEAR, DIRECT trade commands only. The parser
 // returns:
 //   - { kind: "OPEN", … }          — direct buy/sell/open
 //   - { kind: "CLOSE_ONE", … }     — "close my EURUSD trade"
@@ -20,9 +20,9 @@
 // the level we wait for; when the user didn't say above/below, it's left
 // undefined and the watch engine resolves it against the live price at
 // arm-time (never guessed by the parser).
-export type RubyPriceTrigger = { price: number; direction?: "ABOVE" | "BELOW" };
+export type EleanorPriceTrigger = { price: number; direction?: "ABOVE" | "BELOW" };
 
-export type RubyParsedCommand =
+export type EleanorParsedCommand =
   | { kind: "OPEN"; side: "BUY" | "SELL"; symbol: string; volume: number; orderType: string }
   | { kind: "CLOSE_ONE"; symbol: string }
   | { kind: "CLOSE_ALL" }
@@ -39,8 +39,8 @@ export type RubyParsedCommand =
   // `pendingKind` is a copy hint (the user said "limit"/"stop"); it does NOT
   // place a broker-native pending order. `expiresInMinutes`, when present,
   // arms the watch with an expiry the evaluator already honors.
-  | { kind: "WATCH_AND_ENTER"; side: "BUY" | "SELL"; symbol: string; volume?: number; trigger: RubyPriceTrigger; pendingKind?: "LIMIT" | "STOP"; expiresInMinutes?: number }
-  | { kind: "WATCH_AND_CLOSE"; symbol: string; trigger: RubyPriceTrigger; expiresInMinutes?: number }
+  | { kind: "WATCH_AND_ENTER"; side: "BUY" | "SELL"; symbol: string; volume?: number; trigger: EleanorPriceTrigger; pendingKind?: "LIMIT" | "STOP"; expiresInMinutes?: number }
+  | { kind: "WATCH_AND_CLOSE"; symbol: string; trigger: EleanorPriceTrigger; expiresInMinutes?: number }
   // A limit/stop entry was clearly intended but no trigger price was given —
   // ask for the price rather than guess (never place a priceless pending).
   | { kind: "PENDING_NEEDS_PRICE"; side: "BUY" | "SELL"; symbol: string; pendingKind: "LIMIT" | "STOP" }
@@ -51,7 +51,7 @@ export type RubyParsedCommand =
   // column / EA path). Surfaced honestly as armed-but-not-executable.
   | { kind: "TRAILING_STOP_UNSUPPORTED"; symbol?: string }
   // Risk-percent sizing: a lot cannot be computed safely without trusted
-  // broker contract specs, so Ruby asks the user to confirm an exact lot.
+  // broker contract specs, so Eleanor asks the user to confirm an exact lot.
   | { kind: "RISK_PERCENT_SIZING"; side: "BUY" | "SELL"; symbol: string; riskPercent: number; orderType: string }
   | { kind: "SCALP_BEST_SETUP" }
   | { kind: "CANCEL" }
@@ -61,7 +61,7 @@ export type RubyParsedCommand =
   | { kind: "VAGUE"; reason: string }
   | { kind: "UNKNOWN" };
 
-// Vague analysis patterns Ruby must answer, NEVER execute.
+// Vague analysis patterns Eleanor must answer, NEVER execute.
 const VAGUE_PATTERNS: Array<RegExp> = [
   /\bwhat\s+should\s+i\s+(trade|buy|sell|do)\b/i,
   /\bis\s+\S+\s+(good|bullish|bearish|worth)\b/i,
@@ -160,7 +160,7 @@ function extractPrice(text: string, label: "tp" | "sl"): number | null {
 // "if it reaches 1.10", "above 1.20", "below 1.05". Returns the price and,
 // when the user named a side, the direction. Direction-less triggers leave
 // `direction` undefined — the watch engine resolves it against live price.
-function extractTrigger(text: string): RubyPriceTrigger | null {
+function extractTrigger(text: string): EleanorPriceTrigger | null {
   const re = /\b(when|if|at|once|reach(?:es)?|hits?|touch(?:es)?|above|over|below|under|drops?\s+to|rises?\s+to|breaks?\s+(?:above|below))\b[\s\S]{0,24}?(\d+(?:\.\d+)?)/i;
   const m = re.exec(text);
   if (!m) return null;
@@ -233,7 +233,7 @@ export type ParseDefaults = {
   defaultOrderType?: string | null;
 };
 
-export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {}): RubyParsedCommand {
+export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {}): EleanorParsedCommand {
   const text = rawText.trim();
   if (!text) return { kind: "UNKNOWN" };
 
@@ -248,7 +248,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
     return { kind: "CANCEL_PENDING_ORDER", ...(symbol ? { symbol } : {}) };
   }
 
-  // Cancel a pending Ruby action — "cancel that", "never mind", "stop
+  // Cancel a pending Eleanor action — "cancel that", "never mind", "stop
   // watching", "forget it". Matched before everything else so it can't be
   // mistaken for a trade. Bare "stop" is NOT enough (collides with "stop loss").
   if (/\b(cancel(\s+(that|it|the\s+watch|my\s+watch|everything))?|never\s*mind|forget\s+it|stop\s+(watching|monitoring|the\s+watch))\b/i.test(text)
@@ -273,7 +273,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
 
   // Scalp-the-best-setup — explicit scalp intent. Checked BEFORE the vague
   // patterns ("find me a setup" is otherwise vague) because the user is
-  // asking Ruby to act on the strongest current scalp opportunity.
+  // asking Eleanor to act on the strongest current scalp opportunity.
   if (/\b(scalp|scalping)\b/i.test(text)
       && /\b(best|top|strongest|find|get|take|do)\b/i.test(text)) {
     return { kind: "SCALP_BEST_SETUP" };
@@ -330,7 +330,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
       && !extractTrigger(text)) {
     const symbol = extractSymbol(text) ?? defaults.defaultSymbol ?? undefined;
     // "monitor EURUSD and move my stop on fakeouts" — the trader grants the
-    // bounded SL/TP shift authority for this monitor (rubyFakeoutPolicy.ts).
+    // bounded SL/TP shift authority for this monitor (eleanorFakeoutPolicy.ts).
     const fakeoutAuthority = /\b(fake\s*-?\s*outs?|whipsaws?|shift|move|adjust)\b[^.]*\b(stop|sl|tp|take\s*profit|target)s?\b|\b(fake\s*-?\s*outs?|whipsaws?)\b/i.test(text);
     return { kind: "MONITOR_TRADE", ...(symbol ? { symbol } : {}), ...(fakeoutAuthority ? { fakeoutAuthority: true } : {}) };
   }
@@ -413,7 +413,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
     const symbol = extractSymbol(text) ?? defaults.defaultSymbol ?? null;
     // An explicit lot size ALWAYS wins. Risk-% sizing is only considered when
     // the user gave no explicit lot — a lot is never silently fabricated from
-    // a percent (broker contract specs aren't trusted here), so Ruby asks the
+    // a percent (broker contract specs aren't trusted here), so Eleanor asks the
     // user to confirm an exact lot instead of mis-sizing live money.
     const explicitVolume = extractVolume(text);
     const riskPercent = explicitVolume == null ? extractRiskPercent(text) : null;

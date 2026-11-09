@@ -14,7 +14,7 @@ Surfaces affected:
 - Account Analytics
 - Investor dashboard / investor balance
 - Risk cockpit
-- Ruby trade context if Ruby reads account/open-trade state
+- Eleanor trade context if Eleanor reads account/open-trade state
 - Scanner header/account widgets if they show live account/trade counts
 - Any live P/L or open trade counter in nav/header/sidebar
 

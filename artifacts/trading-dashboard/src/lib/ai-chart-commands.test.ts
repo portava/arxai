@@ -1,6 +1,6 @@
 // AI chart-tool command contract + preview overlay mapping (Task #374).
 //
-// The bounded command contract is the ONLY way AI/Ruby drawings reach the
+// The bounded command contract is the ONLY way AI/Eleanor drawings reach the
 // renderer. These tests lock its safety properties:
 //   - the runtime guard rejects arbitrary / malformed objects (no free-form
 //     scripting), and accepts only well-formed commands
@@ -51,7 +51,7 @@ function mkPreview(over: Partial<SetupPreview> = {}): SetupPreview {
     governanceOutcome: null,
     explanation: ["A long idea near 1.1, stop 1.09, target 1.12."],
     invalidationNote: "Close under 1.09 breaks this idea.",
-    createdBy: "ruby",
+    createdBy: "eleanor",
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + 90_000).toISOString(),
     status: "preview",

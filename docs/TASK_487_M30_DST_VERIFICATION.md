@@ -20,7 +20,7 @@ deterministic fixtures.
 1. **No hardcoded weekend window.** `grep` for `Fri|Sun|21:00|22:00|dayOfWeek|
    getDay|weekend` across the calc files (`candleNormalization.ts`,
    `sessionProfile.ts`, `candleTruthEngine.ts`, `chartDataService.ts`,
-   `timeframes.ts`, `rubyChartContext.ts`) returns **0 matches in any decision
+   `timeframes.ts`, `eleanorChartContext.ts`) returns **0 matches in any decision
    path**. Hardcoded clock times appear only as descriptive metadata in
    `symbolProfile.ts`, never in the missing-bar calc.
 
@@ -86,7 +86,7 @@ Read via `GET /api/chart/candles` (temp per-user session minted and deleted afte
 | H4  | 300 | mt5_broker | clean | true | 0 |
 | D1  | 200 | mt5_broker | clean | true | 0 |
 
-Ruby read (`POST /api/me/assistant/read-chart`, EURUSD H1): **basis=VERIFIED**,
+Eleanor read (`POST /api/me/assistant/read-chart`, EURUSD H1): **basis=VERIFIED**,
 not gated, chartTruthScore 96.09 — full directional read allowed.
 
 **Before/after.** A live "before" (pre-#485) is not reproducible here: #485 is

@@ -12,7 +12,7 @@ from live EA BID ticks so the Scanner chart's newest bar ticks in real time.
 
 **Rule — tip is opt-in display-only.** `buildChartFeed`/`getChartCandles` gain
 `includeFormingTip` (default FALSE). Only the chart display routes pass `true`;
-every analysis/Ruby/chart-intelligence caller keeps the default, so the tip
+every analysis/Eleanor/chart-intelligence caller keeps the default, so the tip
 NEVER enters scoring/truth. truthResult/chartTruthScore are computed on closed
 bars BEFORE the tip is folded.
 

@@ -24,7 +24,7 @@ import { OneClickToggleCard } from "./OneClickToggleCard";
 
 const mockToast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@workspace/api-client-react", () => ({
   useGetMeOneClickStatus: () => ({
     data: null,

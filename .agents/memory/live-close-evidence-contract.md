@@ -41,5 +41,5 @@ is `scripts/src/liveCloseEvidenceTest.ts`.
 
 **Still test-only truth:** `resolveLiveCloseConfirmation` is NOT yet enforced in
 the general (non-test-cycle) live close path — only the OWNER live-test cycle and
-the command-status surface consume it. Any manual/Ruby live close completion copy
+the command-status surface consume it. Any manual/Eleanor live close completion copy
 should route through the same contract before claiming "closed".

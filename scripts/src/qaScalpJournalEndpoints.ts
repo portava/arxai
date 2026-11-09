@@ -1,4 +1,4 @@
-// qaScalpJournalEndpoints.ts — Authenticated QA for the Phase-3 Ruby Flame
+// qaScalpJournalEndpoints.ts — Authenticated QA for the Phase-3 Eleanor Flame
 // Scalp journal / after-action review / per-symbol personality endpoints.
 //
 // What it asserts (READ-ONLY — never places, modifies, or closes a trade):

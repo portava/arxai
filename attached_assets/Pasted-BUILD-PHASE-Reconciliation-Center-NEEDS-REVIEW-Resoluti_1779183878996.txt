@@ -6,7 +6,7 @@ Goal:
 Create an admin-only reconciliation center where the operator can review uncertain trade states, stuck commands, stale reservations, duplicate callbacks, unmapped shared master executions, partial fills, failed closes, and NEEDS_REVIEW items without guessing or creating unsafe live actions.
 
 Important:
-Check what already exists first. Reuse the current liveCommandPipeline, trade queue, shared master ledger, exposure reservations, bridge callbacks, audit logs, admin dashboard, kill switches, close-only mode, Ruby context, and user ownership checks. Do not create a second trade/reconciliation system.
+Check what already exists first. Reuse the current liveCommandPipeline, trade queue, shared master ledger, exposure reservations, bridge callbacks, audit logs, admin dashboard, kill switches, close-only mode, Eleanor context, and user ownership checks. Do not create a second trade/reconciliation system.
 
 1. Inspect existing reconciliation logic first
 Inspect:
@@ -73,7 +73,7 @@ Each reconciliation item should show:
 - entry price
 - exit price if known
 - SL/TP
-- source page: scanner, chart, Ruby voice, manual ticket, etc.
+- source page: scanner, chart, Eleanor voice, manual ticket, etc.
 - last known bridge status
 - last known app status
 - last callback time
@@ -185,7 +185,7 @@ For Demo:
 Normal users should see clean messages only for their own items:
 
 - “This trade needs review.”
-- “Ruby is waiting for verification before showing final status.”
+- “Eleanor is waiting for verification before showing final status.”
 - “Your close request needs review.”
 - “Your position status is being verified.”
 - “An operator review is needed before this can continue.”
@@ -198,8 +198,8 @@ Normal users must not see:
 - raw backend errors
 - secrets
 
-11. Ruby awareness
-Ruby should explain NEEDS_REVIEW safely.
+11. Eleanor awareness
+Eleanor should explain NEEDS_REVIEW safely.
 
 For normal users:
 - explain that the system is verifying trade state
@@ -253,7 +253,7 @@ Add or update tests for:
 - personal MT5 reconciliation stays separate from shared master
 - demo reconciliation never creates live command
 - user only sees their own needs-review status
-- Ruby explains NEEDS_REVIEW without exposing admin data
+- Eleanor explains NEEDS_REVIEW without exposing admin data
 - secrets are masked
 - no live command created during tests
 
@@ -265,7 +265,7 @@ Return:
 - scanner/job behavior
 - safe resolution actions
 - blocked unsafe actions
-- Ruby behavior
+- Eleanor behavior
 - tests added/run
 - manual test steps
 - remaining risks

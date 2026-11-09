@@ -4,7 +4,7 @@ The ONE FEED TRUTH fix (commit c90ff27c, LIVE_DELAYED / scanner-suppression / sh
 
 2. IS THE BACKEND RUNNING THE NEW CODE: confirm the LIVE_DELAYED logic exists in the running source — grep the deployed marketScanner.ts for "LIVE_DELAYED" and liveCommandPipeline.ts / the floor for the tri-state verdict. Then check: was the api-server process restarted AFTER the merge? Check process start time vs merge time. If it's serving pre-merge code, that's the bug.
 
-3. IS THE FRONTEND BUNDLE REBUILT: the scanner card + Ruby card LIVE_DELAYED rendering is frontend. Was the trading-dashboard rebuilt after the merge? Check the built bundle / dist timestamp vs merge time. A stale bundle = browser serves old UI even though source is updated. NOTE: a recent post-merge setup reportedly FAILED ("Failed to update environment") — check whether that left the build/deploy in a half-applied state.
+3. IS THE FRONTEND BUNDLE REBUILT: the scanner card + Eleanor card LIVE_DELAYED rendering is frontend. Was the trading-dashboard rebuilt after the merge? Check the built bundle / dist timestamp vs merge time. A stale bundle = browser serves old UI even though source is updated. NOTE: a recent post-merge setup reportedly FAILED ("Failed to update environment") — check whether that left the build/deploy in a half-applied state.
 
 4. RUNTIME PROOF: mint a temp session, hit /api/chart/feed-status and the scanner endpoint for V75 right now. Does the BACKEND response contain LIVE_DELAYED / the new verdict when the feed is delayed, or the old LIVE_FEED/STALE_FEED only? This tells us if the backend logic is live regardless of the UI.
    - If the backend returns the new verdict but the UI doesn't show it → frontend bundle is stale (rebuild/redeploy frontend).

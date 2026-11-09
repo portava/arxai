@@ -7,8 +7,8 @@ Current completed work from last pass:
 * Scanner polling now pauses while document.hidden.
 * Scanner universe change no longer flashes empty state.
 * Scanner buttons now report action timings.
-* Ruby panel open changed from sequential awaits to Promise.allSettled.
-* Ruby res.json failure issue fixed.
+* Eleanor panel open changed from sequential awaits to Promise.allSettled.
+* Eleanor res.json failure issue fixed.
 * typecheck PASS.
 * ci:guards 24/24 PASS.
 * API server restarted clean.
@@ -155,7 +155,7 @@ Instrument:
 * trade panel symbol update
 * Buy/Sell ticket symbol update
 * Live AI Assist selected symbol update if shared
-* Ruby context symbol update
+* Eleanor context symbol update
 * final render settled
 
 Budgets:
@@ -292,8 +292,8 @@ Time these endpoints:
 * live shared validate route
 * live shared preflight/dry-run route only
 * Live AI Assist card route
-* Ruby chat route
-* Ruby voice/TTS route
+* Eleanor chat route
+* Eleanor voice/TTS route
 * admin allocations summary
 * admin allocations search
 * admin Deriv status
@@ -311,16 +311,16 @@ For each endpoint report:
 * budget pass/fail
 * fix applied if over budget
 
-PART 8 — Ruby response system timing
+PART 8 — Eleanor response system timing
 
 Instrument:
 
-* opening Ruby panel
+* opening Eleanor panel
 * loading memory
 * loading market status
 * loading voice status
 * user sends message
-* “Ruby is thinking/typing” visible
+* “Eleanor is thinking/typing” visible
 * chat request start
 * first text visible
 * full text visible
@@ -455,7 +455,7 @@ Add tests/checks for:
 7. dismiss alert has optimistic state update
 8. admin allocation search is debounced
 9. no duplicate scanner polling intervals after route navigation
-10. Ruby text path is not blocked by TTS promise
+10. Eleanor text path is not blocked by TTS promise
 11. all launch-critical buttons have non-empty handlers
 12. arx_live_commands stays 0 in QA
 
@@ -501,7 +501,7 @@ Report exactly:
 6. Manual open/close live-trade latency recorder status
 7. Chart timing table
 8. Live AI Assist timing table
-9. Ruby timing table
+9. Eleanor timing table
 10. Alerts timing table
 11. My Account timing table
 12. Admin Allocations timing table

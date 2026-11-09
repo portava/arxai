@@ -2,7 +2,7 @@
 
 ## Confirmed diagnosis (do not re-diagnose)
 
-The chart-read quality layer computes "expected bars" on a naive 24/7 calendar. For EURUSD this counts market-closed slots as missing bars: H1 reported 96 missing (= exactly two Fri 21:00Z → Sun 21:00Z weekend closures), D1 reported 33 missing (= 33 consecutive Saturdays). Zero genuine gaps exist. Result: H1/H4/D1 read quality=partial, aiUsable=false on a perfectly complete broker feed, and Ruby downgrades to limited read on those timeframes.
+The chart-read quality layer computes "expected bars" on a naive 24/7 calendar. For EURUSD this counts market-closed slots as missing bars: H1 reported 96 missing (= exactly two Fri 21:00Z → Sun 21:00Z weekend closures), D1 reported 33 missing (= 33 consecutive Saturdays). Zero genuine gaps exist. Result: H1/H4/D1 read quality=partial, aiUsable=false on a perfectly complete broker feed, and Eleanor downgrades to limited read on those timeframes.
 
 The fix belongs ONLY in the sequence-completeness / expected-grid calculation. Do NOT touch candle ingestion, broker_candles, backfill, the router/source-priority, or the EA contract.
 
@@ -25,7 +25,7 @@ Instead, derive the expected grid from observed data:
 ## Downstream effects (verify, do not redesign)
 
 - aiUsable flows from quality: with the fix, EURUSD H1/H4/D1 must read clean/aiUsable=true on live data.
-- Ruby read confidence follows aiUsable — confirm Ruby gives a full read on H1/H4/D1 after the fix.
+- Eleanor read confidence follows aiUsable — confirm Eleanor gives a full read on H1/H4/D1 after the fix.
 - Deriv 24/7 synthetics (e.g. Volatility indices): profile is fully present, behavior unchanged — a genuine mid-stream hole must still flag partial.
 
 ## Tests
@@ -41,6 +41,6 @@ Instead, derive the expected grid from observed data:
 ## Acceptance
 
 - Live EURUSD chart read returns quality=clean, aiUsable=true on M1, M5, M15, H1, H4, D1.
-- Ruby full read available on H1/H4/D1.
+- Eleanor full read available on H1/H4/D1.
 - No changes outside the completeness/quality layer and its tests.
 - Response names the exact file(s)/function(s) changed and shows the before/after live read for H1 and D1.

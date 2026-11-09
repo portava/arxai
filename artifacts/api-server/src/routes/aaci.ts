@@ -312,7 +312,7 @@ router.get("/admin/aaci/snapshot/:symbol", async (req, res, next) => {
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
-  actorType: z.enum(["user", "ruby", "self_trade_agent", "admin", "system"]).optional(),
+  actorType: z.enum(["user", "eleanor", "self_trade_agent", "admin", "system"]).optional(),
   symbol: z.string().min(1).max(64).optional(),
 });
 

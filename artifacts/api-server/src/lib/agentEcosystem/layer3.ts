@@ -137,7 +137,7 @@ export async function getPopulationReport(): Promise<PopulationReport> {
 }
 
 const VALID_MODES: ReadonlySet<string> = new Set([
-  "LIVE_EXECUTION", "SCALP", "SCANNER", "RUBY_EXPLANATION",
+  "LIVE_EXECUTION", "SCALP", "SCANNER", "ELEANOR_EXPLANATION",
   "LEARNING", "AGENT_CREATION", "DEEP_REVIEW",
 ]);
 

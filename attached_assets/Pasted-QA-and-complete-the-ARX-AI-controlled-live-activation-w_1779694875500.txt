@@ -212,6 +212,6 @@ Before stopping, verify:
 - Friendly labels are shown in main UI
 - Raw env/backend names are only inside admin advanced details
 - Audit log records every live setup action
-- Login, scanner, Ruby voice/chat, trade modal, user controls, and bridge status still work
+- Login, scanner, Eleanor voice/chat, trade modal, user controls, and bridge status still work
 
 Run typecheck/build and fix all errors before stopping.

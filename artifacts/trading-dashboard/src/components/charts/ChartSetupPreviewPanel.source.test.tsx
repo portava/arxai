@@ -21,7 +21,7 @@ function preview(providerSource: SetupPreview["providerSource"]): SetupPreview {
     providerSource, bridgeStatus: null, allocationKnown: true,
     scannerScore: null, flameStage: null, runOnQuality: null, riskScore: null, governanceOutcome: null,
     explanation: ["A long idea."], invalidationNote: "Close below 1.09 invalidates this long.",
-    createdBy: "ruby", createdAt: new Date().toISOString(),
+    createdBy: "eleanor", createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90_000).toISOString(), status: "preview",
   };
 }

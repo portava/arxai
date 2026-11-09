@@ -21,7 +21,7 @@
 //   8.  meRoutingStatus endpoint file exists and never references
 //       apiKeyHash / raw bridge tokens.
 //   9.  Admin master-bridge page registered in App.tsx routes.
-//  10.  Ruby copy + system prompt copy mention the master bridge.
+//  10.  Eleanor copy + system prompt copy mention the master bridge.
 
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";

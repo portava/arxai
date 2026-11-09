@@ -11,7 +11,7 @@ export type SmartChartLayerSource =
 
 export const SmartChartLayerSource = {
   signal: "signal",
-  ruby: "ruby",
+  eleanor: "eleanor",
   structure: "structure",
   execution: "execution",
   news: "news",

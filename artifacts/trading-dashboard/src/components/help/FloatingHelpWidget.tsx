@@ -15,7 +15,7 @@ import {
 } from "@/knowledge/answerEngine";
 import { resolveRoute } from "@/knowledge/routeKnowledge";
 import { useAssistantIconState, usePrefersReducedMotion } from "./AnimatedArxAssistantIcon";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
 import { useAssistantName } from "@/lib/assistant-name";
 import { sourceLabelFor } from "@/knowledge/knowledgeCompiler";
 import { useAssistantContext, type AssistantLiveContext } from "@/hooks/use-assistant-context";
@@ -320,7 +320,7 @@ function AssistantTrigger({
         )}
       >
         <span className="grid place-items-center h-8 w-8 rounded-full">
-          <RubyAvatar
+          <EleanorAvatar
             state={
               status === "error" ? "disconnected"
               : status === "warning" ? "alert"
@@ -331,7 +331,7 @@ function AssistantTrigger({
             }
             size="sm"
             ariaHidden
-            testId="ruby-avatar-trigger"
+            testId="eleanor-avatar-trigger"
           />
         </span>
         <span className="hidden md:inline text-xs font-semibold tracking-wide">Ask {name}</span>
@@ -389,7 +389,7 @@ function Header({
   return (
     <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 bg-gradient-to-r from-primary/15 to-transparent shrink-0">
       <div className="flex items-center gap-2 min-w-0">
-        <RubyAvatar
+        <EleanorAvatar
           state={
             status === "error" ? "disconnected"
             : status === "warning" ? "alert"
@@ -399,7 +399,7 @@ function Header({
           }
           size="xs"
           ariaHidden
-          testId="ruby-avatar-header"
+          testId="eleanor-avatar-header"
         />
         <div className="min-w-0">
           <div className="text-xs font-semibold tracking-wide leading-tight">{name}</div>

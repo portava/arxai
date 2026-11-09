@@ -1,11 +1,11 @@
-// Ruby Scalp Signals — service layer.
+// Eleanor Scalp Signals — service layer.
 //
 // Gathers the live inputs the pure engine needs (scanner read, broker symbol
 // specs, per-user account allocation) and calls `evaluateScalp`. ONE engine
 // feeds all three surfaces:
 //   - Focus card        -> evaluateScalpForSymbol (on-demand live read)
 //   - Broad ranking     -> rankScalpsForUniverse  (shared scanner cache)
-//   - Ruby Scalp Builder-> buildScalp             (target/risk driven)
+//   - Eleanor Scalp Builder-> buildScalp             (target/risk driven)
 //
 // SAFETY:
 //  - Per-user isolation: specs + account are read scoped by userId.
@@ -589,7 +589,7 @@ export interface ScalpBuildResult {
   noTradeReason: string | null;
 }
 
-/** Ruby Scalp Builder: find the best scalp matching a target/risk. */
+/** Eleanor Scalp Builder: find the best scalp matching a target/risk. */
 export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<ScalpBuildResult> {
   const inputs = await buildRankInputs(userId, args.marketGroup, {
     riskAmount: args.riskAmount ?? null,
@@ -601,7 +601,7 @@ export async function buildScalp(userId: number, args: ScalpBuildArgs): Promise<
   const primary = ranked[0] ?? null;
   const alternatives = ranked.slice(1, 4);
   // Agent Ecosystem advisory (Phase 0) — same bounded, advisory-only attach as
-  // the Focus and Broad paths so the Ruby Scalp Builder surfaces the specialist's
+  // the Focus and Broad paths so the Eleanor Scalp Builder surfaces the specialist's
   // stance consistently (zero influence while the specialist is in Shadow Mode).
   await attachScalpAdvisoryToAll([primary, ...alternatives]);
   return {

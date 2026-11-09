@@ -47,7 +47,7 @@ function receipt(i: number, over: Row = {}): Row {
     userId: 7,
     symbol: "EURUSD",
     timeframe: "M15",
-    source: "ruby_draft_read",
+    source: "eleanor_draft_read",
     intent: null,
     direction: "NEUTRAL",
     tradeType: null,
@@ -58,7 +58,7 @@ function receipt(i: number, over: Row = {}): Row {
     agentConflict: false,
     courtResult: null,
     riskWarning: null,
-    rubyFinalRead: null,
+    eleanorFinalRead: null,
     confidenceScore: null,
     whatWouldChange: null,
     invalidation: null,
@@ -160,7 +160,7 @@ function boilerplateReceipts(n: number, over: (i: number) => Row = () => ({})): 
       agentConsensusStance: "neutral",
       courtResult: null,
       qualityLabel: "A",
-      rubyFinalRead: "EURUSD is ranging.",
+      eleanorFinalRead: "EURUSD is ranging.",
       whatWouldChange: "A close above resistance would change this read.",
       invalidation: "No clear invalidation level yet — wait for structure before risking anything.",
       ...over(i),
@@ -237,14 +237,14 @@ test("agent agreement: measured over reads where agents were consulted", async (
   assert.match(s.note, /2 of 6 reads had no agents consulted/);
 });
 
-test("Ruby explanation quality is not measured: boilerplate presence does not score 100", async () => {
+test("Eleanor explanation quality is not measured: boilerplate presence does not score 100", async () => {
   reset();
   receipts = boilerplateReceipts(5);
   const b = await computeChartBrainBenchmark({ windowDays: 30 });
-  const s = scoreOf(b, "ruby_explanation_quality");
+  const s = scoreOf(b, "eleanor_explanation_quality");
   assert.equal(s.score, null);
   assert.match(s.note, /^Not measured/);
-  assert.equal(b.weakAreas.some((w) => w.key === "ruby_explanation_quality"), false);
+  assert.equal(b.weakAreas.some((w) => w.key === "eleanor_explanation_quality"), false);
 });
 
 test("structure read uses the grader's A+…F vocabulary and leaves unrated reads out", async () => {

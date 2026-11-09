@@ -10,10 +10,10 @@
  *
  * Covers the 10 "Done looks like" items:
  *   1.  Regular users cannot access admin routes; an authed admin CAN.
- *   2.  Users cannot read another user's alerts / trades / Ruby memory.
+ *   2.  Users cannot read another user's alerts / trades / Eleanor memory.
  *   3.  A self-trade agent cannot use another agent's allocation, trade outside
  *       allowed symbols, or exceed its autonomy level (positive EXECUTE too).
- *   4.  Secrets never reach client payloads / logs / Ruby / alerts / exports.
+ *   4.  Secrets never reach client payloads / logs / Eleanor / alerts / exports.
  *   5.  Duplicate, expired, replayed, and unauthorized commands are rejected.
  *   6.  Password reset token expires and cannot be reused.
  *   7.  Invite-code attempts are rate-limited.
@@ -67,7 +67,7 @@ import {
   type DecisionCandidateInput,
 } from "@workspace/domain/self-trade";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   type SignalCandle,
   type SignalEngineInput,
   type SignalScannerInput,
@@ -244,7 +244,7 @@ async function main(): Promise<void> {
     check("01c_admin_security_overview_admin_200", ovAdmin.status === 200, `status=${ovAdmin.status}`);
     check("08a_security_internals_hidden_from_regular_user", ovUser.status === 403 && !ovUser.body.toLowerCase().includes("securityscore"), `status=${ovUser.status}`);
 
-    // ── Item 2: per-user isolation (alerts / trades / Ruby memory) ──────────
+    // ── Item 2: per-user isolation (alerts / trades / Eleanor memory) ──────────
     const aAlerts = await call("GET", "/api/me/alerts", { cookie: aCookie });
     httpBodies.push(aAlerts.body);
     check("02a_alerts_own_visible", aAlerts.status === 200 && aAlerts.body.includes(tokenA), `status=${aAlerts.status}`);
@@ -257,11 +257,11 @@ async function main(): Promise<void> {
 
     const aConvList = await call("GET", "/api/me/assistant/conversations", { cookie: aCookie });
     httpBodies.push(aConvList.body);
-    check("02e_ruby_memory_others_not_leaked", !aConvList.body.includes(tokenB), "B conversation absent from A's list");
+    check("02e_eleanor_memory_others_not_leaked", !aConvList.body.includes(tokenB), "B conversation absent from A's list");
     const aOwnConv = await call("GET", `/api/me/assistant/conversations/${convA.rows[0]!.id}`, { cookie: aCookie });
-    check("02f_ruby_memory_own_readable", aOwnConv.status === 200, `status=${aOwnConv.status}`);
+    check("02f_eleanor_memory_own_readable", aOwnConv.status === 200, `status=${aOwnConv.status}`);
     const aReadsBConv = await call("GET", `/api/me/assistant/conversations/${convB.rows[0]!.id}`, { cookie: aCookie });
-    check("02g_ruby_memory_idor_blocked", aReadsBConv.status === 404 || aReadsBConv.status === 403, `status=${aReadsBConv.status}`);
+    check("02g_eleanor_memory_idor_blocked", aReadsBConv.status === 404 || aReadsBConv.status === 403, `status=${aReadsBConv.status}`);
     const aReadsBAlert = await call("POST", `/api/me/alerts/${alertB.rows[0]!.id}/read`, { cookie: aCookie });
     check("02h_alert_idor_write_blocked", aReadsBAlert.status === 404 || aReadsBAlert.status === 403, `status=${aReadsBAlert.status}`);
 
@@ -274,7 +274,7 @@ async function main(): Promise<void> {
     check("03c_below_autonomy_log_only", execL0.action === "LOG_ONLY" && !execL0.permitted, execL0.action);
     const execShadow = evaluateExecutionPermission(basePermInput({ agentMode: "SHADOW" }));
     check("03d_shadow_mode_log_only", execShadow.action === "LOG_ONLY" && !execShadow.permitted, execShadow.action);
-    const signal = buildRubyMarketEdge(signalInput());
+    const signal = buildEleanorMarketEdge(signalInput());
     function candidate(over: Partial<DecisionCandidateInput> = {}): DecisionCandidateInput {
       return {
         agentId: 1, agentKey: "qa-agent", agentRankWeight: 1, symbol: "EURUSD", timeframe: "M5",

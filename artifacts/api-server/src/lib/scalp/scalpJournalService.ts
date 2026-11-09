@@ -1,4 +1,4 @@
-// Ruby Flame Scalp — journal + personality service (Phase 3, DB side).
+// Eleanor Flame Scalp — journal + personality service (Phase 3, DB side).
 //
 // Records every scalp basket's lifecycle, finalizes it on close with an honest
 // result + plain-English after-action review, and rolls a per-symbol
@@ -268,7 +268,7 @@ async function finalizeClosedEntry(
     exitPrice: exitPrice ?? row.lastCurrentPrice,
     exitReason: review.exitReason,
     lesson: review.lesson,
-    rubyWarnedCorrectly: review.warnedCorrectly,
+    eleanorWarnedCorrectly: review.warnedCorrectly,
     closedAt: now,
     updatedAt: now,
   }).where(and(
@@ -448,7 +448,7 @@ export interface JournalListItem {
   realizedPl: number | null;
   lastFloatingPl: number | null;
   flameContinued: boolean | null;
-  rubyWarnedCorrectly: boolean | null;
+  eleanorWarnedCorrectly: boolean | null;
   exitReason: string | null;
   lesson: string | null;
   openedAt: string | null;
@@ -519,7 +519,7 @@ function toListItemAsStored(r: ScalpJournalEntry): JournalListItem {
     realizedPl: r.realizedPl != null ? Number(r.realizedPl) : null,
     lastFloatingPl: r.lastFloatingPl != null ? Number(r.lastFloatingPl) : null,
     flameContinued: r.flameContinued,
-    rubyWarnedCorrectly: r.rubyWarnedCorrectly,
+    eleanorWarnedCorrectly: r.eleanorWarnedCorrectly,
     exitReason: r.exitReason,
     lesson: r.lesson,
     openedAt: r.openedAt ? new Date(r.openedAt).toISOString() : null,
@@ -597,7 +597,7 @@ export async function getSymbolPersonalities(
     fakeoutCount: p.fakeoutCount,
     continuationCount: p.continuationCount,
     avgScoreAtEntry: p.avgScoreAtEntry != null ? Number(p.avgScoreAtEntry) : null,
-    // "Cautious" = Ruby is applying a real tightening nudge here.
+    // "Cautious" = Eleanor is applying a real tightening nudge here.
     cautious: Number(p.qualityBias) < 0 || Number(p.minQualityDelta) > 0,
     // Notes stored earlier say "N% wins"; every result behind that share was
     // graded from an estimate, so it is reported as estimated.

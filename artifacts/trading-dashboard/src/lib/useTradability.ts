@@ -1,5 +1,5 @@
 // Tiny client wrapper around /api/market-data/tradability — single source
-// of truth that every UI surface (trade ticket, scanner card, Ruby panel)
+// of truth that every UI surface (trade ticket, scanner card, Eleanor panel)
 // reads so they never drift apart.
 import { useQuery } from "@tanstack/react-query";
 

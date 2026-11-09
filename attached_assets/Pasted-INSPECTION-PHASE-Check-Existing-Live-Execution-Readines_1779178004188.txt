@@ -104,8 +104,8 @@ Check whether normal users already see clean status such as:
 
 Make sure normal users do not see admin-only data, other users, shared master totals, secrets, raw bridge data, or code-heavy errors.
 
-6. Existing Ruby awareness
-Check whether Ruby can already explain:
+6. Existing Eleanor awareness
+Check whether Eleanor can already explain:
 - why live trading is blocked
 - whether user is waiting for approval
 - whether allocation is missing
@@ -116,7 +116,7 @@ Check whether Ruby can already explain:
 - whether a trade needs admin review
 - what the user should do next
 
-Ruby must only use authenticated current-user data.
+Eleanor must only use authenticated current-user data.
 
 7. Existing tests/probes
 Find tests or scripts already covering:

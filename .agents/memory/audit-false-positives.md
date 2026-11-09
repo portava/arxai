@@ -37,7 +37,7 @@ get flagged repeatedly but are NOT real defects. Always verify before changing.
   errors vanish once the module resolves — don't "fix" them individually.
 
 **Why:** these three eat audit time and tempt unsafe edits. The agent-ecosystem
-engines ARE wired (advisory-only) into scanner ranking / Ruby explain-signal /
+engines ARE wired (advisory-only) into scanner ranking / Eleanor explain-signal /
 scalp; live execution is fail-closed (no fake fills). The genuine gaps are the
 agent-ecosystem admin *frontend dashboard* + background runner (manual-only
 promotion/outcomes) and the pending-order snapshot no-op stub.

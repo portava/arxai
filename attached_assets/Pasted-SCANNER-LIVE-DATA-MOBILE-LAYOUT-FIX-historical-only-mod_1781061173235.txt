@@ -7,7 +7,7 @@ Observed current behavior:
 - Scanner says:
   - DATA: Historical only
   - Data is incomplete — historical context only, not valid for a live entry.
-  - RUBY: Limited read
+  - ELEANOR: Limited read
   - Live feed unavailable · Analysis only
 - Chart shows candles for 1m, 5m, 15m, 1h, 4h, 1D but all are last-known/historical.
 - Last-known price shown around 1.33814 / 1.33815.
@@ -38,7 +38,7 @@ Create separate status concepts everywhere:
    - Historical depth available/limited
    - Provider/source
    - Last updated time
-   - Whether scanner/Ruby can use it for live-entry decisions
+   - Whether scanner/Eleanor can use it for live-entry decisions
 
 The scanner header should show something like:
 - Execution: LIVE · Shared MT5
@@ -79,7 +79,7 @@ Return a canonical object like:
     source: string
   },
   liveUsable: boolean,
-  rubyCanGiveLiveEntry: boolean,
+  eleanorCanGiveLiveEntry: boolean,
   scannerCanRankLiveSetup: boolean,
   chartMode: "live" | "delayed" | "stale_last_known" | "historical_only" | "unavailable",
   warnings: []
@@ -89,7 +89,7 @@ Rules:
 - liveUsable can only be true when quote is fresh AND candles are fresh enough for that timeframe.
 - If candles are stale, chartMode = stale_last_known or historical_only.
 - If quote exists but no fresh candle stream exists, do not show live price marker.
-- If chartMode is historical_only, Ruby must not give live-entry advice.
+- If chartMode is historical_only, Eleanor must not give live-entry advice.
 - If data is not liveUsable, scanner confidence must be blocked from presenting as live-tradable.
 
 PART 3 — Fix GBPUSD feed specifically
@@ -147,7 +147,7 @@ When chartMode is stale_last_known or historical_only:
 - Timestamp must say exactly when the newest candle was last updated.
 - Do not show the current red/green price line as if it is live.
 - Any support/resistance/structure overlays must be labeled “historical.”
-- Ruby explanations must say “I cannot validate this as a live entry because the feed is stale.”
+- Eleanor explanations must say “I cannot validate this as a live entry because the feed is stale.”
 
 PART 5 — Fix Plan Buy / Plan Sell behavior
 
@@ -158,23 +158,23 @@ In historical-only or stale mode:
   - “Plan Sell — stale data”
 - On tap, open a planning modal that clearly says:
   “This is a historical planning tool. Live feed is unavailable, so this is not a live entry recommendation.”
-- Do not allow Ruby to convert this stale chart plan into a live trade recommendation.
-- Manual trading can remain available elsewhere, but it must be clearly separated from scanner/Ruby signal validity.
+- Do not allow Eleanor to convert this stale chart plan into a live trade recommendation.
+- Manual trading can remain available elsewhere, but it must be clearly separated from scanner/Eleanor signal validity.
 
 Owner/admin live trading should still be possible, but scanner must not claim stale data is live-valid.
 
-PART 6 — Fix Ruby/scanner decision gating
+PART 6 — Fix Eleanor/scanner decision gating
 
-Ruby must check marketDataTruth before every scanner explanation and every trade idea.
+Eleanor must check marketDataTruth before every scanner explanation and every trade idea.
 
 If liveUsable = false:
-Ruby can say:
+Eleanor can say:
 - “Historical read only.”
 - “I can explain structure.”
 - “I cannot validate a live entry.”
 - “Refresh feed or switch provider before live execution.”
 
-Ruby must not say:
+Eleanor must not say:
 - “Enter now”
 - “Buy now”
 - “Sell now”
@@ -206,7 +206,7 @@ Fix CSS/layout:
 - timeframe buttons must wrap or use horizontal scroll inside their own contained row, not force the whole page wider
 - chart must resize with ResizeObserver on mobile orientation/viewport changes
 - no fixed pixel width that exceeds viewport
-- floating Ruby orb must not increase layout width
+- floating Eleanor orb must not increase layout width
 - bottom nav must remain fixed and not create horizontal overflow
 
 Search for and fix:
@@ -252,7 +252,7 @@ Add tests for:
 1. Execution live, market data stale:
 - top execution status can say live
 - scanner market status says stale/historical
-- Ruby live entry disabled
+- Eleanor live entry disabled
 - scanner live setup disabled
 
 2. Fresh quote but stale candles:
@@ -263,7 +263,7 @@ Add tests for:
 3. Stale candles:
 - chartMode = stale_last_known
 - plan buttons labeled stale or disabled
-- Ruby gives historical read only
+- Eleanor gives historical read only
 
 4. Provider symbol mapping:
 - GBPUSD maps correctly for every configured provider
@@ -285,7 +285,7 @@ PART 10 — Do not pass until these exact screenshots are clean
 After the fix, verify:
 - GBPUSD scanner does not show misleading combined LIVE state.
 - It clearly separates execution live from market-data stale.
-- Ruby says historical read only when feed is stale.
+- Eleanor says historical read only when feed is stale.
 - Plan Buy / Plan Sell are not presented as live-valid on stale data.
 - The chart has no horizontal overflow on iPhone.
 - The stale/provider badges are readable and not clipped.

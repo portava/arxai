@@ -2,13 +2,13 @@
 //
 // Builds ONE per-symbol Truth Snapshot by COMPOSING the existing canonical
 // resolvers — it never re-derives freshness, news, price, or a verdict on its
-// own. Every scanner/chart/Ruby surface renders from this single object, so two
+// own. Every scanner/chart/Eleanor surface renders from this single object, so two
 // widgets on the same page can never disagree about the same symbol.
 //
 // SOURCES (composed, never duplicated):
 //   1. getChartCandles        → data state + price + data timestamps (chart feed)
 //   2. buildMarketImpactRadar → news provider + events + high-impact window
-//   3. buildRubyMarketEdgeForUser → scanner verdict + actionable level geometry
+//   3. buildEleanorMarketEdgeForUser → scanner verdict + actionable level geometry
 //   4. evaluateScalpForSymbol → scalp + flame component verdicts
 //   5. computeTimingRead      → timing component verdict (persistSnapshot:false)
 //
@@ -42,7 +42,7 @@ import {
   SYNTHETIC_EVENT_RISK_LABEL,
   type TruthEvidence,
 } from "@workspace/domain/truth";
-import type { RubyMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
+import type { EleanorMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
 import { evaluateMarketDataSufficiency } from "@workspace/domain/market";
 import type { MarketTimingRead } from "@workspace/domain/timing-brain";
 import { COMPONENT_BUILD_TTL_MS, evidenceMatches, isCurrentBuild } from "./marketReadEvidence.js";
@@ -59,7 +59,7 @@ import {
 } from "../data/chart/timeframes.js";
 import { buildMarketImpactRadar } from "../news/marketImpactRadar.js";
 import { classifySymbol } from "../data/marketDataRouter.js";
-import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
+import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
@@ -219,7 +219,7 @@ export function classifySnapshotEvidence(
 export interface TruthSnapshotDeps {
   getChartCandlesFn: typeof getChartCandles;
   buildNewsFn: typeof buildMarketImpactRadar;
-  buildScannerFn: typeof buildRubyMarketEdgeForUser;
+  buildScannerFn: typeof buildEleanorMarketEdgeForUser;
   evaluateScalpFn: typeof evaluateScalpForSymbol;
   computeTimingFn: typeof computeTimingRead;
   /** The reader's own active bridge connection id, or null (read-only lookup). */
@@ -229,7 +229,7 @@ export interface TruthSnapshotDeps {
 const REAL_DEPS: TruthSnapshotDeps = {
   getChartCandlesFn: getChartCandles,
   buildNewsFn: buildMarketImpactRadar,
-  buildScannerFn: buildRubyMarketEdgeForUser,
+  buildScannerFn: buildEleanorMarketEdgeForUser,
   evaluateScalpFn: evaluateScalpForSymbol,
   computeTimingFn: computeTimingRead,
   getUserBridgeFn: async (userId) => (await getUserActiveConnection(userId))?.id ?? null,
@@ -313,7 +313,7 @@ const SIGNAL_BIAS_WORD: Record<string, string> = {
   UNCLEAR: "Unclear",
 };
 
-function scannerComponent(signal: RubyMarketEdgeSignal | null): TruthComponent {
+function scannerComponent(signal: EleanorMarketEdgeSignal | null): TruthComponent {
   if (!signal || !signal.hasSufficientData) return { ...ABSENT_COMPONENT };
   let alignment: TruthAlignment;
   if (signal.direction === "BUY") alignment = "BULLISH";
@@ -639,7 +639,7 @@ export async function buildSymbolTruthSnapshot(
   // data for a directional read (approved ARX market + live feed + the shared
   // minimum of closed bars). We DERIVE that verdict from the shared contract here
   // — rather than re-checking feed-state and bar-count locally — so the scanner,
-  // Ruby, and chart surfaces can never drift from THIS snapshot's read. Component
+  // Eleanor, and chart surfaces can never drift from THIS snapshot's read. Component
   // engines (flame/scalp/timing) can compute a raw direction off very little
   // data, so we feed them to the PURE composer ONLY when the shared contract
   // allows a read; otherwise the composer sees no directional components and

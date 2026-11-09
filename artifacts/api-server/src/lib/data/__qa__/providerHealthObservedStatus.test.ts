@@ -212,7 +212,7 @@ test("active consumers never list a provider only because its key is set", async
   const snap = await getProviderHealthSnapshot();
   const listed = new Set(snap.activeConsumers.flatMap((c) => c.providers));
   for (const id of ["finnhub", "newsapi", "openai"]) assert.equal(listed.has(id), false, id);
-  for (const consumer of ["scanner", "chart", "trade_ticket", "ruby", "news"]) {
+  for (const consumer of ["scanner", "chart", "trade_ticket", "eleanor", "news"]) {
     const row = snap.activeConsumers.find((c) => c.consumer === consumer);
     assert.ok(!row || !row.providers.includes("finnhub"), consumer);
   }

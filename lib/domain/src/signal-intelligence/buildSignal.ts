@@ -1,5 +1,5 @@
-// buildRubyMarketEdge — composes every pure engine into the ONE normalized
-// Ruby Market Edge signal. Deterministic: all time comes from `input.now`.
+// buildEleanorMarketEdge — composes every pure engine into the ONE normalized
+// Eleanor Market Edge signal. Deterministic: all time comes from `input.now`.
 //
 // This is the single seam the api-server service calls after it has normalized
 // real scanner/scalp/market-data outputs and loaded the per-user previous
@@ -8,7 +8,7 @@
 
 import type {
   PriceZone,
-  RubyMarketEdgeSignal,
+  EleanorMarketEdgeSignal,
   SignalBias,
   SignalDirection,
   SignalEngineInput,
@@ -52,7 +52,7 @@ function deriveDirection(
   return "NEUTRAL";
 }
 
-export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSignal {
+export function buildEleanorMarketEdge(input: SignalEngineInput): EleanorMarketEdgeSignal {
   const now = input.now;
   const { candles, scanner, scalp, execution, newsRiskLevel, previous } = input;
 
@@ -247,5 +247,5 @@ export function buildRubyMarketEdge(input: SignalEngineInput): RubyMarketEdgeSig
     firstSeenAt: new Date(firstSeenMs).toISOString(),
     lateReason,
     structureWindow: hasSufficientData && candles ? candles.length : null,
-  } satisfies RubyMarketEdgeSignal;
+  } satisfies EleanorMarketEdgeSignal;
 }

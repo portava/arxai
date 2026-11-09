@@ -72,7 +72,7 @@ interface UserRow {
   };
   toggles: null | {
     aiTradingEnabled: boolean; aiAutoCloseEnabled: boolean;
-    rubyVoiceEnabled: boolean; newsIntelligenceEnabled: boolean;
+    eleanorVoiceEnabled: boolean; newsIntelligenceEnabled: boolean;
     historicalBacktestEnabled: boolean; blockedSymbols: string[];
     minRewardRiskRatio: number | null; stopLossRequired: boolean;
     takeProfitRequired: boolean;
@@ -152,7 +152,7 @@ const PRESETS: Record<PresetKey, Preset> = {
     description: "Demo and live disabled. Scanner read-only. AI assistant on.",
     tone: "secondary",
     payload: {
-      aiTradingEnabled: true, rubyVoiceEnabled: true,
+      aiTradingEnabled: true, eleanorVoiceEnabled: true,
       newsIntelligenceEnabled: true, historicalBacktestEnabled: true,
       stopLossRequired: true, takeProfitRequired: false,
     },
@@ -163,7 +163,7 @@ const PRESETS: Record<PresetKey, Preset> = {
     description: "Scanner-live on, AI on, conservative defaults. No live trading.",
     tone: "default",
     payload: {
-      aiTradingEnabled: true, rubyVoiceEnabled: true,
+      aiTradingEnabled: true, eleanorVoiceEnabled: true,
       newsIntelligenceEnabled: true, historicalBacktestEnabled: true,
       stopLossRequired: true,
     },
@@ -174,7 +174,7 @@ const PRESETS: Record<PresetKey, Preset> = {
     description: "Same as Demo Tester + news + backtest enabled.",
     tone: "default",
     payload: {
-      aiTradingEnabled: true, rubyVoiceEnabled: true,
+      aiTradingEnabled: true, eleanorVoiceEnabled: true,
       newsIntelligenceEnabled: true, historicalBacktestEnabled: true,
       stopLossRequired: true,
     },
@@ -215,7 +215,7 @@ const PRESETS: Record<PresetKey, Preset> = {
     description: "Disables the user. All AI/scanner off. Existing positions are NOT auto-closed.",
     tone: "destructive",
     payload: {
-      aiTradingEnabled: false, rubyVoiceEnabled: false,
+      aiTradingEnabled: false, eleanorVoiceEnabled: false,
       newsIntelligenceEnabled: false, historicalBacktestEnabled: false,
     },
     alsoSetScannerLive: false,
@@ -862,7 +862,7 @@ function ManageAccessDialog({ user, open, onClose }: {
           )}
         </Section>
 
-        {/* SECTION: Ruby / AI / Scanner */}
+        {/* SECTION: Eleanor / AI / Scanner */}
         {user.toggles && (
           <Section title={`AI, ${name} & Scanner`}>
             <ToggleLine label="AI Trading enabled"
@@ -874,9 +874,9 @@ function ManageAccessDialog({ user, open, onClose }: {
               onChange={(v) => updateAdv.mutate({ aiAutoCloseEnabled: v })}
               testid="ma-toggle-autoclose" />
             <ToggleLine label={`${name} voice enabled`}
-              checked={user.toggles.rubyVoiceEnabled}
-              onChange={(v) => updateAdv.mutate({ rubyVoiceEnabled: v })}
-              testid="ma-toggle-ruby" />
+              checked={user.toggles.eleanorVoiceEnabled}
+              onChange={(v) => updateAdv.mutate({ eleanorVoiceEnabled: v })}
+              testid="ma-toggle-eleanor" />
             <ToggleLine label="News intelligence"
               checked={user.toggles.newsIntelligenceEnabled}
               onChange={(v) => updateAdv.mutate({ newsIntelligenceEnabled: v })}
@@ -1272,7 +1272,7 @@ function PushSettingsTab() {
         <div className="grid gap-3 md:grid-cols-2">
           <PushToggle label="AI Trading enabled" k="aiTradingEnabled" payload={payload} set={setPayloadField} />
           <PushToggle label="AI Auto-close" k="aiAutoCloseEnabled" payload={payload} set={setPayloadField} />
-          <PushToggle label={`${name} voice`} k="rubyVoiceEnabled" payload={payload} set={setPayloadField} />
+          <PushToggle label={`${name} voice`} k="eleanorVoiceEnabled" payload={payload} set={setPayloadField} />
           <PushToggle label="News intelligence" k="newsIntelligenceEnabled" payload={payload} set={setPayloadField} />
           <PushToggle label="Historical backtest" k="historicalBacktestEnabled" payload={payload} set={setPayloadField} />
           <PushToggle label="Require Stop Loss" k="stopLossRequired" payload={payload} set={setPayloadField} />

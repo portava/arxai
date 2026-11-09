@@ -1,4 +1,4 @@
-// Plain-English label maps for Ruby Scalp Signals.
+// Plain-English label maps for Eleanor Scalp Signals.
 //
 // SAFETY: normal users must never see raw UPPER_SNAKE status tokens,
 // internal mode keys, or engine identifiers. Every enum the scalp engine
@@ -188,7 +188,7 @@ export function fmtRr(v: number | null | undefined): string {
   return `1 : ${v.toFixed(2)}`;
 }
 
-// ── Flame read labels (Ruby Flame Scalp) ──────────────────────────────────
+// ── Flame read labels (Eleanor Flame Scalp) ──────────────────────────────────
 // Plain-English only. Raw enum tokens stay in data-* attributes, never visible.
 
 export const FLAME_SCALP_STATUS_LABEL: Record<ScalpFlameReadScalpStatus, string> = {

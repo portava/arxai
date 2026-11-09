@@ -133,15 +133,15 @@ describe("Scalp Journal outcome counts graded from an estimate", () => {
   });
 });
 
-// rubyWarnedCorrectly is derived from the estimate-graded result, so on an
+// eleanorWarnedCorrectly is derived from the estimate-graded result, so on an
 // ESTIMATED row the footer goes by the last reading, not "what happened".
 describe("Scalp Journal warning line on estimate-graded rows", () => {
   it("journal rows: ESTIMATED says 'last reading … (estimated)', KNOWN keeps 'what happened'", () => {
     h.reviews = [];
     h.entries = [
-      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, rubyWarnedCorrectly: true },
-      { ...entry(1), symbol: "GBPUSD", result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2, rubyWarnedCorrectly: false },
-      { ...entry(4), symbol: "AUDUSD", result: "LOSS", plQuality: "KNOWN", realizedPl: -2, rubyWarnedCorrectly: true },
+      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, eleanorWarnedCorrectly: true },
+      { ...entry(1), symbol: "GBPUSD", result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2, eleanorWarnedCorrectly: false },
+      { ...entry(4), symbol: "AUDUSD", result: "LOSS", plQuality: "KNOWN", realizedPl: -2, eleanorWarnedCorrectly: true },
     ];
     render(<ScalpJournalPage />);
     const rows = screen.getAllByTestId("scalp-journal-row");
@@ -155,7 +155,7 @@ describe("Scalp Journal warning line on estimate-graded rows", () => {
   it("review rows: ESTIMATED says 'last reading … (estimated)', not 'what happened'", () => {
     h.entries = [entry(1)];
     h.reviews = [
-      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, rubyWarnedCorrectly: true, lesson: null, exitReason: null },
+      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, eleanorWarnedCorrectly: true, lesson: null, exitReason: null },
     ];
     render(<ScalpJournalPage />);
     const tab = screen.getByTestId("scalp-tab-reviews");

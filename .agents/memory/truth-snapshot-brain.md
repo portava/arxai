@@ -26,7 +26,7 @@ freshness/price/permission authority) and only ever applies a one-way conservati
 (BUY/SELL → WATCH_ONLY), never an upgrade.
 
 **Gotcha — "read-side" is not write-free:** the composed scanner resolver
-`buildRubyMarketEdgeForUser` performs a best-effort per-user UPSERT into
+`buildEleanorMarketEdgeForUser` performs a best-effort per-user UPSERT into
 `signalMemoryTable` on every call (advisory "what changed since last look"
 continuity). It is NOT an execution/gate/permission write, but the brain's "writes
 nothing" claim is overstated, and snapshot polling now drives that upsert more often.

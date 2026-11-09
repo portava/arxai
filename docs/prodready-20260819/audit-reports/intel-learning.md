@@ -1,6 +1,6 @@
 # LEARNING / REVIEW Stack Audit — ARX AI
 
-Auditor scope: vision MEMORY/REVIEW (vision.md §§ "ARX MEMORY", "ARX REVIEW", "Validation Pipeline", "Strategy Arena", "Black Box") and encyclopedia functions **46–56** (Immutable Ledger, Trade Journal, Post-Trade Review, Ruby, Conversation Memory, Aggregate Learning, Research Lab, Replay & Determinism, Shadow/Demo Validation, Strategy Arena, Model/Edge/Config Registry).
+Auditor scope: vision MEMORY/REVIEW (vision.md §§ "ARX MEMORY", "ARX REVIEW", "Validation Pipeline", "Strategy Arena", "Black Box") and encyclopedia functions **46–56** (Immutable Ledger, Trade Journal, Post-Trade Review, Eleanor, Conversation Memory, Aggregate Learning, Research Lab, Replay & Determinism, Shadow/Demo Validation, Strategy Arena, Model/Edge/Config Registry).
 
 Codebase root: `/private/tmp/claude-501/-Users-areyouok/a1620dc1-92f1-4ae2-97bc-c424ed64b487/scratchpad/arxai-zip/arxai` (paths below are relative to this root; `api` = `artifacts/api-server/src`).
 
@@ -35,14 +35,14 @@ Weaknesses:
 `api/lib/globalLearning.ts`. Privacy-conscious aggregation of opted-in users' closed imported trades into `global_signal_edges` cohorts with a `MIN_SAMPLE_SIZE = 10` contributor surfaceability gate (`:219`), run bookkeeping in `global_learning_runs` (`:119, 257-264`).
 
 - **`scheduleGlobalAggregation()` is exported but never called anywhere** — grep over all of `api/` finds only its definition (`globalLearning.ts:314-326`). The 6-hour cron described in the header comment does not exist at runtime. Aggregation runs only when an admin manually POSTs (`api/routes/mePrivacy.ts:150`).
-- The only consumer is the Ruby insights read (`mePrivacy.ts:110` → `getGlobalInsightSummary`).
+- The only consumer is the Eleanor insights read (`mePrivacy.ts:110` → `getGlobalInsightSummary`).
 - Aggregates only `importedTradesTable` (broker CSV imports) — despite the header naming paper trades, `paperTradesTable` is imported (`:22`) but never queried in `runGlobalAggregation` (`:144-187`).
 
 ### 1.3 shadowMode.ts + lib/shadowPersistence.ts + shadow_predictions — **Grade: D** (validation theatre: synthetic data, volatile state, dead persistence)
 
 - **Shadow decisions are generated from a synthetic random-walk simulator, not live market data.** `api/lib/shadowMode.ts:15` imports `marketSimulator`; `api/lib/marketSimulator.ts:3` says "This is a synthetic price generator" and prices come from `Math.random()` drift (`:45-49, 89`). `createShadowDecision` calls `runStrategyScan(symbol, candles, 50, "synthetic")` (`shadowMode.ts:61`). The vision's core claim for Shadow Mode — "ARX makes real-time decisions without sending orders, allowing predicted behavior to be compared with actual market outcomes" (vision.md:185) — is not met: outcomes are compared against the same synthetic walk that generated the signal. Every derived surface (forward tests `:178-252`, tournament `:263-314`, confidence calibration `:317-352`, AI readiness `:440-474`, shadow journal `:477-492`) is measuring noise.
 - **Everything is in-memory and lost on restart:** decisions in a module-level `Map` (`shadowMode.ts:41`), promotion/demotion gates in another `Map` (`:359`), forward/tournament state in module vars (`:173-176, 267-268`). The promotion ladder TESTING→PAPER_APPROVED→DEMO_APPROVED→LIVE_INTENT_APPROVED (`:355-419`) evaporates on every deploy.
-- **The durability layer exists but is dead code:** `lib/shadowPersistence.ts` (repo root `lib/`, not inside any workspace package) implements `persistShadowDecision` / `updateShadowOutcome` / `persistRubyChatPrediction` against `shadow_predictions` (`lib/shadowPersistence.ts:20-121`), with relative imports (`./logger.js`, `./shadowMode.js`, `:14-15`) that only resolve if the file lived in `api/lib/` — it was evidently misplaced and orphaned. **No file anywhere in `artifacts/` imports it, and no code inserts into `shadowPredictionsTable` at all** (repo-wide grep: zero writers). The `shadow_predictions` table (`lib/db/src/schema/shadowPredictions.ts`) is permanently empty.
+- **The durability layer exists but is dead code:** `lib/shadowPersistence.ts` (repo root `lib/`, not inside any workspace package) implements `persistShadowDecision` / `updateShadowOutcome` / `persistEleanorChatPrediction` against `shadow_predictions` (`lib/shadowPersistence.ts:20-121`), with relative imports (`./logger.js`, `./shadowMode.js`, `:14-15`) that only resolve if the file lived in `api/lib/` — it was evidently misplaced and orphaned. **No file anywhere in `artifacts/` imports it, and no code inserts into `shadowPredictionsTable` at all** (repo-wide grep: zero writers). The `shadow_predictions` table (`lib/db/src/schema/shadowPredictions.ts`) is permanently empty.
 - Saving grace: all shadow surfaces are honestly labeled `dataSource: "SHADOW"` and are admin/OWNER-only (`api/routes/shadowMode.ts:20-24`), so shadow noise cannot reach users as live truth.
 
 ### 1.4 learningModelVersions — **Grade: D+** (registry exists; promotion pipeline is deadlocked; nothing consumes it)
@@ -51,7 +51,7 @@ Schema `lib/db/src/schema/learningModelVersions.ts` implements the 4-gate design
 
 - **The gate computation reads the permanently-empty `shadow_predictions` table** (`adminLearningVersions.ts:64-77`). `shadowSampleSize` is always 0 < `MIN_SHADOW_SAMPLE` (20), so `shadowValidated` is always false, and approval hard-requires all technical gates (`:208-215`). **No learning version can ever be approved.** Fail-closed, but the promotion path is structurally broken, not merely strict.
 - **The "walk-forward" gate is a proxy with a correctness bug:** it takes "the most recent 50%" as `shadowRows.slice(0, halfPoint)` of a select with **no ORDER BY** (`:65-88`) — an arbitrary half of an arbitrary ordering, described as out-of-sample accuracy.
-- **Nothing consumes the registry at decision time.** `learningModelVersionsTable` is referenced only inside this one route file (repo-wide grep). Ruby recommendations, scanner scoring, and AACI never check `isActive`/`liveAllowed`. Encyclopedia #56's "records exactly which versions made each decision" is absent: `aaci_decisions` rows carry no code/model/config hash, and no service stamps a version id onto decisions.
+- **Nothing consumes the registry at decision time.** `learningModelVersionsTable` is referenced only inside this one route file (repo-wide grep). Eleanor recommendations, scanner scoring, and AACI never check `isActive`/`liveAllowed`. Encyclopedia #56's "records exactly which versions made each decision" is absent: `aaci_decisions` rows carry no code/model/config hash, and no service stamps a version id onto decisions.
 
 ### 1.5 Decision ledgers: tradeDecisionLogs / aiDecisionLog / agentGovernanceTraces — **Grades: B− / F / C+**
 
@@ -60,15 +60,15 @@ Schema `lib/db/src/schema/learningModelVersions.ts` implements the 4-gate design
 - **agentGovernanceTraces (C+):** written by the Governance Court wiring (`api/lib/agentEcosystem/governance.ts:24, 302` records disagreements; traces persisted via `agentGovernanceTracesTable`), consumed by chart benchmark scoring (`api/lib/chart/benchmarkScore.ts`). Advisory-only by design (`governance.ts:8-16`: can only lower rankings, fail-open, never touches execution).
 - Related black-box surfaces that DO work: `vault_events` (written broadly, e.g. `api/routes/backtestRuns.ts:48-55`; no update/delete callers) and the fail-closed `writeSelfTradeAudit` invocation audit that aborts an autonomous cycle if the audit insert fails (`api/lib/selfTrade/autonomousCycle.ts:70-84`).
 
-### 1.6 rubyQuality/ + outcomeWorker — **Grade: A−** (the model implementation of the post-trade review pattern)
+### 1.6 eleanorQuality/ + outcomeWorker — **Grade: A−** (the model implementation of the post-trade review pattern)
 
-`api/lib/rubyQuality/` (tracker, resolver, selfReview, aggregator, tuning, investorHooks, outcomeWorker).
+`api/lib/eleanorQuality/` (tracker, resolver, selfReview, aggregator, tuning, investorHooks, outcomeWorker).
 
-- **Actually started at boot:** `api/app.ts:189` `startRubyOutcomeWorker()`; 60s unref'd interval (`outcomeWorker.ts:50, 167-174`).
+- **Actually started at boot:** `api/app.ts:189` `startEleanorOutcomeWorker()`; 60s unref'd interval (`outcomeWorker.ts:50, 167-174`).
 - **Fail-closed, evidence-only resolution** (`resolver.ts:1-11`): a PENDING signal outcome resolves only on a matched closed trade (per-user scoped, `:87-110`) and/or real observed candle movement (`observeCandleMove`, `:56-84` — real MFE/MAE percent from `getMarketData`); "elapsed time alone NEVER grades" and the resolver leaves rows PENDING without evidence (`:142-166`). R-multiples derive only from the trade's own SL/TP geometry and only when `pnlStatus === "COMPUTED"` (`:117-130`).
 - **Self-reviews are append-only and idempotent** per outcomeId (`selfReview.ts:33-38, 89-97`), with plain-language user summary separated from admin-only detail (`:6-9`) — exactly encyclopedia #48's "LLM narrative separated from deterministic facts".
 - **Threshold tuning is audited fail-closed in one transaction** (`tuning.ts:75-107`: threshold update + `admin_action_audit_log` row commit together, values clamped by the pure domain).
-- Gap: this covers *Ruby signal* outcomes only. Self-trade agent executions get trust ingestion (§1.1) but no structured review row; live/manual trades get none of this.
+- Gap: this covers *Eleanor signal* outcomes only. Self-trade agent executions get trust ingestion (§1.1) but no structured review row; live/manual trades get none of this.
 
 ### 1.7 replaySim — **Grade: C** (honest, deterministic toy; certifies nothing about production)
 
@@ -123,7 +123,7 @@ AA decision persisted to `trade_decision_logs` → paper close triggers Build BB
 
 Closed loop #3 — **Profit missions:** own real closed drafts → testing-lab forward record → fail-closed promotion of the mission's automation level within a guardrail ceiling (§1.9).
 
-**Not closed:** the vision's institutional loop. There is no unified immutable per-trade case file (before/during/after — vision.md:99-105); evidence for one trade is scattered across `trades`, `ruby_signal_outcomes`, `self_trade_agent_executions`, `trade_decision_logs`, `vault_events`, and `aaci_decisions` with no shared correlation id. Post-trade review exists only for Ruby signals (§1.6) and paper debriefs. Strategy-level promotion is either in-memory-on-synthetic-data (§1.3), deadlocked (§1.4), or a stateless calculator (§1.10). No promotion decision anywhere consumes statistically validated evidence from stored real outcomes.
+**Not closed:** the vision's institutional loop. There is no unified immutable per-trade case file (before/during/after — vision.md:99-105); evidence for one trade is scattered across `trades`, `eleanor_signal_outcomes`, `self_trade_agent_executions`, `trade_decision_logs`, `vault_events`, and `aaci_decisions` with no shared correlation id. Post-trade review exists only for Eleanor signals (§1.6) and paper debriefs. Strategy-level promotion is either in-memory-on-synthetic-data (§1.3), deadlocked (§1.4), or a stateless calculator (§1.10). No promotion decision anywhere consumes statistically validated evidence from stored real outcomes.
 
 ---
 
@@ -151,13 +151,13 @@ Ordered so each step only depends on the ones before it.
 0a. Move `lib/shadowPersistence.ts` into `api/lib/` and call `persistShadowDecision`/`updateShadowOutcome` from `createShadowDecision`/`trackOutcomes` (`shadowMode.ts:92-94, 97-119`). This is the single cheapest fix with the widest blast radius: it un-deadlocks the learning-version gates (§1.4) and gives shadow data durability.
 0b. Fix the walk-forward proxy: order `shadow_predictions` by `predictedAt` before slicing (`adminLearningVersions.ts:65-88`) — or better, gate on a real chronological holdout.
 0c. Decide dead schemas: delete `aiDecisionLog` or make the paper/live pipelines write it; add the missing writer for `agentPredictionsTable` (record the advisory outputs the scanner/scalp/chart surfaces already compute via `advisoryInfluence` — consumers exist at `api/lib/marketScanner.ts`, `api/lib/scalp/scalpService.ts`) so `reviewScoring.ts` has something to score.
-0d. Wire `scheduleGlobalAggregation()` into `app.ts` next to `startRubyOutcomeWorker()` (`app.ts:189`) or delete the scheduler.
+0d. Wire `scheduleGlobalAggregation()` into `app.ts` next to `startEleanorOutcomeWorker()` (`app.ts:189`) or delete the scheduler.
 
-**Step 1 — Shadow mode on real data (prereq: 0a):** replace `marketSimulator` inputs with the real feed already used elsewhere (`getMarketData`, `api/lib/data/dataManager.ts` — the rubyQuality resolver proves the pattern at `resolver.ts:64`), keep `dataSource:"SHADOW"` labeling, move promotion-gate state from the in-memory `Map` (`shadowMode.ts:359`) into a DB table. Only after this do calibration/tournament/readiness numbers mean anything.
+**Step 1 — Shadow mode on real data (prereq: 0a):** replace `marketSimulator` inputs with the real feed already used elsewhere (`getMarketData`, `api/lib/data/dataManager.ts` — the eleanorQuality resolver proves the pattern at `resolver.ts:64`), keep `dataSource:"SHADOW"` labeling, move promotion-gate state from the in-memory `Map` (`shadowMode.ts:359`) into a DB table. Only after this do calibration/tournament/readiness numbers mean anything.
 
-**Step 2 — Immutable case files (prereq: none, but consumes Step 1's persisted evidence):** introduce a `correlationId` minted at signal time and carried through decision → risk verdict → execution → fills → management → close; a `trade_case_files` view/table assembling: locked pre-trade snapshot (pattern already exists: rubyQuality's "locked at-signal snapshot is never rewritten", `resolver.ts:10-11`), during-trade MFE/MAE (already computed, `resolver.ts:56-84`), and post-trade facts. Enforce append-only at the DB level (revoke UPDATE/DELETE) for `vault_events`, `trade_decision_logs`, `aaci_decisions`, `self_trade_audit` — today immutability is only behavioural (no update callers found, but nothing prevents one).
+**Step 2 — Immutable case files (prereq: none, but consumes Step 1's persisted evidence):** introduce a `correlationId` minted at signal time and carried through decision → risk verdict → execution → fills → management → close; a `trade_case_files` view/table assembling: locked pre-trade snapshot (pattern already exists: eleanorQuality's "locked at-signal snapshot is never rewritten", `resolver.ts:10-11`), during-trade MFE/MAE (already computed, `resolver.ts:56-84`), and post-trade facts. Enforce append-only at the DB level (revoke UPDATE/DELETE) for `vault_events`, `trade_decision_logs`, `aaci_decisions`, `self_trade_audit` — today immutability is only behavioural (no update callers found, but nothing prevents one).
 
-**Step 3 — Post-trade review for the agent/live path (prereq: 2):** extend the rubyQuality worker pattern (`outcomeWorker.ts`) to `self_trade_agent_executions`: one idempotent review row per closed execution, separating setup/risk/execution/exit quality (encyclopedia #47), reusing `buildSignalSelfReview`-style pure grading. This gives AACI trust ingestion a human-auditable companion record.
+**Step 3 — Post-trade review for the agent/live path (prereq: 2):** extend the eleanorQuality worker pattern (`outcomeWorker.ts`) to `self_trade_agent_executions`: one idempotent review row per closed execution, separating setup/risk/execution/exit quality (encyclopedia #47), reusing `buildSignalSelfReview`-style pure grading. This gives AACI trust ingestion a human-auditable companion record.
 
 **Step 4 — Version pinning + true replay (prereq: 2):** persist the input snapshot with each `aaci_decisions` row; stamp `codeVersion` (git SHA at build), config hash, and active `learning_model_versions.versionId` onto every decision row; export the side-effect-free `evaluateForReplay(input)` that `engine.ts:17-20` already names, and build the divergence-comparison harness over recorded snapshots. Divergence blocks promotion (encyclopedia #53 safety rule).
 
@@ -193,9 +193,9 @@ Ordered so each step only depends on the ones before it.
 | # | Function | Verdict |
 |---|---|---|
 | 46 | Immutable Decision & Trade Ledger | Partial — vault_events/tradeDecisionLogs/selfTradeAudit real and behaviourally append-only; no correlation-id joined timeline; aiDecisionLog dead |
-| 47 | Structured Trade Journal | Partial — rubySignalOutcomes is a real per-signal case file (locked snapshot, MFE/MAE); user journal routes exist (`api/routes/journal.ts`); no unified per-trade case file |
-| 48 | Post-Trade Review | Good for Ruby signals (§1.6) and paper debriefs (BB); absent for agent/live executions |
-| 49 | Ruby Assistant | Present (`api/lib/assistant/`, `meAssistant.ts`) — outside this audit's depth; quality loop audited in §1.6 |
+| 47 | Structured Trade Journal | Partial — eleanorSignalOutcomes is a real per-signal case file (locked snapshot, MFE/MAE); user journal routes exist (`api/routes/journal.ts`); no unified per-trade case file |
+| 48 | Post-Trade Review | Good for Eleanor signals (§1.6) and paper debriefs (BB); absent for agent/live executions |
+| 49 | Eleanor Assistant | Present (`api/lib/assistant/`, `meAssistant.ts`) — outside this audit's depth; quality loop audited in §1.6 |
 | 50 | Private Conversation Memory | Present (`arxAssistantMemory` schema) — not deeply audited here |
 | 51 | Anonymous Aggregate Learning | Built with the right privacy gates, dormant scheduler (§1.2) |
 | 52 | Research Lab | Missing on main — ghost packages only (§1.10) |

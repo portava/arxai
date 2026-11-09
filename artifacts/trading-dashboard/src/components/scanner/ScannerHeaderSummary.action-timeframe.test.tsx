@@ -8,13 +8,13 @@
 // verdict is an M5 verdict — if the store is keyed by symbol ALONE, switching the
 // chart to 15m (same symbol) leaves the header showing the stale M5 "Ready now"
 // while the user looks at a 15m chart that has no such setup. The fix keys the
-// lifted verdict by symbol+timeframe (mirroring rubyReadStore) and reads it back
+// lifted verdict by symbol+timeframe (mirroring eleanorReadStore) and reads it back
 // under the SAME coerced timeframe, so the lifted verdict only ever shows on the
 // timeframe it was actually computed for; every other timeframe falls back to the
 // honest data-only verdict.
 //
 // This is a TRUE end-to-end render proof, not a store unit test or a source scan:
-// it mounts the REAL publisher (RubyScalpFocusCard → ScalpSignalCard, which is
+// it mounts the REAL publisher (EleanorScalpFocusCard → ScalpSignalCard, which is
 // what actually picks the "5m" bus key) AND the REAL ScannerHeaderSummary inside
 // ONE real SelectedActionStoreProvider, then asserts the header's Action cell.
 // Only the page's data hooks are stubbed (symbol/timeframe/truth/mode) and the
@@ -59,7 +59,7 @@ function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live feed confirmed." },
-      ruby: { detail: "" },
+      eleanor: { detail: "" },
       trading: { verdict: "Enabled", detail: "" },
     },
     candles: {
@@ -70,7 +70,7 @@ function makeTruth(): ScannerTruth {
       status: "CONFIRMED",
     },
     consolidated: {
-      rubyReadStatus: "NO_READ",
+      eleanorReadStatus: "NO_READ",
       scannerActionability: DATA_ONLY_ACTIONABILITY,
       userMessage: "Live data is confirmed.",
       internalReasonCode: "FEED_OK",
@@ -203,7 +203,7 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => {
 });
 
 // Imported AFTER the mocks so the components pick up the stubbed hooks.
-import { RubyScalpFocusCard } from "./RubyScalpFocusCard";
+import { EleanorScalpFocusCard } from "./EleanorScalpFocusCard";
 import { ScannerHeaderSummary } from "./ScannerHeaderSummary";
 import { SelectedActionStoreProvider } from "./selectedActionStore";
 
@@ -211,7 +211,7 @@ function sharedTree(symbol: string) {
   return (
     <SelectedActionStoreProvider>
       {/* REAL publisher — lifts its M5 ("5m") verdict into the store */}
-      <RubyScalpFocusCard symbol={symbol} />
+      <EleanorScalpFocusCard symbol={symbol} />
       {/* REAL consumer — its Action cell reads the lifted verdict back */}
       <ScannerHeaderSummary running={false} />
     </SelectedActionStoreProvider>
@@ -490,7 +490,7 @@ describe("ScannerHeaderSummary — the M5 scalp never speaks for the 1m cell, an
 
     scalpOverride = NO_SPECS;
     await act(async () => {
-      screen.getByTestId("ruby-scalp-focus-refresh").click();
+      screen.getByTestId("eleanor-scalp-focus-refresh").click();
     });
     const pill = await screen.findByTestId("scanner-header-action");
     expect(await within(pill).findByText("Wait for confirmation")).toBeTruthy();

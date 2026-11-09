@@ -69,7 +69,7 @@ const ALLOWED_SOURCE_PREFIXES: readonly string[] = [
   "POSITIONS_PAGE", // Positions page stop / target / close (governedOps)
   "BROKER_VALIDATION", // validate:broker demo runner (refuses LIVE)
   "TRADE_ACTION_CENTER", // Trade Action Center confirm (lib/tradeAction/route.ts)
-  "TRADE_ACTION_RUBY", // a Ruby-suggested Trade Action the trader confirmed (origin ruby)
+  "TRADE_ACTION_ELEANOR", // a Eleanor-suggested Trade Action the trader confirmed (origin eleanor)
   "ME_TRADES_", // My Trades live close: ME_TRADES_CLOSE_SHARED / ME_TRADES_CLOSE_USER_OWNED
 ] as const;
 

@@ -124,7 +124,7 @@ function rowActionability(row: OpportunityMapRow): ScannerActionability {
 
 // The feed-degraded verdicts: the data itself can't support a live entry, so a
 // row carrying one of these must NEVER show a direction/scores or read as
-// act-ready. These are exactly the verdicts the chart header & Ruby Chart Read
+// act-ready. These are exactly the verdicts the chart header & Eleanor Chart Read
 // surface when the selected symbol's feed isn't live-confirmed.
 const FEED_DEGRADED_VERDICTS: ReadonlySet<ScannerActionability> = new Set([
   "FEED_LIMITED",
@@ -282,7 +282,7 @@ export function BroadScanOpportunityMap({
 
   // Cross-surface feed-verdict reconciliation (Task #608). The broad scan runs at
   // its OWN scan timeframe (e.g. M5), but the user is looking at the selected
-  // symbol's chart at the chart timeframe (e.g. 15m). The chart header & Ruby
+  // symbol's chart at the chart timeframe (e.g. 15m). The chart header & Eleanor
   // Chart Read derive the selected symbol's feed verdict from `useSymbolTruth` at
   // the CHART timeframe and reconcile a lifted setup-aware verdict on top
   // (`resolveSelectedSymbolActionability`). We consume the SAME source here so a
@@ -706,7 +706,7 @@ function OpportunityRowCardBase({
   // DOWNGRADE-ONLY reconciliation: the selected chart's degraded feed verdict
   // replaces the row's own verdict ONLY when it is at least as conservative, so
   // this can never grant readiness — it can only pull the row down to match the
-  // chart header / Ruby Chart Read for the same symbol (Task #608).
+  // chart header / Eleanor Chart Read for the same symbol (Task #608).
   const action =
     feedCapOverride &&
     ACTIONABILITY_SEVERITY[feedCapOverride] >= ACTIONABILITY_SEVERITY[ownAction]

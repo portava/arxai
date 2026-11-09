@@ -19,7 +19,7 @@ Inspect all major pages after Stage 1:
 * Dashboard
 * Markets
 * Trade
-* Ruby
+* Eleanor
 * Risk
 * Intelligence
 * Admin
@@ -58,7 +58,7 @@ Requirements:
 * Flame Scalp still works.
 * Selected market explanation still works.
 * Market search/symbol selection remains available.
-* Scanner results remain connected to Ruby, Risk, Agent Scoring, and Governance where currently wired.
+* Scanner results remain connected to Eleanor, Risk, Agent Scoring, and Governance where currently wired.
 * No scanner path should break.
 
 3. Trade Page Tabs
@@ -85,9 +85,9 @@ Requirements:
 * Normal trader permissions must remain correct.
 * Admin/OWNER retains full access.
 
-4. Ruby Page Tabs
+4. Eleanor Page Tabs
 
-Organize Ruby into tabs or grouped sections such as:
+Organize Eleanor into tabs or grouped sections such as:
 
 * Chat
 * Market Explanation
@@ -97,10 +97,10 @@ Organize Ruby into tabs or grouped sections such as:
 
 Requirements:
 
-* Ruby chat still works.
-* Ruby typing/thinking indicator still works.
-* Ruby plain-English market explanations still work.
-* Ruby does not expose backend function names, route names, env names, schema names, or internal code wording to normal users.
+* Eleanor chat still works.
+* Eleanor typing/thinking indicator still works.
+* Eleanor plain-English market explanations still work.
+* Eleanor does not expose backend function names, route names, env names, schema names, or internal code wording to normal users.
 * Voice mode remains available if already implemented.
 * Saved chats/memory remains reachable if already implemented.
 
@@ -120,7 +120,7 @@ Requirements:
 * Reward-to-risk remains connected.
 * SL/TP logic remains reachable.
 * Exposure/account protection remains reachable if present.
-* Risk warnings still appear where needed across Scanner, Ruby, Trade, and Admin.
+* Risk warnings still appear where needed across Scanner, Eleanor, Trade, and Admin.
 
 6. Intelligence Page Tabs
 
@@ -251,7 +251,7 @@ Test:
 * role-based visibility
 * Markets tabs
 * Trade tabs
-* Ruby tabs
+* Eleanor tabs
 * Risk tabs
 * Intelligence tabs
 * Admin tabs

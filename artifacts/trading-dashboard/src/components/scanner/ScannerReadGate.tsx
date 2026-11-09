@@ -1,5 +1,5 @@
 // ScannerReadGate — a single, honest downgrade notice for the advisory cards
-// (Timing Intelligence, Ruby Market Read) shown beneath it (Task #391).
+// (Timing Intelligence, Eleanor Market Read) shown beneath it (Task #391).
 //
 // It consumes the ONE shared scanner-truth contract. When the feed isn't valid
 // for a live read (insufficient candles, stale, delayed, mismatch, or no data)

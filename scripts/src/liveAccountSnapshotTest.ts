@@ -268,13 +268,13 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   );
 }
 
-// 16. Source-scan: old blanket Ruby copy absent from this module (not a component test,
+// 16. Source-scan: old blanket Eleanor copy absent from this module (not a component test,
 //     but validates the copy constant is not accidentally re-introduced at the adapter level).
 {
-  const OLD_RUBY_COPY = "Ruby is waiting for market data.";
+  const OLD_ELEANOR_COPY = "Eleanor is waiting for market data.";
   const snap = buildLiveAccountSnapshot(input({ rows: [] }));
-  const leaksOldCopy = snap.warnings.some((w) => w.includes(OLD_RUBY_COPY));
-  check("old Ruby waiting copy absent from snapshot warnings", !leaksOldCopy, snap.warnings.join(" | "));
+  const leaksOldCopy = snap.warnings.some((w) => w.includes(OLD_ELEANOR_COPY));
+  check("old Eleanor waiting copy absent from snapshot warnings", !leaksOldCopy, snap.warnings.join(" | "));
 }
 
 console.log(`\n${failures === 0 ? "ALL PASS" : failures + " FAILED"}`);

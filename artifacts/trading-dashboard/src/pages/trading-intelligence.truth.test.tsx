@@ -8,7 +8,7 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby", isLoading: false, isDefault: true }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor", isLoading: false, isDefault: true }) }));
 const { DnaTab, TradeHistoryTab, formatAccountPnl } = await import("./trading-intelligence");
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

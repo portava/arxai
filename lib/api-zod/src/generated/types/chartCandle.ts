@@ -39,7 +39,7 @@ export interface ChartCandle {
   source: string;
   /** false for the still-forming most-recent bar */
   isComplete: boolean;
-  /** Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis / Ruby / chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.
+  /** Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis / Eleanor / chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.
    */
   isForming: boolean;
   /** live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.

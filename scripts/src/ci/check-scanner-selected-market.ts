@@ -1,6 +1,6 @@
 // CI guard — scanner-selected-market-safety
 //
-// Asserts that the Scanner Direct Symbol Selection + Ruby Market
+// Asserts that the Scanner Direct Symbol Selection + Eleanor Market
 // Explanation panel cannot regress into a live-trading bypass and
 // cannot leak secrets through its read-only surface.
 
@@ -145,7 +145,7 @@ export function checkScannerSelectedMarket(): CheckResult {
   // panel renders "{name} Market Intelligence uses cached …" where {name} is the
   // per-user assistant display name. The safety intent — surfacing the
   // deterministic cached-analysis note — is unchanged; only the leading name is
-  // now dynamic, so match the stable tail rather than the literal "Ruby".
+  // now dynamic, so match the stable tail rather than the literal "Eleanor".
   if (panel && !/Market Intelligence uses cached/.test(panel)) {
     violations.push("SelectedMarketPanel must show the deterministic cached-analysis note");
   }

@@ -13,7 +13,7 @@ vi.mock("@workspace/api-client-react", () => ({
 vi.mock("@/components/trading/ConfirmCloseModal", () => ({ ConfirmCloseModal: () => null }));
 vi.mock("@/components/trading/QuickTradeModal", () => ({ QuickTradeModal: () => null }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => {}] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/hooks/useLiveAccountSnapshot", () => ({
   useLiveAccountSnapshot: () => ({ isUnavailable: true, snapshot: null, live: null, freshness: "unknown", lastUpdatedMs: null, isEstimate: false }),
 }));

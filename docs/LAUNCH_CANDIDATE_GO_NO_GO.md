@@ -34,22 +34,22 @@ The candidate is **safe for paper-only/private-alpha/demo-supervised launch** to
 |---|---|---|
 | End-to-End Staging Dry Run | `pnpm --filter @workspace/scripts run qa:staging:full` | **OVERALL PASS** — 23 PASS / 1 ALLOWED_FAIL / 0 FAIL |
 | Launch Candidate Freeze | `docs/LAUNCH_CANDIDATE.md`, `docs/RELEASE_NOTES.md` | docs in place, version `ARX_AI_LAUNCH_CANDIDATE_0.1` |
-| Manual Mobile QA + iPhone Safari | `docs/MOBILE_QA_CHECKLIST.md`; viewport + 16px input + Ruby z-40 fixes shipped | 33/33 mobile gate items PASS |
+| Manual Mobile QA + iPhone Safari | `docs/MOBILE_QA_CHECKLIST.md`; viewport + 16px input + Eleanor z-40 fixes shipped | 33/33 mobile gate items PASS |
 | Production Launch Readiness | `test:launch-readiness` | PASS |
 | Audit Log Center + Evidence Export | `test:audit-log-center` | **19/19 PASS** (no-secret-markers, 403 for non-admin) |
 | Broker/Regulatory Mode Separation | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` (16-gate evaluator) | enforced; `test:live-phaseB` 19/19 PASS |
 | Reconciliation Center | `test:reconciliation-center` | **26/26 PASS** |
 | Close-Only Emergency Mode | `test:live-pipeline`, `test:live-kill` | 9/9 + 7/7 PASS |
 | Live Readiness Dashboard + Kill Switches | `test:live-kill` engage/release/USER_NOT_ARMED_FOR_LIVE | **7/7 PASS** |
-| Ruby Voice Guardrails | `test:ruby-voice-trading-guardrails` | **29/29 PASS** |
-| Ruby Full App Knowledge | `test:ruby-app-knowledge` | **63/63 PASS** |
+| Eleanor Voice Guardrails | `test:eleanor-voice-trading-guardrails` | **29/29 PASS** |
+| Eleanor Full App Knowledge | `test:eleanor-app-knowledge` | **63/63 PASS** |
 | User Onboarding | `test:onboarding`, `test:fresh-first-load` | **18/18 PASS** (no mock/fake in production pages) |
 | Per-User Private Workspace | `test:per-user-isolation` + `per-user-isolation-me-routes` guard | **13/13 PASS** (214 `/me/*` handlers scanned) |
 | Shared Master Ledger | `test:master-bridge`, `test:master-bridge-live` | 18/18 + 30/30 PASS |
 | Virtual Balance / Risk Profiles | `test:per-user-account-shell` | PASS |
 | Multi-User Queue | `test:multi-user-trade-queue` | **46/46 PASS** (standalone; orchestrator timeout = pre-existing tooling note) |
 | Admin Approval Console | `test:master-bridge-gate`, `test:master-live-access` | 19/19 + 19/19 PASS |
-| Scanner / Ruby Market Explanation | `scanner-selected-market-safety` guard via `ci:guards` | PASS (empty + safetyNote when no TwelveData key, never simulator data) |
+| Scanner / Eleanor Market Explanation | `scanner-selected-market-safety` guard via `ci:guards` | PASS (empty + safetyNote when no TwelveData key, never simulator data) |
 | Trade Position Chart Window | `test:position-mini-chart` | **53/53 PASS** |
 | CI invariant guards | `pnpm run ci:guards` | **21/21 PASS** |
 
@@ -64,7 +64,7 @@ The candidate is **safe for paper-only/private-alpha/demo-supervised launch** to
 
 ## Remaining risks
 
-- Voice cannot be fully unit-tested without a real device — coverage relies on `test:ruby-voice-trading-guardrails` 29/29 + manual checklist Tester walk-through.
+- Voice cannot be fully unit-tested without a real device — coverage relies on `test:eleanor-voice-trading-guardrails` 29/29 + manual checklist Tester walk-through.
 - Production live execution gates rely on a one-way human-operator action (master switch flip) — by design, but means the live happy-path is only verifiable in a staged production with explicit approval.
 - Pre-existing `multi-user-trade-queue` standalone-only timing exceeds orchestrator 90s budget — annotated, not a product bug.
 
@@ -92,7 +92,7 @@ The candidate is **safe for paper-only/private-alpha/demo-supervised launch** to
 - `per-user-isolation-me-routes` CI guard — scanned **214 `/me/*` handlers across 42 route files**, all PASS.
 - `test:per-user-isolation` — User A cannot see User B trades/P&L/notifications; logout clears seeded session+rows.
 - No shared-master global totals returned to normal users (`test:master-live-access` PASS).
-- Ruby admin-context only resolves for authenticated admins (`test:reconciliation-center` #22-23 PASS).
+- Eleanor admin-context only resolves for authenticated admins (`test:reconciliation-center` #22-23 PASS).
 
 ## Secret-masking evidence
 
@@ -112,14 +112,14 @@ The candidate is **safe for paper-only/private-alpha/demo-supervised launch** to
 
 - Viewport now `viewport-fit=cover` (notched-iPhone safe area active).
 - Inputs/textareas/selects forced to ≥16px on `<= 767px` (no iOS auto-zoom).
-- Floating Ruby trigger lowered to `z-40` so modals (`z-50`) overlay it; bottom nav `z-30` unchanged; open Ruby panel `z-50` unchanged.
+- Floating Eleanor trigger lowered to `z-40` so modals (`z-50`) overlay it; bottom nav `z-30` unchanged; open Eleanor panel `z-50` unchanged.
 - `docs/MOBILE_QA_CHECKLIST.md` — 20 routes × 4 viewport sizes, 33/33 prior mobile gate items PASS.
 - `pnpm --filter @workspace/trading-dashboard run typecheck` — green.
 
-## Ruby / Ruby Voice evidence
+## Eleanor / Eleanor Voice evidence
 
-- `test:ruby-app-knowledge` **63/63 PASS** (app questions, account state, blocked-trade reasons, no profit claims, no legal claims).
-- `test:ruby-voice-trading-guardrails` **29/29 PASS** (voice cannot bypass confirmation, sanitizeForSpeech present, transcripts ignored when empty).
+- `test:eleanor-app-knowledge` **63/63 PASS** (app questions, account state, blocked-trade reasons, no profit claims, no legal claims).
+- `test:eleanor-voice-trading-guardrails` **29/29 PASS** (voice cannot bypass confirmation, sanitizeForSpeech present, transcripts ignored when empty).
 - AI assistant safety envelope hardcoded: `{safetyMode:"paper_only", liveLocked:true, readOnlyMode:true, allowOrderExecution:false}` on every response.
 
 ## Audit / export evidence

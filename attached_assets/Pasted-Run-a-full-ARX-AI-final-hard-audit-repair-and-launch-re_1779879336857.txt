@@ -98,7 +98,7 @@ Audit every layer:
 19. trade validation routes
 20. live shared routes
 21. scanner routes
-22. Ruby/AI routes
+22. Eleanor/AI routes
 23. alert routes
 24. performance/calendar routes
 25. position/trade-history routes
@@ -254,7 +254,7 @@ Apply this same owner profile to:
 - Live Chart trade panel
 - Trade Command Room
 - Manual Ticket
-- Ruby trade recommendations
+- Eleanor trade recommendations
 - Quick Trade
 - any one-click or confirmation trade flow
 
@@ -274,7 +274,7 @@ Fix:
 - Trade Command Room
 - Manual Ticket
 - Live Shared page
-- Ruby trade suggestions
+- Eleanor trade suggestions
 
 Required:
 1. Buy/Sell opens the real LIVE_SHARED ticket.
@@ -354,7 +354,7 @@ Fix:
 - Recent scanner trades
 - feed status
 - historical check
-- Ruby setup reason
+- Eleanor setup reason
 
 Rules:
 - LIVE_SHARED scanner uses Market Data Router / Deriv / MT5 live feed
@@ -400,7 +400,7 @@ Create one source of truth for selected symbol across:
 - live shared ticket
 - scanner selected symbol
 - Live AI Assist
-- Ruby explanation
+- Eleanor explanation
 - Market Data Router feed
 
 Fix mismatches like:
@@ -414,7 +414,7 @@ When symbol changes:
 - clear stale card if it belongs to old symbol
 - refetch quote/candles
 - update ticket defaults
-- update Ruby explanation
+- update Eleanor explanation
 - update chart side panel
 - update all labels
 
@@ -463,17 +463,17 @@ Ensure:
 - no stale demo/paper/test alerts in live
 - no crash from missing fields
 
-PART M — RUBY
+PART M — ELEANOR
 
-Fix Ruby so:
+Fix Eleanor so:
 - no raw research dumps
 - no backend JSON/tool payloads
 - no stale delayed TTS
 - voice responses cancel if a newer response exists
 - TTS does not block text response
-- Ruby uses same live feed as scanner/chart
-- Ruby explains in plain English with useful technical bits
-- Ruby asks if user wants more detail after concise answer
+- Eleanor uses same live feed as scanner/chart
+- Eleanor explains in plain English with useful technical bits
+- Eleanor asks if user wants more detail after concise answer
 - voice setting actually controls voice
 - preview voice does not change active voice
 - default is Bella when unset

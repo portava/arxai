@@ -4,7 +4,7 @@
 //   POST /api/me/trade-history/import      — upload CSV/HTML/Excel text
 //   GET  /api/me/trade-history/imports     — list import batches
 //   GET  /api/me/trade-history             — list imported trades (paged)
-//   GET  /api/me/trade-history/summary     — aggregated stats for Ruby
+//   GET  /api/me/trade-history/summary     — aggregated stats for Eleanor
 //
 // SAFETY:
 //   - requireUser on every route — per-user scoped.
@@ -119,7 +119,7 @@ router.get("/me/trade-history", requireUser, async (req, res) => {
 });
 
 // ── GET /api/me/trade-history/summary ────────────────────────────────────
-// Aggregated stats — used by Ruby tools and the dashboard.
+// Aggregated stats — used by Eleanor tools and the dashboard.
 
 router.get("/me/trade-history/summary", requireUser, async (req, res) => {
   const userId = req.authUser!.id;

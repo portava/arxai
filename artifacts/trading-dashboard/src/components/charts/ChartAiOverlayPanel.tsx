@@ -11,7 +11,7 @@ import { useAssistantName } from "@/lib/assistant-name";
 //   - the scanner signal carries its own confidence, status badge, and its
 //     `dataSource` tag (shown in plain English, e.g. "Simulated data") so a
 //     simulated read is never presented as a live one;
-//   - the Ruby read is the read-only assistant's structured output, surfaced
+//   - the Eleanor read is the read-only assistant's structured output, surfaced
 //     only when it has enough data;
 //   - when the chart feed is not AI-confirmed (Level 3), overlays are suppressed
 //     and we say so plainly instead of drawing a stale read.
@@ -54,7 +54,7 @@ export function ChartAiOverlayPanel({
   data: UseAiChartOverlaysResult;
 }) {
   const { name } = useAssistantName();
-  const { signal, ruby, suppressed, suppressedReason, requestRubyRead } = data;
+  const { signal, eleanor, suppressed, suppressedReason, requestEleanorRead } = data;
 
   return (
     <div
@@ -68,14 +68,14 @@ export function ChartAiOverlayPanel({
           size="sm"
           variant="outline"
           className="ml-auto h-6 px-2 text-[10px]"
-          disabled={suppressed || ruby.status === "loading"}
-          onClick={() => requestRubyRead()}
-          data-testid="chart-ai-overlay-ruby-read"
+          disabled={suppressed || eleanor.status === "loading"}
+          onClick={() => requestEleanorRead()}
+          data-testid="chart-ai-overlay-eleanor-read"
         >
-          {ruby.status === "loading" ? (
+          {eleanor.status === "loading" ? (
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
           ) : null}
-          {ruby.read ? `Re-read with ${name}` : `Read with ${name}`}
+          {eleanor.read ? `Re-read with ${name}` : `Read with ${name}`}
         </Button>
       </div>
 
@@ -154,41 +154,41 @@ export function ChartAiOverlayPanel({
             </div>
           )}
 
-          {/* Ruby read summary (on-demand). */}
-          {ruby.status === "error" && (
-            <div className="text-rose-400" data-testid="chart-ai-overlay-ruby-err">
-              {name} couldn't read this chart ({ruby.error}).
+          {/* Eleanor read summary (on-demand). */}
+          {eleanor.status === "error" && (
+            <div className="text-rose-400" data-testid="chart-ai-overlay-eleanor-err">
+              {name} couldn't read this chart ({eleanor.error}).
             </div>
           )}
-          {ruby.status === "insufficient" && (
-            <div className="text-amber-400/90" data-testid="chart-ai-overlay-ruby-insufficient">
+          {eleanor.status === "insufficient" && (
+            <div className="text-amber-400/90" data-testid="chart-ai-overlay-eleanor-insufficient">
               {name} read: not enough confirmed data to mark zones.
             </div>
           )}
-          {ruby.status === "ok" && ruby.read && (
-            <div className="space-y-0.5 text-zinc-300" data-testid="chart-ai-overlay-ruby-body">
+          {eleanor.status === "ok" && eleanor.read && (
+            <div className="space-y-0.5 text-zinc-300" data-testid="chart-ai-overlay-eleanor-body">
               <div className="flex flex-wrap items-center gap-x-2">
                 <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
                 <span className="text-zinc-500">{name}:</span>
-                <span className={`font-semibold ${biasTone(ruby.read.bias)}`}>{ruby.read.bias}</span>
+                <span className={`font-semibold ${biasTone(eleanor.read.bias)}`}>{eleanor.read.bias}</span>
                 <span className="text-zinc-500">·</span>
-                <span className="text-zinc-400">{ruby.read.confidence}</span>
+                <span className="text-zinc-400">{eleanor.read.confidence}</span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 text-zinc-400">
-                <div><span className="text-zinc-500">Support:</span> {ruby.read.supportZone}</div>
-                <div><span className="text-zinc-500">Resistance:</span> {ruby.read.resistanceZone}</div>
+                <div><span className="text-zinc-500">Support:</span> {eleanor.read.supportZone}</div>
+                <div><span className="text-zinc-500">Resistance:</span> {eleanor.read.resistanceZone}</div>
               </div>
-              {ruby.read.goldStrategyRead?.active && (
+              {eleanor.read.goldStrategyRead?.active && (
                 <div
                   className="mt-1 border-t border-amber-500/20 pt-1 text-amber-300/90"
                   data-testid="chart-ai-overlay-gold"
                 >
                   <span className="font-semibold text-amber-300">Gold mode</span>
                   <span className="text-zinc-500"> · macro </span>
-                  {ruby.read.goldStrategyRead.macroBias}
+                  {eleanor.read.goldStrategyRead.macroBias}
                   <span className="text-zinc-500"> · ATR </span>
-                  {ruby.read.goldStrategyRead.atrState}
-                  <div className="text-amber-300/70">{ruby.read.goldStrategyRead.riskWarning}</div>
+                  {eleanor.read.goldStrategyRead.atrState}
+                  <div className="text-amber-300/70">{eleanor.read.goldStrategyRead.riskWarning}</div>
                 </div>
               )}
             </div>

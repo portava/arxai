@@ -61,7 +61,7 @@ export function normalizeTeDate(raw: string | undefined): string | null {
 
 /**
  * Map a raw TE API event object to the `RawCalendarEvent` shape used by
- * the radar + Ruby.  Returns null when mandatory fields are absent/invalid.
+ * the radar + Eleanor.  Returns null when mandatory fields are absent/invalid.
  */
 export interface MinimalTeEvent {
   CalendarId?: string;

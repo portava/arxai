@@ -27,13 +27,13 @@ NOT a code regression — restart `artifacts/api-server: API Server`, confirm pr
   area. If the failing test + the source it exercises are outside the audited
   commit's files, it is NOT that commit's regression.
 
-Live-provider-dependent Ruby/assistant tests (e.g. `rubyFeedNotConfirmedTest`)
+Live-provider-dependent Eleanor/assistant tests (e.g. `eleanorFeedNotConfirmedTest`)
 degrade under external rate-limiting (twelvedata `429`). But a tool returning
 `ok:false` **even for the mt5_broker-served CONFIRMED case** is a code-level issue,
 not merely rate-limiting — distinguish the two before calling it "environment."
 
 Two more full-ci flakes classified in practice (both env, both re-run green):
-- `ruby-chat-chart-read-parity` "a verified feed yields a real read (got insufficient)"
+- `eleanor-chat-chart-read-parity` "a verified feed yields a real read (got insufficient)"
   fires when external providers 5xx (FRED/others `503`) during the run so the feed is
   unconfirmed → read collapses to INSUFFICIENT. Re-run in isolation returns 20/0
   ("got ok") once providers respond. Feed-dependent, not a regression.

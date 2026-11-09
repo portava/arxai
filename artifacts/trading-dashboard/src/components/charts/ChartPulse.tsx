@@ -15,7 +15,7 @@ import { chartReadVerification } from "./chartReadVerification";
 // A small, mobile-friendly grid that summarises the live Chart Intelligence
 // State: feed status, regime, bias, active level, last bar, risk, readiness,
 // best action, setup age — plus the agent-court chip (from the state's agent
-// consensus, withheld on an unverified read) and the Ruby chip. EVERYTHING is generated from the
+// consensus, withheld on an unverified read) and the Eleanor chip. EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
 // it never places, modifies, or closes a trade.
 //
@@ -319,7 +319,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
       </div>
 
       {/* Agent court chip — read from state.agentConsensus, never hard-coded.
-          An unverified read withholds the stance, exactly as Ruby and the
+          An unverified read withholds the stance, exactly as Eleanor and the
           consensus panel do. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
         <span
@@ -331,7 +331,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         </span>
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
-          data-testid="pulse-ruby"
+          data-testid="pulse-eleanor"
         >
           {name}: read-only · on demand
         </span>

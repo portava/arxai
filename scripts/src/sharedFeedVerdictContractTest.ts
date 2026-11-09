@@ -1,6 +1,6 @@
 // Task #785 — Shared feed-truth verdict contract.
 //
-// Every live-capable surface (chart, scanner, Eleanor/Ruby read, the live-entry
+// Every live-capable surface (chart, scanner, Eleanor/Eleanor read, the live-entry
 // floor, and the broker-confirmed-feed predicate behind the unified readiness
 // resolver) derives "is this feed live?" from the SAME pure function,
 // resolveSymbolFeedVerdict. Because they all import this one function, they can

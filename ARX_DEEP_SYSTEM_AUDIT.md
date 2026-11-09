@@ -13,7 +13,7 @@
 - **Static inventory** via filesystem + ripgrep counts (route files, pages, hooks, tables, components, CI guards).
 - **Live endpoint probes** through the shared proxy (`localhost:80`) for auth posture + latency.
 - **Read-only SQL** against the live Postgres DB for the live-trade truth state (EA heartbeat freshness, global gates, pool/allocation, open positions, command history, roles).
-- **Four deep subsystem explorations** (Scanner, Feed/Providers+Candle-history, Live-trade path, Ruby) tracing actual wiring chains and function names.
+- **Four deep subsystem explorations** (Scanner, Feed/Providers+Candle-history, Live-trade path, Eleanor) tracing actual wiring chains and function names.
 - **Workflow + browser console logs** for floating errors and runtime health.
 
 No live trade was placed during this audit (see §13 for the honest BLOCKED verdict and exact prerequisites).
@@ -22,7 +22,7 @@ No live trade was placed during this audit (see §13 for the honest BLOCKED verd
 
 ## 1. Executive summary
 
-ARX AI is a very large, safety-first trading platform: **233 backend route files (~1,547 endpoint registrations), 169 frontend page files (136 user + 33 admin), 300 DB tables across 147 schema files, 365 components, 18 hooks, 428 api-server lib files, 41 CI invariant guards.** The architectural quality of the *core* safety and honesty systems is genuinely high — the scanner, feed router, candle-history layer, Ruby assistant, and the 16-gate live pipeline are all built "honest by construction" (no simulator/fabricated data leaks into user-facing surfaces; dispatch ≠ fill is enforced; advisory surfaces carry a fail-closed `paper_only` envelope).
+ARX AI is a very large, safety-first trading platform: **233 backend route files (~1,547 endpoint registrations), 169 frontend page files (136 user + 33 admin), 300 DB tables across 147 schema files, 365 components, 18 hooks, 428 api-server lib files, 41 CI invariant guards.** The architectural quality of the *core* safety and honesty systems is genuinely high — the scanner, feed router, candle-history layer, Eleanor assistant, and the 16-gate live pipeline are all built "honest by construction" (no simulator/fabricated data leaks into user-facing surfaces; dispatch ≠ fill is enforced; advisory surfaces carry a fail-closed `paper_only` envelope).
 
 The system's weaknesses are **operational truth and surface sprawl**, not core design:
 
@@ -41,7 +41,7 @@ The system's weaknesses are **operational truth and surface sprawl**, not core d
 | Scanner | 90 | A− | No sim leakage; truth caps + feed badges enforced. Decision-readiness gated on feed cleanliness. |
 | Candle History | 82 | B− | Honesty markers present; **deep-history claims must stay gated** (producer gap + provider limits). |
 | Feed System | 87 | B+ | Composite chain, honest fallthrough + `MT5_BROKER_FEED_NOT_ACTIVE`; mt5_broker candles dormant. |
-| Ruby Assistant | 90 | A− | Single execution path, `paper_only` envelope, honesty gates, `AI_AUTO` dormant by design. |
+| Eleanor Assistant | 90 | A− | Single execution path, `paper_only` envelope, honesty gates, `AI_AUTO` dormant by design. |
 | Auth / Permissions | 88 | B+ | Clean anon-401; effective-role gating. Mixed-case `role` values are a latent risk. |
 | Performance | 88 | B+ | Most endpoints 1–20ms; two user-hot-path outliers (timing-brain 766ms, trade-health 379ms). |
 | Floating Errors | 95 | A | No runtime React errors in console this snapshot (only Vite HMR noise). |
@@ -71,13 +71,13 @@ The system's weaknesses are **operational truth and surface sprawl**, not core d
 
 ## 2. System inventory
 
-> **Inventory method (honesty note):** Counts below are exact (verified by filesystem + ripgrep). Given the surface size (~1,547 endpoint registrations, 365 components, 300 tables), items are **classified by functional cluster with representative named members** rather than one row per item — an exhaustive per-item appendix would run to thousands of rows without adding audit signal. Every cluster names the safety/trading-critical members in full; the deep per-item wiring proof for the high-risk surfaces (Scanner, Feed, Candle, Live, Ruby) is in §4–§8 and §13.
+> **Inventory method (honesty note):** Counts below are exact (verified by filesystem + ripgrep). Given the surface size (~1,547 endpoint registrations, 365 components, 300 tables), items are **classified by functional cluster with representative named members** rather than one row per item — an exhaustive per-item appendix would run to thousands of rows without adding audit signal. Every cluster names the safety/trading-critical members in full; the deep per-item wiring proof for the high-risk surfaces (Scanner, Feed, Candle, Live, Eleanor) is in §4–§8 and §13.
 
 ### 2.1 Frontend pages (169 files: 136 user + 33 admin)
 
 **User pages** (`artifacts/trading-dashboard/src/pages/*.tsx`) span: core product (`dashboard`, `market-scanner`, `live-chart`, `live-trading`, `live-shared`, `live-manual`, `live-ai-assist`, `bot-control`, `trade-logs`, `orders`, `positions`, `my-trades`, `portfolio`, `backtest`/`backtesting`, `analytics`/`analytics-command`, `reports`, `emergency`, `mt5-setup`/`mt5-bridge`/`my-mt5`, `risk-settings`/`risk-command-center`, `strategy-settings`/`strategy-lab`/`strategy-tournament`, `journal`/`scalp-journal`/`weekly-review`, `investor`, `notifications`/`alerts`/`alerts-center`); market hubs (`forex-center`, `indices-center`, `stocks-center`, `synthetic-center`, `market-health`, `market-heat-map`, `market-sessions`, `data-quality`); education (`school/*` via `trading-school*`); and a **large QA/testing/diagnostic cluster shipped as user pages** (`acceptance-testing`, `daily-testing`, `qa-checklist`, `tester-playbook`, `test-session-recorder`, `integration-test-results`, `production-readiness`, `readiness-checklist`, `weekly-testing-summary`, `admin-diagnostics`, `admin-control`, `admin-permissions`, `admin-data-management`, `admin-security-status`, `admin-issues`). See §11 for the dead/dormant classification of this cluster.
 
-**Admin pages** (`pages/admin/*.tsx`, 33): `admin-hub`, `user-control-center`, `trading-control`, `master-bridge`, `live-shared`(+`activation`), `live-test-readiness`, `allocations`, `fund-control-center`, `investors`, `reconciliation-center`, `ea-health`, `ea-updates`, `bridge-v2-monitor`, `bridge-diagnostics`, `provider-health`, `deriv-health`, `agent-ecosystem`, `self-trade-ai`, `ruby-quality`, `ruby-voice-settings`, `one-click-controls`, `operator-command-center`, `beta-control`/`beta-readiness`, `launch-readiness`, `audit-center`, `handshake-monitor`, `system-cohesion`, `timing-brain-snapshots`, `chart-brain-benchmark`, `learning-versions`, `security-status`, `settings`.
+**Admin pages** (`pages/admin/*.tsx`, 33): `admin-hub`, `user-control-center`, `trading-control`, `master-bridge`, `live-shared`(+`activation`), `live-test-readiness`, `allocations`, `fund-control-center`, `investors`, `reconciliation-center`, `ea-health`, `ea-updates`, `bridge-v2-monitor`, `bridge-diagnostics`, `provider-health`, `deriv-health`, `agent-ecosystem`, `self-trade-ai`, `eleanor-quality`, `eleanor-voice-settings`, `one-click-controls`, `operator-command-center`, `beta-control`/`beta-readiness`, `launch-readiness`, `audit-center`, `handshake-monitor`, `system-cohesion`, `timing-brain-snapshots`, `chart-brain-benchmark`, `learning-versions`, `security-status`, `settings`.
 
 **Routing note:** `App.tsx` defines **~200 `<Route>` entries** — materially more than the 169 page files, because many paths are **aliases** to the same component (e.g. `/scanner`→`/market-scanner` redirect; `/ai-trading`, `/ai-autopilot`, `/ai-decisions` → `LiveAiAssist`/`LiveAiAutoTest`; `/risk-governor`→`RiskSettings`; `/risk-profile`→`RiskCommandCenter`; `/audit-vault`,`/safety-logs`→`AuditLog`; `/positions/live`→`LiveTrades`; `/orders/demo`,`/positions/demo`,`/demo-trading`→`PaperTrading`). Alias inventory is a cleanup candidate (§11).
 
@@ -92,7 +92,7 @@ Mounted in `routes/index.ts`. Functional groupings:
 - **Scanner / signals / strategy:** `scanner.ts`, `signals.ts`, `strategies.ts`, `strategyLab.ts`, `opportunityRadar.ts`, `meScalp.ts`.
 - **Live execution + MT5 bridge:** `instantTrade.ts`, `mt5.ts`, `mt5Live.ts`, `mt5DemoBridge.ts`, `mt5RemoteOps.ts`, `bridgeV2.ts`, `meBridgeV2.ts`, `liveTrading.ts`, `liveIntent.ts`, `livePositions.ts`, `liveTestCycle.ts`, `tradesLiveShared.ts`, `meLive.ts`, `meLiveAccount.ts`, `meMasterBridge.ts`, `meMasterLiveAccess.ts`.
 - **Demo/paper:** `demoExecution.ts`, `meDemo*` (×6), `paperTrading.ts`, `paperExecution.ts`, `paperAutopilot.ts`, `paperIntelligence.ts`, `paperSessions.ts`.
-- **Ruby/assistant:** `meAssistant.ts`, `meRubyQuality.ts`, `adminRubyQuality.ts`, `adminRubyExecution.ts`, `adminRubyVoice.ts`, `meTTS.ts`, `meVoiceSettings.ts`.
+- **Eleanor/assistant:** `meAssistant.ts`, `meEleanorQuality.ts`, `adminEleanorQuality.ts`, `adminEleanorExecution.ts`, `adminEleanorVoice.ts`, `meTTS.ts`, `meVoiceSettings.ts`.
 - **Admin/operator:** `admin*` (×40+), incl. `adminLiveAccount`, `adminAllocations`, `adminMasterLiveAccess`, `adminMarketDataDiagnostics`, `adminProviderHealth`, `adminLiveGatesDiagnostic`, `adminReconciliationCenter`, `adminBridgeControl`, `adminEaHealth`/`adminEaUpdates`.
 - **Fund/capital/investor:** `meFundBook`/`adminFundBook`, `adminWaterfall`, `meCapital`/`adminCapital`, `meFundControls`/`adminFundControls`, `meInvestor`/`adminInvestors`, `meAllocation`/`adminAllocations`.
 - **Agent ecosystem / governance / AACI:** `agents.ts`, `agentEcosystem.ts`, `ecosystem.ts`, `aaci.ts`, `adminAaciLearning.ts`, `adminGovernance.ts`, `selfTradeAi.ts`/`adminSelfTradeAi.ts`, `riskGovernor.ts`/`riskGovernor2.ts`, `decisionIntelligence.ts`.
@@ -104,9 +104,9 @@ Mounted in `routes/index.ts`. Functional groupings:
 
 ### 2.5 DB schema (300 tables, 147 files)
 
-Key safety/trading tables observed live: `users`, `mt5_connection`, `global_trading_settings`, `arx_live_arming`, `arx_live_commands`, `arx_live_positions`, `virtual_trading_accounts`, `user_slot_allocation`, `join_requests`, `mt5_demo_commands`/`mt5_commands`, plus the fund-book/capital, agent-ecosystem, AACI, ruby-execution, audit-log, and chart-decision-memory families.
+Key safety/trading tables observed live: `users`, `mt5_connection`, `global_trading_settings`, `arx_live_arming`, `arx_live_commands`, `arx_live_positions`, `virtual_trading_accounts`, `user_slot_allocation`, `join_requests`, `mt5_demo_commands`/`mt5_commands`, plus the fund-book/capital, agent-ecosystem, AACI, eleanor-execution, audit-log, and chart-decision-memory families.
 
-### 2.6 MT5 / bridge, market-data/feed/candle, Ruby, trading functions
+### 2.6 MT5 / bridge, market-data/feed/candle, Eleanor, trading functions
 
 Covered in §5–§7 and §13 with concrete function names from the explorations.
 
@@ -121,7 +121,7 @@ Covered in §5–§7 and §13 with concrete function names from the explorations
 | **C. Open trades** | `arx_live_positions` ⋈ attribution, user-scoped | `/api/me/positions/all` reports `liveCount:1` for user 4; but DB shows **33 open rows** mostly `reconcile_state=IGNORED`/stale | **BROKEN_DATA_MAPPING / STALE_SOURCE** — phantom positions (C1) |
 | **D. Scanner** | UI → `/market-scanner/*` + `/chart/candles` → router → truth-capped rows | Confirmed end-to-end; `useScannerTruth`; truth cap in `computeFinalRead`; viewer masking in `feedTruthCopy.ts` | **WORKING_FULL_CHAIN** (gated on feed cleanliness) |
 | **E. Chart** | `/chart/candles` → `chartDataService` → `marketDataRouter` → feed-status badge | Confirmed; `buildChartFeed`; `/api/chart/candles` carries `feedStatus`; `/api/data/candles` deprecated bare array | **WORKING** (mt5_broker candle slot dormant → falls through) |
-| **F. Ruby** | read-only advisory + single governed exec path | `meAssistant.ts`; advisory carries `paper_only`; exec routes via `executeInstant`→16-gate; `AI_AUTO` rejected | **WORKING_FULL_CHAIN** |
+| **F. Eleanor** | read-only advisory + single governed exec path | `meAssistant.ts`; advisory carries `paper_only`; exec routes via `executeInstant`→16-gate; `AI_AUTO` rejected | **WORKING_FULL_CHAIN** |
 | **G. Live trade** | `executeInstant`→draft→confirm→dispatch→16-gate→bridge→fill | Pipeline confirmed; **real fills exist** (10 `LIVE_FILLED`); but 3 stuck `SENT_TO_MT5_LIVE`; fresh test BLOCKED | **WORKING but operationally BLOCKED** (C2/C3) |
 | **H. Admin/user permission** | effective-role gate at endpoint + UI containment | `normalizeProductRole` effective-role; admin endpoints 401 anon; preview-as-user downgraded | **WORKING** (mixed-case role data = latent risk C6) |
 | **I. Realtime** | SSE/polling; pause on hidden tab | Balance SSE; polling loops; RQ pauses hidden tabs; raw loops guard `visibilitychange` | **WORKING** |
@@ -142,7 +142,7 @@ Classified using the Task #441 taxonomy. Representative findings (full per-contr
 | Stuck live commands | **BROKEN_REALTIME_UPDATE** | 3 rows frozen at `SENT_TO_MT5_LIVE` (no terminal result) |
 | mt5_broker candle feed | **BROKEN_FEED_WIRING (producer-side)** | Server ingest ready (`mergeCandleFromMT5`); EA v1.50 does not emit TICK/CANDLE → slot returns `MT5_BROKER_FEED_NOT_ACTIVE` |
 | Pending-order drafts | **PARTIAL_BACKEND_ONLY / DORMANT** | `ScannerTradeModal.submitPendingDraft` saves to `/me/pending-order-draft`; EA does not execute pending orders |
-| Ruby `AI_AUTO` authority | **DORMANT_OR_UNUSED (by design)** | `adminRubyExecution` rejects `AI_AUTO`; `executeInstant` → `RUBY_AI_AUTO_NOT_ENABLED` |
+| Eleanor `AI_AUTO` authority | **DORMANT_OR_UNUSED (by design)** | `adminEleanorExecution` rejects `AI_AUTO`; `executeInstant` → `ELEANOR_AI_AUTO_NOT_ENABLED` |
 | Deprecated `/api/data/candles` | **STALE_OR_DUPLICATE_SOURCE (intentional)** | marked deprecated; legacy QA only; UI uses `/chart/candles` |
 | Simulator/mock provider | **DORMANT_OR_UNUSED (safe)** | `mockProvider.ts` excluded from real asset chains — no DANGEROUS_FAKE_SUCCESS path found |
 | Viewer masking of SIMULATOR rows | **WORKING (honesty guard)** | `feedTruthCopy.maskSimulatedOpportunity` zeroes numbers + "Waiting for verified feed." for non-admins |
@@ -155,7 +155,7 @@ Classified using the Task #441 taxonomy. Representative findings (full per-contr
 
 **Sub-grade: 90 / A−** (decision-ready *when feed is clean*).
 
-- **Endpoints actually called** (`market-scanner.tsx` + components): `GET /api/market-scanner/status` (5s poll), `/opportunities` (5s poll), `/universes` (mount), `POST /scan` (admin/owner on-demand), `GET /api/chart/candles` (`ScannerChartPanel`), `GET /api/chart/feed-status` (`useScannerTruth`), `POST /api/me/assistant/read-chart` (`RubyChartRead`), `POST /api/me/demo-commands` (`ScannerTradeModal`, demo path).
+- **Endpoints actually called** (`market-scanner.tsx` + components): `GET /api/market-scanner/status` (5s poll), `/opportunities` (5s poll), `/universes` (mount), `POST /scan` (admin/owner on-demand), `GET /api/chart/candles` (`ScannerChartPanel`), `GET /api/chart/feed-status` (`useScannerTruth`), `POST /api/me/assistant/read-chart` (`EleanorChartRead`), `POST /api/me/demo-commands` (`ScannerTradeModal`, demo path).
 - **Truth source:** chart data resolves `chartDataService.buildChartFeed` → `marketDataRouter` (real providers, else honest empty `quality:"unavailable"`). Each scanner row carries `dataSource` ∈ {`LIVE_FEED`, `AWAITING_FEED`, `SIMULATOR`}.
 - **Truth cap (`marketScanner.computeFinalRead`, Step 5):** if `dataSource !== "LIVE_FEED"`, confidence is floored and actionable labels (`TRADE_WATCH`) downgrade to `WAIT_FOR_CONFIRMATION`.
 - **Viewer projection:** non-admin `SIMULATOR` rows are zeroed and relabeled "Waiting for verified feed." (`feedTruthCopy.maskSimulatedOpportunity`).
@@ -216,7 +216,7 @@ Classified using the Task #441 taxonomy. Representative findings (full per-contr
 | 4 | Chart | `chartDataService`→router, feedStatus | honest feed badge | confirmed; mt5_broker slot dormant | **PASS (gated)** | Medium | FX-4 (producer-side): activate mt5_broker candle feed when a future EA streams TICK/CANDLE |
 | 5 | Candle history | `candleHistoryService` | honest depth markers | markers present; deep depth unbacked | **PASS (claims gated)** | Medium (C7) | FX-7: keep deep-history claims gated until producer streaming + provider depth are real |
 | 6 | Feed | `marketDataRouter` chain | honest fallthrough | confirmed `MT5_BROKER_FEED_NOT_ACTIVE` | **PASS** | Medium (C4) | FX-4: same producer-side EA streaming gap |
-| 7 | Ruby | `executeInstant` + `paper_only` | single exec path, advisory read-only | confirmed | **PASS** | — | None |
+| 7 | Eleanor | `executeInstant` + `paper_only` | single exec path, advisory read-only | confirmed | **PASS** | — | None |
 | 8 | Live trade | 16-gate pipeline | real fill = brokerTicket | 10 real fills; 3 stuck SENT | **PARTIAL** | High (C3) | FX-3: settle/resolve the 3 stuck `SENT_TO_MT5_LIVE` rows via command-status poll; never fabricate a terminal result |
 | 9 | Admin/user permission | effective `normalizeProductRole` | anon 401, effective-role gate | confirmed; mixed-case data | **PASS (latent risk)** | Medium (C6) | FX-6: normalize `users.role` casing OR audit every guard for case-insensitive compare |
 | 10 | Wiring | full-chain proof | core chains proven | core proven; phantoms/stuck/feed gaps | **PARTIAL** | High | FX-1/FX-3/FX-4 collectively close the proven wiring breaks |
@@ -238,7 +238,7 @@ Recorded as `[ID] feature — result — note`. PASS = full-chain proven; BLOCKE
 - **G. Candle history (special)** — see §6 — **PASS (claims gated)**; per-symbol×tf live coverage table **BLOCKED** (auth + streaming EA).
 - **H. Feed (special)** — see §7 — **PASS**; mt5_broker candle producer **BLOCKED** (future EA).
 - **I. Chart** — [I1] `/chart/candles` feedStatus badge **PASS**; [I2] deep-history scrollback **PARTIAL** (depth unbacked).
-- **J. Ruby AI** — [J1] advisory `paper_only` envelope **PASS**; [J2] single governed exec path **PASS**; [J3] honesty/feed-not-confirmed gates **PASS**; [J4] `AI_AUTO` rejected **PASS (dormant by design)**.
+- **J. Eleanor AI** — [J1] advisory `paper_only` envelope **PASS**; [J2] single governed exec path **PASS**; [J3] honesty/feed-not-confirmed gates **PASS**; [J4] `AI_AUTO` rejected **PASS (dormant by design)**.
 - **K. Live trading** — see §13 — [K1] EURUSD live fill path **PASS (historical real fills)**; [K2] fresh micro-lot test **BLOCKED** (unfunded pool + $0 margin); [K3] synthetic-symbol live **BLOCKED/FAIL-historical** (symbol not in Market Watch); [K4] stuck SENT_TO_MT5_LIVE settlement **FAIL** (C3).
 - **L. Risk/governance** — [L1] kill switch off, re-checked at dispatch (gate 5) **PASS**; [L2] allocation freeze/over-alloc gates **PASS** (code); agent governance advisory-only/shadow **PASS** (memory).
 - **M. Admin controls** — [M1] operator bridge controls reason-gated + audited **PASS** (code); [M2] effective-role gate **PASS**.
@@ -259,7 +259,7 @@ Recorded as `[ID] feature — result — note`. PASS = full-chain proven; BLOCKE
 - **Pending-order drafts:** backend persists drafts; **EA does not execute pending orders** → feature presents as functional but is a no-op end-to-end (C9).
 - **Deprecated `/api/data/candles`:** intentional legacy bare-array endpoint; keep documented as deprecated, ensure no UI consumes it.
 - **`mockProvider.ts`:** intentionally disconnected from real chains (safe dormant).
-- **Ruby `AI_AUTO` + auto-listen voice:** dormant by design (do not "fix" — these are deliberate).
+- **Eleanor `AI_AUTO` + auto-listen voice:** dormant by design (do not "fix" — these are deliberate).
 - **Multiple overlapping "readiness/health/validation" routers** (`readiness`, `tradingReadiness`, `userReadiness`, `meFirstRunReadiness`, `mePaperBetaReadiness`, `systemHealth`, `systemFullHealth`, `adminRuntimeHealth`, `appDoctor`, several `*Validation*`): likely overlapping responsibilities — **audit for consolidation** (Medium).
 
 ---
@@ -328,7 +328,7 @@ Measured through the proxy (`localhost:80`) and from server logs (`responseTime`
 | Scanner | 90 | A− | Decision-readiness gated on feed | Activate mt5_broker candle feed (needs EA) |
 | Candle History | 82 | B− | Deep depth unbacked | Operator backfill + streaming EA; keep claims gated |
 | Feed System | 87 | B+ | mt5_broker candle producer dormant | Future EA TICK/CANDLE streaming |
-| Ruby Assistant | 90 | A− | None material | Surface dormant permissions only if/when product-ready |
+| Eleanor Assistant | 90 | A− | None material | Surface dormant permissions only if/when product-ready |
 | Auth/Permissions | 88 | B+ | Mixed-case role data | Normalize `users.role` casing (data hygiene) |
 | Performance | 88 | B+ | timing-brain/trade-health outliers | Aggregate/cache those two endpoints |
 | Floating Errors | 95 | A | Single-snapshot only | Exhaustive live-session sweep |
@@ -359,7 +359,7 @@ Measured through the proxy (`localhost:80`) and from server logs (`responseTime`
 **(4) Dashboard / open-trades / P&L truth**
 - (Covered by FX-1.) Plus **FX-7 — open-position count parity** between `/me/positions/all` (shows 1) and raw table (33). Severity: **High**. Repair: ensure count derives from the reconciled truth join, not raw rows.
 
-**(5) Ruby grounding/wiring** — no critical issues; **FX-8 (Low):** review dormant Ruby permission UI exposure only if product-ready.
+**(5) Eleanor grounding/wiring** — no critical issues; **FX-8 (Low):** review dormant Eleanor permission UI exposure only if product-ready.
 
 **(6) Admin/user permission wiring**
 - **FX-9 — Normalize `users.role` casing.** Files: `users` table, role resolvers. Root cause: `USER`/`user` mixed-case. Severity: **Medium**. Repair: data-hygiene normalization + assert all guards use `normalizeProductRole` (no case-sensitive compares).

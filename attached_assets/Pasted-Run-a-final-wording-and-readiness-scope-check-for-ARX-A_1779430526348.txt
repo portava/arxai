@@ -16,7 +16,7 @@ Remove “live money,” “real money,” and “LIVE MODE — REAL MONEY” fr
 - top banners
 - status chips
 - scanner
-- AI/Ruby page
+- AI/Eleanor page
 - Risk Command Center
 - Trade page
 - Open Trades page

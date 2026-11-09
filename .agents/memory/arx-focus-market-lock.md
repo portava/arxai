@@ -59,6 +59,6 @@ fixture contract (Part 1) stays deterministic.
 **Out-of-scope surfaces that still mention unapproved symbols** (NAS100, AAPL,
 TSLA, GER40, UK100, JP225): paper-trading ticket, backtest form, admin/diagnostic
 inputs, indices-center, design-tokens, stopLossAssessment. Phase 1 intentionally
-did NOT touch these — they are not the live scanner/chart/Ruby/trade-ticket
+did NOT touch these — they are not the live scanner/chart/Eleanor/trade-ticket
 surfaces. The public login marquee (`LoginShowcase.tsx`) was corrected to show
 only approved symbols since it is the brand splash.

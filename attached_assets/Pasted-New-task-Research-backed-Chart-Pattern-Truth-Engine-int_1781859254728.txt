@@ -1,7 +1,7 @@
 New task: Research-backed Chart Pattern Truth Engine integrated into Scanner Truth.
 
 Goal:
-Teach Ruby and Scanner to detect chart patterns in a measurable, testable way, and make pattern intelligence part of Scanner Truth without letting patterns bypass feed truth, trade health, or live execution gates.
+Teach Eleanor and Scanner to detect chart patterns in a measurable, testable way, and make pattern intelligence part of Scanner Truth without letting patterns bypass feed truth, trade health, or live execution gates.
 
 Research foundation:
 Use a research-backed approach:
@@ -169,7 +169,7 @@ pattern_truth_verdict:
 - chaseRisk
 - confidenceCapReason
 - scannerTruthImpact
-- rubyExplanation
+- eleanorExplanation
 - warnings[]
 
 detected_pattern:
@@ -307,8 +307,8 @@ Scanner Truth rules:
    - pattern must be confirmed before Scalp Builder can call it strong
    - otherwise label conditional
 
-Phase 5 — Ruby behavior:
-Ruby should explain patterns in plain language:
+Phase 5 — Eleanor behavior:
+Eleanor should explain patterns in plain language:
 - what pattern she sees
 - whether it is forming or confirmed
 - what confirms it
@@ -318,7 +318,7 @@ Ruby should explain patterns in plain language:
 - how it fits HTF bias and support/resistance
 - whether it supports scalp, intraday, or swing
 
-Ruby should say:
+Eleanor should say:
 “Pattern detected, but not confirmed yet.”
 “Pattern confirmed, but feed is not live-confirmed.”
 “Pattern is late/exhausted — avoid chase.”
@@ -372,7 +372,7 @@ Learning outputs:
 - best sessions for pattern
 - worst markets for pattern
 - pattern reliability score
-- Ruby confidence adjustment by market/timeframe
+- Eleanor confidence adjustment by market/timeframe
 
 Phase 8 — Tests:
 Add deterministic fixtures.
@@ -391,7 +391,7 @@ Tests:
 11. PatternTruthVerdict feeds Scanner Truth.
 12. Scanner Truth cannot be upgraded to ready-now by pattern alone.
 13. Scalp Builder downgrades forming pattern to conditional.
-14. Ruby explains confirmation and invalidation levels.
+14. Eleanor explains confirmation and invalidation levels.
 15. Auto bot cannot execute from pattern detection alone.
 16. Pattern outcome logging updates reliability stats.
 17. Pattern detector fails closed when candles are insufficient.

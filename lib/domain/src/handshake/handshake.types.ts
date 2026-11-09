@@ -27,8 +27,8 @@ export const HANDSHAKE_LAYER_KEYS = [
   "ADMIN_CONTROL",
   "KILL_SWITCH",
   // ── Readiness layers wrapping existing read-only services ──
-  // The Ruby explanation engine's data dependency (assistant market provider).
-  "RUBY_EXPLANATION",
+  // The Eleanor explanation engine's data dependency (assistant market provider).
+  "ELEANOR_EXPLANATION",
   // Smart-chart overlay / market-impact-radar drawing data source.
   "CHART_OVERLAY",
   // Pre-trade economics (spread / slippage / margin / ATR) preview readiness.
@@ -108,7 +108,7 @@ export interface HandshakePermissions {
 
 // The cross-layer flows that perform a handshake. The first group is wired with
 // real read-only adapters; the scaffold group is reserved for downstream phases
-// (Ruby Market Edge) and runs no fabricated logic until implemented.
+// (Eleanor Market Edge) and runs no fabricated logic until implemented.
 export const HANDSHAKE_TYPES = [
   // ── Infrastructure / layer-readiness handshakes ──
   "MARKET_DATA",
@@ -125,7 +125,7 @@ export const HANDSHAKE_TYPES = [
   // ── Named end-to-end readiness handshakes (the 9 surfaces) ──
   "SMART_CHART_OVERLAY",
   "TRADE_PREVIEW",
-  "RUBY_EXECUTION",
+  "ELEANOR_EXECUTION",
 ] as const;
 export type HandshakeType = (typeof HANDSHAKE_TYPES)[number];
 
@@ -138,12 +138,12 @@ export const NAMED_HANDSHAKE_SURFACES: Readonly<Record<string, HandshakeType>> =
   "Scanner Signal": "SIGNAL_INTELLIGENCE",
   "Smart Chart Overlay": "SMART_CHART_OVERLAY",
   "Trade Preview": "TRADE_PREVIEW",
-  "Ruby Execution": "RUBY_EXECUTION",
+  "Eleanor Execution": "ELEANOR_EXECUTION",
   "Live Trade Health": "TRADE_HEALTH",
   "Investor Value": "INVESTOR_VALUE",
   "Weekly Report": "WEEKLY_REPORT",
   "Admin Fund Control": "ADMIN_FUND_CONTROL",
-  "Ruby Explanation": "SCANNER_EXPLANATION",
+  "Eleanor Explanation": "SCANNER_EXPLANATION",
 } as const;
 
 // Handshake types that inform an EXECUTION-CRITICAL action. Their advisory
@@ -151,7 +151,7 @@ export const NAMED_HANDSHAKE_SURFACES: Readonly<Record<string, HandshakeType>> =
 // the real 16-gate live pipeline. These are NEVER a 17th gate.
 export const EXECUTION_CRITICAL_HANDSHAKE_TYPES: readonly HandshakeType[] = [
   "TRADE_PREVIEW",
-  "RUBY_EXECUTION",
+  "ELEANOR_EXECUTION",
 ] as const;
 
 // The handshake types that read per-investor data and therefore REQUIRE an
@@ -169,7 +169,7 @@ export const INVESTOR_SCOPED_HANDSHAKE_TYPES: readonly HandshakeType[] = [
 export interface HandshakeContext {
   // The investor (user) whose data an investor-scoped handshake may read.
   investorUserId?: number | null;
-  // The user whose per-user execution surface (trade preview / Ruby execution /
+  // The user whose per-user execution surface (trade preview / Eleanor execution /
   // risk preview / ticket prefill) is being evaluated. Without it, those
   // per-user layers report SKIPPED rather than fabricate or leak — the system
   // (admin) monitor view never supplies one.

@@ -142,7 +142,7 @@ describe("ScalpSignalCard — an expired read states nothing as current", () => 
 
 describe("buildReasoningFromScalp — expired input", () => {
   it("states no current decision and labels the why as at-read", async () => {
-    const { buildReasoningFromScalp } = await import("@/lib/rubyReasoningBlock");
+    const { buildReasoningFromScalp } = await import("@/lib/eleanorReasoningBlock");
     const data = buildReasoningFromScalp({ result: makeResult(), expired: true });
     expect(data.decision).not.toMatch(/BUY scalp setup/);
     expect(data.decision).toMatch(/expired/i);

@@ -1,14 +1,14 @@
 // Frontend wrapper for the global Instant Trade Router.
 //
 // Every trade-capable surface (trade page, scanner, chart, watchlist,
-// position card, dashboard, alert click-through, Ruby AI panel) calls
+// position card, dashboard, alert click-through, Eleanor AI panel) calls
 // `executeInstantTrade()` with a properly-tagged `source` so the
-// backend can audit-attribute the click and Ruby commands flow through
+// backend can audit-attribute the click and Eleanor commands flow through
 // the same gated path as one-click button presses.
 export type InstantTradeSource =
   | "trade_panel" | "scanner" | "chart" | "chart_drag" | "watchlist"
   | "position_card" | "dashboard" | "alert"
-  | "ruby_text" | "ruby_voice";
+  | "eleanor_text" | "eleanor_voice";
 
 export type InstantTradeAction = "BUY" | "SELL" | "CLOSE" | "CLOSE_ALL" | "MODIFY_SL_TP";
 
@@ -69,7 +69,7 @@ export async function validateInstantTrade(intent: InstantTradeIntent): Promise<
   return post("/api/trades/instant/validate", intent);
 }
 
-export type RubyCommandResponse = {
+export type EleanorCommandResponse = {
   ok: boolean;
   classification?: string;
   message?: string;
@@ -85,32 +85,32 @@ export type RubyCommandResponse = {
   retryAfterSeconds?: number;
 };
 
-// Ruby's gated command path (2026-11-04: now called by the chat panel for
+// Eleanor's gated command path (2026-11-04: now called by the chat panel for
 // direct commands). The server parses, checks AI-Assisted authority and
 // per-action permissions, asks for confirmation (confirm:true on the resend)
 // and runs the full instant-trade gate chain. Nothing here bypasses a gate.
-export async function sendRubyTradeCommand(args: {
+export async function sendEleanorTradeCommand(args: {
   text: string;
-  source?: "ruby_text" | "ruby_voice";
+  source?: "eleanor_text" | "eleanor_voice";
   accountMode?: "live" | "demo";
   confirm?: boolean;
-}): Promise<RubyCommandResponse> {
+}): Promise<EleanorCommandResponse> {
   const r = await fetch("/api/me/assistant/instant-trade-command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
       text: args.text,
-      source: args.source ?? "ruby_text",
+      source: args.source ?? "eleanor_text",
       accountMode: args.accountMode ?? "live",
       ...(args.confirm === true ? { confirm: true } : {}),
     }),
   });
-  try { return (await r.json()) as RubyCommandResponse; }
+  try { return (await r.json()) as EleanorCommandResponse; }
   catch { return { ok: false, error: `HTTP_${r.status}` }; }
 }
 
-export type RubyWatchView = {
+export type EleanorWatchView = {
   id: number;
   kind: string;
   status: string;
@@ -129,16 +129,16 @@ export type RubyWatchView = {
     keepCount: number;
     awaitingAnswer: boolean;
     lastAlert: { at: string; price: number | null; reversalRiskScore: number | null; health: string; reason: string } | null;
-    /** Per-monitor: the trader let Ruby shift SL/TP on a fakeout (bounded, audited). */
+    /** Per-monitor: the trader let Eleanor shift SL/TP on a fakeout (bounded, audited). */
     fakeoutAuthority?: boolean;
-    /** Count of fakeout shifts Ruby has sent for this monitor. */
+    /** Count of fakeout shifts Eleanor has sent for this monitor. */
     fakeoutAdjustments?: number;
     lastFakeoutAdjustment?: { at: string; toStopLoss: number | null; toTakeProfit: number | null; reason: string; ok: boolean; blocked: string | null } | null;
   } | null;
 };
 
-/** Grant or withdraw Ruby's authority to shift this monitor's SL/TP on a fakeout. Server audits both ways. */
-export async function setRubyWatchFakeoutAuthority(watchId: number, enabled: boolean): Promise<{ ok: boolean; message?: string; error?: string }> {
+/** Grant or withdraw Eleanor's authority to shift this monitor's SL/TP on a fakeout. Server audits both ways. */
+export async function setEleanorWatchFakeoutAuthority(watchId: number, enabled: boolean): Promise<{ ok: boolean; message?: string; error?: string }> {
   const r = await fetch(`/api/me/assistant/watches/${encodeURIComponent(String(watchId))}/fakeout-authority`, {
     method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
     body: JSON.stringify({ enabled }),
@@ -147,13 +147,13 @@ export async function setRubyWatchFakeoutAuthority(watchId: number, enabled: boo
   catch { return { ok: false, error: `HTTP_${r.status}` }; }
 }
 
-export async function fetchRubyWatches(): Promise<{ ok: boolean; watches: RubyWatchView[]; sweeper?: { enabled: boolean; running: boolean; intervalMs: number } }> {
+export async function fetchEleanorWatches(): Promise<{ ok: boolean; watches: EleanorWatchView[]; sweeper?: { enabled: boolean; running: boolean; intervalMs: number } }> {
   const r = await fetch("/api/me/assistant/watches", { credentials: "include" });
-  try { return (await r.json()) as { ok: boolean; watches: RubyWatchView[] }; }
+  try { return (await r.json()) as { ok: boolean; watches: EleanorWatchView[] }; }
   catch { return { ok: false, watches: [] }; }
 }
 
-export async function ackRubyWatch(watchId: number, decision: "keep" | "close"): Promise<{ ok: boolean; message?: string; error?: string }> {
+export async function ackEleanorWatch(watchId: number, decision: "keep" | "close"): Promise<{ ok: boolean; message?: string; error?: string }> {
   const r = await fetch(`/api/me/assistant/watches/${watchId}/ack`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },

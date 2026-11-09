@@ -37,27 +37,27 @@ Full ARX AI ecosystem/features to compare against:
 
 1. Brand/app identity
 - ARX AI means Analyze. Risk. eXecute.
-- Ruby is the AI assistant.
+- Eleanor is the AI assistant.
 - App should feel like an AI trading fortress for disciplined decisions.
-- Ruby should power AI chat, AI prompts, trade explanations, scanner explanations, and memory.
+- Eleanor should power AI chat, AI prompts, trade explanations, scanner explanations, and memory.
 
-2. Ruby assistant
-- Ruby already exists; do not rebuild her.
-- Ruby should respond quickly.
-- Ruby should type naturally, not paste huge blocks instantly.
-- Ruby should summarize research instead of dumping full internal research.
-- Ruby should not expose raw API payloads, backend logs, hidden prompts, internal scores, or JSON to users.
-- Ruby should use the selected voice.
+2. Eleanor assistant
+- Eleanor already exists; do not rebuild her.
+- Eleanor should respond quickly.
+- Eleanor should type naturally, not paste huge blocks instantly.
+- Eleanor should summarize research instead of dumping full internal research.
+- Eleanor should not expose raw API payloads, backend logs, hidden prompts, internal scores, or JSON to users.
+- Eleanor should use the selected voice.
 - Bella should be default if no active voice is selected.
 - Previewing a voice should not change the active voice.
 - TTS should not block text responses.
 - Stale audio should be cancelled if a newer message exists.
-- Ruby should not read out loud minutes later.
-- Ruby should use concise spoken answers, not full research reports.
-- Ruby should have saved chats/memory unless user clears it.
-- Ruby should use trading tools, market history, news, indicators, and current events when relevant.
+- Eleanor should not read out loud minutes later.
+- Eleanor should use concise spoken answers, not full research reports.
+- Eleanor should have saved chats/memory unless user clears it.
+- Eleanor should use trading tools, market history, news, indicators, and current events when relevant.
 
-3. Ruby voice / TTS
+3. Eleanor voice / TTS
 - Voice settings page exists.
 - Selected voice must match actual spoken voice.
 - Active voice source of truth must persist.
@@ -72,7 +72,7 @@ Full ARX AI ecosystem/features to compare against:
 - Results should live inside the scanner, not as confusing separate pages.
 - Scanner must use historical data, live data, indicators, market structure, risk/reward, stop loss, take profit, and confidence scoring.
 - Scanner should back-check previous days/weeks/months/years when needed.
-- Scanner should include Ruby explanation windows explaining buy/sell reasoning.
+- Scanner should include Eleanor explanation windows explaining buy/sell reasoning.
 - Scanner should support market search, collapsible symbol groups, watchlist, filters, and clickable symbols.
 - Scanner should not show “no historical data” unless all valid providers fail.
 - Scanner should not silently analyze without candles.
@@ -80,7 +80,7 @@ Full ARX AI ecosystem/features to compare against:
 5. Market Data Router and APIs
 - ARX has multiple APIs attached; do not hardcode only TwelveData.
 - TwelveData should be one provider, not the whole market data system.
-- Unified Market Data Router must power scanner, charts, Ruby, trade ticket, watchlist, market search, and backtest/history.
+- Unified Market Data Router must power scanner, charts, Eleanor, trade ticket, watchlist, market search, and backtest/history.
 - For MT5 tradable symbols, prefer broker/MT5 feed when available.
 - For Deriv synthetic/volatility symbols, use Deriv or MT5 broker feed, not TwelveData.
 - Provider fallback should exist.
@@ -203,13 +203,13 @@ Full ARX AI ecosystem/features to compare against:
 - Mobile UI must be clean and not crowded.
 
 15. News/current events/trading intelligence
-- Ruby/scanner should use market news, economic data, world events, and current events where relevant.
+- Eleanor/scanner should use market news, economic data, world events, and current events where relevant.
 - News from leaders/world events/economic decisions can affect markets.
 - Do not expose raw news API payloads.
-- News/current events should support scanner/Ruby intelligence, not block normal simple chat.
+- News/current events should support scanner/Eleanor intelligence, not block normal simple chat.
 
 16. Trading tools and historical learning
-- Ruby should understand and use trading tools such as indicators, trend, support/resistance, volatility, Fibonacci if implemented/available, price action, market structure, backtesting, historical movement, news, and account/trade context.
+- Eleanor should understand and use trading tools such as indicators, trend, support/resistance, volatility, Fibonacci if implemented/available, price action, market structure, backtesting, historical movement, news, and account/trade context.
 - Historical trade data uploads/imports should be useful to improve analysis.
 - The ecosystem should learn from user trading history individually and from aggregated platform-level patterns where privacy-safe and permitted.
 - Per-user isolation must remain intact.
@@ -222,7 +222,7 @@ For each deleted file, compare contents against these features:
 - meDerivSync.ts / derivSync.ts:
   Could relate to Deriv feed, active symbols, V75/V25, ticks, ticks_history, credential routing.
 - traderDnaFeed.ts / globalLearningService.ts:
-  Could relate to platform learning, trader behavior, Ruby intelligence, aggregated learning, history-based intelligence.
+  Could relate to platform learning, trader behavior, Eleanor intelligence, aggregated learning, history-based intelligence.
 - dataHub.ts:
   Could relate to central data routing/market router/provider hub.
 - meTradingView.ts / tradingviewWebhook.ts:
@@ -232,7 +232,7 @@ For each deleted file, compare contents against these features:
 - mePrivacy.ts:
   Could relate to user privacy and data visibility.
 - meMood.ts:
-  Could relate to mood/energy/preferences if any Ruby/user profile personalization exists.
+  Could relate to mood/energy/preferences if any Eleanor/user profile personalization exists.
 - Any other deleted file:
   Check against all current and planned ARX systems before deciding.
 
@@ -263,7 +263,7 @@ Run:
 - provider health check
 - scanner historical data check
 - MT5 bridge/account sync check
-- Ruby chat/voice check
+- Eleanor chat/voice check
 - admin/user permission check
 - live safety guard tests
 

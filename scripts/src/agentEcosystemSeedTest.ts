@@ -94,14 +94,14 @@ async function main() {
   }
   check("mapped council agents start ACTIVE", mappedOk);
 
-  // Ruby is the household lead and ACTIVE.
-  const ruby = byKey.get("RUBY");
-  check("Ruby seeded as ACTIVE lead", !!ruby && ruby.currentStatus === "ACTIVE" && ruby.department === "RUBY_HOUSEHOLD");
+  // Eleanor is the household lead and ACTIVE.
+  const eleanor = byKey.get("ELEANOR");
+  check("Eleanor seeded as ACTIVE lead", !!eleanor && eleanor.currentStatus === "ACTIVE" && eleanor.department === "ELEANOR_HOUSEHOLD");
 
-  // Parent links resolved (every non-Ruby core agent parents to Ruby).
-  const rubyId = ruby?.id;
-  const parented = coreRows.filter((r) => r.agentKey !== "RUBY").every((r) => r.parentAgentId === rubyId);
-  check("non-Ruby core agents parent to Ruby", parented);
+  // Parent links resolved (every non-Eleanor core agent parents to Eleanor).
+  const eleanorId = eleanor?.id;
+  const parented = coreRows.filter((r) => r.agentKey !== "ELEANOR").every((r) => r.parentAgentId === eleanorId);
+  check("non-Eleanor core agents parent to Eleanor", parented);
 
   if (failures > 0) { console.error(`\n${failures} check(s) failed`); process.exit(1); }
   console.log("\nAll agent-ecosystem seed checks passed.");

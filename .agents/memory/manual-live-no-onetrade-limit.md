@@ -3,7 +3,7 @@ name: Manual live path has no one-trade limiter
 description: The automated Live Test Cycle (single-shot verification) vs uncapped owner/admin manual live testing — do not conflate.
 ---
 There is NO global "max ONE live trade" limiter on the owner/admin MANUAL live path
-(scanner modal, chart, Trade page, Ruby — all funnel through createLiveDraft →
+(scanner modal, chart, Trade page, Eleanor — all funnel through createLiveDraft →
 confirmLiveCommand → dispatchLiveCommand).
 
 The "Live Test Cycle" is a one-time AUTOMATED OPEN+CLOSE *verification* with

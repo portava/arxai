@@ -20,7 +20,7 @@ export const AACI_FRESHNESS_THRESHOLDS_MS = {
   marketFeed: 1_000,
   candle: 3_000,
   scanner: 3_000,
-  ruby: 30_000,
+  eleanor: 30_000,
   heat: 60_000,
   news: 15 * 60_000,
   // Shared MT5 heartbeat policy fresh bound (owner decision 17). Staleness for
@@ -37,7 +37,7 @@ const AACI_FRESHNESS_WEIGHTS: Record<AaciFreshnessSource, number> = {
   marketFeed: 0.16,
   candle: 0.12,
   scanner: 0.12,
-  ruby: 0.08,
+  eleanor: 0.08,
   heat: 0.08,
   news: 0.06,
   bridgeHeartbeat: 0.14,
@@ -99,7 +99,7 @@ export function computeFreshness(
     marketFeed: ageFromIso(nowMs, snapshot.smartChart?.lastTickTime),
     candle: ageFromIso(nowMs, snapshot.smartChart?.lastCandleTime),
     scanner: ageFromIso(nowMs, snapshot.scanner?.lastUpdated),
-    ruby: ageFromIso(nowMs, snapshot.ruby?.lastUpdated),
+    eleanor: ageFromIso(nowMs, snapshot.eleanor?.lastUpdated),
     heat: ageFromIso(nowMs, snapshot.heat?.lastUpdated),
     news: ageFromIso(nowMs, snapshot.news?.lastUpdated),
     // Raw (unclamped) age: a negative / future-dated heartbeat is "unknown"

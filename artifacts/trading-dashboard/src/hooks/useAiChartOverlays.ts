@@ -9,16 +9,16 @@ import {
 
 // useAiChartOverlays — ARX Native Chart Level 5 AI-overlay FOUNDATION.
 //
-// Maps REAL Ruby + scanner outputs into the EXISTING Level 4 ChartOverlay
+// Maps REAL Eleanor + scanner outputs into the EXISTING Level 4 ChartOverlay
 // contract so ARXNativeChart renders them with no renderer change. It does THREE
 // things and nothing else:
 //   1. Polls the existing market-scanner endpoint on its OWN throttled interval
 //      (paused on a hidden tab, independent of the candle stream) and maps a
 //      matching, ACTIONABLE opportunity into `source:"signal"` overlays
 //      (entry / SL / TP lines + a BUY/SELL marker).
-//   2. Exposes an on-demand `requestRubyRead()` that calls the read-only Ruby
+//   2. Exposes an on-demand `requestEleanorRead()` that calls the read-only Eleanor
 //      assistant (`POST /api/me/assistant/read-chart`) and maps its support /
-//      resistance zones into `source:"ruby"` zone overlays.
+//      resistance zones into `source:"eleanor"` zone overlays.
 //   3. SUPPRESSES every AI overlay when the chart feed is not AI-confirmed
 //      (Level 3 `aiUsable=false`) — overlays go empty and a reason is surfaced.
 //
@@ -30,9 +30,9 @@ import {
 //     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata, and the
 //     entry label names any non-live source in plain English.
 //   - Any fetch failure renders NOTHING (no fake lines), and never throws into
-//     the chart — chart rendering and the Ruby/scanner pages keep working.
+//     the chart — chart rendering and the Eleanor/scanner pages keep working.
 //   - This hook never re-runs per candle: scanner polling is on a fixed
-//     interval and the Ruby read is strictly user-initiated.
+//     interval and the Eleanor read is strictly user-initiated.
 //   - Only user-safe scanner fields are read (bias / confidence / status badge /
 //     entry / SL / TP / final-read label) — no admin-only agent internals.
 
@@ -146,9 +146,9 @@ export function isDrawableScannerRow(
   return (o.finalRead?.label ?? "") === "TRADE_WATCH";
 }
 
-export type RubyReadStatus = "idle" | "loading" | "ok" | "insufficient" | "error";
+export type EleanorReadStatus = "idle" | "loading" | "ok" | "insufficient" | "error";
 
-export interface RubyReadSummary {
+export interface EleanorReadSummary {
   bias: string;
   confidence: string;
   supportZone: string;
@@ -307,15 +307,15 @@ export function buildSignalOverlays(
   ];
 }
 
-// Map Ruby's textual confidence to a 0..1 opacity hint (display only).
-function rubyConfidence(conf: string): number {
+// Map Eleanor's textual confidence to a 0..1 opacity hint (display only).
+function eleanorConfidence(conf: string): number {
   const c = (conf || "").toLowerCase();
   if (c === "high") return 0.9;
   if (c === "medium") return 0.6;
   return 0.3;
 }
 
-// Extract the finite numbers from a Ruby zone string ("1.16500 – 1.17200",
+// Extract the finite numbers from a Eleanor zone string ("1.16500 – 1.17200",
 // "1.16500", or "Not enough data" → []). Returns [] when none parse.
 function parseZoneNumbers(zone: string | null | undefined): number[] {
   if (!zone) return [];
@@ -326,8 +326,8 @@ function parseZoneNumbers(zone: string | null | undefined): number[] {
     .filter((n) => Number.isFinite(n) && n > 0);
 }
 
-/** Build a single `source:"ruby"` overlay (zone when 2 numbers, line when 1). */
-function buildRubyZoneOverlay(
+/** Build a single `source:"eleanor"` overlay (zone when 2 numbers, line when 1). */
+function buildEleanorZoneOverlay(
   id: string,
   zone: string,
   label: string,
@@ -346,11 +346,11 @@ function buildRubyZoneOverlay(
       priceMax: Math.max(...nums),
       label,
       severity,
-      source: "ruby",
+      source: "eleanor",
       confidence,
       color,
       style: "dashed",
-      metadata: { source: "ruby", raw: zone },
+      metadata: { source: "eleanor", raw: zone },
     };
   }
   if (nums.length === 1) {
@@ -361,12 +361,12 @@ function buildRubyZoneOverlay(
       price: nums[0]!,
       label,
       severity,
-      source: "ruby",
+      source: "eleanor",
       confidence,
       color,
       style: "dashed",
       lineWidth: 1,
-      metadata: { source: "ruby", raw: zone },
+      metadata: { source: "eleanor", raw: zone },
     };
   }
   return null;
@@ -456,17 +456,17 @@ export function buildFvgOverlays(
   return out;
 }
 
-/** Map a Ruby read into `source:"ruby"` overlays (only when dataQuality ok). */
-export function buildRubyOverlays(
-  read: RubyReadSummary,
+/** Map a Eleanor read into `source:"eleanor"` overlays (only when dataQuality ok). */
+export function buildEleanorOverlays(
+  read: EleanorReadSummary,
   symbol: string,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
 ): ChartOverlay[] {
   if (read.dataQuality !== "ok") return [];
-  const conf = rubyConfidence(read.confidence);
+  const conf = eleanorConfidence(read.confidence);
   const overlays: ChartOverlay[] = [];
-  const support = buildRubyZoneOverlay(
-    `ruby-${symbol}-support`,
+  const support = buildEleanorZoneOverlay(
+    `eleanor-${symbol}-support`,
     read.supportZone,
     `${assistantName} support`,
     "success",
@@ -474,8 +474,8 @@ export function buildRubyOverlays(
     symbol,
     conf,
   );
-  const resistance = buildRubyZoneOverlay(
-    `ruby-${symbol}-resistance`,
+  const resistance = buildEleanorZoneOverlay(
+    `eleanor-${symbol}-resistance`,
     read.resistanceZone,
     `${assistantName} resistance`,
     "warning",
@@ -489,22 +489,22 @@ export function buildRubyOverlays(
 }
 
 export interface UseAiChartOverlaysResult {
-  /** Combined AI overlays for the chart (scanner + Ruby). Empty when suppressed. */
+  /** Combined AI overlays for the chart (scanner + Eleanor). Empty when suppressed. */
   overlays: ChartOverlay[];
   /** User-safe scanner-signal summary for the panel legend, when one matches. */
   signal: AiSignalSummary | null;
-  /** On-demand Ruby read state for the panel. */
-  ruby: {
-    status: RubyReadStatus;
-    read: RubyReadSummary | null;
+  /** On-demand Eleanor read state for the panel. */
+  eleanor: {
+    status: EleanorReadStatus;
+    read: EleanorReadSummary | null;
     error: string | null;
   };
   /** True when the chart feed is not AI-confirmed (Level 3) — overlays hidden. */
   suppressed: boolean;
   /** Honest reason overlays are hidden, else null. */
   suppressedReason: string | null;
-  /** Trigger a Ruby read of the current symbol/timeframe (user-initiated only). */
-  requestRubyRead: () => void;
+  /** Trigger a Eleanor read of the current symbol/timeframe (user-initiated only). */
+  requestEleanorRead: () => void;
 }
 
 /**
@@ -532,9 +532,9 @@ export function useAiChartOverlays({
   // FVG advisory block from the raw scanner opportunity — separate from signal
   // so buildFvgOverlays can always access fvgRead even when signal is null.
   const [fvgOpp, setFvgOpp] = useState<Pick<ScannerOpportunityLite, "fvgRead" | "symbol"> | null>(null);
-  const [rubyStatus, setRubyStatus] = useState<RubyReadStatus>("idle");
-  const [rubyRead, setRubyRead] = useState<RubyReadSummary | null>(null);
-  const [rubyError, setRubyError] = useState<string | null>(null);
+  const [eleanorStatus, setEleanorStatus] = useState<EleanorReadStatus>("idle");
+  const [eleanorRead, setEleanorRead] = useState<EleanorReadSummary | null>(null);
+  const [eleanorError, setEleanorError] = useState<string | null>(null);
 
   const suppressed = !aiUsable;
   const suppressedReason = suppressed
@@ -614,26 +614,26 @@ export function useAiChartOverlays({
     return () => clearTimeout(t);
   }, [signal]);
 
-  // Monotonic request token. Bumped on every new Ruby request AND whenever the
+  // Monotonic request token. Bumped on every new Eleanor request AND whenever the
   // instrument changes, so a slow in-flight read can never apply its result to a
   // different symbol/timeframe (the "no stale read across symbol change" rule).
-  const rubyReqRef = useRef(0);
+  const eleanorReqRef = useRef(0);
 
-  // Reset the Ruby read whenever the instrument changes — a stale read must
+  // Reset the Eleanor read whenever the instrument changes — a stale read must
   // never sit on a different symbol's chart. Bumping the token invalidates any
   // in-flight request so its late response is discarded.
   useEffect(() => {
-    rubyReqRef.current += 1;
-    setRubyStatus("idle");
-    setRubyRead(null);
-    setRubyError(null);
+    eleanorReqRef.current += 1;
+    setEleanorStatus("idle");
+    setEleanorRead(null);
+    setEleanorError(null);
   }, [normalized, timeframe]);
 
-  const requestRubyRead = useCallback(() => {
+  const requestEleanorRead = useCallback(() => {
     if (!normalized || suppressed) return;
-    const reqId = (rubyReqRef.current += 1);
-    setRubyStatus("loading");
-    setRubyError(null);
+    const reqId = (eleanorReqRef.current += 1);
+    setEleanorStatus("loading");
+    setEleanorError(null);
     void (async () => {
       try {
         const r = await fetch(u("/api/me/assistant/read-chart"), {
@@ -643,20 +643,20 @@ export function useAiChartOverlays({
           body: JSON.stringify({ symbol: normalized, timeframe }),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = (await r.json()) as { chartRead?: RubyReadSummary };
-        if (reqId !== rubyReqRef.current) return;
+        const j = (await r.json()) as { chartRead?: EleanorReadSummary };
+        if (reqId !== eleanorReqRef.current) return;
         const read = j.chartRead ?? null;
         if (!read) {
-          setRubyStatus("error");
-          setRubyError(`${name} returned no read.`);
+          setEleanorStatus("error");
+          setEleanorError(`${name} returned no read.`);
           return;
         }
-        setRubyRead(read);
-        setRubyStatus(read.dataQuality === "ok" ? "ok" : "insufficient");
+        setEleanorRead(read);
+        setEleanorStatus(read.dataQuality === "ok" ? "ok" : "insufficient");
       } catch (e) {
-        if (reqId !== rubyReqRef.current) return;
-        setRubyStatus("error");
-        setRubyError(e instanceof Error ? e.message : "network error");
+        if (reqId !== eleanorReqRef.current) return;
+        setEleanorStatus("error");
+        setEleanorError(e instanceof Error ? e.message : "network error");
       }
     })();
   }, [normalized, timeframe, suppressed, name]);
@@ -665,19 +665,19 @@ export function useAiChartOverlays({
     if (suppressed) return [];
     const out: ChartOverlay[] = [];
     if (signal) out.push(...buildSignalOverlays(signal, normalized));
-    if (rubyRead) out.push(...buildRubyOverlays(rubyRead, normalized, name));
+    if (eleanorRead) out.push(...buildEleanorOverlays(eleanorRead, normalized, name));
     // HTF Trend FVG Pullback overlays (Task #675) — additive, display-only.
     // Emits chart zones/lines ONLY when the backend engine set canSignal=true.
     if (fvgOpp) out.push(...buildFvgOverlays(fvgOpp));
     return out;
-  }, [suppressed, signal, rubyRead, fvgOpp, normalized, name]);
+  }, [suppressed, signal, eleanorRead, fvgOpp, normalized, name]);
 
   return {
     overlays,
     signal: suppressed ? null : signal,
-    ruby: { status: rubyStatus, read: rubyRead, error: rubyError },
+    eleanor: { status: eleanorStatus, read: eleanorRead, error: eleanorError },
     suppressed,
     suppressedReason,
-    requestRubyRead,
+    requestEleanorRead,
   };
 }

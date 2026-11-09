@@ -1,7 +1,7 @@
 // Truth audit 2026-10-27 — event risk that could not be checked is not "no risk".
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRubyMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
+import { buildEleanorMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
 import { buildSymbolTruthSnapshot, type TruthSnapshotDeps } from "../symbolTruthSnapshot.js";
 import { SYNTHETIC_EVENT_RISK_LABEL, TRUTH_EVIDENCE_REASON_TEXT } from "@workspace/domain/truth";
 import { NOW, marketFixture } from "./marketEvidenceFixtures.js";
@@ -12,7 +12,7 @@ const inputs: SignalEngineInput = { symbol: "EURUSD", displayName: "EURUSD", tim
   currentPrice: 1.098, dataSource: "LIVE_FEED", scanner: { bias: "bullish", recommendedAction: "BUY", confidenceScore: 85, entrySniperScore: 85, riskRewardRatio: 2,
     setupType: "Trend", entry: 1.098, entryZone: { from: 1.0978, to: 1.0982 }, stopLoss: 1.097, takeProfit: 1.1, reasonForTrade: "", reasonToAvoid: "" },
   scalp: null, execution: null, newsRiskLevel: null, previous: null, now: NOW };
-const signal = () => ({ ...buildRubyMarketEdge(inputs), marketEvidence: { ...fixture.evidence, userId: 1 } });
+const signal = () => ({ ...buildEleanorMarketEdge(inputs), marketEvidence: { ...fixture.evidence, userId: 1 } });
 
 type Radar = Awaited<ReturnType<TruthSnapshotDeps["buildNewsFn"]>>;
 function radar(connected: boolean, name: string, over: Partial<Radar["radar"]> = {}): Radar {

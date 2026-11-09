@@ -17,7 +17,7 @@ let chartStale = true;
 const realSignal = await import("../../lib/signalIntelligence/signalIntelligenceService.js");
 mock.module("../../lib/signalIntelligence/signalIntelligenceService.js", { namedExports: {
   ...realSignal,
-  buildRubyMarketEdgeForUser: async () => ({
+  buildEleanorMarketEdgeForUser: async () => ({
     symbol: "EURUSD", direction: "NEUTRAL", lifecycleStage: "WATCHING", hasSufficientData: true,
     freshness: "FRESH", generatedAt: new Date().toISOString(), dataSource,
     entryZone: null, watchZone: null, retestZone: null, doNotChaseZone: null,

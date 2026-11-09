@@ -1,6 +1,6 @@
 # COMMAND — FOCUS LOCK: ADD JUMP/BOOM-CRASH MARKETS (Tier 1) + PHASE 2 (backtest/dashboard/admin/watchlist)
 
-Read this entire command before changing anything. Two parts in one pass because both touch the market registry: PART A grows the approved universe by 7 synthetic markets; PART B extends Focus-Lock enforcement to the remaining display surfaces (Phase 2). Phase 1 (registry + scanner/chart/Ruby/trade + API/live backstop) is ALREADY MERGED (`67f7288e`) — do not rebuild it; extend it. **Read the LIVE source for `lib/domain/src/market/arxFocusMarkets.ts` first** — any file contents quoted from older archives are stale. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
+Read this entire command before changing anything. Two parts in one pass because both touch the market registry: PART A grows the approved universe by 7 synthetic markets; PART B extends Focus-Lock enforcement to the remaining display surfaces (Phase 2). Phase 1 (registry + scanner/chart/Eleanor/trade + API/live backstop) is ALREADY MERGED (`67f7288e`) — do not rebuild it; extend it. **Read the LIVE source for `lib/domain/src/market/arxFocusMarkets.ts` first** — any file contents quoted from older archives are stale. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
 
 ## PART A — ADD 7 MARKETS TO THE REGISTRY (all Tier 1)
 
@@ -14,7 +14,7 @@ The merged registry has 36 markets including BOOM1000, CRASH1000, BOOM500, CRASH
 6. Boom 300 Index
 7. Crash 300 Index
 
-All `category: "synthetic"`, `priorityTier: "tier_1"`, `sessionProfile: "24_7"`, `riskProfile` matching the existing synthetic entries' convention, `visibility: "approved_only"`, `enabledFor*` flags matching the other synthetics (scanner/chart/Ruby/backtest/live all true unless an existing synthetic sets one false — mirror the pattern).
+All `category: "synthetic"`, `priorityTier: "tier_1"`, `sessionProfile: "24_7"`, `riskProfile` matching the existing synthetic entries' convention, `visibility: "approved_only"`, `enabledFor*` flags matching the other synthetics (scanner/chart/Eleanor/backtest/live all true unless an existing synthetic sets one false — mirror the pattern).
 
 ### CRITICAL — REAL BROKER/DERIV SYMBOL IDS, NOT GUESSES (this is where "approved but won't open" bugs live)
 Each new entry's `canonicalSymbol`, `aliases`, and `mt5Aliases` must use the ACTUAL symbol strings the connected broker/data provider uses — confirm each against the live Deriv symbol map / `resolveDerivSymbol` / the provider routing map / `getBrokerSymbolSpec`, exactly as was done for the existing synthetics and the 1s variants. Standard Deriv ids are typically `JD10/JD25/JD50/JD75/JD100` (Jump) and `BOOM300N`/`CRASH300N` (300 variants) — but VERIFY against this deployment's actual subscribed symbols rather than hardcoding these. For ANY of the 7 where the real symbol/tick cannot be confirmed against the live provider, FLAG it in the report rather than shipping an alias that won't resolve.
@@ -23,7 +23,7 @@ Each new entry's `canonicalSymbol`, `aliases`, and `mt5Aliases` must use the ACT
 - Add each to the default-order list in the correct position (group with the other synthetics).
 
 ### Tier 1 priority
-Add all 7 to the Tier-1 set so they get scanner/cache/chart-prefetch/Ruby-depth priority alongside the existing Tier-1 markets.
+Add all 7 to the Tier-1 set so they get scanner/cache/chart-prefetch/Eleanor-depth priority alongside the existing Tier-1 markets.
 
 ### Tests for the additions
 - `resolveArxMarket` resolves each of the 7 by canonicalSymbol AND each alias/mt5Alias.
@@ -33,7 +33,7 @@ Add all 7 to the Tier-1 set so they get scanner/cache/chart-prefetch/Ruby-depth 
 
 ## PART B — PHASE 2: ENFORCE FOCUS LOCK ON THE REMAINING SURFACES
 
-Phase 1 covered scanner/chart/Ruby/trade + the API/live backstop. Phase 2 extends the SAME registry + helpers (`isApprovedArxMarket` / `resolveArxMarket` / `getAllApprovedArxMarkets` / `getApprovedMarketsByCategory` / `getTierOneMarkets`) to the display surfaces that can still leak or display non-approved markets. Reuse the helpers — do NOT add a parallel list or re-implement matching.
+Phase 1 covered scanner/chart/Eleanor/trade + the API/live backstop. Phase 2 extends the SAME registry + helpers (`isApprovedArxMarket` / `resolveArxMarket` / `getAllApprovedArxMarkets` / `getApprovedMarketsByCategory` / `getTierOneMarkets`) to the display surfaces that can still leak or display non-approved markets. Reuse the helpers — do NOT add a parallel list or re-implement matching.
 
 ### NON-NEGOTIABLE RULES (carry over from Phase 1)
 - Additive only. No relaxation of any gate, the synthetic floor, SL policy, or owner/admin relaxations. No trading-path change.

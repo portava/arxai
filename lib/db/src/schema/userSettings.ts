@@ -11,17 +11,17 @@ export const userSettingsTable = pgTable("user_settings", {
   accountMode: text("account_mode").notNull().default("DEMO"),  // DEMO | LIVE
   theme: text("theme").notNull().default("dark"),
 
-  // ── Ruby Voice (per-user, backend = source of truth, LS = cache) ──────────
+  // ── Eleanor Voice (per-user, backend = source of truth, LS = cache) ──────────
   // All voice toggles are nullable so "never set" is distinguishable from
   // "explicitly set to false". Defaults below match the legacy localStorage
   // defaults so behaviour is preserved on first read.
-  rubyVoiceEnabled:       boolean("ruby_voice_enabled").default(true),
-  rubySpeakResponses:     boolean("ruby_speak_responses").default(true),
-  rubyAutoListen:         boolean("ruby_auto_listen").default(true),
-  rubyBrowserFallback:    boolean("ruby_browser_fallback").default(true),
+  eleanorVoiceEnabled:       boolean("eleanor_voice_enabled").default(true),
+  eleanorSpeakResponses:     boolean("eleanor_speak_responses").default(true),
+  eleanorAutoListen:         boolean("eleanor_auto_listen").default(true),
+  eleanorBrowserFallback:    boolean("eleanor_browser_fallback").default(true),
   // "auto" | "elevenlabs" | "openai" | "browser"
-  rubyTtsProvider:        text("ruby_tts_provider").default("auto"),
-  rubyTtsVoiceId:         text("ruby_tts_voice_id"),
+  eleanorTtsProvider:        text("eleanor_tts_provider").default("auto"),
+  eleanorTtsVoiceId:         text("eleanor_tts_voice_id"),
 
   // ── AI assistant display name (per-user personalization) ──────────────────
   // Nullable: NULL means "never customized" and the app falls back to the

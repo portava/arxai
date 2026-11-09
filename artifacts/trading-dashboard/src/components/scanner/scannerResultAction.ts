@@ -35,7 +35,7 @@ export function scannerFinalReadReasons(finalRead: { reasons?: unknown } | null 
 }
 
 /**
- * What a surface that would explain the raw BUY / SELL setup (Ruby's Setup
+ * What a surface that would explain the raw BUY / SELL setup (Eleanor's Setup
  * Reason) shows instead when the server's final read withheld the action:
  * the chip's words and the final read's own reasons. Null when not withheld.
  */

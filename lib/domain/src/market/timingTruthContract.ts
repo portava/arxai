@@ -113,7 +113,7 @@ export interface TimingTruthVerdict {
   quality: TimingQuality;
   confidenceCapReason: string | null;
   scannerTruthImpact: TimingScannerImpact;
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -334,7 +334,7 @@ export function resolveTimingTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildTimingExplanation({ session: input.session, timingStatus, candleState: input.candleState, volatilityState: input.volatilityState, contextOnly }),
+    eleanorExplanation: buildTimingExplanation({ session: input.session, timingStatus, candleState: input.candleState, volatilityState: input.volatilityState, contextOnly }),
     warnings: dedupe(warnings),
   };
 }

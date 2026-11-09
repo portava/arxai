@@ -32,7 +32,7 @@ interface AuditRow {
   priceChecked?: boolean;
   /** Additive server field: the feed was confirmed live (null = not reported). */
   feedLive?: boolean | null;
-  rubyAllowed: boolean;
+  eleanorAllowed: boolean;
   status: AuditStatus;
   rawAssessment: string;
   quality: string;
@@ -232,7 +232,7 @@ export function ChartTruthHealthCard() {
                       <td className="text-center py-1 pr-2"><PassCell ok={checkedResult(row.mergePass, row.mergeChecked)} testid={`chart-truth-merge-${symbol}-${row.timeframe}`} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.mirrorPass} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={checkedResult(row.priceAlignPass, row.priceChecked)} testid={`chart-truth-price-${symbol}-${row.timeframe}`} /></td>
-                      <td className="text-center py-1 pr-2"><PassCell ok={row.rubyAllowed} /></td>
+                      <td className="text-center py-1 pr-2"><PassCell ok={row.eleanorAllowed} /></td>
                       <td className="py-1 text-muted-foreground max-w-[280px] whitespace-normal break-words">
                         {row.reasons.length > 0 ? row.reasons.join(" ") : "—"}
                       </td>

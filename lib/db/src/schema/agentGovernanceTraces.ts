@@ -3,7 +3,7 @@
 // SAFETY / SCOPE:
 //   - ADVISORY / OBSERVATION ONLY. A trace is an after-the-fact record of how the
 //     governance layer (Traffic Controller routing + Agent Court review) treated a
-//     single real app action (a scanner refresh, a Ruby read, a scalp scan, a live
+//     single real app action (a scanner refresh, a Eleanor read, a scalp scan, a live
 //     submit/close bypass record, …). It NEVER gates, slows, or blocks any
 //     live/demo path and carries no trade-execution authority.
 //   - Persisted alongside the fast in-memory ring buffer so operators can audit
@@ -23,7 +23,7 @@ export const agentGovernanceTracesTable = pgTable("agent_governance_traces", {
   // Stable per-action id (uuid) so a single user action maps to one trace row.
   actionId:          text("action_id").notNull(),
   // What real app action produced this trace, e.g. SCANNER_REFRESH, FOCUS_SCAN,
-  // BROAD_SCAN, SCALP_SCAN, RUBY_ANALYSIS, RUBY_SCALP_QUESTION, TRADE_MODAL,
+  // BROAD_SCAN, SCALP_SCAN, ELEANOR_ANALYSIS, ELEANOR_SCALP_QUESTION, TRADE_MODAL,
   // TRADE_CONFIRM, LIVE_SUBMIT, LIVE_CLOSE, AGENT_CREATION, LEARNING_CAMP,
   // PROMOTION, HOUSEHOLD_REPORT, OUTCOME_REVIEW, NO_TRADE_REWARD.
   actionType:        text("action_type").notNull(),
@@ -34,10 +34,10 @@ export const agentGovernanceTracesTable = pgTable("agent_governance_traces", {
   timeframe:         text("timeframe"),
   tradeId:           text("trade_id"),
   scannerSignalId:   text("scanner_signal_id"),
-  rubyMessageId:     text("ruby_message_id"),
+  eleanorMessageId:     text("eleanor_message_id"),
 
   // Traffic Controller mode in effect: LIVE_EXECUTION | SCALP | SCANNER |
-  // RUBY_EXPLANATION | LEARNING | AGENT_CREATION | DEEP_REVIEW.
+  // ELEANOR_EXPLANATION | LEARNING | AGENT_CREATION | DEEP_REVIEW.
   activeMode:        text("active_mode").notNull(),
 
   // JSON-as-text agentKey arrays / reason maps from Traffic + Court.
@@ -49,7 +49,7 @@ export const agentGovernanceTracesTable = pgTable("agent_governance_traces", {
   agentOutputs:          text("agent_outputs").notNull().default("[]"),
 
   finalGovernanceDecision: text("final_governance_decision"),
-  rubySummaryUsed:         boolean("ruby_summary_used").notNull().default(false),
+  eleanorSummaryUsed:         boolean("eleanor_summary_used").notNull().default(false),
   riskVetoUsed:            boolean("risk_veto_used").notNull().default(false),
   disagreementCourtUsed:   boolean("disagreement_court_used").notNull().default(false),
   predictionLocked:        boolean("prediction_locked").notNull().default(false),

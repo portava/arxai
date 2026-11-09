@@ -5,9 +5,9 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
-import type { RubyMissedOpportunity } from "./rubyMissedOpportunity";
+import type { EleanorMissedOpportunity } from "./eleanorMissedOpportunity";
 
 export interface AdminMissedOpportunitiesResp {
   ok: boolean;
-  replays: RubyMissedOpportunity[];
+  replays: EleanorMissedOpportunity[];
 }

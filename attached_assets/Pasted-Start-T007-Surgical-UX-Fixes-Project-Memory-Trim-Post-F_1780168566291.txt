@@ -6,19 +6,19 @@ Goal:
 Fix the two real UX quirks found during T006 and trim/reorganize project memory without breaking the app.
 
 Scope A — Fix top-bar symbol picker propagation:
-1. Inspect the current top-bar symbol picker, scanner symbol explorer, active chart symbol state, Ruby chart-read state, and trade modal symbol state.
-2. The user should not have to press a separate explorer “Load” button just to make the selected market become the active chart/trade/Ruby symbol.
+1. Inspect the current top-bar symbol picker, scanner symbol explorer, active chart symbol state, Eleanor chart-read state, and trade modal symbol state.
+2. The user should not have to press a separate explorer “Load” button just to make the selected market become the active chart/trade/Eleanor symbol.
 3. When a user selects/searches/clicks a symbol from the top-bar picker or scanner symbol explorer:
    - Active scanner symbol updates immediately.
    - Active chart updates immediately.
-   - Ruby’s selected market context updates immediately.
+   - Eleanor’s selected market context updates immediately.
    - Trade modal opens with the same selected symbol.
    - The scanner sidebar/explorer should collapse back cleanly on mobile after selection.
 4. If the existing Load button still has a useful purpose, keep it but rename/position it so it is not required for normal symbol selection. If it is redundant, remove it only from the UI, not from backend functions unless confirmed unused.
 5. Prevent stale symbol state, mismatched chart symbols, or a trade modal opening with the previous symbol.
 6. Add or update tests/checks proving:
    - select symbol → chart updates
-   - select symbol → Ruby context updates
+   - select symbol → Eleanor context updates
    - select symbol → trade modal receives same symbol
    - mobile symbol selection collapses cleanly
 
@@ -66,7 +66,7 @@ After fixes, run full verification again:
    - scanner
    - symbol search/select
    - chart updates
-   - Ruby chart read
+   - Eleanor chart read
    - trade modal open
    - trade modal close
    - settings
@@ -77,7 +77,7 @@ After fixes, run full verification again:
    - scanner shell appearing
    - scanner data appearing
    - symbol select to chart update
-   - symbol select to Ruby context update
+   - symbol select to Eleanor context update
    - trade modal open
    - trade modal close
 7. No live trade should be placed during this QA unless I explicitly give a separate command for live trade testing.

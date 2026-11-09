@@ -24,7 +24,7 @@ Critical name correction
 
 The ARX AI assistant is now named Eleanor.
 
-Audit all remaining Ruby, ruby, Ruby AI, rubyBrain, rubyContext, rubyExplanation, or similar references.
+Audit all remaining Eleanor, eleanor, Eleanor AI, eleanorBrain, eleanorContext, eleanorExplanation, or similar references.
 
 Classify each one as:
 
@@ -32,12 +32,12 @@ Classify each one as:
 2. Internal legacy naming that should be centralized.
 3. Hardcoded AI identity that must be replaced.
 4. Safe internal alias for backward compatibility.
-5. Dead/dormant Ruby-era code.
-6. Active logic that still depends on old Ruby naming.
+5. Dead/dormant Eleanor-era code.
+6. Active logic that still depends on old Eleanor naming.
 
 The product should now refer to the assistant as Eleanor everywhere user-facing.
 
-Ruby references should not remain visible to users.
+Eleanor references should not remain visible to users.
 
 The AI identity should be centralized so future name changes do not require chasing hardcoded strings across the app.
 
@@ -328,7 +328,7 @@ Include:
 * testSymbol
 * requireScannerSignal
 * requireEleanorExplanation
-* requireRubyExplanation
+* requireEleanorExplanation
 * requireBacktest
 * requireNewsCheck
 * requireRiskReward
@@ -387,7 +387,7 @@ Search for:
 3. Unused components.
 4. Duplicate components.
 5. Old demo/paper systems.
-6. Old Ruby systems.
+6. Old Eleanor systems.
 7. Old scanner systems.
 8. Old bridge systems.
 9. Old live-onboarding systems.
@@ -654,7 +654,7 @@ Audit:
 
 1. Eleanor frontend UI.
 2. Eleanor backend context builder.
-3. Old Ruby references.
+3. Old Eleanor references.
 4. Static greeting loops.
 5. Repeated old setup instructions.
 6. Page context.
@@ -730,7 +730,7 @@ Search for:
 10. Dormant pages.
 11. Overlong trade buttons.
 12. Backend-sounding copy.
-13. Ruby references.
+13. Eleanor references.
 14. Repetitive Eleanor messages.
 15. Cluttered cards.
 16. Duplicate sections.

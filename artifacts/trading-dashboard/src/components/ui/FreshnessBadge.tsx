@@ -2,7 +2,7 @@
 //
 // Renders a small chip that communicates the staleness of live broker data
 // so users are never misled into thinking stale numbers are current.
-// Used by Dashboard (AccountSnapshotCard), Open Trades, and Ruby panel.
+// Used by Dashboard (AccountSnapshotCard), Open Trades, and Eleanor panel.
 //
 // RULES
 //   - "Live" means ≤5s since the last broker snapshot.

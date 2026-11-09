@@ -6,7 +6,7 @@ description: Scanner/card render-proof suites render with NO QueryClientProvider
 # Render-proof component tests mock data hooks, not a QueryClient
 
 Scanner-page (and similar) component render-proof suites — e.g.
-`RubyMarketReadCard.test.tsx` (run by `test:scanner-ux`) — deliberately render
+`EleanorMarketReadCard.test.tsx` (run by `test:scanner-ux`) — deliberately render
 the component with **no `QueryClientProvider`** and `vi.mock(...)` every data
 hook it uses. They also mock the whole `@workspace/api-client-react` module
 exposing ONLY the generated hooks that test references (e.g. just

@@ -1,4 +1,4 @@
-// Heat Snapshots — optional persistence surface for the Ruby Market Timing Brain.
+// Heat Snapshots — optional persistence surface for the Eleanor Market Timing Brain.
 // Written by marketTimingBrainService on each computed read (never faked).
 // Used by Phase 4 (replay / learning). Never an execution gate.
 

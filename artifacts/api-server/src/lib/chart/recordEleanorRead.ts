@@ -1,0 +1,199 @@
+// Chart Brain v2 — Task 5: flow wiring for decision memory (Slow Brain).
+//
+// This is the glue that makes the decision-memory layer ACTIVE: every official
+// Eleanor read / chart trade plan calls recordEleanorReadDecision(), which (a) writes
+// ONE immutable Decision Receipt capturing what the chart + intelligence layers
+// said at decision time, and (b) records the meaningful chart EVENTS implied by
+// that read (eleanor_recommendation, no_trade, risk_veto, court_conflict,
+// setup_stale/invalid) into per-user chart-event memory.
+//
+// STRICT SAFETY CONTRACT:
+//   - Fire-and-forget: callers invoke this with `void` and it is NEVER awaited
+//     on the request hot path, so it adds no latency to the Eleanor read.
+//   - Fail-open: it never throws into the caller. Any error (provider, DB) is
+//     swallowed and logged; the user's read is unaffected.
+//   - Slow Brain only: this runs on read-only Eleanor surfaces. It is never called
+//     from the live execution / candle-render / 16-gate dispatch path and can
+//     never block a trade.
+//   - Per-user: every write carries the caller's userId.
+
+import { buildChartIntelligenceState } from "../data/chart/chartIntelligence.js";
+import type { ChartIntelligenceState } from "../data/chart/chartIntelligence.js";
+import { isChartTimeframe } from "../data/chart/timeframes.js";
+import type { ChartTimeframe } from "../data/chart/timeframes.js";
+import { enrichStateWithUserBrokerQuote } from "../data/chart/userBrokerAlignment.js";
+import { buildEleanorDraftRead } from "../assistant/eleanorDraftRead.js";
+import type { EleanorDraftIntent } from "../assistant/eleanorDraftRead.js";
+import { getAssistantDisplayName } from "../assistant/assistantName.js";
+import { logger } from "../logger.js";
+import {
+  buildSetupFingerprint,
+  type ChartSetupFingerprint,
+} from "./setupFingerprint.js";
+import { createDecisionReceipt, type ReceiptSource } from "./decisionReceipts.js";
+import {
+  recordChartDecisionEvents,
+  type ChartDecisionEventInput,
+} from "./chartDecisionMemory.js";
+
+export interface RecordEleanorReadArgs {
+  userId: number;
+  source: ReceiptSource;
+  /** The user-facing intent of the read (free-form; defaults to "analyze"). */
+  intent?: string | null;
+  /** The draft-read intent used to shape the deterministic read. */
+  draftReadIntent?: EleanorDraftIntent;
+  direction?: "BUY" | "SELL" | "NEUTRAL" | null;
+  symbol: string;
+  timeframe: string;
+  limit?: number;
+  /** Optional pre-built state to avoid a second build on endpoints that have one. */
+  state?: ChartIntelligenceState;
+}
+
+/**
+ * The chart state a receipt records: the same state the user's Eleanor read is
+ * built from (buildEleanorChartContext) — the intelligence state enriched with
+ * this user's own bound broker quote. Without the enrichment the mirror stays
+ * unmeasured, so the receipt would store a gated "syncing" read the user never
+ * saw. Fail-open to the unenriched state, exactly as the read path does.
+ */
+export async function buildReceiptState(args: {
+  userId: number;
+  symbol: string;
+  timeframe: ChartTimeframe;
+  limit: number;
+}): Promise<ChartIntelligenceState> {
+  const state = await buildChartIntelligenceState(args.symbol, args.timeframe, args.limit);
+  try {
+    return await enrichStateWithUserBrokerQuote(state, args);
+  } catch {
+    return state;
+  }
+}
+
+/**
+ * Derive the meaningful chart events implied by a Eleanor read from its (already
+ * deterministic) setup fingerprint. Always emits a eleanor_recommendation; adds
+ * no_trade / risk_veto / court_conflict / setup_stale / setup_invalid honestly
+ * when the fingerprint says so. Never fabricates.
+ */
+function deriveEvents(
+  args: RecordEleanorReadArgs,
+  fp: ChartSetupFingerprint,
+  headline: string | null,
+  receiptRef: string | null,
+  assistant: string,
+): ChartDecisionEventInput[] {
+  const base = {
+    userId: args.userId,
+    symbol: args.symbol,
+    timeframe: args.timeframe,
+    // Event direction is BUY|SELL|null — a NEUTRAL read carries no direction.
+    direction: fp.direction === "NEUTRAL" ? null : fp.direction,
+    regime: fp.regime,
+    setupStage: fp.stage,
+    readinessScore: fp.readinessScore,
+    qualityLabel: fp.qualityLabel,
+    receiptRef,
+  } as const;
+
+  const events: ChartDecisionEventInput[] = [
+    {
+      ...base,
+      eventType: "eleanor_recommendation",
+      summary: headline ?? `${assistant} read recorded for ${args.symbol} ${args.timeframe}.`,
+    },
+  ];
+
+  const vetoed = fp.riskStatus === "veto";
+  if (fp.direction === "NEUTRAL" || vetoed) {
+    events.push({
+      ...base,
+      eventType: "no_trade",
+      summary: vetoed
+        ? `${assistant} held back — risk veto in play.`
+        : `${assistant} saw no clear directional edge — no trade.`,
+    });
+  }
+  if (vetoed) {
+    events.push({ ...base, eventType: "risk_veto", summary: "Risk-AI vetoed this setup." });
+  }
+  if (fp.agentAgreement === "conflict") {
+    events.push({
+      ...base,
+      eventType: "court_conflict",
+      summary: "Agents disagreed on this read.",
+    });
+  }
+  if (fp.freshnessBucket === "stale") {
+    events.push({ ...base, eventType: "setup_stale", summary: "Setup has gone stale." });
+  }
+  if (/invalid/i.test(fp.stage)) {
+    events.push({
+      ...base,
+      eventType: "setup_invalid",
+      summary: "Setup invalidated by structure.",
+    });
+  }
+  return events;
+}
+
+/**
+ * Fire-and-forget: record an immutable receipt + the implied chart events for an
+ * official Eleanor read. Call with `void recordEleanorReadDecision(...)`. Never throws,
+ * never blocks, never on the live path.
+ */
+export function recordEleanorReadDecision(args: RecordEleanorReadArgs): void {
+  // Detach from the request lifecycle entirely. Any failure is contained here.
+  void (async () => {
+    try {
+      // The intelligence engine accepts only canonical ARX timeframes. If a
+      // caller passes a non-canonical timeframe (and gave us no prebuilt state),
+      // we honestly skip rather than fabricate a state for an unsupported TF.
+      const tf = args.timeframe.toUpperCase();
+      if (!args.state && !isChartTimeframe(tf)) return;
+      const state =
+        args.state ??
+        (await buildReceiptState({
+          userId: args.userId,
+          symbol: args.symbol,
+          timeframe: tf as ChartTimeframe,
+          limit: args.limit ?? 300,
+        }));
+      const draftRead = buildEleanorDraftRead(
+        state,
+        args.draftReadIntent ?? "analyze",
+        null,
+      );
+      const receipt = await createDecisionReceipt({
+        userId: args.userId,
+        state,
+        draftRead,
+        source: args.source,
+        intent: args.intent ?? draftRead.intent ?? "analyze",
+        direction: args.direction ?? null,
+      });
+
+      // Events are recorded even if the receipt write failed (receiptRef null),
+      // so chart-event memory still captures the flow honestly.
+      const fp = buildSetupFingerprint(state, {
+        direction: args.direction ?? undefined,
+      });
+      const assistant = await getAssistantDisplayName(args.userId);
+      const events = deriveEvents(
+        args,
+        fp,
+        draftRead.headline ?? null,
+        receipt?.receiptId ?? null,
+        assistant,
+      );
+      await recordChartDecisionEvents(events);
+    } catch (err) {
+      logger.warn(
+        { err, userId: args.userId, symbol: args.symbol, source: args.source },
+        "recordEleanorReadDecision: best-effort decision-memory write failed (ignored)",
+      );
+    }
+  })();
+}
