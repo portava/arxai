@@ -2,6 +2,7 @@ import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISer
 import { drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
 import { measurementLabels } from "./chartRangeMeasurement";
 import type { ChartEngineCandle } from "./types";
+import { measureDrawingRender, type DrawingFidelity } from "./drawingRenderFidelity";
 import { layoutTextNote, NOTE_FONT, NOTE_HEADER_HEIGHT, NOTE_LINE_HEIGHT, NOTE_PADDING, type MeasureNoteText, type NoteLayout } from "./chartTextNote";
 
 export interface PixelPoint { x: number; y: number }
@@ -236,17 +237,38 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   // The chart can invalidate primitives for every series/tick in a burst.
   // Projection belongs at draw time, once per frame, not once per invalidation.
   updateAllViews(): void { this.dirty = true; }
-  private updateGeometry(): void {
-    this.dirty = false;
+  /**
+   * Render-fidelity read-back (drawingRenderFidelity.ts): the geometry this
+   * primitive paints, measured against the stored anchors through the
+   * engine's own pixel→price / pixel→time axes. null when not attached.
+   */
+  measureRender(priceStep: number): DrawingFidelity | null {
     const attached = this.attachment;
-    if (!attached) return;
-    const project: ProjectAnchor = (anchor, priceOnly) => {
+    if (!attached) return null;
+    if (this.dirty) this.updateGeometry();
+    const width = attached.chart.timeScale().width(), height = attached.series.getPane().getHeight();
+    return measureDrawingRender(this.drawings, this.strokes, this.notes, this.projector(), {
+      price: y => attached.series.coordinateToPrice(y),
+      time: x => { const t = attached.chart.timeScale().coordinateToTime(x); return typeof t === "number" ? t : null; },
+    }, width, height, priceStep);
+  }
+
+  private projector(): ProjectAnchor {
+    const attached = this.attachment!;
+    return (anchor, priceOnly) => {
       const y = attached.series.priceToCoordinate(anchor.price);
       if (y == null || !Number.isFinite(y) || !this.times.size) return null;
       // Horizontal levels are price-only and remain visible after backfill rolls.
       const x = priceOnly ? 0 : this.times.has(anchor.time) ? attached.chart.timeScale().timeToCoordinate(anchor.time as UTCTimestamp) : null;
       return x == null ? null : { x, y };
     };
+  }
+
+  private updateGeometry(): void {
+    this.dirty = false;
+    const attached = this.attachment;
+    if (!attached) return;
+    const project = this.projector();
     const width = attached.chart.timeScale().width(), height = attached.series.getPane().getHeight();
     this.strokes = drawingStrokes(this.drawings, project, width, height);
     this.notes = drawingNotes(this.drawings, project, width, height);

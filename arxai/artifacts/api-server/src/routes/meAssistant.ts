@@ -13,6 +13,7 @@
 //   GET  /api/me/assistant/tools                    list tool definitions
 //   GET  /api/me/assistant/market-status            market provider status
 
+import { recordIssuedProjection } from "../lib/data/chart/renderEvidence.js";
 import { readOpenPositions } from "../lib/positions/openPositions.js";
 import express, { Router } from "express";
 import multer from "multer";
@@ -907,6 +908,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // residual confident phrasing whenever the feed is not VERIFIED+clean.
   const drawFeedNotClean = basis !== "VERIFIED" || read.dataQuality !== "ok";
   const setupPreviewPayload = scrubUserCopyDeep(setupPreview);
+  // Render Accuracy: remember the levels issued so the chart's drawn
+  // projection can be checked against exactly this payload (renderEvidence.ts).
+  if (req.authUser?.id != null) recordIssuedProjection(req.authUser.id, setupPreviewPayload);
   res.json({
     setupPreview: drawFeedNotClean
       ? neutralizeFeedCopyDeep(setupPreviewPayload)

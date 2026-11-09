@@ -14,6 +14,7 @@
 // Run: pnpm --filter @workspace/api-server run test:risk-governor-automation
 
 import { after, before, mock, test } from "node:test";
+import { executablePaperFixture } from "../../lib/safety/__qa__/paperModeFixture.js";
 import assert from "node:assert/strict";
 import { desc, eq, inArray } from "drizzle-orm";
 import type { MarketDataSnapshot } from "../../lib/marketData/types.js";
@@ -111,7 +112,10 @@ async function latestEvent() {
   return row;
 }
 
+// Paper bookings need an executable Safety Core (safety/entryPolicy.ts).
+let restorePaperMode: (() => Promise<void>) | undefined;
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   const [u] = await db.insert(usersTable).values({ email: EMAIL, name: "QA Risk Auto", role: "USER", isSystemUser: true })
     .returning({ id: usersTable.id });
@@ -119,6 +123,7 @@ before(async () => {
 });
 
 after(async () => {
+  await restorePaperMode?.();
   await deleteFixtures();
 });
 
