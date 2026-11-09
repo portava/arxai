@@ -140,10 +140,13 @@ function requestSeed(bridgeConnectionId: number | null | undefined, nowMs: numbe
   if (last != null && nowMs - last < BROKER_CLOCK_SEED_RETRY_MS) return;
   seedAttemptAt.set(bridgeConnectionId, nowMs);
   const read = seeder;
+  const startedAt = Date.now();
   void (async () => {
     try {
       const stored = await read(bridgeConnectionId);
-      if (stored) seedBrokerClockOffset(bridgeConnectionId, stored, Date.now());
+      // Judge the TTL on the caller's clock plus the time the read took, so a
+      // caller-supplied nowMs (replay, tests) is honoured end to end.
+      if (stored) seedBrokerClockOffset(bridgeConnectionId, stored, nowMs + (Date.now() - startedAt));
     } catch { /* unknown stays unknown; retried after BROKER_CLOCK_SEED_RETRY_MS */ }
   })();
 }

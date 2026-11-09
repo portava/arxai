@@ -100,9 +100,11 @@ for (const symbol of ["EURUSD", "US30", "BTCUSD", "AAPL", "R_75"]) test(`${symbo
   assert.equal(out.aiUsable, false);
   assert.equal(out.feedStatus.notLiveReason, "stored_history");
 });
-test("MT5 store wins over a newer provider; one read, no blending, no bridge attribution", async () => {
+test("MT5 store wins over a newer provider within the preference window; one read, no blending, no bridge attribution", async () => {
+  // Bars are on one UTC clock (convert-at-ingest), so the mirror is preferred
+  // while its newest bar is within MT5_MIRROR_PREFERENCE_INTERVALS of the newest.
   stored.set(key("XAUUSD", "M30", "assistant_real:twelve_data"), bars(9000, Date.now(), 120));
-  stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(2400, Date.now() - 6 * M30, 50));
+  stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(2400, Date.now() - 2 * M30, 50));
   const out = await routeStoredCandleHistory("XAUUSD", "30m", 30, empty("XAUUSD") as never);
   assert.equal(out.primaryProvider, "mt5_broker");
   assert.equal(out.candles.length, 30);
