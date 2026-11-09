@@ -87,7 +87,7 @@ function evaluate(test: Cand[], label: string, seed: number) {
     hitRate: { top: +hitTop.toFixed(4), random: +hitAll.toFixed(4), lift: +(hitTop - hitAll).toFixed(4), pValue: pHit },
     expectancyR: { top: +rTop.toFixed(4), random: +rAll.toFixed(4), lift: +(rTop - rAll).toFixed(4), pValue: pR },
   };
-  console.log(`[scanner-vs-random] ${JSON.stringify(report)}`);
+  process.stdout.write(`[scanner-vs-random] ${JSON.stringify(report)}` + "\n");
   return report;
 }
 

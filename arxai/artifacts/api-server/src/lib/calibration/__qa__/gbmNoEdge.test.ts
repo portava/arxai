@@ -89,7 +89,7 @@ describe("killer test: driftless GBM", () => {
         assert.ok(Math.abs(p - t.rate) <= 3 * se + 0.005, rows[rows.length - 1]);
       }
     }
-    console.log(`[gbm-killer] M1\n  ${rows.join("\n  ")}`);
+    process.stdout.write(`[gbm-killer] M1\n  ${rows.join("\n  ")}` + "\n");
     assert.ok(measured >= 8, `expected most strategies measured, got ${measured}`);
   });
 

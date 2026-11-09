@@ -139,7 +139,7 @@ describe("agent trust is measured only from the agent's own scored record", () =
       max = Math.max(max, t.influence);
     }
     const mean = sum / 200;
-    console.log(`[agent-noise] mean influence ${mean.toFixed(4)}, max ${max.toFixed(3)} over 200 noise agents (n=400 each)`);
+    process.stdout.write(`[agent-noise] mean influence ${mean.toFixed(4)}, max ${max.toFixed(3)} over 200 noise agents (n=400 each)` + "\n");
     assert.ok(mean < 0.01, `mean influence ${mean}`);
     assert.ok(max <= 0.25, `max influence ${max}`);
   });
