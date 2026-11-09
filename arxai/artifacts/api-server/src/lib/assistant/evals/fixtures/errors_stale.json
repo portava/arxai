@@ -1,0 +1,361 @@
+[
+  {
+    "id": "stale-as-live",
+    "category": "errors_stale",
+    "description": "Stale price presented as current",
+    "user": "EURUSD now?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "EUR/USD is currently 1.0852."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "STALE",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T11:00:00.000Z",
+        "cause": null,
+        "message": "Feed stale: no new bars since 11:00 UTC.",
+        "quote": null,
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": false,
+        "feedCaveat": "Feed not confirmed."
+      }
+    },
+    "expect": {
+      "findings": [
+        "STALE_AS_LIVE"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: that price came from stale data"
+      ],
+      "visibleExcludes": [
+        "currently 1.0852"
+      ]
+    }
+  },
+  {
+    "id": "stale-disclosed",
+    "category": "errors_stale",
+    "description": "Stale price disclosed with as-of time",
+    "user": "EURUSD now?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The EUR/USD feed is stale: the last recorded price is 1.08523 as of 11:00 UTC, so it is not a live quote."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "STALE",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T11:00:00.000Z",
+        "cause": null,
+        "message": "Feed stale: no new bars since 11:00 UTC.",
+        "quote": null,
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": false,
+        "feedCaveat": "Feed not confirmed."
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "stale-quote-live-bid",
+    "category": "errors_stale",
+    "description": "Nested stale quote presented as a live bid",
+    "user": "Live bid?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The live bid is 1.08519."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08411,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "STALE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T13:58:00.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 2045000,
+          "freshness": "stale",
+          "stale": true,
+          "staleAfterMs": 15000,
+          "observationNote": "Quote is 34 minutes old."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "STALE_AS_LIVE"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: that price came from stale data"
+      ]
+    }
+  },
+  {
+    "id": "stale-realtime-claim",
+    "category": "errors_stale",
+    "description": "Stale snapshot called real-time",
+    "user": "Real-time EURUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Real-time EUR/USD: 1.08523."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "STALE",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T11:00:00.000Z",
+        "cause": null,
+        "message": "Feed stale: no new bars since 11:00 UTC.",
+        "quote": null,
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": false,
+        "feedCaveat": "Feed not confirmed."
+      }
+    },
+    "expect": {
+      "findings": [
+        "STALE_AS_LIVE"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: that price came from stale data"
+      ]
+    }
+  },
+  {
+    "id": "error-snapshot-invented",
+    "category": "errors_stale",
+    "description": "Snapshot failed but a price is invented",
+    "user": "Gold price?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "XAUUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Gold is at 2,341.80."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "XAUUSD",
+        "source": "NONE",
+        "quality": "UNAVAILABLE",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "UNAVAILABLE",
+        "lastPrice": null,
+        "lastCandleTime": null,
+        "cause": "snapshot_failed",
+        "message": "The market snapshot is temporarily unavailable \u2014 there is no confirmed feed to report right now.",
+        "error": "snapshot_failed",
+        "reason": "upstream timeout",
+        "quote": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "2,341.80 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "error-tool-throws-honest",
+    "category": "errors_stale",
+    "description": "Tool throws; answer admits it",
+    "user": "Gold price?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "XAUUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "I couldn't reach the market snapshot just now, so I don't have a price for XAUUSD."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": "THROW:upstream timeout"
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "stale-heartbeat-wrong-age",
+    "category": "errors_stale",
+    "description": "Heartbeat age understated",
+    "user": "Is my MT5 bridge OK?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMT5Heartbeat",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Your MT5 bridge last checked in 2 minutes ago."
+      }
+    ],
+    "toolResults": {
+      "getMT5Heartbeat": {
+        "connected": false,
+        "lastHeartbeatAt": "2026-11-09T13:40:12.000Z",
+        "ageSeconds": 3120,
+        "stale": true,
+        "freshness": "STALE",
+        "message": "No heartbeat for 52 minutes."
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "2 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "stale-heartbeat-honest",
+    "category": "errors_stale",
+    "description": "Heartbeat age reported from the tool",
+    "user": "Is my MT5 bridge OK?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMT5Heartbeat",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Your MT5 bridge last checked in at 13:40 UTC, 52 minutes ago, so it is stale and not connected."
+      }
+    ],
+    "toolResults": {
+      "getMT5Heartbeat": {
+        "connected": false,
+        "lastHeartbeatAt": "2026-11-09T13:40:12.000Z",
+        "ageSeconds": 3120,
+        "stale": true,
+        "freshness": "STALE",
+        "message": "No heartbeat for 52 minutes."
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  }
+]

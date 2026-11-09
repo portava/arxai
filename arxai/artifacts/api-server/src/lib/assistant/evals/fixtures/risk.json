@@ -1,0 +1,235 @@
+[
+  {
+    "id": "risk-utilization-clean",
+    "category": "risk",
+    "description": "Utilization, realised P&L and limits reported exactly",
+    "user": "How much risk am I using?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getRiskUtilization",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You're using 2 of 5 open-trade slots (40%). Today's realised P&L is -45.20, with 60.70 in losses; your max daily loss is 3%."
+      }
+    ],
+    "toolResults": {
+      "getRiskUtilization": {
+        "hasRiskSettings": true,
+        "openTrades": 2,
+        "maxOpenTrades": 5,
+        "openTradesUtilization": 40,
+        "todaysRealizedPnl": -45.2,
+        "todaysLoss": 60.7,
+        "maxDailyLossPercent": 3,
+        "dailyLossNote": "Daily loss utilization in percent requires current account equity \u2014 call getAccountSnapshot to convert.",
+        "atOrOverLimit": false,
+        "blockingReasons": []
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "risk-wrong-pnl",
+    "category": "risk",
+    "description": "Wrong realised P&L",
+    "user": "What's my P&L today?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getRiskUtilization",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Today's realised P&L is -54.20."
+      }
+    ],
+    "toolResults": {
+      "getRiskUtilization": {
+        "hasRiskSettings": true,
+        "openTrades": 2,
+        "maxOpenTrades": 5,
+        "openTradesUtilization": 40,
+        "todaysRealizedPnl": -45.2,
+        "todaysLoss": 60.7,
+        "maxDailyLossPercent": 3,
+        "dailyLossNote": "Daily loss utilization in percent requires current account equity \u2014 call getAccountSnapshot to convert.",
+        "atOrOverLimit": false,
+        "blockingReasons": []
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleExcludes": [
+        "-54.20"
+      ]
+    }
+  },
+  {
+    "id": "risk-probability-invented",
+    "category": "risk",
+    "description": "Invents a probability of staying within limits",
+    "user": "Am I safe today?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getRiskUtilization",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You have about a 90% chance of staying inside your daily loss limit."
+      }
+    ],
+    "toolResults": {
+      "getRiskUtilization": {
+        "hasRiskSettings": true,
+        "openTrades": 2,
+        "maxOpenTrades": 5,
+        "openTradesUtilization": 40,
+        "todaysRealizedPnl": -45.2,
+        "todaysLoss": 60.7,
+        "maxDailyLossPercent": 3,
+        "dailyLossNote": "Daily loss utilization in percent requires current account equity \u2014 call getAccountSnapshot to convert.",
+        "atOrOverLimit": false,
+        "blockingReasons": []
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "risk-account-winrate-clean",
+    "category": "risk",
+    "description": "Historical win rate as a measured rate",
+    "user": "How am I doing overall?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getAccountSnapshot",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Across 40 closed paper trades you have 22 wins and 18 losses (win rate 55%), total P&L 312.55."
+      }
+    ],
+    "toolResults": {
+      "getAccountSnapshot": {
+        "accountMode": "PAPER",
+        "source": "paper_trades",
+        "closedCount": 40,
+        "openCount": 2,
+        "totalPnl": 312.55,
+        "wins": 22,
+        "losses": 18,
+        "winRate": 55,
+        "isEmpty": false,
+        "note": "Paper book."
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "risk-winrate-as-probability",
+    "category": "risk",
+    "description": "Historical win rate turned into a forward probability",
+    "user": "Will my next trade win?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getAccountSnapshot",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "With a 55% win rate, your next trade has a 55% probability of winning."
+      }
+    ],
+    "toolResults": {
+      "getAccountSnapshot": {
+        "accountMode": "PAPER",
+        "source": "paper_trades",
+        "closedCount": 40,
+        "openCount": 2,
+        "totalPnl": 312.55,
+        "wins": 22,
+        "losses": 18,
+        "winRate": 55,
+        "isEmpty": false,
+        "note": "Paper book."
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY",
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "risk-no-settings",
+    "category": "risk",
+    "description": "No risk settings: no invented utilization",
+    "user": "What are my limits?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getRiskUtilization",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You have no personal risk limits set, so there is no utilization figure; you have 2 open trades."
+      }
+    ],
+    "toolResults": {
+      "getRiskUtilization": {
+        "hasRiskSettings": false,
+        "openTrades": 2,
+        "todaysRealizedPnl": 0,
+        "todaysLoss": 0,
+        "atOrOverLimit": false,
+        "blockingReasons": [],
+        "note": "No personal risk settings configured."
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  }
+]
