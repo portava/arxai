@@ -36,7 +36,9 @@ mock.module("../../lib/safety/platformSwitches.js", {
   namedExports: {
     ...switches,
     loadPlatformSettings: async () => ({
-      switches: switches.switchesFromRows([{ ...switches.DEFAULT_SWITCH_ROW, liveBrokerExecutionArmed: armed }]),
+      // Platform mode LIVE: the scenario is the master switch, and the default
+      // row is fail-closed OFF (whose next step is the platform mode instead).
+      switches: switches.switchesFromRows([{ ...switches.DEFAULT_SWITCH_ROW, platformMode: "LIVE", liveBrokerExecutionArmed: armed }]),
       config: null,
     }),
   },
