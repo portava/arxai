@@ -65,6 +65,15 @@ const { createUserSession } = await import("../../auth/userSessions.js");
 const { confirmAction } = await import("../confirm.js");
 const { openMyTradesDemo, MY_TRADES_DEMO_SOURCE, MY_TRADES_LIVE_NOT_ENABLED } = await import("../myTradesOpen.js");
 const { default: meTradesRouter } = await import("../../../routes/meTrades.js");
+const { recordMt5Tick } = await import("../../data/providers/mt5Provider.js");
+
+/** The execution price is the router's MT5 store pinned to the trader's own
+ *  bridge (the symbol-spec bid/ask is not a price source since 2026-11-04):
+ *  feed that bridge a fresh tick through the real ingest seam. */
+function seedTick(bridgeConnectionId: number, userId: number): void {
+  const eaUtcMs = Date.now();
+  recordMt5Tick(SYMBOL, { bid: 1.1, ask: 1.1001, brokerTimeMs: eaUtcMs, eaUtcMs }, { bridgeConnectionId, userId });
+}
 
 const EMAIL_A = "qa+my-trades-demo-a@arx.test";
 const EMAIL_B = "qa+my-trades-demo-b@arx.test";
@@ -114,6 +123,7 @@ async function seedUser(email: string, bridge: boolean): Promise<{ id: number; c
       userId: id, bridgeConnectionId: connId, symbol: SYMBOL, contractSize: 100_000, profitCurrency: "USD",
       volumeStep: 0.01, minVolume: 0.01, maxVolume: 50, bid: 1.1, ask: 1.1001, lastTickTime: new Date(),
     });
+    seedTick(connId, id);
   }
   await db.insert(userTradingPermissionsTable).values({ userId: id, tradingMode: "DEMO", demoEnabled: true, suspended: false });
   await db.insert(userRiskLimitsTable).values({ userId: id, maxLotSize: 1, allowedAccountType: "both" });
@@ -137,6 +147,7 @@ async function setRow(which: "platform" | "safety_core", set: Record<string, unk
 async function fresh(...userIds: number[]): Promise<void> {
   calls.length = 0;
   queueMode = "send";
+  if (conn.a) seedTick(conn.a, u.a);
   for (const id of userIds) {
     await db.delete(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.userId, id));
     await db.delete(tradeCommandAuditLogTable).where(eq(tradeCommandAuditLogTable.userId, id));

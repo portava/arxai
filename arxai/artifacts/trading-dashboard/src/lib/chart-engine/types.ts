@@ -131,6 +131,21 @@ export interface ChartStructureMarker {
  * ONLY through these methods. lightweight-charts is the first implementation;
  * any future engine implements the same surface.
  */
+/** What the engine actually drew versus the source bars it was given
+ * (LightweightChartsAdapter.measureRenderFidelity). Reported to the server as
+ * Render Accuracy evidence. */
+export interface RenderFidelity {
+  displayMode: "ohlc" | "close" | "hollow" | "heikinAshi";
+  /** Newest drawn bar open time, Unix seconds. */
+  newestBarTime: number;
+  barsCompared: number;
+  mismatchedBars: number;
+  droppedBars: number;
+  priceRoundTripOk: boolean;
+  /** null when the newest bar is off screen (not measured). */
+  timeRoundTripOk: boolean | null;
+}
+
 export interface ChartEngineAdapter {
   /** Scanner migration bridge: display overlays/coordinates only. */
   getScannerOverlaySurface?(): Pick<ScannerChartSurface, "chart" | "series" | "container"> | null;
@@ -170,6 +185,8 @@ export interface ChartEngineAdapter {
   resetScale(): void;
   /** Map a price to a Y pixel coordinate (for DOM overlays); null if off-scale. */
   priceToCoordinate(price: number): number | null;
+  /** Measure the drawn series against its source bars; null when nothing is drawn. */
+  measureRenderFidelity?(): RenderFidelity | null;
   /** View controls only; none of these methods touches execution. */
   goToLatest?(animated?: boolean): void;
   fitHistory?(): void;

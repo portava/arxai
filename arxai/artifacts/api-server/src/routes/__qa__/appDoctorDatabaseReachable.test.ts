@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 import express from "express";
 import type { AddressInfo } from "node:net";
 
-process.env["DATABASE_URL"] ??= "postgres://nobody@127.0.0.1:1/none";
+// Forced, not defaulted: CI sets a real DATABASE_URL, and this test is about
+// an unreachable one.
+process.env["DATABASE_URL"] = "postgres://nobody@127.0.0.1:1/none";
 const { default: router } = await import("../appDoctor.js");
 
 test("DATABASE_URL set but the database refuses connections: databaseReachable is false, with when it was checked", async () => {

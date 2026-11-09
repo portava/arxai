@@ -4,6 +4,15 @@
 // on or off; the panel says the server runs them on every submit instead.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
+
+// The panel reads one-click mode through react-query (useOneClickMode), as it
+// does inside the app's QueryClientProvider.
+function renderPanel(ui: ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 vi.mock("wouter", () => ({ useLocation: () => ["/trade-command-room", vi.fn()] }));
 vi.mock("@/components/charts/ChartFeedConfidence", () => ({ ChartFeedConfidence: () => null }));
@@ -27,13 +36,13 @@ function panel() {
 
 describe("Quick Trade server-check controls", () => {
   it("no Risk check / Safety gates switch is rendered", () => {
-    render(panel());
+    renderPanel(panel());
     expect(screen.queryByTestId("trade-riskcheck-toggle")).toBeNull();
     expect(screen.queryByTestId("trade-safety-toggle")).toBeNull();
   });
 
   it("says the server runs the checks on every submit and they cannot be turned off here", () => {
-    render(panel());
+    renderPanel(panel());
     const note = screen.getByTestId("trade-server-checks-note").textContent ?? "";
     expect(note).toMatch(/server runs them on every order/i);
     expect(note).toMatch(/cannot be turned off/i);
@@ -41,21 +50,20 @@ describe("Quick Trade server-check controls", () => {
 });
 
 describe("Quick Trade ticket handoff", () => {
-  it("does not claim to execute a trade; says only the symbol reaches the manual ticket", () => {
-    render(panel());
+  it("does not claim to execute a trade; says SELL/BUY open the order window and its button sends", () => {
+    renderPanel(panel());
     expect(document.body.textContent).not.toMatch(/Execute a trade in seconds/);
     const note = screen.getByTestId("trade-ticket-handoff-note").textContent ?? "";
-    expect(note).toMatch(/open the manual ticket with EURUSD selected/);
-    // Codex line: the panel also has the MT5 order window, which does place
-    // orders with these fields. The note says the SELL/BUY buttons send none
-    // and that only the order window carries the fields.
-    expect(note).toMatch(/no order is sent from those buttons/);
-    expect(note).toMatch(/order window above does carry them/);
-    expect(note).toMatch(/side, lot size, order type, stop loss and take profit set here are not carried over/);
+    // 11-04 (7f92915b): SELL/BUY open the order window pre-filled with this
+    // panel's side, lot and SL/TP; only that window's button sends the order.
+    expect(note).toMatch(/SELL and BUY open the order window for EURUSD/);
+    expect(note).toMatch(/side, lot size, stop loss and take profit set here/);
+    expect(note).toMatch(/its button sends the order/);
+    expect(note).not.toMatch(/send a market order .* on the first click/);
   });
 
   it("there is no Cancel button that opens the ticket", () => {
-    render(panel());
+    renderPanel(panel());
     expect(screen.queryByTestId("trade-action-cancel")).toBeNull();
   });
 });

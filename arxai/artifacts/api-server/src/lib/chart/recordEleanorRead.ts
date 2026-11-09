@@ -17,6 +17,7 @@
 //     never block a trade.
 //   - Per-user: every write carries the caller's userId.
 
+import { applyRenderEvidence } from "../data/chart/renderEvidence.js";
 import { buildChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import type { ChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import { isChartTimeframe } from "../data/chart/timeframes.js";
@@ -65,11 +66,14 @@ export async function buildReceiptState(args: {
   limit: number;
 }): Promise<ChartIntelligenceState> {
   const state = await buildChartIntelligenceState(args.symbol, args.timeframe, args.limit);
+  let enriched = state;
   try {
-    return await enrichStateWithUserBrokerQuote(state, args);
+    enriched = await enrichStateWithUserBrokerQuote(state, args);
   } catch {
-    return state;
+    // fail-open: mirror stays unmeasured
   }
+  // The read the user saw carried their measured chart render (renderEvidence.ts).
+  return applyRenderEvidence(enriched, args.userId);
 }
 
 /**

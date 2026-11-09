@@ -62,6 +62,7 @@ import {
   getCachedIntelligenceContext,
 } from "../../artifacts/api-server/src/lib/data/chart/chartIntelligence.js";
 import { buildEleanorDraftRead } from "../../artifacts/api-server/src/lib/assistant/eleanorDraftRead.js";
+import { applyRenderEvidence, recordRenderEvidence } from "../../artifacts/api-server/src/lib/data/chart/renderEvidence.js";
 import { getSymbolMarketContextTool, getTradeMarketContextTool, getMarketSnapshot } from "../../artifacts/api-server/src/lib/assistant/tools.js";
 import {
   updateCandlesFromMT5,
@@ -271,7 +272,24 @@ export async function run(): Promise<CiTestResultLike> {
     bound.binding.status === "BOUND" && bound.binding.reasons.length === 0,
     `usable: same-bridge, owner-requested, freshly ticked quote is BOUND (got ${bound.binding.status} ${bound.binding.reasons.join(",")})`,
   );
-  const usableState = bound.state;
+  // Every data gate passes and the quote binds, but the user's chart has not
+  // reported a measured render yet → not usable (owner ruling 2026-11-09:
+  // reads must be accurate; Render Accuracy must be measured, not assumed).
+  const unrenderedRead = buildEleanorDraftRead(applyRenderEvidence(bound.state, QUOTE_BRIDGE.userId), "analyze");
+  assert(
+    unrenderedRead.feedUsable === false,
+    `unrendered: no measured chart render → draft not usable (got ${String(unrenderedRead.feedUsable)})`,
+  );
+  // The user's chart engine measured an exact draw of THIS served series.
+  const servedNewest = bound.state.currentCandle ?? bound.state.latestClosedCandle;
+  recordRenderEvidence(QUOTE_BRIDGE.userId, {
+    symbol: bound.state.symbol, timeframe: bound.state.timeframe,
+    source: bound.state.truthState.source ?? "none", displayMode: "ohlc",
+    newestBarTime: servedNewest ? Date.parse(servedNewest.openTime) / 1000 : 1,
+    barsCompared: bound.state.candleStats.barsAnalyzed, mismatchedBars: 0, droppedBars: 0,
+    priceRoundTripOk: true, timeRoundTripOk: true,
+  });
+  const usableState = applyRenderEvidence(bound.state, QUOTE_BRIDGE.userId);
   const usableRead = buildEleanorDraftRead(usableState, "analyze");
   assert(
     usableRead.feedUsable === true,

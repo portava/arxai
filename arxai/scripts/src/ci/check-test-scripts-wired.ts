@@ -55,6 +55,10 @@ const PACKAGE_FILES: Record<string, string> = {
  * should not run automatically at all.
  */
 const MANUAL_ONLY = new Set<string>([
+  // Real-browser QA: launch Playwright Chromium against a running dashboard
+  // (and, for the header, a signed-in session). Not runnable in the offline lane.
+  "@workspace/scripts::test:compact-workspace-geometry",
+  "@workspace/scripts::test:shell-header-browser",
   // Covered automatically by the test:timing umbrella (already in root `ci`):
   "@workspace/api-server::test:timing-broadflow",
   "@workspace/api-server::test:timing-composer",

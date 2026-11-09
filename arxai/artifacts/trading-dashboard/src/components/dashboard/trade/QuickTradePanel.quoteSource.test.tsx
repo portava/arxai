@@ -7,6 +7,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
+
+// The panel reads one-click mode through react-query (useOneClickMode), as it
+// does inside the app's QueryClientProvider.
+function renderPanel(ui: ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 vi.mock("wouter", () => ({ useLocation: () => ["/trade-command-room", vi.fn()] }));
 vi.mock("@/components/charts/ChartFeedConfidence", () => ({ ChartFeedConfidence: () => null }));
@@ -42,7 +51,7 @@ describe("Quick Trade quote source", () => {
   });
 
   it("a simulator quote is not shown as Sell / Buy prices", () => {
-    render(panel(SIM_QUOTE));
+    renderPanel(panel(SIM_QUOTE));
     const strip = screen.getByTestId("quick-trade-price-strip").textContent ?? "";
     expect(strip).not.toContain("1.08494");
     expect(strip).not.toContain("1.08506");
@@ -56,12 +65,12 @@ describe("Quick Trade quote source", () => {
 
   it("a quote with no stated source is not shown either", () => {
     const { executionEnvironment: _e, ...unsourced } = SIM_QUOTE;
-    render(panel(unsourced));
+    renderPanel(panel(unsourced));
     expect(screen.getByTestId("quick-trade-price-strip").textContent).not.toContain("1.08494");
   });
 
   it("a broker quote is shown with its source", () => {
-    render(panel({ ...SIM_QUOTE, executionEnvironment: "MT5" }));
+    renderPanel(panel({ ...SIM_QUOTE, executionEnvironment: "MT5" }));
     expect(screen.getByTestId("quick-trade-price-strip").textContent).toContain("1.08494");
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toContain("MT5");
   });
@@ -81,20 +90,20 @@ describe("Quick Trade quote source", () => {
 // that never came back.
 describe("Quick Trade — an error body is not a simulator quote", () => {
   it("an error body says no quote is available, not 'ARX price simulator'", () => {
-    render(panel({ error: "Unknown symbol" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
+    renderPanel(panel({ error: "Unknown symbol" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
     const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
     expect(src).not.toMatch(/simulator/i);
     expect(src).toBe("No quote available for this symbol.");
   });
 
   it("a quote object without numeric bid/ask is not called a simulator quote", () => {
-    render(panel({ executionEnvironment: "SIMULATOR" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
+    renderPanel(panel({ executionEnvironment: "SIMULATOR" } as unknown as Parameters<typeof QuickTradePanel>[0]["quote"]));
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
   });
 
   it("a priced quote with no stated source is named as unsourced, not as the simulator", () => {
     const { executionEnvironment: _e, ...unsourced } = SIM_QUOTE;
-    render(panel(unsourced));
+    renderPanel(panel(unsourced));
     const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
     expect(src).not.toMatch(/simulator/i);
     expect(src).toMatch(/no stated source/i);
@@ -146,7 +155,7 @@ describe("Quick Trade — a failed quote read is 'could not be loaded', not 'no 
   });
 
   it("the panel says the quote could not be loaded instead of 'No quote available'", () => {
-    render(panel(null, "—", true));
+    renderPanel(panel(null, "—", true));
     const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
     expect(src).toMatch(/The quote could not be loaded/);
     expect(src).not.toMatch(/No quote available/);
@@ -154,7 +163,7 @@ describe("Quick Trade — a failed quote read is 'could not be loaded', not 'no 
   });
 
   it("with no failure, an absent quote still reads 'No quote available for this symbol.'", () => {
-    render(panel(null, "—", false));
+    renderPanel(panel(null, "—", false));
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
   });
 });
@@ -164,14 +173,14 @@ describe("Quick Trade — a failed quote read is 'could not be loaded', not 'no 
 // the symbol made before any answer arrived.
 describe("Quick Trade — a quote not read yet is not 'no quote'", () => {
   it("while the quote is loading the panel says so, not 'No quote available'", () => {
-    render(panel(null, "—", false, true));
+    renderPanel(panel(null, "—", false, true));
     const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
     expect(src).not.toMatch(/No quote available/);
     expect(src).toBe("Loading the quote…");
   });
 
   it("once the read answered with no quote it says 'No quote available for this symbol.'", () => {
-    render(panel(null, "—", false, false));
+    renderPanel(panel(null, "—", false, false));
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
   });
 });

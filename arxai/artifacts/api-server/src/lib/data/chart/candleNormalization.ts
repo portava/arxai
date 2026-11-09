@@ -221,8 +221,10 @@ function providerSymbolFrom(source: string | null, symbol: string): string | nul
   return null;
 }
 
-/** Whether the raw router `time` should be read as the bar open or close. */
-function timeBasis(source: string | null): "open" | "close" {
+/** Whether the raw router `time` should be read as the bar open or close.
+ * Exported so consumers that hand bars back in the provider's own clock (the
+ * scanner's rawClosed) use the same convention instead of a copy of it. */
+export function timeBasis(source: string | null): "open" | "close" {
   if (!source) return "open";
   if (source === "assistant_real:polygon" || source === "assistant_real:twelve_data") return "open";
   if (source.startsWith("assistant_real")) return "close";

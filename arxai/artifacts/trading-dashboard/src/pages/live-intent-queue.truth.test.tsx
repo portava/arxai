@@ -46,7 +46,7 @@ describe("Live Intent Queue truth labels", () => {
     }
   });
 
-  it("the always-disabled Convert button does not promise bridge-dependent enablement", async () => {
+  it("an intent is shown as a record only, with no Convert button promising bridge-dependent enablement", async () => {
     stubFetch(200, {
       intents: [{
         id: 1, intentId: "i-1", source: "MANUAL", symbol: "EURUSD", direction: "BUY",
@@ -58,9 +58,11 @@ describe("Live Intent Queue truth labels", () => {
       counts: { total: 1, pendingMt5: 1, ready: 0, rejected: 0, executedLater: 0 },
     });
     render(<LiveIntentQueuePage />);
-    const btn = await screen.findByRole("button", { name: /Convert to Broker Order/ });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
-    expect(btn.getAttribute("title") ?? "").not.toMatch(/Connect MT5 bridge to enable/i);
+    const label = await screen.findByTestId("intent-not-routed");
+    expect(label.textContent).toBe("Record only");
+    expect(label.getAttribute("title") ?? "").toMatch(/not built/i);
+    expect(label.getAttribute("title") ?? "").toMatch(/connecting the MT5 bridge does not change that/i);
+    expect(screen.queryByRole("button", { name: /Convert to Broker Order/ })).toBeNull();
     expect(screen.queryByText(/No intents match filters/)).toBeNull();
     const tiles = screen.getAllByTestId("intent-count-value").map((t) => t.textContent);
     expect(tiles[0]).toBe("1");

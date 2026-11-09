@@ -1,11 +1,11 @@
-// Trading is available by default (owner decision 2026-10-24), on a real
-// database.
+// Fresh-install trading defaults, on a real database. Owner decision
+// 2026-11-04 (fail-closed) replaced the 2026-10-24 "trading on by default".
 //
 // Proves:
 //   - with no global_trading_settings row (a fresh install), the platform
-//     emergency stop does not halt DEMO or LIVE,
-//   - the singleton seeded on first read comes up LIVE, demo and live
-//     enabled, emergency stop released,
+//     emergency stop does not halt DEMO or LIVE (the mode/venue switches do),
+//   - the singleton seeded on first read comes up OFF with demo and live
+//     disabled and the emergency stop released,
 //   - an engaged stop still halts both broker venues, and never paper.
 //
 // The original settings rows are restored afterwards.
@@ -40,11 +40,11 @@ test("a fresh install (no settings row) is not halted by the platform stop", asy
   assert.equal(await platformStop("LIVE"), false);
 });
 
-test("the seeded singleton is LIVE, demo and live enabled, stop released", async () => {
+test("the seeded singleton is fail-closed: OFF, demo and live disabled, stop released", async () => {
   const g = (await loadGlobalTradingSettingsRow())!;
-  assert.equal(g.platformMode, "LIVE");
-  assert.equal(g.demoEnabled, true);
-  assert.equal(g.liveEnabled, true);
+  assert.equal(g.platformMode, "OFF");
+  assert.equal(g.demoEnabled, false);
+  assert.equal(g.liveEnabled, false);
   assert.equal(g.emergencyKillSwitch, false);
   assert.equal(await platformStop("LIVE"), false);
 });

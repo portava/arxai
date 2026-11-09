@@ -2,6 +2,7 @@
 // the Chart Modes panels kept showing EURUSD's intelligence under the V75 chart
 // until V75's own /me/chart/intelligence response arrived, because the chart
 // only reports a state when one matches and the page held the last one.
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
 import { useEffect } from "react";
@@ -42,6 +43,7 @@ vi.mock("@/components/charts/ChartAiOverlayPanel", () => ({ ChartAiOverlayPanel:
 vi.mock("@/components/charts/ChartSetupPreviewPanel", () => ({ ChartSetupPreviewPanel: () => null }));
 vi.mock("@/components/charts/ChartTradeEntry", () => ({ ChartTradeEntry: () => null }));
 vi.mock("@/components/oneclick/OneClickTradePanel", () => ({ OneClickTradePanel: () => null }));
+vi.mock("@/components/live/LivePendingOrders", () => ({ LivePendingOrders: () => null }));
 vi.mock("@/components/positions/PositionPickerPanel", () => ({ PositionPickerPanel: () => null }));
 vi.mock("@/hooks/useLivePositionOverlays", () => ({ useLivePositionOverlays: () => ({ overlays: [] }) }));
 vi.mock("@/hooks/useAiChartOverlays", () => ({ useAiChartOverlays: () => ({ overlays: [] }) }));
@@ -58,7 +60,10 @@ afterEach(() => { cleanup(); responses.clear(); currentSymbol = "EURUSD"; });
 describe("Smart Chart intelligence follows the chart's symbol", () => {
   it("does not keep the previous symbol's intelligence after a symbol switch", async () => {
     responses.set("EURUSD", { symbol: "EURUSD", timeframe: "M15" });
-    render(<LiveChartPage />);
+    // Panels that read their own data (receipts, pending orders) do so through
+    // react-query, as inside the app's provider; their fetches fail harmlessly.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><LiveChartPage /></QueryClientProvider>);
     expect(screen.getByTestId("chart-modes-state").textContent).toBe("EURUSD");
 
     await act(async () => { setSymbolExternal!("V75"); });

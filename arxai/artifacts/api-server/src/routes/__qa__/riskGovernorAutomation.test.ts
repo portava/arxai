@@ -44,6 +44,15 @@ const {
   paperOrdersTable, paperTradeEventsTable, riskSettingsTable, userRiskEventsTable, userRiskSettingsTable, usersTable,
 } = await import("@workspace/db");
 const { executePaperFromDecision } = await import("../../lib/paperExecution/paperExecutionService.js");
+const { recordMt5Tick } = await import("../../lib/data/providers/mt5Provider.js");
+
+/** The paper venue fills at the router's execution quote (since 2026-11-04 the
+ *  analysis snapshot is not an execution price): feed the router's MT5 store
+ *  a fresh tick through the real ingest seam, on a QA-only bridge key. */
+function seedRouterTick(): void {
+  const eaUtcMs = Date.now();
+  recordMt5Tick(SYMBOL, { bid: QUOTE.bid, ask: QUOTE.ask, brokerTimeMs: eaUtcMs, eaUtcMs }, { bridgeConnectionId: -930401, userId: null });
+}
 
 const EMAIL = "qa+risk-gov-auto@arx.test";
 const SYMBOL = "EURUSD";
@@ -117,6 +126,7 @@ test("C demo automated: automation is sized to the trader's lot cap, opens, and 
   const acct = await resetPaper();
   await db.insert(userRiskSettingsTable).values({ userId, maxPositionSize: 0.2 })
     .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxPositionSize: 0.2 } });
+  seedRouterTick();
   const res = await executePaperFromDecision(decision(), nextDecisionId(), { ownerUserId: userId, paperAccountId: acct, origin: "automation" });
   if (res.status !== "PAPER_OPENED" && /RISK_GOVERNOR_BLOCK\[/.test(res.rejection_reason ?? "") === false) {
     // The account-level paper governor (Build HH) or eligibility refused before sizing.
@@ -140,6 +150,7 @@ test("C demo automated: a daily-loss breach rejects the automated trade with the
     userId, paperAccountId: acct, symbol: "GBPUSD", direction: "BUY", lotSize: 1,
     entryPrice: 1.3, stopLoss: 1.2, takeProfit: 1.4, status: "CLOSED_SL", exitPrice: 1.2, profitLoss: -500, closedAt: new Date(),
   });
+  seedRouterTick();
   const res = await executePaperFromDecision(decision(), nextDecisionId(), { ownerUserId: userId, paperAccountId: acct, origin: "automation" });
   assert.notEqual(res.status, "PAPER_OPENED");
   assert.match(res.rejection_reason ?? "", /^RISK_GOVERNOR_BLOCK\[[^\]]*daily_loss_limit/);

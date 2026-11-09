@@ -27,8 +27,12 @@ mock.module("../../positions/ledger.js", {
   },
 });
 let governedTickets: string[] = [];
+// Two reads: placed pending orders ({ id, t }: none here, so no fill is
+// recorded and update is never reached) and governed fills ({ t }).
 const fakeDb = {
-  select: () => ({ from: () => ({ where: async () => governedTickets.map((t) => ({ t })) }) }),
+  select: (fields: Record<string, unknown>) => ({ from: () => ({ where: async () =>
+    "id" in fields ? [] : governedTickets.map((t) => ({ t })) }) }),
+  update: () => { throw new Error("no placed pending order exists in these fixtures"); },
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 

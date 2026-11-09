@@ -378,13 +378,10 @@ test("B demo Eleanor: a sound Eleanor draft passes the governor and moves on to 
   assert.ok(draft.ok);
   const result = await confirmAction({ userId: u.a, actionId: draft.action.id, confirmedMode: "SIMULATED" });
   // Owner decision 13: a confirmed SIMULATED open books a PAPER order at a
-  // real current quote. This sandbox has no real market-data provider, so the
-  // venue refuses it by name and books nothing (test:simulated-open covers
-  // the booked path with a stubbed feed).
-  assert.equal(result.ok ? null : result.error, "venue_rejected", JSON.stringify(result));
-  const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
-  assert.match(row!.rejectionReason ?? "", /No valid current price/);
-  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
+  // real current quote. seedBridge pushes a real tick through the bridge seam,
+  // which the router serves, so the paper venue books exactly one order.
+  assert.equal(result.ok ? null : result.error, null, JSON.stringify(result));
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 1);
   const ev = await latestEvent(u.a);
   assert.equal(ev.row.decision, "pass");
   assert.equal(ev.intent["origin"], "eleanor");
