@@ -28,6 +28,15 @@ test("enabled by default; only an explicit false/0/off/no disables it", () => {
   for (const v of ["false", "0", "off", "no", " FALSE "]) assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: v }), false, v);
 });
 
+test("the pre-rename kill switch still disables the sweeper; an off under either name wins", () => {
+  for (const v of ["false", "0", "off", "no", " FALSE "]) {
+    assert.equal(isSweeperEnabled({ ARX_RUBY_WATCH_SWEEPER_ENABLED: v }), false, `legacy ${v}`);
+    assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: "true", ARX_RUBY_WATCH_SWEEPER_ENABLED: v }), false, `legacy ${v} beats new true`);
+    assert.equal(isSweeperEnabled({ ARX_ELEANOR_WATCH_SWEEPER_ENABLED: v, ARX_RUBY_WATCH_SWEEPER_ENABLED: "true" }), false, `new ${v} beats legacy true`);
+  }
+  assert.equal(isSweeperEnabled({ ARX_RUBY_WATCH_SWEEPER_ENABLED: "true" }), true);
+});
+
 test("interval: default 10 s, floor 2 s, garbage → default", () => {
   assert.equal(sweeperIntervalMs({}), ELEANOR_SWEEPER_DEFAULT_INTERVAL_MS);
   assert.equal(sweeperIntervalMs({ ARX_ELEANOR_WATCH_SWEEPER_INTERVAL_MS: "30000" }), 30_000);
