@@ -223,7 +223,7 @@ export async function analyzeSymbolForPaper(
       detail: `Only ${candles.length}/${MIN_REAL_CANDLES_FOR_PAPER} real closed candles available from ${candleSource}.`,
     });
   }
-  const signal = runStrategyScan(symbol, candles, minConfidence, marketType);
+  const signal = runStrategyScan(symbol, candles, minConfidence, marketType, { timeframe: "M1" });
 
   // ── Sizing uses the LIVE MT5 balance from the snapshot (NEVER places).
   const accountBalance = mt5.balance ?? 0;

@@ -371,6 +371,7 @@ export * from "./handshake";
 // admin-tunable learning thresholds. OBSERVATION ONLY — read-only over trade
 // results; never gates, slows, or blocks any live/demo execution path.
 export * from "./eleanorSignalOutcomes";
+export * from "./calibrationFits";
 export * from "./eleanorSignalReviews";
 export * from "./eleanorQualityThresholds";
 

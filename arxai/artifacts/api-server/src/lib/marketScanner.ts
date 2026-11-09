@@ -41,6 +41,12 @@ import {
 import { routeCandles, routeQuote, quotePinForSeries } from "./data/marketDataRouter.js";
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
+  calibrate,
+  rankByCalibration,
+  SCANNER_CALIBRATION_KEY,
+  type CalibrationStamp,
+} from "./calibration/cache.js";
+import {
   buildFeatureSnapshot,
   latestCloseIso,
   type FeatureSnapshot,
@@ -275,7 +281,16 @@ export interface ScannerOpportunity {
   bias: MarketAnalysis["marketBias"];
   recommendedAction: MarketAnalysis["recommendedAction"];
   setupType: string;
+  /** Raw, uncalibrated 0-100 heuristic (kept for stored-row compatibility). */
   confidenceScore: number;
+  /** Calibration engine: MEASURED probability the call works, from graded
+   *  scanner-signal outcomes (scope/fallback in `calibration`), or null when
+   *  unmeasured. Optional only so legacy fixtures keep compiling; every row
+   *  scanSymbolTimeframe emits sets it. */
+  calibratedProbability?: number | null;
+  calibration?: CalibrationStamp;
+  /** Position basis after calibrated ranking (scanOnceSnapshot). */
+  rankBasis?: "calibrated_probability" | "unmeasured_raw_order";
   riskScore: number;
   entrySniperScore: number;
   riskRewardRatio: number;
@@ -496,6 +511,33 @@ export function effectiveOpportunityScore(o: ScannerOpportunity): number {
   const heatBoost = o.agentGovernance || o.agentAdvisory ? o.timingContext?.heatBoost ?? 0 : 0;
   if (!Number.isFinite(base) || !Number.isFinite(heatBoost)) return 0;
   return clamp(base + heatBoost, 0, 100);
+}
+
+/** Calibration fields for one scanner row. A row that shows no directional
+ *  call (WAIT / bias withheld) makes no forecast: null + unmeasured, N=0. */
+export function scannerCalibrationFields(
+  symbol: string,
+  timeframe: string,
+  action: string,
+  rawScore: number,
+): { calibratedProbability: number | null; calibration: CalibrationStamp } {
+  const act = String(action ?? "").toUpperCase();
+  const directional = act.includes("BUY") || act.includes("SELL") || act.includes("LONG") || act.includes("SHORT");
+  const calibration = calibrate(SCANNER_CALIBRATION_KEY, symbol, timeframe, rawScore);
+  if (!directional) {
+    return {
+      calibratedProbability: null,
+      calibration: { ...calibration, probability: null, status: "unmeasured", n: 0, label: "unmeasured (N=0)", reason: "No directional call to calibrate." },
+    };
+  }
+  return { calibratedProbability: calibration.probability, calibration };
+}
+
+/** Order scanner rows by calibrated probability; see rankByCalibration. */
+export function rankScannerOpportunities(rows: readonly ScannerOpportunity[]): ScannerOpportunity[] {
+  return rankByCalibration(
+    rows.map((o) => ({ o, rawScore: effectiveOpportunityScore(o), reading: { probability: o.calibratedProbability ?? null } })),
+  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis }));
 }
 
 function advisoryDirectionFor(a: MarketAnalysis): AdvisoryDirection {
@@ -1799,6 +1841,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       featureSnapshot,
       patternImpact,
       trendlineImpact,
+      ...scannerCalibrationFields(sym, tf, displayAction, displayConfidenceScore),
     };
     if (routed) bindScannerSource(op, routed.sourceIdentity);
     // Agent Ecosystem advisory (Phase 0). Bounded, advisory-only re-weighting by
@@ -1923,11 +1966,13 @@ export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnap
     const out: ScannerOpportunity[] = scanned.filter(
       (o): o is ScannerOpportunity => o != null,
     );
-    // Rank by the agent-adjusted score when the Agent Ecosystem has weighed in
-    // (advisory-only), otherwise by the raw opportunity score.
-    out.sort((x, y) => effectiveOpportunityScore(y) - effectiveOpportunityScore(x));
+    // Rank every scanned timeframe by MEASURED probability (calibration
+    // engine, with its cross-timeframe fallback). Measured rows rank above
+    // unmeasured ones; the unmeasured tail and ties keep the previous order
+    // (agent-adjusted score when present, else the raw opportunity score).
+    const ranked = rankScannerOpportunities(out);
     return {
-      universe, symbols: syms, timeframes: tfs, opportunities: out,
+      universe, symbols: syms, timeframes: tfs, opportunities: ranked,
       generatedAt,
       durationMs: Math.round(performance.now() - started),
     };

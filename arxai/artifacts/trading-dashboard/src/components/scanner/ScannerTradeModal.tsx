@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Loader2, ShieldCheck, Info, Radio, RadioTower } from "lucide-react";
 import { EleanorSetupReason, type SignalContext } from "./EleanorSetupReason";
+import { CalibratedProbability } from "@/components/calibration/CalibratedProbability";
 import type { ScannerSetupReasonWithheld } from "./scannerResultAction";
 import {
   assessStopLoss,
@@ -1019,6 +1020,13 @@ export function ScannerTradeModal({
                     <span className="font-mono">{Math.round(signal.confidenceScore)} / 100</span>
                   </div>
                 )}
+                {/* Calibration engine — the only "%" on this ticket: a win
+                    probability MEASURED on graded outcomes, always with its N,
+                    or "unmeasured (N=…)" below the minimum sample. */}
+                <div className="flex justify-between">
+                  <span className="text-txt-secondary">Measured win probability</span>
+                  <CalibratedProbability calibration={signal.calibration} testId="scanner-trade-calibrated-probability" />
+                </div>
               </div>
 
               {!market && (

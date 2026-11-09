@@ -20,7 +20,8 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { type LiveCandidate } from "../assistant/liveScanner.js";
-import { type ScannerOpportunity } from "../marketScanner.js";
+import { type ScannerOpportunity, rankScannerOpportunities } from "../marketScanner.js";
+import { rankByCalibration, type CalibrationStamp } from "../calibration/cache.js";
 import { ARX_FOCUS_MARKETS, isApprovedArxMarket } from "@workspace/domain/market";
 import { scanCoreOpportunities } from "../data/marketOverview.js";
 import {
@@ -200,6 +201,13 @@ export interface Opportunity {
   toolsUsed: string[];
   dataQuality: DataQuality;
   dataSource: string | null;
+  /** Calibration engine: measured probability for the primary timeframe's
+   *  call, or null when unmeasured. Always paired with `calibration` (N). */
+  calibratedProbability?: number | null;
+  calibration?: CalibrationStamp | null;
+  /** calibrated_probability when the position was earned by a measured
+   *  probability; unmeasured_raw_order when it fell back to the raw score. */
+  rankBasis?: "calibrated_probability" | "unmeasured_raw_order";
   multiTimeframe?: {
     bias: string;
     alignmentScore: number;
@@ -229,8 +237,12 @@ const DEFAULT_SYMBOLS: readonly string[] = ARX_FOCUS_MARKETS
   .filter((m) => m.priorityTier === "tier_1" && (m.category === "forex_major" || m.category === "metal"))
   .map((m) => m.canonicalSymbol);
 
-/** Timeframes the radar scans per symbol through the single scoring path. */
-const RADAR_TIMEFRAMES = ["M15", "H1"] as const;
+/** Timeframes the radar scans per symbol through the single scoring path:
+ *  every standard chart timeframe from M1 to D1 (was M15/H1 only). Each
+ *  symbol's primary timeframe is the one with the best CALIBRATED probability
+ *  (calibration engine, which itself falls back across timeframes when a
+ *  timeframe has no measured fit yet). */
+export const RADAR_TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"] as const;
 
 function labelAndAction(c: LiveCandidate): { label: RadarLabel; action: SuggestedAction; opportunityScore: number } {
   // Map LiveScanner opportunityLabel + statusBadge → radar label + suggested action.
@@ -732,14 +744,14 @@ export async function evaluateOpportunitiesForUser(
     symbolsWithData++;
     // Adapt every row for this symbol to a LiveCandidate for the multi-tf view.
     const cands = rows.map(scannerOpportunityToLiveCandidate);
-    // Pick the best-scored timeframe as the primary candidate, keeping the raw
-    // row index aligned so the opportunity carries its OWN provenance + freshness.
-    let primaryIdx = 0;
-    for (let i = 1; i < cands.length; i++) {
-      if (cands[i]!.score > cands[primaryIdx]!.score) primaryIdx = i;
-    }
-    const primaryRow = rows[primaryIdx]!;
+    // Pick the primary timeframe by CALIBRATED probability (measured rows
+    // first, raw score for ties and the unmeasured tail), keeping the raw row
+    // index aligned so the opportunity carries its OWN provenance + freshness.
+    const primaryRow = rankScannerOpportunities(rows)[0]!;
+    const primaryIdx = rows.findIndex((r) => r.timeframe === primaryRow.timeframe);
     const op = fromLiveCandidate(cands[primaryIdx]!, primaryRow.feedProvider ?? primaryRow.dataSource);
+    op.calibratedProbability = primaryRow.calibratedProbability ?? null;
+    op.calibration = primaryRow.calibration ?? null;
     // Honest per-row freshness — derived from the scanner row's dataStatus, not
     // hardcoded FRESH. (Live-only input ⇒ FRESH today, but derived for correctness.)
     op.dataQuality = mapScannerDataStatusToDataQuality(primaryRow.dataStatus);
@@ -774,12 +786,15 @@ export async function evaluateOpportunitiesForUser(
   }
 
   // Ranking: data-insufficient ALWAYS sinks to the bottom (per spec #5 of test list).
-  ops.sort((a, b) => {
-    const aBad = a.label === "Data insufficient" ? 1 : 0;
-    const bBad = b.label === "Data insufficient" ? 1 : 0;
-    if (aBad !== bBad) return aBad - bBad;
-    return b.opportunityScore - a.opportunityScore;
-  });
+  // Then measured probability ranks above everything unmeasured; the raw
+  // opportunity score orders ties and the unmeasured tail.
+  const usable = ops.filter((o) => o.label !== "Data insufficient");
+  const insufficient = ops.filter((o) => o.label === "Data insufficient");
+  const ordered = rankByCalibration(
+    usable.map((o) => ({ o, rawScore: o.opportunityScore, reading: { probability: o.calibratedProbability ?? null } })),
+  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis }));
+  ops.length = 0;
+  ops.push(...ordered, ...insufficient);
   const ranked = ops.slice(0, limit);
 
   const sections = {

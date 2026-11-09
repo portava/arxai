@@ -299,7 +299,7 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   const syntheticData = input.candles == null && (mdSnapshot?.source !== "REAL");
   try {
     const marketType = getMarketTypeForSymbol(symbol);
-    chosenStrategySignal = runStrategyScan(symbol, candles, 65, marketType);
+    chosenStrategySignal = runStrategyScan(symbol, candles, 65, marketType, { timeframe: input.candles ? "" : "M5" });
     if (chosenStrategySignal) {
       const conf = chosenStrategySignal.confidence ?? 0;
       signalsUsed.push({

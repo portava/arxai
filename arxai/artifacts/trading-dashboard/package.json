@@ -23,6 +23,7 @@
     "test:admin-hub-routes": "vitest run src/pages/admin/admin-hub.routes.test.ts",
     "test:investor-weekly-story": "vitest run src/pages/investor.weeklyStory.test.tsx",
     "test:execution-preview": "vitest run src/components/live/ExecutionPreviewPanel.test.tsx",
+    "test:calibration-ui": "vitest run src/components/calibration/calibration.test.tsx",
     "test:scanner-ux": "vitest run src/lib/eleanorReasoningBlock.feedVsLevels.test.ts src/lib/eleanorReasoningBlock.test.ts src/components/scanner/EleanorMarketReadCard.test.tsx src/components/scanner/EleanorMarketReadCard.context.test.tsx src/components/scanner/BroadScanOpportunityMap.test.tsx src/lib/eleanorReasoningBlock.patternTrendline.test.ts src/lib/eleanorReasoningBlock.structureSource.test.ts src/components/scanner/ChartTimingChip.test.tsx src/components/scanner/ChartTimingChip.freshness.test.tsx src/lib/eleanorReasoningBlock.chartReadConfidence.test.ts src/components/scanner/EleanorMarketReadCard.scoreLabels.test.tsx src/lib/eventRiskCopy.test.ts src/lib/eleanorReasoningBlock.eventRisk.test.ts",
     "test:selected-market-view": "vitest run src/components/scanner/selectedMarketView.test.ts",
     "test:selected-market-panel": "vitest run src/components/scanner/SelectedMarketPanel.test.tsx src/components/scanner/SelectedMarketPanel.responsiveness.test.tsx src/lib/selectedMarketQuery.test.tsx src/hooks/useScannerTruth.selectedMarket.test.tsx",
