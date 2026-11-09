@@ -24,8 +24,6 @@ import {
   getGetMeSharedAccountPositionsQueryKey,
   useGetBrainSymbols,
   useGetSignals,
-  useGetChartFeedStatus,
-  getGetChartFeedStatusQueryKey,
   useGetPerformanceSummary,
   useGetCriticalAlerts,
   useGetEconomicCalendarEnvelope,
@@ -33,6 +31,8 @@ import {
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
 import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
+import { useScannerTruth } from "@/hooks/useScannerTruth";
+import type { ScannerTruth } from "@/lib/scannerTruth";
 import {
   Wallet,
   ShieldCheck,
@@ -543,6 +543,15 @@ function Row({ label, value, valueClass, title, "data-testid": testId }: { label
    from the existing brain-symbols + coach explanation feeds. Explain & Prepare
    Trade route to the existing AI / trade surfaces.
    ──────────────────────────────────────────────────────────────────────── */
+/** The shared data verdict, worded for the cockpit (exported for tests). */
+export function eleanorWaitingReason(symbol: string, truth: ScannerTruth | null): string {
+  if (!truth) return `Waiting for fresh ${symbol} chart data.`;
+  const { verdict, detail } = truth.strip.data;
+  if (verdict === "Live") return `Candle feed live for ${symbol} — waiting for a signal.`;
+  const d = detail.trim();
+  return `${symbol} chart data: ${verdict.toLowerCase()}${d ? ` — ${d}` : "."}`;
+}
+
 export function EleanorMarketViewCard() {
   const { name } = useAssistantName();
   const { active } = useActiveSymbol();
@@ -550,14 +559,11 @@ export function EleanorMarketViewCard() {
   const signalsQ = useGetSignals({ symbol: active, limit: 1 });
   // Catalog metadata (riskLevel, displayName) for the selected symbol.
   const brainQ = useGetBrainSymbols();
-  // Actual candle/quote availability for the active symbol — used to tell the
-  // user WHY there is no signal (chart feed unavailable vs. stale vs. waiting).
-  // 15s refetch: lightweight, not hot-path. queryKey keyed by symbol so it
-  // refreshes automatically when the active symbol changes.
-  const feedQ = useGetChartFeedStatus(
-    { symbol: active, timeframe: "M5" },
-    { query: { queryKey: getGetChartFeedStatusQueryKey({ symbol: active, timeframe: "M5" }), refetchInterval: 15_000, staleTime: 10_000 } },
-  );
+  // WHY there is no signal: the SAME shared scanner truth (useScannerTruth →
+  // /api/chart/candles) the scanner badge, the chart strip and the AI read use
+  // for this symbol, so the cockpit never calls a feed "live" or "delayed"
+  // while the chart on the same page says otherwise. No separate feed poll.
+  const feedTruth = useScannerTruth(active, "5m");
 
   const signal = (signalsQ.data ?? [])[0] ?? null;
   const catalog = (brainQ.data ?? []).find((s) => s.symbol === active) ?? null;
@@ -601,26 +607,11 @@ export function EleanorMarketViewCard() {
               user understands WHY there is no signal, not just that Eleanor is
               "waiting". Old blanket text removed to prevent false certainty. */}
           <p className="text-sm text-txt-secondary" data-testid="eleanor-waiting-reason">
-            {signalsQ.isLoading || feedQ.isLoading
+            {signalsQ.isLoading || (feedTruth.isLoading && !feedTruth.truth)
               ? `Analyzing ${active}…`
               : signalsQ.isError
                 ? "Signal data temporarily unavailable."
-                // Branch on actual feed-status so the user knows WHY there is
-                // no signal, not just that Eleanor is waiting.
-                : feedQ.isError || feedQ.data == null
-                  ? `Waiting for fresh ${active} chart data.`
-                  : feedQ.data.quality === "unavailable"
-                    // Distinguish: is there a live quote even though candle
-                    // history is unavailable? isLive=true means the feed is
-                    // streaming tick/quote data but lacks OHLC history.
-                    ? feedQ.data.isLive
-                      ? `Live quote available for ${active} — candle feed unavailable.`
-                      : `Chart/candle feed unavailable for ${active}.`
-                    : feedQ.data.stale
-                      ? `Market data for ${active} is delayed — last candle stale.`
-                      : feedQ.data.isLive
-                        ? `Candle feed live for ${active} — waiting for a signal.`
-                        : `Waiting for fresh ${active} chart data.`}
+                : eleanorWaitingReason(active, feedTruth.truth)}
           </p>
         </div>
       ) : (

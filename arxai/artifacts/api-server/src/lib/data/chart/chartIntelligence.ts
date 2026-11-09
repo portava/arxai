@@ -69,6 +69,7 @@ import {
   type BrokerAlignmentInputs,
 } from "./brokerPriceAlignment.js";
 import { chartSeriesAttribution, type ChartSeriesAttribution } from "./brokerQuoteBinding.js";
+import { currentFeedScopeBridge, currentFeedScopeBridgeSync, feedScopeCacheKey } from "../feedScope.js";
 import type {
   ChartTrendRead,
   ChartLevelsRead,
@@ -238,7 +239,10 @@ export function getCachedIntelligenceContext(
   feedStatus: ChartFeedStatus;
   seriesAttribution: ChartSeriesAttribution | null;
 } | null {
-  const entry = cache.get(`${symbol}|${timeframe}|${limit}`);
+  // A pending bridge lookup is a miss: never serve another reader's series.
+  const scopeBridge = currentFeedScopeBridgeSync();
+  if (scopeBridge === undefined) return null;
+  const entry = cache.get(`${symbol}|${timeframe}|${limit}|${feedScopeCacheKey(scopeBridge)}`);
   if (!entry || entry.expiresAt <= Date.now()) return null;
   return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus,
     seriesAttribution: entry.seriesAttribution };
@@ -482,7 +486,9 @@ export async function buildChartIntelligenceState(
   timeframe: ChartTimeframe,
   limit: number,
 ): Promise<ChartIntelligenceState> {
-  const cacheKey = `${symbol}|${timeframe}|${limit}`;
+  // Keyed by whose series this is (lib/data/feedScope.ts): the chart, the AI
+  // read and the scanner of one trader share an entry; two traders never do.
+  const cacheKey = `${symbol}|${timeframe}|${limit}|${feedScopeCacheKey(await currentFeedScopeBridge())}`;
   const now = Date.now();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > now) {

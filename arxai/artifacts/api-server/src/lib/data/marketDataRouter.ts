@@ -42,6 +42,7 @@
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
 import { FUTURE_STAMPED_SERIES_NOTE, MT5_FEED_FRESH_MS } from "./freshness.js";
+import { currentFeedScopeBridge } from "./feedScope.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
   getDerivCandles,
@@ -619,10 +620,23 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
   const attempts: ProviderAttempt[] = [];
   const tf = normalizeTimeframe(timeframe);
 
+  // Whose series: an explicit pin wins; with none the bound reader's own
+  // bridge (lib/data/feedScope.ts) is tried first so every surface built in
+  // their request reads the bars their chart shows. Their bridge not pushing
+  // this series falls back to the platform-wide MT5 series, which provenance
+  // then attributes to its real writer (the chart labels it platform_shared).
+  const explicitPin = opts?.bridgeConnectionId;
+  const scopePin = explicitPin === undefined ? await currentFeedScopeBridge() : null;
+  const pin = explicitPin !== undefined ? explicitPin : scopePin;
+
   for (const id of chain) {
     if (id === "mt5_broker") {
-      const r = await tryMt5Candles(symbol, tf, limit, { bridgeConnectionId: opts?.bridgeConnectionId ?? null });
+      let r = await tryMt5Candles(symbol, tf, limit, { bridgeConnectionId: pin });
       attempts.push(stripCandles(r));
+      if (!r.ok && explicitPin === undefined && scopePin != null) {
+        r = await tryMt5Candles(symbol, tf, limit, { bridgeConnectionId: null });
+        attempts.push(stripCandles(r));
+      }
       if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance, r.notes);
     } else if (id === "deriv") {
       const r = await tryDerivCandles(symbol, tf, limit);
@@ -813,11 +827,19 @@ export async function routeQuote(symbol: string, opts?: RouteQuoteOptions): Prom
   const pinned = opts?.mt5Writer;
   const chain = pinned ? CHAIN_BY_CLASS[assetClass].filter((id) => id === "mt5_broker") : CHAIN_BY_CLASS[assetClass];
   const attempts: ProviderAttempt[] = [];
+  // Unpinned: the bound reader's own bridge first (see routeCandles), then the
+  // platform-wide MT5 quote, then the provider chain as before.
+  const scopeBridge = pinned === undefined ? await currentFeedScopeBridge() : null;
+  const scopeWriter = scopeBridge != null ? { bridgeConnectionId: scopeBridge } : undefined;
 
   for (const id of chain) {
     if (id === "mt5_broker") {
-      const r = await tryMt5Quote(symbol, pinned);
+      let r = await tryMt5Quote(symbol, pinned ?? scopeWriter);
       attempts.push(stripQuote(r));
+      if (!(r.ok && r.quote) && pinned === undefined && scopeWriter) {
+        r = await tryMt5Quote(symbol);
+        attempts.push(stripQuote(r));
+      }
       if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved, r.brokerClockOffsetMs);
     } else if (id === "deriv") {
       const r = await tryDerivQuote(symbol);

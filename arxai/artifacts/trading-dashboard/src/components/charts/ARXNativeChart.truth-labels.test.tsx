@@ -312,6 +312,18 @@ describe("feed strip says what the server graded, never an unmeasured mirror", (
     truthLevel = "historical_only";
     renderChart();
     expect(strip()).toBe("Unconfirmed");
+    // The canvas banner carries the same capped verdict: it cannot stay silent
+    // (raw feed "clean") while the chip, the strip and the scanner say otherwise.
+    const banner = screen.getByTestId("arx-native-feed-banner");
+    expect(banner.getAttribute("data-severity")).toBe("caution");
+    expect(banner.textContent).toMatch(/^Unconfirmed feed/);
+    expect(banner.textContent).toMatch(/not confirmed current/i);
+  });
+
+  it("a clean feed the shared truth confirms shows no banner at all", () => {
+    renderChart();
+    expect(strip()).toBe("Clean");
+    expect(screen.queryByTestId("arx-native-feed-banner")).toBeNull();
   });
 
   it("offers no lock toggle or inspection mode that changes nothing", () => {
@@ -340,6 +352,7 @@ describe("a failed candle refresh withdraws every live claim", () => {
     expect(screen.getByTestId("arx-feed-badge").getAttribute("data-ai-usable")).toBe("false");
     expect(screen.getByTestId("arx-feed-badge").getAttribute("data-severity")).not.toBe("clean");
     expect(screen.getByTestId("arx-native-refresh-failed").textContent).toMatch(/refresh failed/i);
+    expect(screen.getByTestId("arx-native-feed-banner").textContent).toMatch(/^Refresh failed feed.*refresh failed/i);
     expect((onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean }).aiUsable).toBe(false);
   });
 });

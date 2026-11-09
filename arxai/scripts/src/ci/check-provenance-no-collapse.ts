@@ -162,14 +162,6 @@ export const ALLOWLIST: PinEntry[] = [
       "a completeness heuristic, never a price source.",
   },
   {
-    file: "artifacts/api-server/src/lib/data/chart/chartIntelligence.ts",
-    count: 2,
-    reason:
-      "Fast Brain chart-intelligence state cache (read-only summary; the file " +
-      "itself states it is not a decision/fork engine and the chart never " +
-      "executes from this state). Caches derived commentary, not bars.",
-  },
-  {
     file: "artifacts/api-server/src/lib/data/chart/formingBarComposer.ts",
     count: 1,
     reason:

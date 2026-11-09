@@ -1496,8 +1496,11 @@ export function ARXNativeChart({
 
   // Only surface the prominent banner once real candles are on screen — the
   // empty/error overlays already own the no-data story.
+  // The banner renders the SAME capped verdict as the header chip and the feed
+  // strip (stripConf), so the canvas can never stay silent while the chip,
+  // the scanner badge and the AI read for this market say "Unconfirmed".
   const showPoorBanner =
-    showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
+    showFeedStatus && hasCandles && !isSafeMode && (refreshFailed || stripConf.severity !== "clean");
   const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
 

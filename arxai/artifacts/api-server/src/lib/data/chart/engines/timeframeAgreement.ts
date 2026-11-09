@@ -11,6 +11,7 @@
 // unavailable.
 
 import { getChartCandles } from "../chartDataService.js";
+import { currentFeedScopeBridgeSync, feedScopeCacheKey, fixedFeedScope, runWithFeedScope } from "../../feedScope.js";
 import type { ChartTimeframe } from "../timeframes.js";
 import { computeTrendRegime } from "./trendRegime.js";
 import {
@@ -175,7 +176,12 @@ function directionOf(group: ChartTimeframeBias[]): ChartTfBias {
  * background refresh. NEVER awaits the heavy multi-timeframe fetch.
  */
 export function getTimeframeAgreement(symbol: string): ChartTimeframeAgreement {
-  const key = symbol.trim().toUpperCase();
+  const sym = symbol.trim().toUpperCase();
+  // One entry per (symbol, reader's bridge): the background recompute runs
+  // under that same bridge, so a trader's agreement is read from their bars
+  // (lib/data/feedScope.ts). A still-pending bridge lookup computes shared.
+  const scopeBridge = currentFeedScopeBridgeSync() ?? null;
+  const key = `${sym}|${feedScopeCacheKey(scopeBridge)}`;
   const entry = cache.get(key);
   const now = Date.now();
 
@@ -191,7 +197,7 @@ export function getTimeframeAgreement(symbol: string): ChartTimeframeAgreement {
     placeholder.refreshing = true;
     cacheSet(key, placeholder);
     // Fire-and-forget background recompute — never blocks the caller.
-    void recompute(key)
+    void runWithFeedScope(fixedFeedScope(scopeBridge), () => recompute(sym))
       .then((result) => {
         cacheSet(key, { result, computedAtMs: Date.now(), refreshing: false });
         markSlowBrainRun();
