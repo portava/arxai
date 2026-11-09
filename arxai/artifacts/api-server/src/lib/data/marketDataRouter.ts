@@ -129,6 +129,12 @@ export interface MarketQuoteResult {
    * consumers must treat absent as not observed.
    */
   tickTimeObserved?: boolean;
+  /**
+   * Additive: the measured broker-clock offset (ms) the ingest removed from an
+   * MT5 tick stamp to make `quote.timestamp` UTC. null/absent = the stamp is
+   * the producer's raw clock (or not an MT5 quote); consumers fail closed.
+   */
+  brokerClockOffsetMs?: number | null;
 }
 
 // ── Timeframe normalization ──────────────────────────────────────────────
@@ -390,7 +396,7 @@ async function tryMt5Candles(
   return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
 }
 
-type QuoteAttempt = ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null; tickTimeObserved?: boolean };
+type QuoteAttempt = ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null; tickTimeObserved?: boolean; brokerClockOffsetMs?: number | null };
 
 async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number | null }): Promise<QuoteAttempt> {
   const t0 = Date.now();
@@ -421,6 +427,7 @@ async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number
     return {
       provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
       tickTimeObserved: read.tickTimeObserved,
+      brokerClockOffsetMs: read.brokerClockOffsetMs,
       // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
       // Bridge/owner are the authenticated writer's identity when the ingest
       // path threaded it; an unattributed writer stays null. Broker-native
@@ -597,7 +604,16 @@ async function tryAssistantQuote(symbol: string): Promise<QuoteAttempt> {
 
 // ── Public router API ────────────────────────────────────────────────────
 
-export async function routeCandles(symbol: string, timeframe: string, limit: number): Promise<MarketCandlesResult> {
+export interface RouteCandlesOptions {
+  /**
+   * Pin the MT5 read to this bridge's partition (the requesting trader's own
+   * feed). A miss falls through the chain like any other provider miss; it
+   * never silently serves another bridge's series (Truth audit T2).
+   */
+  bridgeConnectionId?: number | null;
+}
+
+export async function routeCandles(symbol: string, timeframe: string, limit: number, opts?: RouteCandlesOptions): Promise<MarketCandlesResult> {
   const assetClass = classifySymbol(symbol);
   const chain = CHAIN_BY_CLASS[assetClass];
   const attempts: ProviderAttempt[] = [];
@@ -605,7 +621,7 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
 
   for (const id of chain) {
     if (id === "mt5_broker") {
-      const r = await tryMt5Candles(symbol, tf, limit);
+      const r = await tryMt5Candles(symbol, tf, limit, { bridgeConnectionId: opts?.bridgeConnectionId ?? null });
       attempts.push(stripCandles(r));
       if (r.ok) return success(symbol, assetClass, r.candles, r.provider, attempts, r.provenance, r.notes);
     } else if (id === "deriv") {
@@ -802,15 +818,15 @@ export async function routeQuote(symbol: string, opts?: RouteQuoteOptions): Prom
     if (id === "mt5_broker") {
       const r = await tryMt5Quote(symbol, pinned);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved, r.brokerClockOffsetMs);
     } else if (id === "deriv") {
       const r = await tryDerivQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved, r.brokerClockOffsetMs);
     } else if (id === "assistant_real") {
       const r = await tryAssistantQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved, r.brokerClockOffsetMs);
     }
   }
 
@@ -907,7 +923,7 @@ function stripCandles<T extends { candles: Candle[]; provenance: SeriesProvenanc
   return rest;
 }
 function stripQuote<T extends QuoteAttempt>(r: T): ProviderAttempt {
-  const { quote: _quote, provenance: _provenance, tickTimeObserved: _tickTimeObserved, ...rest } = r;
+  const { quote: _quote, provenance: _provenance, tickTimeObserved: _tickTimeObserved, brokerClockOffsetMs: _brokerClockOffsetMs, ...rest } = r;
   return rest;
 }
 
@@ -927,7 +943,7 @@ function success(symbol: string, assetClass: AssetClass, candles: Candle[], prov
     ...(notes && notes.length > 0 ? { provenanceNotes: notes } : {}),
   };
 }
-function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null, tickTimeObserved?: boolean): MarketQuoteResult {
+function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null, tickTimeObserved?: boolean, brokerClockOffsetMs?: number | null): MarketQuoteResult {
   return {
     ok: true,
     symbol,
@@ -939,6 +955,7 @@ function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote
     adminDetail: `Served by ${provider}; ${attempts.length} provider(s) tried.`,
     ...(provenance ? { provenance } : {}),
     tickTimeObserved: tickTimeObserved === true,
+    brokerClockOffsetMs: brokerClockOffsetMs ?? null,
   };
 }
 

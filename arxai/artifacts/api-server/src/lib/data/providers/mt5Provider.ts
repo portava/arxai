@@ -369,6 +369,9 @@ interface QuoteEntry {
   tickTimeObserved: boolean;
   /** Set by `recordMt5Tick`; null for a legacy latest-wins `updateQuoteFromMT5` write. */
   tick: TickProvenanceState | null;
+  /** Measured broker-clock offset (ms) the ingest subtracted to make
+   *  `quote.timestamp` UTC; null = no conversion (raw broker stamp). */
+  brokerClockOffsetMs: number | null;
 }
 // symbol → (bridgeKey → latest quote). Same partition wall as the candle store:
 // a bridge-scoped read serves ONLY that bridge's quote; the unscoped read
@@ -542,7 +545,7 @@ export function updateQuoteFromMT5(
   symbol: string,
   quote: MarketQuote,
   bridge?: Mt5BridgeIdentity | null,
-  observation?: { tickTimeObserved?: boolean },
+  observation?: { tickTimeObserved?: boolean; brokerClockOffsetMs?: number | null },
 ): void {
   const key = normalizeSymbolKey(symbol);
   let partitions = quoteStore.get(key);
@@ -558,6 +561,7 @@ export function updateQuoteFromMT5(
     userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
     tickTimeObserved: observation?.tickTimeObserved === true,
     tick: null,
+    brokerClockOffsetMs: observation?.brokerClockOffsetMs ?? null,
   });
   lastUpdate = Date.now();
 }
@@ -649,6 +653,9 @@ export function recordMt5Tick(
       bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
       userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
       tickTimeObserved: tick.brokerTimeMs != null && tightlyBounded,
+      // The timestamp is the EA's own UTC clock at first sight, not a converted
+      // broker stamp: no offset was removed from it.
+      brokerClockOffsetMs: null,
       tick: {
         key: tickKey,
         firstSeenEaMs: tick.eaUtcMs,
@@ -697,6 +704,8 @@ export interface Mt5QuoteRead {
    *  time). Lets the router label a push older than MT5_FEED_FRESH_MS STALE
    *  instead of LIVE_TICK for the partition actually read (pinned or not). */
   receivedAtMs: number;
+  /** Broker-clock offset (ms) the ingest removed from the stamp; null = raw. */
+  brokerClockOffsetMs: number | null;
 }
 
 /**
@@ -758,6 +767,7 @@ export function readMt5Quote(
     tickTimeObserved: entry.tickTimeObserved,
     tick: entry.tick ? publicProvenance(entry.tick) : null,
     receivedAtMs: entry.updatedAt,
+    brokerClockOffsetMs: entry.brokerClockOffsetMs,
   };
 }
 
@@ -832,16 +842,7 @@ export function readMt5Candles(
 
   // Contention requires ≥2 DISTINCT ATTRIBUTED bridges fresh with bars — an
   // unattributed writer cannot substantiate a multi-bridge claim.
-  const freshAttributed: number[] = [];
-  for (const s of partitions.values()) {
-    if (
-      s.bridgeConnectionId != null &&
-      s.candles.length > 0 &&
-      now - s.updatedAt <= CANDLE_TTL_MS
-    ) {
-      freshAttributed.push(s.bridgeConnectionId);
-    }
-  }
+  const freshAttributed = freshAttributedBridges(partitions, now);
   const contention = freshAttributed.length >= 2;
   if (contention) {
     const symKey = normalizeSymbolKey(symbol);
@@ -871,6 +872,25 @@ export function readMt5Candles(
     contendingBridgeIds: contention ? [...freshAttributed].sort((a, b) => a - b) : [],
     futureStamped: writerFutureStamped(serving),
   };
+}
+
+function freshAttributedBridges(partitions: Map<string, CandleSeries>, now: number): number[] {
+  const out: number[] = [];
+  for (const s of partitions.values()) {
+    if (s.bridgeConnectionId != null && s.candles.length > 0 && now - s.updatedAt <= CANDLE_TTL_MS) out.push(s.bridgeConnectionId);
+  }
+  return out;
+}
+
+/**
+ * Whether two or more attributed bridges are currently pushing this series
+ * (the store-level fact a pinned read does not report, since a pinned read
+ * never blends). Read-only; used to LABEL a served series, never to pick one.
+ */
+export function mt5SeriesContention(symbol: string, timeframe: string, now: number = Date.now()): boolean {
+  const partitions = candleStore.get(seriesKey(symbol, timeframe));
+  if (!partitions) return false;
+  return freshAttributedBridges(partitions, now).length >= 2;
 }
 
 /** Per-series freshness probe (used by diagnostics). Reflects the SERVING

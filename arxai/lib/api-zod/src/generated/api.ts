@@ -5845,6 +5845,39 @@ export const GetChartCandlesResponse = zod.object({
       .describe(
         "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
       ),
+    feedScope: zod
+      .union([
+        zod.literal("own_bridge"),
+        zod.literal("platform_shared"),
+        zod.literal("provider"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.\n",
+      ),
+    contention: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Two attributed bridges were pushing this series at read time.",
+      ),
+    brokerClockOffsetMs: zod
+      .number()
+      .nullish()
+      .describe(
+        "Measured broker-clock offset (ms, broker minus UTC) in force for the serving bridge; its stamps were converted to UTC with it at ingest. null when unknown (raw broker clock; freshness fails closed).\n",
+      ),
+    lastTickTimeBasis: zod
+      .union([
+        zod.literal("producer_tick"),
+        zod.literal("server_receive"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
+      ),
   }),
   truthResult: zod
     .union([
@@ -6258,6 +6291,37 @@ export const GetChartFeedStatusResponse = zod.object({
     .describe(
       "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
     ),
+  feedScope: zod
+    .union([
+      zod.literal("own_bridge"),
+      zod.literal("platform_shared"),
+      zod.literal("provider"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.\n",
+    ),
+  contention: zod
+    .boolean()
+    .optional()
+    .describe("Two attributed bridges were pushing this series at read time."),
+  brokerClockOffsetMs: zod
+    .number()
+    .nullish()
+    .describe(
+      "Measured broker-clock offset (ms, broker minus UTC) in force for the serving bridge; its stamps were converted to UTC with it at ingest. null when unknown (raw broker clock; freshness fails closed).\n",
+    ),
+  lastTickTimeBasis: zod
+    .union([
+      zod.literal("producer_tick"),
+      zod.literal("server_receive"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
+    ),
 });
 
 /**
@@ -6634,6 +6698,39 @@ export const GetMeChartIntelligenceResponse = zod.object({
           .nullish()
           .describe(
             "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+          ),
+        feedScope: zod
+          .union([
+            zod.literal("own_bridge"),
+            zod.literal("platform_shared"),
+            zod.literal("provider"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.\n",
+          ),
+        contention: zod
+          .boolean()
+          .optional()
+          .describe(
+            "Two attributed bridges were pushing this series at read time.",
+          ),
+        brokerClockOffsetMs: zod
+          .number()
+          .nullish()
+          .describe(
+            "Measured broker-clock offset (ms, broker minus UTC) in force for the serving bridge; its stamps were converted to UTC with it at ingest. null when unknown (raw broker clock; freshness fails closed).\n",
+          ),
+        lastTickTimeBasis: zod
+          .union([
+            zod.literal("producer_tick"),
+            zod.literal("server_receive"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
           ),
       }),
       currentCandle: zod.union([
@@ -8162,6 +8259,37 @@ export const GetMeMarketTruthResponse = zod.object({
       .describe(
         "Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null\/absent otherwise.",
       ),
+    lastTickBasis: zod
+      .union([
+        zod.literal("producer_tick"),
+        zod.literal("server_receive"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "What lastTickAt is: the producer's own tick time, or the time ARX received the tick (never a verified observation). Absent on older servers.",
+      ),
+    feedScope: zod
+      .union([
+        zod.literal("own_bridge"),
+        zod.literal("platform_shared"),
+        zod.literal("provider"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Whose feed the data block rests on: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. Absent on older servers.",
+      ),
+    contention: zod
+      .boolean()
+      .optional()
+      .describe("Two bridges were pushing this series when it was read."),
+    brokerClockOffsetMs: zod
+      .number()
+      .nullish()
+      .describe(
+        "Measured broker-clock offset (ms, broker minus UTC) used to convert the serving bridge's stamps to UTC at ingest; null when unknown.",
+      ),
   }),
   news: zod.object({
     providerConnected: zod.boolean(),
@@ -8191,6 +8319,12 @@ export const GetMeMarketTruthResponse = zod.object({
       .optional()
       .describe(
         "Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server).",
+      ),
+    fetchedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "ISO time the connected calendar was last fetched from its provider. Lets the news claim be verified (recent) or stale (old). Absent on older servers.",
       ),
   }),
   components: zod.object({
@@ -8296,6 +8430,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",
@@ -8333,6 +8468,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",
@@ -8370,6 +8506,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",
@@ -8407,6 +8544,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",
@@ -8445,6 +8583,7 @@ export const GetMeMarketTruthResponse = zod.object({
               "FEED_UNCONFIRMED",
               "CALENDAR_FETCH_TIME_UNKNOWN",
               "SYNTHETIC_NO_EVENT_MAPPING",
+              "RECEIVE_TIME_ONLY",
               "FEED_STALE",
               "EXPIRED",
               "NO_FEED",
@@ -8482,6 +8621,7 @@ export const GetMeMarketTruthResponse = zod.object({
               "FEED_UNCONFIRMED",
               "CALENDAR_FETCH_TIME_UNKNOWN",
               "SYNTHETIC_NO_EVENT_MAPPING",
+              "RECEIVE_TIME_ONLY",
               "FEED_STALE",
               "EXPIRED",
               "NO_FEED",
@@ -8519,6 +8659,7 @@ export const GetMeMarketTruthResponse = zod.object({
               "FEED_UNCONFIRMED",
               "CALENDAR_FETCH_TIME_UNKNOWN",
               "SYNTHETIC_NO_EVENT_MAPPING",
+              "RECEIVE_TIME_ONLY",
               "FEED_STALE",
               "EXPIRED",
               "NO_FEED",
@@ -8556,6 +8697,7 @@ export const GetMeMarketTruthResponse = zod.object({
               "FEED_UNCONFIRMED",
               "CALENDAR_FETCH_TIME_UNKNOWN",
               "SYNTHETIC_NO_EVENT_MAPPING",
+              "RECEIVE_TIME_ONLY",
               "FEED_STALE",
               "EXPIRED",
               "NO_FEED",
@@ -8594,6 +8736,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",
@@ -8631,6 +8774,7 @@ export const GetMeMarketTruthResponse = zod.object({
             "FEED_UNCONFIRMED",
             "CALENDAR_FETCH_TIME_UNKNOWN",
             "SYNTHETIC_NO_EVENT_MAPPING",
+            "RECEIVE_TIME_ONLY",
             "FEED_STALE",
             "EXPIRED",
             "NO_FEED",

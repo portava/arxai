@@ -79,7 +79,9 @@ router.post("/multi-timeframe/generate", async (req, res): Promise<void> => {
     // from stale (weekend / stalled-feed) or untimestamped bars is
     // DATA_NOT_CURRENT with no bias, never a confident current alignment.
     //
-    // Broker clock (audit H7): MT5 bars stay broker-stamped. A series with a
+    // Broker clock: bars converted to UTC at ingest carry offset 0 on their own
+    // evidence (nothing to subtract). Unconverted MT5 bars stay broker-stamped
+    // (audit H7 rule for raw stamps). A series with a
     // measured broker-clock offset is aged on the UTC clock (bar time minus
     // the offset). An MT5 series with NO measured offset (durable mirror,
     // unattributed writer, bridge with no broker-time tick yet) cannot be
@@ -87,9 +89,9 @@ router.post("/multi-timeframe/generate", async (req, res): Promise<void> => {
     // It is flagged so its freshness is UNKNOWN, never CURRENT (fail closed).
     // Bar times are not rewritten.
     const offsets = {
-      lower: servedSeriesBrokerClockOffsetMs(lowerSeries.provenance),
-      middle: servedSeriesBrokerClockOffsetMs(middleSeries.provenance),
-      higher: servedSeriesBrokerClockOffsetMs(higherSeries.provenance),
+      lower: servedSeriesBrokerClockOffsetMs(lowerSeries.provenance, lowerSeries.candles[lowerSeries.candles.length - 1] ?? null),
+      middle: servedSeriesBrokerClockOffsetMs(middleSeries.provenance, middleSeries.candles[middleSeries.candles.length - 1] ?? null),
+      higher: servedSeriesBrokerClockOffsetMs(higherSeries.provenance, higherSeries.candles[higherSeries.candles.length - 1] ?? null),
     };
     const built = buildReport({
       symbol: body.symbol,

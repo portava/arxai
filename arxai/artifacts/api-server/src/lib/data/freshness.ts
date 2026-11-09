@@ -89,7 +89,10 @@ export function plausibleBrokerClockOffsetMs(offsetMs: unknown): number | null {
  */
 export function measuredBrokerClockOffsetMs(evidence: unknown): number | null {
   if (!evidence || typeof evidence !== "object") return null;
-  const e = evidence as { basis?: unknown; brokerClockOffsetMs?: unknown };
+  const e = evidence as { basis?: unknown; brokerClockOffsetMs?: unknown; convertedAtIngest?: unknown };
+  // Converted to UTC at ingest: the offset was already removed from the bar
+  // time, so nothing remains to subtract (0), and no writer offset applies.
+  if (e.basis === "UTC" && e.convertedAtIngest === true) return 0;
   if (e.basis !== "BROKER_SERVER") return null;
   return plausibleBrokerClockOffsetMs(e.brokerClockOffsetMs);
 }

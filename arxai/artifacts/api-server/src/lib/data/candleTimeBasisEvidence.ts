@@ -19,6 +19,13 @@ export interface CandleTimeBasisEvidence {
   brokerClockOffsetMs?: number | null;
   /** When that offset was measured (ISO, EA UTC clock); null with a null offset. */
   brokerClockOffsetMeasuredAt?: string | null;
+  /**
+   * True when the bar's `time` was converted from the broker clock to UTC at
+   * ingest by subtracting `brokerClockOffsetMs` (basis "UTC"). Consumers must
+   * NOT subtract the offset again. Still `kind: "unavailable"`: a current
+   * measured offset is not an original historical UTC record.
+   */
+  convertedAtIngest?: boolean;
 }
 
 /**
@@ -47,6 +54,30 @@ export function brokerServerCandleTimeBasis(
     brokerClockOffsetMeasuredAt: new Date(offset.measuredAtMs).toISOString(),
   };
 }
+/**
+ * Evidence for an EA bar whose broker-clock open time was converted to UTC at
+ * ingest with the bridge's measured offset (owner decision 2026-11-08,
+ * convert at ingest). The bar time is now on the UTC clock; the offset that
+ * was removed travels with it for audit. Not an original UTC record, so
+ * research that requires original_utc still refuses it.
+ */
+export function convertedBrokerCandleTimeBasis(
+  offset: { offsetMs: number; measuredAtMs: number },
+): CandleTimeBasisEvidence {
+  const sign = offset.offsetMs >= 0 ? "+" : "-";
+  const abs = Math.abs(offset.offsetMs);
+  const hh = String(Math.floor(abs / 3_600_000)).padStart(2, "0");
+  const mm = String(Math.floor((abs % 3_600_000) / 60_000)).padStart(2, "0");
+  return {
+    kind: "unavailable",
+    basis: "UTC",
+    authority: null,
+    reason: `MT5 bar converted from the broker clock to UTC at ingest with the bridge's measured offset UTC${sign}${hh}:${mm}. A current measured offset is not an original historical UTC record.`,
+    brokerClockOffsetMs: Math.round(offset.offsetMs),
+    brokerClockOffsetMeasuredAt: new Date(offset.measuredAtMs).toISOString(),
+    convertedAtIngest: true,
+  };
+}
 export function unavailableCandleTimeBasis(source: string | null): CandleTimeBasisEvidence {
   return {
     kind: "unavailable",
@@ -66,6 +97,10 @@ export function resolveCandleTimeBasisEvidence(evidence: unknown, source: string
   // UTC claim: the result stays "unavailable" / BROKER_SERVER).
   if (source === "mt5_broker" && evidence && typeof evidence === "object") {
     const e = evidence as Partial<CandleTimeBasisEvidence>;
+    if (e.basis === "UTC" && e.convertedAtIngest === true && typeof e.brokerClockOffsetMs === "number" && Number.isFinite(e.brokerClockOffsetMs)) {
+      const at = typeof e.brokerClockOffsetMeasuredAt === "string" ? Date.parse(e.brokerClockOffsetMeasuredAt) : NaN;
+      return convertedBrokerCandleTimeBasis({ offsetMs: e.brokerClockOffsetMs, measuredAtMs: Number.isFinite(at) ? at : Date.now() });
+    }
     if (e.basis === "BROKER_SERVER" && typeof e.brokerClockOffsetMs === "number" && Number.isFinite(e.brokerClockOffsetMs)) {
       const at = typeof e.brokerClockOffsetMeasuredAt === "string" ? Date.parse(e.brokerClockOffsetMeasuredAt) : NaN;
       return brokerServerCandleTimeBasis({ offsetMs: e.brokerClockOffsetMs, measuredAtMs: Number.isFinite(at) ? at : Date.now() });
