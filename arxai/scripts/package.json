@@ -242,6 +242,7 @@
     "correct:missing-close-fill-pnl": "tsx ./src/correctMissingCloseFillPricePnl.ts",
     "maintenance:prod": "tsx ./src/runProductionMaintenance.ts",
     "backfill:legacy-unknown-pnl": "tsx ./src/backfillLegacyUnknownPnl.ts",
+    "purge:pre-utc-mt5-bars": "tsx ./src/purgePreUtcMt5Bars.ts",
     "backfill:unknown-pnl-ea-version": "tsx ./src/backfillUnknownPnlEaVersion.ts",
     "test:aggregates-exclude-unknown": "tsx ./src/aggregatesExcludeUnknownPnlTest.ts",
     "test:backfill-ea-version": "tsx ./src/backfillUnknownPnlEaVersionTest.ts",

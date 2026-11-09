@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TruthDataNotLiveReason } from "./truthDataNotLiveReason";
+import type { TruthDataFeedScope } from "./truthDataFeedScope";
+import type { TruthDataLastTickBasis } from "./truthDataLastTickBasis";
 import type { TruthDataState } from "./truthDataState";
 
 export interface TruthData {
@@ -22,4 +24,12 @@ export interface TruthData {
   lastTickAt: string | null;
   /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
   notLiveReason?: TruthDataNotLiveReason;
+  /** What lastTickAt is: the producer's own tick time, or the time ARX received the tick (never a verified observation). Absent on older servers. */
+  lastTickBasis?: TruthDataLastTickBasis;
+  /** Whose feed the data block rests on: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. Absent on older servers. */
+  feedScope?: TruthDataFeedScope;
+  /** Two bridges were pushing this series when it was read. */
+  contention?: boolean;
+  /** Measured broker-clock offset (ms, broker minus UTC) used to convert the serving bridge's stamps to UTC at ingest; null when unknown. */
+  brokerClockOffsetMs?: number | null;
 }

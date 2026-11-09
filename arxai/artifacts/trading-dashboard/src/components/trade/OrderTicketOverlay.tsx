@@ -26,6 +26,7 @@ import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { humanizeReason } from "@/lib/humanize";
 import { normalizeLot, stepLot } from "@/lib/oneClickMode";
 import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
+import { BROKER_CLOCK_UNKNOWN_HINT, useBrokerClockOffset } from "@/hooks/useBrokerClockOffset";
 import {
   ORDER_TYPE_INFO, isPendingType, orderTypeInfo, parseNum, validateTicket,
   type ExpirationChoice, type OrderTypeId, type TicketDraft,
@@ -113,6 +114,8 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
   const quoteUsable = bid != null && ask != null && !q?.stale;
   const lastOnly = (bid == null || ask == null) && q?.available !== false && q?.last != null;
   const spec = useSymbolLotSpec(symbol);
+  // "Today" ends at the end of the broker's day (own bridge's measured offset).
+  const brokerClock = useBrokerClockOffset(open);
 
   const info = orderTypeInfo(orderType);
   const pending = isPendingType(orderType);
@@ -122,7 +125,8 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
     price: parseNum(priceText), stopLimitPrice: parseNum(stopLimitText),
     stopLoss: parseNum(slText), takeProfit: parseNum(tpText),
     expiration, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-  }), [orderType, lot, priceText, stopLimitText, slText, tpText, expiration, expiresAt]);
+    brokerClockOffsetMs: brokerClock.offsetMs,
+  }), [orderType, lot, priceText, stopLimitText, slText, tpText, expiration, expiresAt, brokerClock.offsetMs]);
   // Side checks use the live quote only while it is usable; otherwise the broker decides.
   const v = validateTicket(draft, quoteUsable ? { bid, ask } : { bid: null, ask: null }, spec);
 
@@ -289,6 +293,9 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
                   className="h-7 rounded border border-zinc-800 bg-transparent px-1 text-xs" data-testid="order-ticket-exp-at" />
               )}
             </div>
+            {expiration === "TODAY" && brokerClock.offsetMs == null && !brokerClock.loading && (
+              <p className="col-span-2 text-[10px] text-txt-secondary" data-testid="order-ticket-exp-broker-clock-hint">{BROKER_CLOCK_UNKNOWN_HINT}</p>
+            )}
           </div>
         )}
 

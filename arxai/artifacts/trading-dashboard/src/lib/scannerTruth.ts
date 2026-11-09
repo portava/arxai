@@ -698,7 +698,13 @@ export function resolveScannerTruth(
     candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago${behind}. Not a live read.`;
   } else if (displayStatus === "LIVE" && candleTrailing === "clean") {
     candleStatus = "live";
-    candleReason = "Live, confirmed candles.";
+    // On coarse timeframes a clean series' newest closed bar can be hours old
+    // (the trailing-interval rule is right to call it current); say how old the
+    // shown close is instead of letting "Live" imply a fresh tick (Truth audit T7).
+    const coarse = candleIntervalMsForTf != null && candleIntervalMsForTf >= 4 * HOUR_MS && candleAgeMs != null;
+    candleReason = coarse
+      ? `Live, confirmed candles. The newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago; the shown price is its close, not a fresh tick.`
+      : "Live, confirmed candles.";
   } else if (displayStatus === "LIVE" && candleTrailing === "delayed") {
     // One closed bar is overdue: the same "delayed" the server rule assigns.
     candleStatus = "delayed";

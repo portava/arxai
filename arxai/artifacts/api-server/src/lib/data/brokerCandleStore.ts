@@ -37,6 +37,7 @@ import {
   type NewBrokerCandle,
 } from "@workspace/db";
 import type { Candle } from "./types.js";
+import { brokerStampToUtcMs, recordBrokerClockSample } from "../brokerHub/brokerClockOffset.js";
 import { isValidCacheOhlc, upsertCandles, getCacheCoverage } from "./candleCache.js";
 import { depthTargetDaysFor } from "./providerRoutingMap.js";
 
@@ -378,6 +379,22 @@ export async function ingestBrokerCandles(
   const source = payload.source?.trim() || BROKER_CANDLE_SOURCE;
   const terminalId = payload.terminalId ?? null;
   const brokerServerTime = parseTime(payload.brokerServerTime ?? null);
+  // Broker-clock offset sample (Truth audit T1): the push carries the broker
+  // server clock (TimeCurrent) beside the EA's GMT clock (sentAt) read at the
+  // same instant. The bars below are stamped in the broker clock and are
+  // converted to UTC with the bridge's measured offset when one is known.
+  const sentAtForClock = parseTime(payload.sentAt ?? null);
+  recordBrokerClockSample({
+    bridgeConnectionId: ctx.bridgeConnectionId,
+    brokerMs: brokerServerTime?.getTime() ?? null,
+    gmtMs: sentAtForClock?.getTime() ?? null,
+    basis: "candle_push",
+    nowMs: now,
+  });
+  const toUtc = (d: Date): Date => {
+    const c = brokerStampToUtcMs(ctx.bridgeConnectionId, d.getTime(), now);
+    return c ? new Date(c.utcMs) : d;
+  };
 
   const empty: BrokerCandleIngestResult = {
     ok: true,
@@ -412,13 +429,15 @@ export async function ingestBrokerCandles(
       rejected += 1;
       continue;
     }
-    const openTime = parseTime(b.openTime ?? b.time);
-    if (!openTime) {
+    const openTimeRaw = parseTime(b.openTime ?? b.time);
+    if (!openTimeRaw) {
       rejected += 1;
       continue;
     }
+    const openTime = toUtc(openTimeRaw);
     const openMs = openTime.getTime();
-    const closeTime = parseTime(b.closeTime ?? null) ?? new Date(openMs + tfMs);
+    const closeTimeRaw = parseTime(b.closeTime ?? null);
+    const closeTime = closeTimeRaw ? toUtc(closeTimeRaw) : new Date(openMs + tfMs);
     const isClosedBar = resolveIsClosed(openMs, tfMs, b.isClosed ?? b.isFinal, now);
     byTime.set(openTime.toISOString(), {
       openTime,

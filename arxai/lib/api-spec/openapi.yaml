@@ -13875,6 +13875,28 @@ components:
             bars are the stored MT5 mirror with no bridge pushing them
             (stored_history). null when neither applies. Absent from older
             servers.
+        feedScope:
+          type: ["string", "null"]
+          enum: [own_bridge, platform_shared, provider, null]
+          description: >
+            Whose feed this is: the signed-in trader's own bridge, another
+            bridge's MT5 series served platform-wide, or a non-MT5 provider.
+            null when nothing was served. Absent from older servers.
+        contention:
+          type: boolean
+          description: Two attributed bridges were pushing this series at read time.
+        brokerClockOffsetMs:
+          type: ["number", "null"]
+          description: >
+            Measured broker-clock offset (ms, broker minus UTC) in force for the
+            serving bridge; its stamps were converted to UTC with it at ingest.
+            null when unknown (raw broker clock; freshness fails closed).
+        lastTickTimeBasis:
+          type: ["string", "null"]
+          enum: [producer_tick, server_receive, null]
+          description: >
+            What lastTickTime is: the producer's own tick time, or the time this
+            server received the tick (never proof the tick is current).
 
     ChartMergeSeamReport:
       type: object
@@ -15560,6 +15582,13 @@ components:
             then the shared synthetic sentence, riskUnchecked is false and no
             events or disclaimer are carried. Absent means not synthetic (or an
             older server).
+        fetchedAt:
+          type: string
+          nullable: true
+          description: >-
+            ISO time the connected calendar was last fetched from its provider.
+            Lets the news claim be verified (recent) or stale (old). Absent on
+            older servers.
     TruthData:
       type: object
       required: [state, source, sourceLabel, price, lastCandleAt, lastTickAt]
@@ -15585,6 +15614,31 @@ components:
             Why a not-live feed is not live when the reason is known and not a
             fault: market_closed = the instrument is in its scheduled close and
             the bars are the last session's. null/absent otherwise.
+        lastTickBasis:
+          type: string
+          nullable: true
+          enum: [producer_tick, server_receive, null]
+          description: >-
+            What lastTickAt is: the producer's own tick time, or the time ARX
+            received the tick (never a verified observation). Absent on older
+            servers.
+        feedScope:
+          type: string
+          nullable: true
+          enum: [own_bridge, platform_shared, provider, null]
+          description: >-
+            Whose feed the data block rests on: the signed-in trader's own
+            bridge, another bridge's MT5 series served platform-wide, or a
+            non-MT5 provider. Absent on older servers.
+        contention:
+          type: boolean
+          description: Two bridges were pushing this series when it was read.
+        brokerClockOffsetMs:
+          type: number
+          nullable: true
+          description: >-
+            Measured broker-clock offset (ms, broker minus UTC) used to convert
+            the serving bridge's stamps to UTC at ingest; null when unknown.
     TruthComponents:
       type: object
       required: [scanner, flame, timing, scalp]
@@ -15662,7 +15716,7 @@ components:
           type: string
           enum:
             [LIVE_FEED_OBSERVATION, MODEL_ESTIMATE, FEED_UNCONFIRMED,
-             CALENDAR_FETCH_TIME_UNKNOWN, SYNTHETIC_NO_EVENT_MAPPING, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
+             CALENDAR_FETCH_TIME_UNKNOWN, SYNTHETIC_NO_EVENT_MAPPING, RECEIVE_TIME_ONLY, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
              NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, CALENDAR_UNCHECKED,
              COMPONENT_ABSENT, LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
         observedAt:

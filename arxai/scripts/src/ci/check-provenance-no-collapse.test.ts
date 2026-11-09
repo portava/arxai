@@ -175,7 +175,7 @@ record(
 {
   const under = checkProvenanceNoCollapse({
     allowlist: ALLOWLIST.map((e) =>
-      e.file.endsWith("chartIntelligence.ts") ? { ...e, count: e.count - 1 } : e,
+      e.file.endsWith("formingBarComposer.ts") ? { ...e, count: e.count + 1 } : e,
     ),
   });
   record(

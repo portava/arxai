@@ -101,6 +101,11 @@ export interface NewsRadarProvider {
   name: string;
   /** Plain-English note describing what is / is not live. */
   note: string;
+  /**
+   * ISO time of the provider's last successful fetch, when connected and
+   * known; null otherwise. Lets the Truth snapshot date the calendar read.
+   */
+  fetchedAt?: string | null;
 }
 
 export interface MarketImpactRadar {

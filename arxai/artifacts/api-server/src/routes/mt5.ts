@@ -49,6 +49,7 @@ import { emitLiveAccountChanged, emitConnectionAccountChanged } from "../lib/liv
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State, readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 import { readSharedMasterBridgeForUser } from "./mt5SharedBridgeStatus.js";
+import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample, seedBrokerClockOffsetFromConnection } from "../lib/brokerHub/brokerClockOffset.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
 const router = Router();
@@ -460,6 +461,19 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       };
     })();
     const heartbeatReceivedAt = new Date();
+    // Broker-clock offset sample (Truth audit T1): the EA's broker server time
+    // (`brokerTime`, TimeCurrent) beside its GMT clock (`eaTimeGmt`), read at
+    // the same instant. Measurement only; nothing here gates. A bridge with no
+    // in-memory samples (fresh process) is first seeded from its own row's
+    // persisted offset when that is within the TTL (no I/O: row in hand).
+    seedBrokerClockOffsetFromConnection(userConn, heartbeatReceivedAt.getTime());
+    recordBrokerClockSample({
+      bridgeConnectionId: userConn?.id ?? null,
+      brokerMs: parseMqlTimeString(extras.brokerTime),
+      gmtMs: extras.eaTimeGmtMs,
+      basis: "heartbeat",
+      nowMs: heartbeatReceivedAt.getTime(),
+    });
     const drift = evaluateClockDrift({
       eaGmtMs: extras.eaTimeGmtMs,
       serverReceivedMs: heartbeatReceivedAt.getTime(),
@@ -2455,7 +2469,10 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
     if (!isValidOhlc(b)) { rejected += 1; continue; }
     const parsedTime = new Date(b.time);
     if (Number.isNaN(parsedTime.getTime())) { rejected += 1; continue; }
-    const time = parsedTime.toISOString();
+    // Bar times arrive in the broker's clock; convert with this bridge's
+    // measured offset when known (Truth audit T1), else keep the raw stamp.
+    const utc = brokerStampToUtcMs(userConn.id, parsedTime.getTime());
+    const time = new Date(utc ? utc.utcMs : parsedTime.getTime()).toISOString();
     byTime.set(time, {
       time, open: b.open, high: b.high, low: b.low, close: b.close,
       volume: b.tickVolume ?? b.volume,

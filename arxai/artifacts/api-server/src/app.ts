@@ -5,6 +5,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { attachAuthUser } from "./lib/auth/middleware";
+import { bindFeedScope } from "./lib/data/feedScopeMiddleware";
 import { applyEffectiveViewMode } from "./lib/auth/effectiveViewMode";
 import { startMonitor } from "./lib/intelligence/monitorWorker";
 import { startEleanorOutcomeWorker } from "./lib/eleanorQuality/outcomeWorker";
@@ -189,6 +190,9 @@ app.use("/api/mt5", (req, _res, next) => {
 // the timer's res.on("finish") sees every API response (including 4xx/5xx
 // from downstream handlers). Records into the perfRecorder ring buffer
 // readable only by ADMIN/OWNER via /api/admin/performance/recent-actions.
+// Whose market data: every read inside a signed-in request is pinned to the
+// reader's own bridge, the same one the chart shows (lib/data/feedScope.ts).
+app.use("/api", bindFeedScope);
 app.use("/api", router);
 
 if (process.env.ARX_SERVE_DASHBOARD === "true") {

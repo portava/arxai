@@ -7,6 +7,7 @@ import { bootstrapOwnerUser } from "./lib/auth/ownerBootstrap";
 import { bootstrapAdminUser } from "./lib/auth/adminBootstrap";
 import { bootstrapLegacyOwnerDowngrade } from "./lib/auth/legacyOwnerDowngrade";
 import { startStuckCommandWatchdog } from "./lib/mt5/stuckCommandWatchdog";
+import { installBrokerClockOffsetPersistence } from "./lib/brokerHub/brokerClockOffsetStore";
 import { startUnknownReconcilerWorker } from "./lib/live/unknownReconcilerWorker";
 import { startMt5FeedStalenessWatchdog } from "./lib/data/mt5FeedStalenessWatchdog";
 import { startPoolViewAnomalyDetector } from "./lib/audit/poolViewAnomalyDetector";
@@ -143,6 +144,9 @@ ensureSafetyCoreInitialized()
       if (isPreviewSafeStart()) {
         logger.warn("Development preview safe start: background jobs paused; authentication available; no schema migration performed");
       } else {
+      // Truth audit T1 follow-up — persist / reseed each bridge's measured
+      // broker clock offset across restarts (best-effort, never blocks ingest).
+      installBrokerClockOffsetPersistence();
       startStuckCommandWatchdog();
       // R2 S3/S4 — scheduled UNKNOWN-command reconciler. Resolves LIVE_UNKNOWN
       // commands from broker evidence (never fabricates an outcome) and

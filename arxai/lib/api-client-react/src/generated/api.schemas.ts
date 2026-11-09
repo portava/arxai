@@ -3553,6 +3553,35 @@ export const ChartFeedStatusNotLiveReason = {
   stored_history: "stored_history",
 } as const;
 
+/**
+ * Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.
+
+ * @nullable
+ */
+export type ChartFeedStatusFeedScope =
+  | (typeof ChartFeedStatusFeedScope)[keyof typeof ChartFeedStatusFeedScope]
+  | null;
+
+export const ChartFeedStatusFeedScope = {
+  own_bridge: "own_bridge",
+  platform_shared: "platform_shared",
+  provider: "provider",
+} as const;
+
+/**
+ * What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).
+
+ * @nullable
+ */
+export type ChartFeedStatusLastTickTimeBasis =
+  | (typeof ChartFeedStatusLastTickTimeBasis)[keyof typeof ChartFeedStatusLastTickTimeBasis]
+  | null;
+
+export const ChartFeedStatusLastTickTimeBasis = {
+  producer_tick: "producer_tick",
+  server_receive: "server_receive",
+} as const;
+
 export interface ChartFeedStatus {
   symbol: string;
   displaySymbol: string;
@@ -3597,6 +3626,26 @@ export interface ChartFeedStatus {
    * @nullable
    */
   notLiveReason?: ChartFeedStatusNotLiveReason;
+  /**
+   * Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.
+
+   * @nullable
+   */
+  feedScope?: ChartFeedStatusFeedScope;
+  /** Two attributed bridges were pushing this series at read time. */
+  contention?: boolean;
+  /**
+   * Measured broker-clock offset (ms, broker minus UTC) in force for the serving bridge; its stamps were converted to UTC with it at ingest. null when unknown (raw broker clock; freshness fails closed).
+
+   * @nullable
+   */
+  brokerClockOffsetMs?: number | null;
+  /**
+   * What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).
+
+   * @nullable
+   */
+  lastTickTimeBasis?: ChartFeedStatusLastTickTimeBasis;
 }
 
 /**
@@ -6509,6 +6558,8 @@ export interface TruthNews {
   disclaimer: string | null;
   /** Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server). */
   synthetic?: boolean;
+  /** ISO time the connected calendar was last fetched from its provider. Lets the news claim be verified (recent) or stale (old). Absent on older servers. */
+  fetchedAt?: string | null;
 }
 
 export type TruthDataState =
@@ -6532,6 +6583,31 @@ export const TruthDataNotLiveReason = {
   market_closed: "market_closed",
 } as const;
 
+/**
+ * What lastTickAt is: the producer's own tick time, or the time ARX received the tick (never a verified observation). Absent on older servers.
+ */
+export type TruthDataLastTickBasis =
+  | (typeof TruthDataLastTickBasis)[keyof typeof TruthDataLastTickBasis]
+  | null;
+
+export const TruthDataLastTickBasis = {
+  producer_tick: "producer_tick",
+  server_receive: "server_receive",
+} as const;
+
+/**
+ * Whose feed the data block rests on: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. Absent on older servers.
+ */
+export type TruthDataFeedScope =
+  | (typeof TruthDataFeedScope)[keyof typeof TruthDataFeedScope]
+  | null;
+
+export const TruthDataFeedScope = {
+  own_bridge: "own_bridge",
+  platform_shared: "platform_shared",
+  provider: "provider",
+} as const;
+
 export interface TruthData {
   state: TruthDataState;
   source: string | null;
@@ -6546,6 +6622,14 @@ export interface TruthData {
   lastTickAt: string | null;
   /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
   notLiveReason?: TruthDataNotLiveReason;
+  /** What lastTickAt is: the producer's own tick time, or the time ARX received the tick (never a verified observation). Absent on older servers. */
+  lastTickBasis?: TruthDataLastTickBasis;
+  /** Whose feed the data block rests on: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. Absent on older servers. */
+  feedScope?: TruthDataFeedScope;
+  /** Two bridges were pushing this series when it was read. */
+  contention?: boolean;
+  /** Measured broker-clock offset (ms, broker minus UTC) used to convert the serving bridge's stamps to UTC at ingest; null when unknown. */
+  brokerClockOffsetMs?: number | null;
 }
 
 export interface TruthComponents {
@@ -6654,6 +6738,7 @@ export const TruthEvidenceClaimReason = {
   FEED_UNCONFIRMED: "FEED_UNCONFIRMED",
   CALENDAR_FETCH_TIME_UNKNOWN: "CALENDAR_FETCH_TIME_UNKNOWN",
   SYNTHETIC_NO_EVENT_MAPPING: "SYNTHETIC_NO_EVENT_MAPPING",
+  RECEIVE_TIME_ONLY: "RECEIVE_TIME_ONLY",
   FEED_STALE: "FEED_STALE",
   EXPIRED: "EXPIRED",
   NO_FEED: "NO_FEED",

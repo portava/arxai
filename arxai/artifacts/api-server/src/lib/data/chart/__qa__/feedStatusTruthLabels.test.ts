@@ -26,6 +26,7 @@ interface RouteState {
   provenance: Record<string, unknown> | null;
   assetClass: string;
 }
+const routeCalls: Array<number | null | undefined> = [];
 const route: RouteState = { ok: true, candles: [], primaryProvider: "mt5_broker", attempts: [], provenance: null, assetClass: "forex" };
 
 function series(n: number, newestOpenMs: number, intervalMs: number) {
@@ -37,7 +38,7 @@ function series(n: number, newestOpenMs: number, intervalMs: number) {
 
 mock.module("../../marketDataRouter.js", { namedExports: {
   classifySymbol: () => route.assetClass,
-  routeCandles: async (symbol: string) => ({
+  routeCandles: async (symbol: string, _tf?: string, _limit?: number, opts?: { bridgeConnectionId?: number | null }) => (routeCalls.push(opts?.bridgeConnectionId), {
     ok: route.ok, symbol, assetClass: route.assetClass, candles: route.candles,
     primaryProvider: route.primaryProvider, attempts: route.attempts,
     provenance: route.provenance, userMessage: route.ok ? null : "No feed.",
@@ -67,20 +68,32 @@ function liveMt5(nowMs: number, intervalMs = M5) {
     brokerSymbol: null, environment: "unknown", receivedAt: new Date(nowMs).toISOString(), delayed: false, source: "DERIVED", sourceId: "mt5_broker:EURUSD:M5" };
 }
 
+// The served series is bridge 7's (provenance above); ticks are that writer's.
+const BRIDGE_7 = { bridgeConnectionId: 7 };
+
 beforeEach(() => __resetFormingBarStore());
 
 test("Last tick: an MT5-served chart reports the broker tick the server received", async () => {
   liveMt5(WEEKDAY_NOW);
-  foldFormingTick("EURUSD", 1.1, WEEKDAY_NOW - 1_000, WEEKDAY_NOW - 1_000, "mt5_broker");
-  foldFormingTick("EURUSD", 1.1002, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker");
+  foldFormingTick("EURUSD", 1.1, WEEKDAY_NOW - 1_000, WEEKDAY_NOW - 1_000, "mt5_broker", BRIDGE_7);
+  foldFormingTick("EURUSD", 1.1002, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker", BRIDGE_7);
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.source, "mt5_broker");
   assert.equal(out.feedStatus.lastTickTime, new Date(WEEKDAY_NOW).toISOString());
 });
 
+test("Last tick: another bridge's tick on the same symbol is not this series' last tick", async () => {
+  liveMt5(WEEKDAY_NOW);
+  foldFormingTick("EURUSD", 1.1, WEEKDAY_NOW - 1_000, WEEKDAY_NOW - 1_000, "mt5_broker", { bridgeConnectionId: 8 });
+  foldFormingTick("EURUSD", 1.1002, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker", { bridgeConnectionId: 8 });
+  const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
+  assert.equal(out.feedStatus.lastTickTime, null);
+  assert.equal(out.candles.some((c) => c.isForming), false, "bridge 8's ticks never form bridge 7's tip");
+});
+
 test("Last tick: no MT5 tick observed for the symbol stays unknown (never invented)", async () => {
   liveMt5(WEEKDAY_NOW);
-  foldFormingTick("GBPUSD", 1.3, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker");
+  foldFormingTick("GBPUSD", 1.3, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker", BRIDGE_7);
   foldFormingTick("EURUSD", 1.1, WEEKDAY_NOW, WEEKDAY_NOW, "deriv_public");
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.lastTickTime, null);
@@ -89,7 +102,7 @@ test("Last tick: no MT5 tick observed for the symbol stays unknown (never invent
 test("Last tick: a replayed frozen quote is not reported as a fresh tick", async () => {
   liveMt5(WEEKDAY_NOW);
   const brokerTime = WEEKDAY_NOW - 30 * MIN;
-  for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, brokerTime, WEEKDAY_NOW - i * 10_000, "mt5_broker");
+  for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, brokerTime, WEEKDAY_NOW - i * 10_000, "mt5_broker", BRIDGE_7);
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.lastTickTime, null);
 });
@@ -212,7 +225,7 @@ test("Closed market: the EA replaying its frozen Friday quote on Saturday does n
   const now = FRI + D1 + 2 * HOUR;
   closedBars(H4, FRI + 20 * HOUR, now);
   const lastQuote = FRI + 21 * HOUR + 54 * MIN;
-  for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, lastQuote, now - i * 10_000, "mt5_broker");
+  for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, lastQuote, now - i * 10_000, "mt5_broker", BRIDGE_7);
   const out = await withNow(now, () => getChartCandles("EURUSD", "H4", 60, true));
   assert.equal(out.feedStatus.isLive, false);
 });
@@ -234,8 +247,8 @@ test("Reopen: bars printed after the Friday close are observed trading, not clos
 test("Friday after the scheduled close: a quote still moving is trading, not closed", async () => {
   const now = FRI + 22 * HOUR + 20 * MIN;
   closedBars(D1, FRI, now);
-  foldFormingTick("EURUSD", 1.1, now - 1_000, now - 1_000, "mt5_broker");
-  foldFormingTick("EURUSD", 1.1001, now, now, "mt5_broker");
+  foldFormingTick("EURUSD", 1.1, now - 1_000, now - 1_000, "mt5_broker", BRIDGE_7);
+  foldFormingTick("EURUSD", 1.1001, now, now, "mt5_broker", BRIDGE_7);
   const out = await withNow(now, () => getChartCandles("EURUSD", "D1", 60));
   assert.equal(out.feedStatus.isLive, true);
 });
@@ -247,4 +260,20 @@ test("24/7 synthetic is never treated as weekend-closed", async () => {
   route.primaryProvider = "mt5_broker";
   const out = await withNow(now, () => getChartCandles("V75", "D1", 60));
   assert.equal(out.feedStatus.isLive, true);
+});
+
+test("A pinned read whose bridge is not serving runs the provider chain once (no second full chain)", async () => {
+  const now = WEEKDAY_NOW;
+  route.ok = true;
+  route.primaryProvider = "assistant_real:twelve_data";
+  route.assetClass = "forex";
+  route.candles = series(60, Math.floor(now / M5) * M5 - M5, M5);
+  route.attempts = [{ provider: "assistant_real:twelve_data", ok: true, reason: null, candleCount: 60, ms: 1 }];
+  route.provenance = { providerId: "assistant_real", subProviderId: "twelve_data", brokerCode: "third_party", bridgeConnectionId: null, userId: null,
+    brokerSymbol: null, environment: "unknown", receivedAt: new Date(now).toISOString(), delayed: null, source: "DERIVED", sourceId: "x" };
+  routeCalls.length = 0;
+  const out = await withNow(now, () => getChartCandles("EURUSD", "M5", 60, false, { bridgeConnectionId: 11 }));
+  assert.equal(routeCalls.length, 1, "the router's own scope fallback handles the shared MT5 retry");
+  assert.equal(routeCalls[0], undefined, "the pin travels as the scope so the router may fall back to the shared MT5 series");
+  assert.equal(out.feedStatus.feedScope, "provider");
 });

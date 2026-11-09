@@ -30,13 +30,13 @@ import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
   recordMt5Tick,
-  getMt5BridgeClockOffset,
   type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
 import type { Candle } from "../data/types.js";
 import { mt5PriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
-import { brokerServerCandleTimeBasis } from "../data/candleTimeBasisEvidence.js";
+import { brokerServerCandleTimeBasis, convertedBrokerCandleTimeBasis } from "../data/candleTimeBasisEvidence.js";
+import { brokerStampToUtcMs, recordBrokerClockSample } from "../brokerHub/brokerClockOffset.js";
 import { isUniqueViolation } from "../pgError.js";
 import { randomUUID } from "node:crypto";
 import { isExactNativeAccountReplay } from "../brokerHub/nativeAccountReport.js";
@@ -328,13 +328,16 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
       if (!symbol || !timeframe || openTimeEpochMs == null) return;
-      // `openTimeEpochMs` is bar time on the broker's trade-server clock, not
-      // UTC (audit H7). The bar keeps those coordinates (the forming bar and
-      // the stored history bucket on the same clock) and carries the bridge's
-      // measured UTC offset so a reader can show it in UTC and age it honestly.
+      // Bar OPEN times arrive in the broker's trade-server clock (MqlRates.time).
+      // They are converted to UTC here with the bridge's measured offset
+      // (brokerClockOffset.ts; owner decision 2026-11-08, convert at ingest,
+      // superseding audit H7's broker coordinates). With no measurement the raw
+      // stamp is kept and labelled BROKER_SERVER with no offset, so freshness
+      // consumers fail closed rather than guess.
+      const openUtc = brokerStampToUtcMs(bridgeConnectionId, openTimeEpochMs);
       const candle: Candle = {
-        time: new Date(openTimeEpochMs).toISOString(),
-        timeBasisEvidence: brokerServerCandleTimeBasis(getMt5BridgeClockOffset(candleBridge)),
+        time: new Date(openUtc ? openUtc.utcMs : openTimeEpochMs).toISOString(),
+        timeBasisEvidence: openUtc ? convertedBrokerCandleTimeBasis(openUtc.offset) : brokerServerCandleTimeBasis(null),
         open: Number(p.open),
         high: Number(p.high),
         low: Number(p.low),
@@ -381,13 +384,30 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
         : null;
     if (eaCreatedAtEpochMs == null) return;
     recordMt5Tick(symbol, { bid, ask, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
+    // One broker-clock offset sample per tick: the tick's broker time against
+    // the EA's UTC clock in the same post (brokerClockOffset.ts rejects samples
+    // far from the 30-minute grid, e.g. a re-posted old tick on a quiet market).
+    if (brokerTimeEpochMs != null) {
+      recordBrokerClockSample({
+        bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+        brokerMs: brokerTimeEpochMs, gmtMs: eaCreatedAtEpochMs, basis: "v2_tick",
+      });
+    }
+    const tickUtc = brokerTimeEpochMs != null
+      ? brokerStampToUtcMs(bridge?.bridgeConnectionId ?? null, brokerTimeEpochMs)
+      : null;
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
-    // analysis/execution input. Deliberately keeps the broker clock: the EA's
-    // CANDLE `openTimeEpochMs` is bar time on the same trade-server clock, so
-    // the forming bar buckets consistently with the stored closed bars.
-    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
+    // analysis/execution input. The tip buckets on the same clock as the bars:
+    // UTC when this bridge's offset is measured (bars are converted at ingest),
+    // else the raw broker clock (bars are stored raw too). Partitioned by the
+    // writing bridge and bucketed on its broker grid, so another bridge's ticks
+    // never fold into this broker's tip.
+    foldFormingTick(symbol, bid, tickUtc ? tickUtc.utcMs : brokerTimeEpochMs, Date.now(), "mt5_broker", {
+      bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+      brokerOffsetMs: tickUtc ? tickUtc.offset.offsetMs : null,
+    });
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }
@@ -428,3 +448,6 @@ async function safeInsertRejected(
     return false;
   }
 }
+
+/** Test seam: the market-data fold of one accepted v2 message (no DB). */
+export const __feedMarketDataStoreForTests = feedMarketDataStore;

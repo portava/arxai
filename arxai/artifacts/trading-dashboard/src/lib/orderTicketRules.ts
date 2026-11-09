@@ -64,6 +64,11 @@ export interface TicketDraft {
   expiration: ExpirationChoice;
   /** ISO datetime for SPECIFIED. */
   expiresAt: string | null;
+  /**
+   * The trader's own bridge broker clock − UTC, in ms (GET /api/me/broker-clock).
+   * Sets where "Today" ends; null/absent = unknown (23:59 UTC).
+   */
+  brokerClockOffsetMs?: number | null;
 }
 
 export interface TicketQuote { bid: number | null; ask: number | null }
@@ -162,19 +167,38 @@ export function validateTicket(d: TicketDraft, q: TicketQuote, spec?: TicketSymb
   return { ok: errors.length === 0, errors, reference, riskReward };
 }
 
+/**
+ * The UTC instant at which the BROKER's current trading day ends.
+ *
+ * MT5's "Today" pending-order expiry is the broker's calendar day. With the
+ * broker clock − UTC offset (ms) known, the day ends 23:59:59 broker time,
+ * converted back to UTC (the EAs take a UTC epoch and convert to server time
+ * on their side). Unknown offset: 23:59 UTC, as before.
+ */
+export function brokerDayEndIso(nowMs: number, brokerClockOffsetMs: number | null | undefined): string {
+  const known = typeof brokerClockOffsetMs === "number" && Number.isFinite(brokerClockOffsetMs);
+  if (!known) {
+    const d = new Date(nowMs);
+    d.setUTCHours(23, 59, 0, 0);
+    return d.toISOString();
+  }
+  const broker = new Date(nowMs + brokerClockOffsetMs);
+  broker.setUTCHours(23, 59, 59, 0);
+  return new Date(broker.getTime() - brokerClockOffsetMs).toISOString();
+}
+
 /** Resolve the expiration choice to the ISO string the server takes (null = GTC). */
 //
-// "Today" = 23:59 of the current day. MT5's "Today" is the BROKER's day; when
-// the caller knows the broker clock's UTC offset (minutes) the end of day is
-// computed on that clock, otherwise on UTC. No dashboard surface has a broker
-// offset yet, so today this is 23:59 UTC.
-export function expirationIso(d: Pick<TicketDraft, "expiration" | "expiresAt">, now: Date = new Date(), brokerUtcOffsetMinutes: number | null = null): string | null {
+// "Today" = end of the BROKER's day (brokerDayEndIso). The offset comes from
+// the explicit minutes argument when given, else the draft's
+// brokerClockOffsetMs (the order window fills it from useBrokerClockOffset).
+export function expirationIso(d: Pick<TicketDraft, "expiration" | "expiresAt" | "brokerClockOffsetMs">, now: Date = new Date(), brokerUtcOffsetMinutes: number | null = null): string | null {
   if (d.expiration === "GTC") return null;
   if (d.expiration === "TODAY") {
-    const off = typeof brokerUtcOffsetMinutes === "number" && Number.isFinite(brokerUtcOffsetMinutes) ? brokerUtcOffsetMinutes : 0;
-    const broker = new Date(now.getTime() + off * 60_000);
-    broker.setUTCHours(23, 59, 0, 0);
-    return new Date(broker.getTime() - off * 60_000).toISOString();
+    const offMs = typeof brokerUtcOffsetMinutes === "number" && Number.isFinite(brokerUtcOffsetMinutes)
+      ? brokerUtcOffsetMinutes * 60_000
+      : d.brokerClockOffsetMs ?? null;
+    return brokerDayEndIso(now.getTime(), offMs);
   }
   return d.expiresAt && Number.isFinite(Date.parse(d.expiresAt)) ? new Date(d.expiresAt).toISOString() : null;
 }

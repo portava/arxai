@@ -46,6 +46,7 @@ export type TruthEvidenceReason =
   | "FEED_UNCONFIRMED"
   | "CALENDAR_FETCH_TIME_UNKNOWN"
   | "SYNTHETIC_NO_EVENT_MAPPING"
+  | "RECEIVE_TIME_ONLY"
   // stale
   | "FEED_STALE"
   | "EXPIRED"
@@ -67,6 +68,7 @@ export const TRUTH_EVIDENCE_REASONS: readonly TruthEvidenceReason[] = [
   "FEED_UNCONFIRMED",
   "CALENDAR_FETCH_TIME_UNKNOWN",
   "SYNTHETIC_NO_EVENT_MAPPING",
+  "RECEIVE_TIME_ONLY",
   "FEED_STALE",
   "EXPIRED",
   "NO_FEED",
@@ -91,6 +93,10 @@ const REASON_CLASS: Record<TruthEvidenceReason, TruthEvidenceClass> = {
   // never "verified" (nothing was observed), never "unavailable" (nothing is
   // missing — scheduled events simply do not apply to a synthetic market).
   SYNTHETIC_NO_EVENT_MAPPING: "estimate",
+  // The value exists and the feed is live, but its time is the server's
+  // receive time, not the producer's observation time: identified, not proven
+  // current (Truth audit T3).
+  RECEIVE_TIME_ONLY: "estimate",
   FEED_STALE: "stale",
   EXPIRED: "stale",
   NO_FEED: "unavailable",
@@ -137,9 +143,22 @@ export interface TruthEvidenceInput {
     price: number | null;
     lastCandleAt: string | null;
     lastTickAt: string | null;
+    /**
+     * What lastTickAt is: the producer's tick time, or the time this server
+     * received the tick. A receive time is never a verified observation.
+     * Absent (older server) is treated as producer_tick for compatibility.
+     */
+    lastTickBasis?: "producer_tick" | "server_receive" | null;
   };
   news: {
     providerConnected: boolean;
+    /**
+     * ISO time the calendar was last fetched from its provider, when the
+     * snapshot carries it. A connected calendar fetched within
+     * TRUTH_CALENDAR_FRESH_MS is a verified observation; older is stale.
+     * Absent (older server) keeps the estimate CALENDAR_FETCH_TIME_UNKNOWN.
+     */
+    fetchedAt?: string | null;
     /**
      * Scheduled event risk could not be checked: the calendar read failed, or
      * a configured calendar is not connected. Distinct from "no calendar is
@@ -161,6 +180,8 @@ export interface TruthEvidenceInput {
 
 /** Clock skew tolerated before a tick time counts as "in the future". */
 export const TRUTH_EVIDENCE_TICK_SKEW_MS = 5_000;
+/** A connected calendar fetched within this is a current observation. */
+export const TRUTH_CALENDAR_FRESH_MS = 30 * 60_000;
 
 const COMPONENT_KEYS: readonly TruthComponentKey[] = ["scanner", "flame", "timing", "scalp"];
 
@@ -243,22 +264,33 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
 
   // ── Last tick: a real observation time; a future one is not an observation.
   const tickAt = data.lastTickAt;
-  const lastTick = tickAt == null
+  const lastTickFeed = tickAt == null
     ? claim("NO_VALUE", null)
     : !parsable(tickAt) || Date.parse(tickAt) > nowMs + TRUTH_EVIDENCE_TICK_SKEW_MS
       ? claim("INVALID_TIMESTAMP", null)
       : feedClaim(data.state, data.source, tickAt);
+  // A receive-time stamp identifies the tick but does not prove it current.
+  const lastTick = lastTickFeed.reason === "LIVE_FEED_OBSERVATION" && data.lastTickBasis === "server_receive"
+    ? claim("RECEIVE_TIME_ONLY", tickAt)
+    : lastTickFeed;
 
-  // ── News / calendar. The snapshot does not carry the calendar's fetch time,
-  // so even a connected provider is never labelled "verified" here. A calendar
-  // that could not be checked is unavailable for that reason — never
+  // ── News / calendar. A connected provider is a verified observation only
+  // when the snapshot carries the calendar's fetch time and that fetch is
+  // recent; an old fetch is stale; no fetch time keeps the estimate. A
+  // calendar that could not be checked is unavailable for that reason — never
   // described as "not connected", and never as an estimate.
+  const fetchedAt = input.news.fetchedAt ?? null;
+  const fetchedMs = parsable(fetchedAt) ? Date.parse(fetchedAt) : NaN;
   const news = input.news.synthetic === true
     ? claim("SYNTHETIC_NO_EVENT_MAPPING", null)
     : input.news.riskUnchecked === true
     ? claim("CALENDAR_UNCHECKED", null)
     : input.news.providerConnected
-      ? claim("CALENDAR_FETCH_TIME_UNKNOWN", null)
+      ? !Number.isFinite(fetchedMs) || fetchedMs > nowMs + TRUTH_EVIDENCE_TICK_SKEW_MS
+        ? claim("CALENDAR_FETCH_TIME_UNKNOWN", null)
+        : nowMs - fetchedMs <= TRUTH_CALENDAR_FRESH_MS
+          ? claim("LIVE_FEED_OBSERVATION", fetchedAt)
+          : claim("FEED_STALE", fetchedAt)
       : claim("NO_CALENDAR", null);
 
   // ── Components: heuristic reads over the feed.
@@ -384,6 +416,7 @@ export const TRUTH_EVIDENCE_REASON_TEXT: Record<TruthEvidenceReason, string> = {
   FEED_UNCONFIRMED: "The live feed is not confirmed yet, so this is not verified.",
   CALENDAR_FETCH_TIME_UNKNOWN: "From the connected calendar; when it was last fetched isn't reported.",
   SYNTHETIC_NO_EVENT_MAPPING: "Synthetic market — scheduled events do not apply; calendar not consulted.",
+  RECEIVE_TIME_ONLY: "Stamped when ARX received it, not when the broker observed it — identified, not verified current.",
   FEED_STALE: "The feed behind this has gone stale.",
   EXPIRED: "This read expired; waiting for current evidence.",
   NO_FEED: "No usable market-data feed backs this.",

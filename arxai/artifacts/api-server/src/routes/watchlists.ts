@@ -40,14 +40,16 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
         // signalAsOf is the newest bar's own stamp (never rewritten).
         signalAsOf = new Date(newestMs).toISOString();
         const now = Date.now();
-        // Broker clock (audit H7): MT5 bars stay broker-stamped. With a
+        // Broker clock: a bar converted to UTC at ingest carries offset 0 on its
+        // own evidence (nothing to subtract). An unconverted MT5 bar is on the
+        // broker clock (audit H7 rule for raw stamps). With a
         // measured broker-clock offset the newest bar is aged on the UTC
         // clock (bar time minus the offset) for both the stale and the
         // future-stamp check. An MT5 series with NO measured offset (durable
         // mirror, unattributed writer, bridge with no broker-time tick yet)
         // cannot be aged at all: as stamped, a UTC+2 series silent about two
         // hours reads current. It is never confirmed current (fail closed).
-        const brokerClockOffsetMs = servedSeriesBrokerClockOffsetMs(series.provenance);
+        const brokerClockOffsetMs = servedSeriesBrokerClockOffsetMs(series.provenance, series.candles[series.candles.length - 1] ?? null);
         const brokerClockUnmeasured = servedSeriesBrokerStamped(series.provenance) && brokerClockOffsetMs == null;
         const newestUtcMs = barOpenUtcMs(newestMs, brokerClockOffsetMs);
         const currentBarOpen = Math.floor(now / BAR_MS) * BAR_MS;

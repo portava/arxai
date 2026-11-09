@@ -33,6 +33,9 @@ import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
 import { routeStoredCandleHistory, STORED_HISTORY_SUB_PROVIDER } from "../storedCandleHistory.js";
+import { currentFeedScope, currentFeedScopeBridge, fixedFeedScope, runWithFeedScope } from "../feedScope.js";
+import { MULTI_BRIDGE_CONTENTION_NOTE, mt5SeriesContention, readMt5Quote } from "../providers/mt5Provider.js";
+import { getBrokerClockOffset } from "../../brokerHub/brokerClockOffset.js";
 import {
   getDerivSymbolFeedStatus,
   resolveDerivSymbol,
@@ -68,7 +71,9 @@ import {
   getFormingTickAgeMs,
   getFeedFreshness,
   type FormingBarSnapshot,
+  type FormingPartition,
 } from "./formingBarComposer.js";
+import { brokerBucketCloseMs, isBrokerBucketAligned } from "./brokerBucket.js";
 
 // Quality precedence + trailing-interval thresholds now live in the shared
 // freshness module (../freshness.js) so every analysis/chart surface classifies
@@ -122,6 +127,40 @@ export interface ChartFeedStatus {
    * snapshot's DELAYED) say what the chart says instead of "delayed".
    */
   notLiveReason?: "market_closed" | "stored_history" | null;
+  /**
+   * Whose feed this is (Truth audit T2): the requesting trader's own bridge
+   * ("own_bridge"), another bridge's MT5 series served platform-wide
+   * ("platform_shared"), a non-MT5 provider ("provider"), or null when nothing
+   * was served. Absent from older servers.
+   */
+  feedScope?: ChartFeedScope | null;
+  /**
+   * Two attributed bridges were pushing this symbol+timeframe when it was read;
+   * the served series is one of them. Named, never silently resolved.
+   */
+  contention?: boolean;
+  /**
+   * The measured broker-clock offset (ms, broker − UTC) in force for the serving
+   * bridge; its bar and tick stamps were converted to UTC with it at ingest.
+   * null when unknown (stamps are the broker's raw clock; freshness fails closed).
+   */
+  brokerClockOffsetMs?: number | null;
+  /**
+   * What `lastTickTime` is: the producer's own tick time ("producer_tick") or
+   * the time this server received the tick ("server_receive", which can never
+   * prove the tick is current). null when there is no last tick.
+   */
+  lastTickTimeBasis?: "producer_tick" | "server_receive" | null;
+}
+
+export type ChartFeedScope = "own_bridge" | "platform_shared" | "provider";
+
+/** Reader context for a feed build (Truth audit T2). */
+export interface ChartFeedOptions {
+  /** The requesting trader's own bridge connection; pins the MT5 read to it. */
+  bridgeConnectionId?: number | null;
+  /** Only chart display routes opt in; analysis defaults remain unchanged. */
+  storedHistoryFallback?: boolean;
 }
 
 export interface ChartCandlesResponse {
@@ -143,11 +182,6 @@ export interface ChartCandlesResponse {
   truthResult: TimeframeTruthResult | null;
   /** Phase 3: weighted Chart Truth Score derived from Phase 1 signals. */
   chartTruthScore: ChartTruthScore;
-}
-
-export interface ChartFeedOptions {
-  /** Only chart display routes opt in; analysis defaults remain unchanged. */
-  storedHistoryFallback?: boolean;
 }
 
 function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
@@ -183,7 +217,7 @@ function buildFormingTipCandle(
   timeframe: ChartTimeframe,
   nowMs: number,
 ): NormalizedChartCandle {
-  const closeMs = forming.openMs + timeframeMs(timeframe);
+  const closeMs = brokerBucketCloseMs(forming.openMs, timeframe, forming.brokerOffsetMs);
   return {
     ...template,
     timeBasisEvidence: unavailableCandleTimeBasis(template.source),
@@ -230,13 +264,44 @@ async function buildChartFeed(
   const displaySymbol = resolveDisplaySymbol(symbol, assetClass);
   const now = Date.now();
 
-  let result = await routeCandles(symbol, timeframe, limit);
+  // Whose feed (Truth audit T2): with a requesting bridge the MT5 read is
+  // pinned to that trader's own partition. When their bridge is not pushing
+  // this series, the platform-wide MT5 series (another bridge's) may still be
+  // served, but it is LABELLED platform_shared — never passed off as theirs.
+  // With no explicit pin the bound reader's bridge (lib/data/feedScope.ts)
+  // is the pin, so the AI, scanner and chart banners built in one request
+  // all describe the same series.
+  const pinnedBridge = opts.bridgeConnectionId ?? (await currentFeedScopeBridge());
+  // A pinned read runs the chain once with the pin as its scope: the router
+  // tries this bridge's MT5 series, then the platform-wide MT5 series, then
+  // the other providers (marketDataRouter's scope fallback), instead of a
+  // second full chain after a miss.
+  let pinnedResult: Awaited<ReturnType<typeof routeCandles>> | null = null;
+  if (pinnedBridge != null) {
+    const pinScope = fixedFeedScope(pinnedBridge, currentFeedScope()?.userId ?? null);
+    await runWithFeedScope(pinScope, async () => { pinnedResult = await routeCandles(symbol, timeframe, limit); });
+  }
+  let result = (pinnedResult as Awaited<ReturnType<typeof routeCandles>> | null)
+    ?? (await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null }));
+  // Nothing live answered: the display chart still shows the market up to its
+  // last stored bar (closed market or a down feed), labelled as stored.
   if (!result.ok && opts.storedHistoryFallback === true) {
-    result = await routeStoredCandleHistory(symbol, timeframe, limit, result);
+    result = await routeStoredCandleHistory(symbol, timeframe, limit, result, { bridgeConnectionId: pinnedBridge });
   }
   const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
   const providerDelayed = result.provenance?.delayed === true;
+  const servingBridgeId = result.ok ? (result.provenance?.bridgeConnectionId ?? null) : null;
+  const feedScope: ChartFeedScope | null = source == null
+    ? null
+    : source === "mt5_broker"
+      ? (pinnedBridge != null && servingBridgeId === pinnedBridge ? "own_bridge" : "platform_shared")
+      : "provider";
+  // A pinned read never reports contention itself (it never blends), so ask the
+  // store directly whether two bridges are pushing this series.
+  const contention = result.ok && source === "mt5_broker" &&
+    ((result.provenanceNotes ?? []).includes(MULTI_BRIDGE_CONTENTION_NOTE) || mt5SeriesContention(symbol, timeframe, now));
+  const brokerClock = source === "mt5_broker" ? getBrokerClockOffset(servingBridgeId, now) : null;
 
   // Latency: the winning provider's server-side read time (ms). When nothing
   // was served there is no read to time — the cost of failed probes is not a
@@ -264,12 +329,15 @@ async function buildChartFeed(
   // the market is trading, whatever the static weekend schedule says.
   // Stored history (display-only fallback) gets no live tick evidence, exactly
   // as it gets no forming tip: a live tick must not be attached to stored bars.
-  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
+  // Tick state is partitioned by writer: an MT5 series reads the ticks of the
+  // bridge that wrote its bars, never another broker's.
+  const tickPartition: FormingPartition = source === "mt5_broker" ? servingBridgeId : null;
+  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker", tickPartition) : null;
   const tickSource = !storedHistory && isFormingTickSource(source) ? source : null;
   const tickFreshness = tickSource === "mt5_broker"
     ? mt5TickFreshness
     : tickSource
-      ? getFeedFreshness(symbol, now, tickSource)
+      ? getFeedFreshness(symbol, now, tickSource, tickPartition)
       : null;
   const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
   const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
@@ -385,14 +453,29 @@ async function buildChartFeed(
   const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
   const timestampsUnconfirmed = feedTimestampsUnconfirmed({ trailingIntervals: trailing, newestOpenLeadMs, futureStampObserved });
   // "Last tick": the Deriv WS tick for a Deriv-served series, else the MT5
-  // broker tick the server last RECEIVED for this symbol (receive time — the
-  // broker clock is not zone-verified). A quote the broker is only replaying
-  // (market frozen) is not a new tick, so it reports unknown, never "just now".
+  // broker tick for this series' own writer. When that bridge's clock offset
+  // is measured, the tick's own time (converted to UTC at ingest) is reported
+  // with basis producer_tick; otherwise the time the server RECEIVED it, with
+  // basis server_receive, which can never prove the tick is current (Truth
+  // audit T3). A quote the broker is only replaying (market frozen) is not a
+  // new tick, so it reports unknown, never "just now".
+  const mt5WriterQuote = source === "mt5_broker"
+    ? readMt5Quote(symbol, { writer: { bridgeConnectionId: servingBridgeId }, now })
+    : null;
+  // A producer time is either a broker stamp converted with a measured offset,
+  // or (v2 TICK) the EA's own UTC clock at the tick's first sight, tightly
+  // bounded by the previous post (recordMt5Tick). Both are UTC tick times.
+  const mt5TickConverted = mt5WriterQuote != null && mt5WriterQuote.tickTimeObserved
+    && (mt5WriterQuote.brokerClockOffsetMs != null || mt5WriterQuote.tick != null)
+    && Number.isFinite(Date.parse(mt5WriterQuote.quote.timestamp));
   const lastTickTime = derivBacked
     ? derivSymbolStatus?.lastTickAt ?? null
     : mt5TickFreshness && !mt5TickFreshness.marketFrozen
-      ? new Date(mt5TickFreshness.lastTickWallMs).toISOString()
+      ? (mt5TickConverted ? mt5WriterQuote!.quote.timestamp : new Date(mt5TickFreshness.lastTickWallMs).toISOString())
       : null;
+  const lastTickTimeBasis: ChartFeedStatus["lastTickTimeBasis"] = lastTickTime == null
+    ? null
+    : derivBacked || mt5TickConverted ? "producer_tick" : "server_receive";
 
   // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
   // Fold the live-tick forming bar onto the newest bar for the DISPLAY surface.
@@ -407,16 +490,24 @@ async function buildChartFeed(
   // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && !storedHistory && lastCandle && isFormingTickSource(source)) {
-    const forming = getFormingBar(symbol, timeframe, now, source);
+  if (includeFormingTip && lastCandle && !storedHistory && isFormingTickSource(source)) {
+    const forming = getFormingBar(symbol, timeframe, now, source, tickPartition);
     if (forming) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
-      if (tipOpenMs > lastClosedOpenMs) {
+      // Safety net for coarse timeframes: a tip that opens inside the newest
+      // bar's interval but not on its open is the same session bucketed on a
+      // different grid (an offset that changed, a bar pushed before the clock
+      // was measured). It is merged into that bar, never appended beside it.
+      const sameSessionOffGrid = timeframeMs(timeframe) >= timeframeMs("H2")
+        && tipOpenMs > lastClosedOpenMs
+        && tipOpenMs - lastClosedOpenMs < timeframeMs(timeframe)
+        && !isBrokerBucketAligned(lastClosedOpenMs, timeframe, forming.brokerOffsetMs);
+      if (tipOpenMs > lastClosedOpenMs && !sameSessionOffGrid) {
         // Tip is for an interval ahead of the newest closed bar → append.
         candles = [...candles, buildFormingTipCandle(lastCandle, forming, timeframe, now)];
         formingTipPresent = true;
-      } else if (tipOpenMs === lastClosedOpenMs) {
+      } else if (tipOpenMs === lastClosedOpenMs || sameSessionOffGrid) {
         // Provider's newest bar is the same (current) interval → merge live
         // extremes onto it; keep the closed bar's open, take the tip's close.
         const merged: NormalizedChartCandle = {
@@ -442,7 +533,7 @@ async function buildChartFeed(
       }
       // tipOpenMs < lastClosedOpenMs → stale tip behind the closed feed; ignore.
       if (formingTipPresent) {
-        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source);
+        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source, tickPartition);
       }
     }
   }
@@ -566,6 +657,10 @@ async function buildChartFeed(
     message,
     completenessReason: verdict.completenessReason,
     notLiveReason: notLiveReasonFor(quality, messageCtx),
+    feedScope,
+    contention,
+    brokerClockOffsetMs: brokerClock?.offsetMs ?? null,
+    lastTickTimeBasis,
   };
 
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
@@ -672,6 +767,7 @@ function notLiveReasonFor(quality: ChartQuality, ctx: MessageContext): "market_c
   if (ctx.storedHistory) return readableNotLiveQuality(quality) ? "stored_history" : null;
   if (ctx.marketClosedAtMs != null && readableNotLiveQuality(quality)) return "market_closed";
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) return "stored_history";
+  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) return "stored_history";
   return null;
 }
 
