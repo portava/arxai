@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CalibratedProbability, calibrationText } from "./CalibratedProbability";
-import { CalibrationReliabilityCard, brierVerdict, type CalibrationFitView } from "./CalibrationReliabilityCard";
+import { CalibrationReliabilityCard, brierVerdict, sourceText, type CalibrationFitView } from "./CalibrationReliabilityCard";
 
 // The UI side of the calibration engine:
 //   - a measured probability renders as "62% (N=143)", never without its N;
@@ -89,6 +89,21 @@ describe("CalibrationReliabilityCard (trader-facing)", () => {
   it("says everything is unmeasured when there are no graded outcomes", async () => {
     renderCard({ ok: true, minSample: 30, measuredCount: 0, edgeCount: 0, lastRefitAt: null, fits: [] });
     await waitFor(() => expect(screen.getByTestId("calibration-empty").textContent).toMatch(/unmeasured \(minimum 30/));
+  });
+
+  it("names every source behind N and the real-history fixture it replayed", () => {
+    expect(sourceText({ source: "strategy_replay", provenance: null })).toBe("Strategy replay on stored candles");
+    expect(
+      sourceText({
+        source: "historical_replay+strategy_replay",
+        provenance: {
+          basis: "replay_only",
+          liveN: 0,
+          replayN: 400,
+          components: [{ id: "a", source: "historical_replay", n: 400, fixtureId: "real-history-v1", datasetHash: "fa83f149997cb8f9" }],
+        },
+      }),
+    ).toBe("Replay on committed real price history + Strategy replay on stored candles (real-history-v1 fa83f149)");
   });
 
   it("verdict wording follows the measured edge", () => {

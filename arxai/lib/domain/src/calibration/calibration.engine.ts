@@ -40,6 +40,10 @@ export const CALIBRATION_MIN_SAMPLE = 30;
 export const CALIBRATION_EDGE_MIN_SAMPLE = 100;
 export const CALIBRATION_PRIOR_STRENGTH = 5;
 export const CALIBRATION_CV_FOLDS = 5;
+/** Brier improvements below this are float rounding, not evidence: a model
+ *  that collapses to one isotonic block predicts the base rate to ~1e-17 and
+ *  must not read as an edge. Far below any decision-relevant gain. */
+export const CALIBRATION_EDGE_TOLERANCE = 1e-9;
 export const CALIBRATION_METHOD = "isotonic_pav_beta_shrinkage_cv_selected" as const;
 
 export interface CalibrationBlock {
@@ -156,8 +160,11 @@ function pav(blocks: PavBlock[]): PavBlock[] {
   return out;
 }
 
-/** Isotonic fit with Beta shrinkage toward `prior`. Returns monotone blocks. */
-function fitIsotonic(samples: CalibrationSample[], prior: number, k: number): CalibrationBlock[] {
+/** Isotonic fit with Beta shrinkage toward `prior`. Returns monotone blocks.
+ *  `exact` keeps full precision: cross-validation must compare unrounded
+ *  probabilities with the unrounded base rate, or the 6-decimal rounding of a
+ *  one-block model reads as a (tiny, consistent) out-of-sample "edge". */
+function fitIsotonic(samples: CalibrationSample[], prior: number, k: number, exact = false): CalibrationBlock[] {
   if (samples.length === 0) return [];
   const sorted = [...samples].sort((a, b) => clampScore(a.score) - clampScore(b.score));
   // Tie groups first: equal scores must map to one probability.
@@ -187,7 +194,7 @@ function fitIsotonic(samples: CalibrationSample[], prior: number, k: number): Ca
     hi: b.hi,
     n: b.n,
     wins: b.wins,
-    probability: round(b.sumY / b.weight),
+    probability: exact ? b.sumY / b.weight : round(b.sumY / b.weight),
   }));
 }
 
@@ -260,7 +267,7 @@ function crossValidate(samples: CalibrationSample[], folds: number, k: number): 
     const train = samples.slice(0, start).concat(samples.slice(end));
     const trainWins = train.reduce((s, x) => s + x.outcome, 0);
     const base = train.length > 0 ? trainWins / train.length : 0.5;
-    const blocks = fitIsotonic(train, base, k);
+    const blocks = fitIsotonic(train, base, k, true);
     for (let i = start; i < end; i++) {
       basePreds[i] = base;
       isoPreds[i] = lookupBlock(blocks, samples[i].score)?.probability ?? base;
@@ -284,7 +291,7 @@ function crossValidate(samples: CalibrationSample[], folds: number, k: number): 
       skill: brierBaseline > 0 ? round(1 - brierModel / brierBaseline) : 0,
       meanImprovement: round(mean),
       improvementLower95: round(lower),
-      edgeDetected: lower > 0,
+      edgeDetected: lower > CALIBRATION_EDGE_TOLERANCE,
     },
   };
 }

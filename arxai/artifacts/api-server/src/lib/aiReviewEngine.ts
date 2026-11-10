@@ -3,6 +3,7 @@
 // Output is structured grades + insights + coaching plan.
 
 import type { CalibrationStamp } from "./calibration/cache.js";
+import { PRECEDENCE_RULE } from "./calibration/provenance.js";
 
 /** The fixed calibration reading of a post-trade review (see type docs). */
 export const AI_REVIEW_CALIBRATION: CalibrationStamp = Object.freeze({
@@ -17,6 +18,8 @@ export const AI_REVIEW_CALIBRATION: CalibrationStamp = Object.freeze({
   edgeDetected: false,
   label: "unmeasured (N=0)",
   reason: "A post-trade review makes no forecast, so there is no outcome to calibrate it against.",
+  source: "none",
+  provenance: Object.freeze({ basis: "none", liveN: 0, replayN: 0, sources: [], fixtures: [], rule: PRECEDENCE_RULE }),
 }) as CalibrationStamp;
 
 import type { PaperTrade } from "@workspace/db";

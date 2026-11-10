@@ -11,7 +11,11 @@
 // Scope: agent trust fits are governance internals and are not listed here.
 // Fits pooled from live-signal outcomes (eleanor / scanner) are listed at the
 // pooled-symbol level only, so no single account's outcomes are singled out;
-// strategy-replay fits (public price history) are listed per market.
+// replay fits (public price history: stored broker candles or a committed
+// real-history fixture) are listed per market. Every row carries its
+// provenance: which live / replay components make up N, the fixture id +
+// dataset hash + file sha256 behind a historical replay, and the precedence
+// rule (live only once live N >= 30, else live + replay).
 
 import { Router } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -21,6 +25,7 @@ import {
   formatCalibrationLabel,
 } from "../lib/calibration/cache.js";
 import { getCalibrationRefitStatus } from "../lib/calibration/refitWorker.js";
+import { isPublicReplay, PRECEDENCE_RULE, type FitProvenance } from "../lib/calibration/provenance.js";
 import {
   CALIBRATION_EDGE_MIN_SAMPLE,
   CALIBRATION_METHOD,
@@ -49,6 +54,8 @@ export interface CalibrationSummaryRow {
   reliability: { lo: number; hi: number; n: number; meanPredicted: number | null; observedRate: number | null }[];
   rawReliability: { lo: number; hi: number; n: number; meanPredicted: number | null; observedRate: number | null }[];
   fittedAt: string;
+  /** Evidence behind N; null only for fits persisted before provenance existed. */
+  provenance: FitProvenance | null;
 }
 
 export function buildCalibrationSummary() {
@@ -56,7 +63,7 @@ export function buildCalibrationSummary() {
   for (const [fitKey, e] of calibrationCacheEntries()) {
     const [strategy, symbol, timeframe] = fitKey.split("|");
     if (strategy.startsWith("agent:")) continue;
-    if (e.source !== "strategy_replay" && symbol !== POOLED) continue;
+    if (!isPublicReplay(e.source) && symbol !== POOLED) continue;
     const f = e.fit;
     rows.push({
       fitKey,
@@ -77,6 +84,7 @@ export function buildCalibrationSummary() {
       reliability: f.reliability,
       rawReliability: f.rawReliability,
       fittedAt: e.fittedAt,
+      provenance: e.provenance ?? null,
     });
   }
   rows.sort((a, b) => b.n - a.n || a.fitKey.localeCompare(b.fitKey));
@@ -86,6 +94,8 @@ export function buildCalibrationSummary() {
     method: CALIBRATION_METHOD,
     minSample: CALIBRATION_MIN_SAMPLE,
     edgeMinSample: CALIBRATION_EDGE_MIN_SAMPLE,
+    precedenceRule: PRECEDENCE_RULE,
+    historical: refit.lastCycle?.historical ?? null,
     cacheLoadedAt: calibrationCacheLoadedAt(),
     lastRefitAt: refit.lastCycle?.at ?? null,
     measuredCount: rows.filter((r) => r.status === "measured").length,
