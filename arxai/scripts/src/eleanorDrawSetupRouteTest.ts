@@ -64,6 +64,8 @@ import {
   pool,
   usersTable,
   agentsTable,
+  agentPredictionsTable,
+  calibrationFitsTable,
   authUserSessionsTable,
   arxSymbolSpecsTable,
 } from "@workspace/db";
@@ -86,7 +88,15 @@ import {
 } from "./ci/inProcessAppHarness.js";
 
 import { invalidateAgentRegistrySnapshot } from "../../artifacts/api-server/src/lib/agentEcosystem/advisoryInfluence.js";
+import { runCalibrationRefit } from "../../artifacts/api-server/src/lib/calibration/refitWorker.js";
 const TEST_AGENT_KEY = "QA_ELEANOR_DRAW_RISK";
+// Agent influence is earned only from the agent's own scored record
+// (calibration engine, key agent:<agentKey>). The test agent gets a real,
+// graded prediction record whose confidence predicts its outcomes, and the
+// real refit turns it into measured influence. Without it, the agent has no
+// record and, correctly, no influence.
+const TEST_AGENT_FIT_KEY = `agent:${TEST_AGENT_KEY}|*|*`;
+const TEST_AGENT_RECORD = 600;
 
 const TEST_EMAIL = "qa+eleanor-draw-setup-route@arx.test";
 
@@ -253,6 +263,10 @@ async function cleanupByEmail(): Promise<void> {
   // Restore the real market provider so no test state (the injected scanner
   // signal) leaks into the running process or subsequent suites (Task #389).
   _resetMarketProviderForTests();
+  for (const a of await db.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.agentKey, TEST_AGENT_KEY))) {
+    await db.delete(agentPredictionsTable).where(eq(agentPredictionsTable.agentId, a.id));
+  }
+  await db.delete(calibrationFitsTable).where(eq(calibrationFitsTable.fitKey, TEST_AGENT_FIT_KEY));
   await db.delete(agentsTable).where(eq(agentsTable.agentKey, TEST_AGENT_KEY));
   invalidateAgentRegistrySnapshot();
   const rows = await db.select().from(usersTable).where(eq(usersTable.email, TEST_EMAIL));
@@ -280,6 +294,26 @@ export async function run(): Promise<CiTestResultLike> {
     department: "RISK", currentStatus: "ACTIVE", currentMode: "FULL",
     authorityWeight: 0.2, trustScore: 50, liveInfluenceAllowed: false,
   });
+  {
+    const [agent] = await db.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.agentKey, TEST_AGENT_KEY));
+    // Deterministic skilled record: P(win) rises with the stated confidence.
+    let seed = 0x5eed;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+    const t0 = Date.UTC(2026, 9, 1);
+    const preds = Array.from({ length: TEST_AGENT_RECORD }, (_, i) => {
+      const confidence = Math.round(rand() * 100);
+      const win = rand() < 0.1 + 0.8 * (confidence / 100);
+      return {
+        predictionId: `qa-draw-risk-${i}-${randomBytes(4).toString("hex")}`,
+        agentId: agent.id, symbol: VERIFIED_SYMBOL, timeframe: SIGNAL_TIMEFRAME,
+        direction: i % 2 ? "BUY" : "SELL", decision: "approve", confidenceScore: confidence,
+        outcomeStatus: win ? "WIN" : "LOSS", locked: true, timestampCreated: new Date(t0 + i * 60_000),
+      };
+    });
+    await db.insert(agentPredictionsTable).values(preds);
+    const refit = await runCalibrationRefit();
+    assert(refit.errors.every((e) => !e.startsWith("agents")), `calibration refit read the agent record (errors: ${refit.errors.join("; ") || "none"})`);
+  }
   invalidateAgentRegistrySnapshot();
   const baseUrl = await getSharedBaseUrl();
 
