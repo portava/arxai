@@ -7,8 +7,7 @@
 // better; a served Brier no better than the base rate means "no edge" and
 // the card says so.
 
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export interface ReliabilityBinView {
@@ -134,8 +133,35 @@ export function CalibrationFitDetail({ fit }: { fit: CalibrationFitView }) {
   );
 }
 
+// Self-contained fetch (no QueryClientProvider needed): the card is mounted
+// inside pages that tests render without one.
+type SummaryResult = Awaited<ReturnType<typeof getSummary>>;
+const REFRESH_MS = 5 * 60_000;
+
+function useCalibrationSummary() {
+  const [state, setState] = useState<{ data?: SummaryResult; isLoading: boolean; isError: boolean }>({
+    isLoading: true,
+    isError: false,
+  });
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      getSummary().then(
+        (data) => alive && setState({ data, isLoading: false, isError: false }),
+        () => alive && setState((s) => ({ data: s.data, isLoading: false, isError: !s.data })),
+      );
+    void load();
+    const t = setInterval(load, REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  return state;
+}
+
 export function CalibrationReliabilityCard() {
-  const q = useQuery({ queryKey: ["calibration", "summary"], queryFn: getSummary, refetchInterval: 5 * 60_000 });
+  const q = useCalibrationSummary();
   const fits = useMemo(() => (q.data?.fits ?? []).filter((f) => f.n > 0), [q.data]);
   const [selected, setSelected] = useState<string | null>(null);
   const fit = fits.find((f) => f.fitKey === selected) ?? fits.find((f) => f.status === "measured") ?? fits[0];

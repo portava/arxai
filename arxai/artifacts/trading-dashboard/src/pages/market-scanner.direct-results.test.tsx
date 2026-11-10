@@ -136,6 +136,8 @@ vi.mock("@/components/ui/select", () => ({
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
 vi.mock("@/components/scanner/EleanorSetupReason", () => ({ EleanorSetupReason: () => null }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
+// The calibration card does its own GET /api/calibration/summary; this suite counts scan fetches only.
+vi.mock("@/components/calibration/CalibrationReliabilityCard", () => ({ CalibrationReliabilityCard: () => null }));
 vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => <div data-testid="test-trade-ticket"/> }));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({ MasterLiveAccessBanner: () => null }));
