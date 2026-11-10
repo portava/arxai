@@ -7,6 +7,11 @@
 //   pnpm --filter @workspace/scripts run research:real-data-validation -- --source db --store
 //   … -- --out /path/run.json                                                         # also write the full result
 //
+// INTRADAY (the feeds ARX actually trades):
+//   … -- --source intraday_fixture [--store]   # pinned Deriv M1/M5/M15/H1 fixture (CI uses this)
+//   … -- --source mt5_db [--store]             # stored MT5 broker_candles M1/M5/M15/H1, synthetics INCLUDED
+//   … -- --gross                               # zero-cost diagnostic (stored with its own params hash)
+//
 // --source db reads market_candles and broker_candles from DATABASE_URL. Deriv
 // synthetic indices are EXCLUDED: they are driftless by construction and are
 // covered by the V75 killer test; mixing them in would dilute "real" with
@@ -22,7 +27,11 @@ import { createHash } from "node:crypto";
 import { stableStringify } from "@workspace/discovery";
 import type { Bar } from "@workspace/validation";
 import { loadVerifiedFixture } from "./realHistoryFixture.js";
-import { runRealDataValidation, type AssetClass, type RealDataRunResult, type RunnerInstrument } from "./realDataValidation.js";
+import { loadVerifiedIntradayFixture, TIMEFRAME_SECONDS, type IntradayTimeframe } from "./intradayHistoryFixture.js";
+import {
+  runRealDataValidation, INTRADAY_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams,
+  type AssetClass, type PlantedEdgeSpec, type RealDataRunResult, type RunnerInstrument, type RunnerParams,
+} from "./realDataValidation.js";
 import { isEntrypoint } from "../ci/inProcessAppHarness.js";
 import { ValidationEvidenceStore, type ValidationRunLike } from "../../../artifacts/api-server/src/lib/research/validationEvidence.js";
 
@@ -41,6 +50,37 @@ export function fixtureInstruments(): { datasetHash: string; instruments: Runner
   };
 }
 
+/** The intraday dataset hash this code commits to (scripts/fixtures/real-history-intraday-v1). */
+export const PINNED_INTRADAY_DATASET_HASH = "a5f9b3cc7147bdae0e95eb7052397b2e478e018634c01bb13580a35fca9725dc";
+export const INTRADAY_FIXTURE_DIR = new URL("../../fixtures/real-history-intraday-v1", import.meta.url).pathname;
+export const INTRADAY_TIMEFRAMES: readonly IntradayTimeframe[] = ["M1", "M5", "M15", "H1"];
+
+/**
+ * Positive control for the intraday lane: a seeded synthetic edge mixed into a
+ * real family on a real Deriv series. Same hit rate as the daily lane's control.
+ * It is never part of the stored headline run.
+ */
+export const INTRADAY_PLANTED_CONTROL: PlantedEdgeSpec = { symbol: "R_100@H1", familyKey: "TrendContinuation", hitRate: 0.58, seed: 20261110 };
+
+/** Reporting-only annualisation: Volatility indices run 24/7; FX/metal ≈ 252 sessions of 24h. */
+export function intradayBarsPerYear(assetClass: AssetClass, timeframe: IntradayTimeframe): number {
+  const perDay = 86400 / TIMEFRAME_SECONDS[timeframe];
+  return (assetClass === "synthetic" ? 365 : 252) * perDay;
+}
+
+export function intradayFixtureInstruments(): { datasetHash: string; instruments: RunnerInstrument[]; excluded: string[] } {
+  const { manifest, instruments } = loadVerifiedIntradayFixture(INTRADAY_FIXTURE_DIR, PINNED_INTRADAY_DATASET_HASH);
+  return {
+    datasetHash: manifest.datasetHash,
+    instruments: instruments.map((i) => ({
+      symbol: `${i.spec.symbol}@${i.spec.timeframe}`, assetClass: i.spec.assetClass, ohlc: "ohlc",
+      source: `fixture:real-history-intraday-v1/${i.spec.file}`, dates: i.dates, bars: i.bars,
+      timeframe: i.spec.timeframe, barsPerYear: intradayBarsPerYear(i.spec.assetClass, i.spec.timeframe),
+    })),
+    excluded: manifest.excluded.map((e) => `${e.symbol}@${e.timeframe}: ${e.reason}`),
+  };
+}
+
 const DERIV_SYNTHETIC = /^(R_\d+|1HZ\d+V|BOOM|CRASH|JD\d+|STP|RDBEAR|RDBULL|VOLATILITY|V\d+)/i;
 const BARS_PER_YEAR_BY_TF: Record<string, number> = { M1: 362880, M5: 72576, M15: 24192, M30: 12096, H1: 6048, H4: 1512, D1: 252 };
 
@@ -50,6 +90,65 @@ export function inferAssetClass(symbol: string): AssetClass {
   if (/^(BTC|ETH|SOL|XRP|LTC|ADA|DOGE)/.test(s)) return "crypto";
   if (/^[A-Z]{6}$/.test(s)) return "fx";
   return "index";
+}
+
+/**
+ * Stored MT5 bars (broker_candles) at the intraday timeframes, Deriv synthetics
+ * INCLUDED — this source exists to validate the feeds ARX trades. Only closed
+ * bars in a non-rejected quality state; the newest `maxBars` per series;
+ * malformed bars dropped and counted; series under `minBars` skipped and listed.
+ */
+export async function mt5DbInstruments(pool: QueryPool, opts: { minBars: number; maxBars: number }): Promise<{ datasetHash: string; instruments: RunnerInstrument[]; skipped: string[] }> {
+  const instruments: RunnerInstrument[] = [];
+  const skipped: string[] = [];
+  const goodState = "is_closed_bar AND quality_status IN ('accepted','finalized','idempotent')";
+  const groups = await pool.query<{ bridge_connection_id: number; symbol: string; timeframe: string; n: string }>(
+    `SELECT bridge_connection_id,symbol,timeframe,count(*)::text AS n FROM broker_candles
+     WHERE ${goodState} AND timeframe = ANY($1) GROUP BY 1,2,3 ORDER BY 1,2,3`, [[...INTRADAY_TIMEFRAMES]]);
+  for (const g of groups.rows) {
+    const tf = g.timeframe as IntradayTimeframe;
+    const label = `db:broker_candles/bridge${g.bridge_connection_id}/${g.symbol}/${tf}`;
+    if (Number(g.n) < opts.minBars) { skipped.push(`${label} (${g.n} bars < ${opts.minBars})`); continue; }
+    const rows = await pool.query<{ t: Date; open: number; high: number; low: number; close: number }>(
+      `SELECT * FROM (SELECT open_time_utc AS t,open,high,low,close FROM broker_candles
+         WHERE bridge_connection_id=$1 AND symbol=$2 AND timeframe=$3 AND ${goodState}
+         ORDER BY open_time_utc DESC LIMIT $4) newest ORDER BY t`,
+      [g.bridge_connection_id, g.symbol, tf, opts.maxBars]);
+    const bars: Bar[] = [];
+    const dates: string[] = [];
+    let bad = 0;
+    for (const r of rows.rows) {
+      const ok = [r.open, r.high, r.low, r.close].every((x) => x > 0) && r.high >= Math.max(r.open, r.close) && r.low <= Math.min(r.open, r.close)
+        && r.t.getTime() % (TIMEFRAME_SECONDS[tf] * 1000) === 0;
+      if (!ok) { bad++; continue; }
+      bars.push({ open: r.open, high: r.high, low: r.low, close: r.close });
+      dates.push(r.t.toISOString());
+    }
+    if (bars.length < opts.minBars) { skipped.push(`${label} (${bars.length} valid bars after dropping ${bad} malformed/off-grid)`); continue; }
+    const assetClass: AssetClass = DERIV_SYNTHETIC.test(g.symbol) ? "synthetic" : inferAssetClass(g.symbol);
+    instruments.push({ symbol: `${g.symbol}@${tf}#${g.bridge_connection_id}`, assetClass, ohlc: "ohlc",
+      source: `${label}${bad ? ` (${bad} malformed dropped)` : ""}`, dates, bars, timeframe: tf,
+      barsPerYear: intradayBarsPerYear(assetClass, tf) });
+  }
+  const datasetHash = createHash("sha256").update(stableStringify(instruments.map((i) => ({
+    symbol: i.symbol, source: i.source, dates: i.dates, bars: i.bars.map((b) => [b.open, b.high, b.low, b.close]) })))).digest("hex");
+  return { datasetHash, instruments, skipped };
+}
+
+/** Survivors per base symbol × timeframe (variant + walk-forward), every cell reported, zeros included. */
+export function survivorGrid(r: RealDataRunResult): string {
+  const tfs = [...new Set(r.instruments.map((i) => i.timeframe ?? "D1"))];
+  const base = (s: string) => s.split("@")[0]!;
+  const symbols = [...new Set(r.instruments.map((i) => base(i.symbol)))];
+  const lines = [`${"symbol".padEnd(12)}${tfs.map((t) => t.padStart(6)).join("")}`];
+  for (const sym of symbols) {
+    lines.push(`${sym.padEnd(12)}${tfs.map((tf) => {
+      const inst = r.instruments.find((i) => base(i.symbol) === sym && (i.timeframe ?? "D1") === tf);
+      if (!inst) return "—".padStart(6);
+      return String(r.survivors.filter((s) => s.symbol === inst.symbol).length).padStart(6);
+    }).join("")}`);
+  }
+  return lines.join("\n");
 }
 
 type QueryPool = { query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> };
@@ -142,6 +241,7 @@ async function main() {
   const flag = (n: string) => args.includes(n);
   const val = (n: string) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
   const source = val("--source") ?? "fixture";
+  let params: RunnerParams = DEFAULT_RUNNER_PARAMS;
   let datasetHash: string;
   let instruments: RunnerInstrument[];
   let datasetSource: string;
@@ -157,10 +257,29 @@ async function main() {
     }
     ({ datasetHash, instruments } = loaded);
     datasetSource = "db:market_candles+broker_candles";
+  } else if (source === "intraday_fixture") {
+    const loaded = intradayFixtureInstruments();
+    for (const e of loaded.excluded) console.log(`excluded: ${e}`);
+    ({ datasetHash, instruments } = loaded);
+    datasetSource = "fixture:real-history-intraday-v1";
+    params = INTRADAY_RUNNER_PARAMS;
+  } else if (source === "mt5_db") {
+    const loaded = await mt5DbInstruments(await dbPool() as unknown as QueryPool,
+      { minBars: Number(val("--min-bars") ?? 500), maxBars: Number(val("--max-bars") ?? 3000) });
+    for (const s of loaded.skipped) console.log(`skipped: ${s}`);
+    if (loaded.instruments.length === 0) {
+      console.log("No stored MT5 intraday series met the minimum — nothing to validate. (Reported, not replaced by the fixture.)");
+      return;
+    }
+    ({ datasetHash, instruments } = loaded);
+    datasetSource = "db:broker_candles(mt5,intraday)";
+    params = INTRADAY_RUNNER_PARAMS;
   } else throw new Error(`unknown --source ${source}`);
 
-  const run = runRealDataValidation({ instruments, datasetHash });
+  if (flag("--gross")) { params = grossParams(params); datasetSource += " gross-of-costs diagnostic"; }
+  const run = runRealDataValidation({ instruments, datasetHash, params });
   console.log(formatFindings(run));
+  if (instruments.some((i) => i.timeframe)) console.log(`\nsurvivors per symbol × timeframe:\n${survivorGrid(run)}`);
   const out = val("--out");
   if (out) writeFileSync(out, `${JSON.stringify(run, null, 1)}\n`);
   if (flag("--store")) {
@@ -168,7 +287,7 @@ async function main() {
     const receipt = await new ValidationEvidenceStore(await dbPool()).record({ run: run as unknown as ValidationRunLike, datasetSource, codeCommit: commit, codeDirty: dirty });
     console.log(`stored: ${receipt.disposition} ${receipt.manifest.id} manifest ${receipt.manifestHash} (commit ${commit}${dirty ? ", DIRTY tree" : ""})`);
   }
-  if (process.env.DATABASE_URL && (flag("--store") || source === "db")) await (await dbPool()).end();
+  if (process.env.DATABASE_URL && (flag("--store") || source === "db" || source === "mt5_db")) await (await dbPool()).end();
 }
 
 if (isEntrypoint(import.meta.url)) main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });

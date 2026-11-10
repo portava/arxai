@@ -60,7 +60,8 @@ import { controlFdr, sharpePValue, stableStringify } from "@workspace/discovery"
 
 export const REAL_DATA_RUNNER_VERSION = "arx-real-data-validation-v1";
 
-export type AssetClass = "fx" | "crypto" | "metal" | "index";
+/** "synthetic" = Deriv Volatility indices (driftless by construction; intraday lane only). */
+export type AssetClass = "fx" | "crypto" | "metal" | "index" | "synthetic";
 
 export interface RunnerInstrument {
   symbol: string;
@@ -73,6 +74,10 @@ export interface RunnerInstrument {
   bars: Bar[];
   /** Annualisation for REPORTING only; defaults to params.barsPerYear[assetClass] (daily). */
   barsPerYear?: number;
+  /** Bar timeframe (intraday lane: M1/M5/M15/H1). Omitted for the daily fixture. */
+  timeframe?: string;
+  /** Per-instrument cost override; defaults to params.costPerTurnover[assetClass]. */
+  costPerTurnover?: number;
 }
 
 export interface RunnerParams {
@@ -81,10 +86,10 @@ export interface RunnerParams {
   thresholds: ValidationThresholds;
   pboBlocks: number;
   fdrQ: number;
-  /** Cost per unit of position turnover, as a log-return fraction. */
-  costPerTurnover: Record<AssetClass, number>;
+  /** Cost per unit of position turnover, as a log-return fraction. A class with no entry must carry a per-instrument cost. */
+  costPerTurnover: Partial<Record<AssetClass, number>>;
   /** Bars per year for annualised reporting only (never used in a test). */
-  barsPerYear: Record<AssetClass, number>;
+  barsPerYear: Partial<Record<AssetClass, number>>;
   lookaheadSamples: number;
 }
 
@@ -100,6 +105,27 @@ export const DEFAULT_RUNNER_PARAMS: RunnerParams = {
   barsPerYear: { fx: 252, crypto: 365, metal: 365, index: 252 },
   lookaheadSamples: 8,
 };
+
+/**
+ * Intraday lane (Deriv M1/M5/M15/H1). Same validation geometry as daily —
+ * horizon/embargo are in BARS, and every strategyEngine family is defined in
+ * bars. Costs are ASSUMED half-spreads per unit turnover (a 0→1→0 round trip
+ * pays twice): ~1 pip EURUSD/GBPUSD/USDJPY ⇒ 0.5bp; ~$0.40 on ~$4,000 gold ⇒
+ * 0.5bp; Deriv Volatility indices 1bp. They are not measured spreads, which is
+ * why the lane also reports a ZERO-cost diagnostic run: if nothing survives at
+ * zero cost, no cost assumption is hiding an edge.
+ */
+export const INTRADAY_RUNNER_PARAMS: RunnerParams = {
+  ...DEFAULT_RUNNER_PARAMS,
+  costPerTurnover: { fx: 0.00005, metal: 0.00005, synthetic: 0.0001 },
+  // Per-instrument barsPerYear is always supplied by the intraday loader.
+  barsPerYear: {},
+};
+
+/** The same parameters with every cost set to zero — a diagnostic, never the headline. */
+export function grossParams(p: RunnerParams): RunnerParams {
+  return { ...p, costPerTurnover: Object.fromEntries(Object.keys(p.costPerTurnover).map((k) => [k, 0])) as RunnerParams["costPerTurnover"] };
+}
 
 /** Families whose decision reads the bar's high/low/open beyond the close. */
 export const WICK_DEPENDENT_FAMILIES: readonly string[] = [
@@ -186,7 +212,8 @@ export interface RealDataRunResult {
   datasetHash: string;
   paramsHash: string;
   params: RunnerParams;
-  instruments: Array<{ symbol: string; assetClass: AssetClass; ohlc: string; source: string; bars: number; first: string; last: string; barsPerYear: number }>;
+  instruments: Array<{ symbol: string; assetClass: AssetClass; ohlc: string; source: string; bars: number; first: string; last: string; barsPerYear: number;
+    timeframe?: string; costPerTurnover?: number }>;
   families: string[];
   variants: VariantResult[];
   walkForward: WalkForwardResult[];
@@ -194,7 +221,7 @@ export interface RealDataRunResult {
   survivors: Survivor[];
   summary: Array<{ symbol: string; familyKey: string; variants: number; activeVariants: number; survivors: number;
     bestKey: string; bestAnnualisedSharpe: number; bestDsr: number; pbo: number; walkForwardAnnualisedSharpe: number;
-    walkForwardSurvivor: boolean; rangesDerived: boolean }>;
+    walkForwardSurvivor: boolean; rangesDerived: boolean; timeframe?: string }>;
   checks: HonestyChecks;
   validationReportHashes: string[];
   planted: PlantedEdgeSpec | null;
@@ -287,6 +314,19 @@ export function plantedEdgeReturns(closes: readonly number[], spec: PlantedEdgeS
   return netReturns(positions, closes, costPerTurnover).returns;
 }
 
+/** The cost charged on an instrument. Missing ⇒ throw: an uncosted run would overstate every edge. */
+export function costOf(inst: Pick<RunnerInstrument, "symbol" | "assetClass" | "costPerTurnover">, params: RunnerParams): number {
+  const c = inst.costPerTurnover ?? params.costPerTurnover[inst.assetClass];
+  if (typeof c !== "number" || !(c >= 0)) throw new Error(`runner: no cost for ${inst.symbol} (${inst.assetClass})`);
+  return c;
+}
+
+function barsPerYearOf(inst: Pick<RunnerInstrument, "symbol" | "assetClass" | "barsPerYear">, params: RunnerParams): number {
+  const b = inst.barsPerYear ?? params.barsPerYear[inst.assetClass];
+  if (typeof b !== "number" || !(b > 0)) throw new Error(`runner: no bars-per-year for ${inst.symbol}`);
+  return b;
+}
+
 export function paramsHashOf(params: RunnerParams): string {
   return sha256(stableStringify({ runnerVersion: REAL_DATA_RUNNER_VERSION, params }));
 }
@@ -321,8 +361,8 @@ export function runRealDataValidation(opts: {
 
   for (const inst of opts.instruments) {
     const closes = inst.bars.map((b) => b.close);
-    const cost = params.costPerTurnover[inst.assetClass];
-    const ppy = inst.barsPerYear ?? params.barsPerYear[inst.assetClass];
+    const cost = costOf(inst, params);
+    const ppy = barsPerYearOf(inst, params);
     const perFamily = new Map<string, Pending[]>();
     for (const v of variantsTemplate) {
       const la = lookaheadViolation(v, inst.bars, params.lookaheadSamples);
@@ -473,6 +513,7 @@ export function runRealDataValidation(opts: {
       bestAnnualisedSharpe: best.annualisedSharpe, bestDsr: best.dsr, pbo: best.pbo,
       walkForwardAnnualisedSharpe: wf.annualisedSharpe, walkForwardSurvivor: wf.survivor,
       rangesDerived: vs.some((v) => v.rangesDerived),
+      ...(inst.timeframe !== undefined ? { timeframe: inst.timeframe } : {}),
     };
   }));
 
@@ -483,7 +524,10 @@ export function runRealDataValidation(opts: {
     params,
     instruments: opts.instruments.map((i) => ({ symbol: i.symbol, assetClass: i.assetClass, ohlc: i.ohlc, source: i.source,
       bars: i.bars.length, first: i.dates[0]!, last: i.dates.at(-1)!,
-      barsPerYear: i.barsPerYear ?? params.barsPerYear[i.assetClass] })),
+      barsPerYear: barsPerYearOf(i, params),
+      // Added only when set, so the daily lane's result hash is unchanged.
+      ...(i.timeframe !== undefined ? { timeframe: i.timeframe } : {}),
+      ...(i.costPerTurnover !== undefined ? { costPerTurnover: i.costPerTurnover } : {}) })),
     families,
     variants,
     walkForward,

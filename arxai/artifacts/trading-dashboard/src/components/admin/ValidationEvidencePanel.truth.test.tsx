@@ -13,7 +13,7 @@ vi.mock("@tanstack/react-query", () => ({
     ({ data: queryKey.length > 3 ? state.detail : state.list, isLoading: false }),
 }));
 
-const { ValidationEvidencePanel, rowStatus } = await import("./ValidationEvidencePanel");
+const { ValidationEvidencePanel, rowStatus, groupByTimeframe, latestPerSource } = await import("./ValidationEvidencePanel");
 
 const manifest = {
   id: "11111111-1111-4111-8111-111111111111", datasetSource: "fixture:real-history-v1",
@@ -71,6 +71,37 @@ describe("ValidationEvidencePanel", () => {
     state.detail = undefined;
     render(<ValidationEvidencePanel />);
     expect(screen.getByTestId("validation-evidence-unavailable").textContent).toContain("could not be read");
+  });
+
+  it("shows the newest run of EACH dataset source, daily and intraday side by side", () => {
+    const intraday = { ...manifest, id: "22222222-2222-4222-8222-222222222222", datasetSource: "fixture:real-history-intraday-v1",
+      trials: 1728, recordedAt: "2026-11-10T12:00:00.000Z" };
+    const olderIntraday = { ...intraday, id: "33333333-3333-4333-8333-333333333333", recordedAt: "2026-11-01T12:00:00.000Z" };
+    const items = [{ manifest: intraday }, { manifest }, { manifest: olderIntraday }];
+    expect(latestPerSource(items as never).map((m) => m.id)).toEqual([intraday.id, manifest.id]);
+    state.list = { ok: true, items };
+    state.detail = detail;
+    render(<ValidationEvidencePanel />);
+    const sections = screen.getAllByTestId("validation-evidence-run");
+    expect(sections.map((x) => x.getAttribute("data-source"))).toEqual(["fixture:real-history-intraday-v1", "fixture:real-history-v1"]);
+    expect(screen.getAllByTestId("validation-evidence-survivors").map((x) => x.textContent)).toEqual(
+      ["0 survivors of 1728 tests", "0 survivors of 540 tests"]);
+  });
+
+  it("groups intraday rows by timeframe in M1→H1 order, each with its own survivor count", () => {
+    const rows = [
+      row({ symbol: "R_75@H1", timeframe: "H1" }), row({ symbol: "R_75@M5", timeframe: "M5" }),
+      row({ symbol: "R_75@M1", timeframe: "M1", survivors: 1 }), row({ symbol: "frxEURUSD@M5", timeframe: "M5" }),
+    ];
+    expect(groupByTimeframe(rows as never).map((g) => [g.timeframe, g.rows.length])).toEqual([["M1", 1], ["M5", 2], ["H1", 1]]);
+    expect(groupByTimeframe([row({})] as never).map((g) => g.timeframe)).toEqual(["D1"]);
+    state.list = { ok: true, items: [{ manifest: { ...manifest, datasetSource: "fixture:real-history-intraday-v1" } }] };
+    state.detail = { ...detail, run: { ...detail.run, summary: rows } };
+    render(<ValidationEvidencePanel />);
+    expect(screen.getByTestId("validation-evidence-tf-M1").textContent).toContain("1 survivor(s) — SHADOW only");
+    expect(screen.getByTestId("validation-evidence-tf-M5").textContent).toContain("M5 · 2 series · 0 survivors");
+    expect(screen.getByTestId("validation-evidence-tf-H1").textContent).toContain("0 survivors");
+    expect(screen.queryByTestId("validation-evidence-tf-D1")).toBeNull();
   });
 
   it("offers no promote, approve or live control", () => {
