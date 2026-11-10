@@ -15,8 +15,28 @@
 //   - drawings: each drawing's painted geometry read back through the axes
 //     against its stored anchors (trendlines, levels, zones, fibs, channels,
 //     notes, and the engine-drawn structure/research lines);
-//   - projections: each AI setup/prediction level as the engine holds it.
+//   - projections: each AI setup/prediction level as the engine holds it;
+//   - Heikin Ashi: the newest drawn HA bars WITH their source candles (and the
+//     HA seed before them), which the server re-derives itself
+//     (heikinAshiTransform.ts) — see "Heikin Ashi" below.
 // It posts that report here.
+//
+// Heikin Ashi (owner ruling 2026-11-09, A+ chart lane): an HA draw is measured,
+// not refused, but only on the server's own arithmetic. The report must carry
+// `transform: "heikinAshi"`, the chart's own bar-for-bar verdict
+// (`transformVerified`) and `transformCheck` — up to HA_SAMPLE_LIMIT newest
+// bars as { time, source O/H/L/C, drawn HA O/H/L/C } plus the HA bar before
+// them. The server then:
+//   - binds the samples to the series it serves: the served newest CLOSED
+//     candle must be among them with exactly the served O/H/L/C (else unbound);
+//   - re-derives every sampled HA bar from the sampled source candles with the
+//     canonical formula and requires the drawn values back (else a measured
+//     FAIL). The seed only moves the first sampled HA open, and its influence
+//     halves every bar, so the newest bars are pinned by source data alone; the
+//     chart's own transformVerified covers the full window from the first bar.
+// An HA report without the transform check is "unavailable" (never a pass).
+// HA values are averaged display values, not tradable prices: the verdict says
+// so, and the read keeps quoting the source candles.
 //
 // Projections are checked HERE against the payload the server itself issued
 // (recordIssuedProjection, called by POST /me/assistant/draw-setup): a level
@@ -47,11 +67,27 @@ import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { withSubMetric } from "./chartTruthScore.js";
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
 import { currentFeedScopeBridgeSync, feedScopeCacheKey } from "../feedScope.js";
+import { heikinAshiRun } from "./heikinAshiTransform.js";
 
 export const RENDER_EVIDENCE_TTL_MS = 120_000;
 const MAX_ENTRIES = 5_000;
 
 export type RenderDisplayMode = "ohlc" | "close" | "hollow" | "heikinAshi";
+
+/** Newest bars an HA report carries for the server's own re-derivation. */
+export const HA_SAMPLE_LIMIT = 64;
+
+/** One sampled bar: [open, high, low, close]. */
+export type OhlcTuple = [number, number, number, number];
+
+export interface HeikinAshiTransformCheck {
+  /** HA bar before the first sample, as the chart computed it; null when the
+   * samples start at the first loaded bar. */
+  seed: { open: number; close: number } | null;
+  /** Consecutive newest bars, oldest first: the source candle and the HA bar
+   * the engine actually holds for it. */
+  samples: { time: number; source: OhlcTuple; drawn: OhlcTuple }[];
+}
 
 export interface RenderEvidenceReport {
   symbol: string;
@@ -78,6 +114,11 @@ export interface RenderEvidenceReport {
   drawings: { checked: number; failed: number; unplaced: number; failedIds: string[] };
   /** AI setup/prediction levels as the engine holds them. */
   projections: RenderedProjection[];
+  /** Heikin Ashi only: the transform the chart drew and its own verdict that
+   * every drawn bar equals a fresh transform of the source. */
+  transform?: "heikinAshi" | null;
+  transformVerified?: boolean | null;
+  transformCheck?: HeikinAshiTransformCheck | null;
 }
 
 export interface RenderedProjection {
@@ -184,6 +225,17 @@ export function recordRenderEvidence(
   store.set(key, { ...report, symbol: report.symbol.trim().toUpperCase(), userId, receivedAt: now });
 }
 
+/** The reader's latest stored report for this chart (for the chart's own
+ * "Render verified" chip); null when none is stored or its scope is pending. */
+export function latestRenderEvidence(
+  userId: number, symbol: string, timeframe: string,
+): { receivedAt: number; barsCompared: number; displayMode: RenderDisplayMode } | null {
+  const scopeBridge = currentFeedScopeBridgeSync();
+  if (scopeBridge === undefined) return null;
+  const e = store.get(keyOf(userId, scopeBridge, symbol, timeframe));
+  return e ? { receivedAt: e.receivedAt, barsCompared: e.barsCompared, displayMode: e.displayMode } : null;
+}
+
 export function __clearRenderEvidenceForTests(): void { store.clear(); issued.clear(); }
 
 export type RenderEvidenceVerdict =
@@ -218,7 +270,16 @@ export function judgeRenderEvidence(
   }
   if (e.barsCompared < 1) return { status: "unavailable", detail: "Renderer reported no drawn bars." };
   const ha = e.displayMode === "heikinAshi";
+  let haProblems: string[] = [];
+  let haUnavailable: string | null = null;
+  if (ha) {
+    const check = judgeHeikinAshi(e, state);
+    if (check.status === "unbound") return { status: "unbound", detail: check.detail };
+    if (check.status === "ok") haProblems = check.problems;
+    else haUnavailable = check.detail;
+  }
   const problems = [
+    ...haProblems,
     e.mismatchedBars > 0 ? `${e.mismatchedBars} drawn bar(s) differ from ${ha ? "the Heikin Ashi transform of the source" : "the source"}` : null,
     e.droppedBars > 0 ? `${e.droppedBars} source bar(s) not drawn` : null,
     !e.priceRoundTripOk ? "price axis does not map back to a drawn price" : null,
@@ -227,6 +288,8 @@ export function judgeRenderEvidence(
     ...judgeProjections(userId, state, e.projections, now),
   ].filter((p): p is string => p != null);
   if (problems.length) return { status: "measured", score: 0, detail: `Renderer mismatch: ${problems.join("; ")}.` };
+  // A Heikin Ashi draw the server could not re-derive is never a pass.
+  if (haUnavailable) return { status: "unavailable", detail: haUnavailable };
   // Nothing on screen to round-trip: not a measured pass.
   if (e.visibleBarsRoundTripped < 1 || e.timeRoundTripOk !== true) {
     return { status: "unavailable", detail: "Renderer evidence has no visible bar to round-trip through the chart axes." };
@@ -237,8 +300,49 @@ export function judgeRenderEvidence(
     detail: `Renderer measured: ${e.barsCompared} drawn bar(s) match ${ha ? "the Heikin Ashi transform of the source" : "the source"} exactly; `
       + `${e.visibleBarsRoundTripped} visible bar(s) round-trip price and time; `
       + `${e.drawings.checked} drawing(s) read back at their anchors${e.drawings.unplaced ? ` (${e.drawings.unplaced} off screen, not measured)` : ""}; `
-      + `${previews} AI projection(s) match the issued levels.`,
+      + `${previews} AI projection(s) match the issued levels.`
+      + (ha ? ` ${HA_PASS_NOTE(e.transformCheck!.samples.length)}` : ""),
   };
+}
+
+const HA_PASS_NOTE = (n: number) =>
+  `The server re-derived the newest ${n} Heikin Ashi bar(s) from the served source candles and they match as drawn. `
+  + "Heikin Ashi bars are averaged display values, not tradable prices; prices in this read are the source candles.";
+
+const sameTuple = (a: readonly number[], b: readonly number[]) => a.length === 4 && b.length === 4 && a.every((v, i) => Number.isFinite(v) && samePrice(v, b[i]!));
+
+/** The server's own Heikin Ashi check (see the header). `unavailable` when the
+ * report carries no usable transform check, `unbound` when its samples are not
+ * the served series, else the re-derivation problems (empty = exact). */
+export function judgeHeikinAshi(
+  e: RenderEvidenceReport,
+  state: Pick<ChartIntelligenceState, "latestClosedCandle">,
+): { status: "ok"; problems: string[] } | { status: "unavailable" | "unbound"; detail: string } {
+  const check = e.transformCheck;
+  if (e.transform !== "heikinAshi" || e.transformVerified == null || !check || check.samples.length < 1) {
+    return { status: "unavailable", detail: "Renderer evidence unavailable: the Heikin Ashi draw did not report its transform check." };
+  }
+  const { samples } = check;
+  for (let i = 1; i < samples.length; i++) {
+    if (!(samples[i]!.time > samples[i - 1]!.time)) {
+      return { status: "unavailable", detail: "Renderer evidence unavailable: the Heikin Ashi samples are not consecutive bars in time order." };
+    }
+  }
+  if (samples[samples.length - 1]!.time !== e.newestBarTime) {
+    return { status: "unbound", detail: "Renderer evidence is for a different bar window than its Heikin Ashi samples." };
+  }
+  const closed = state.latestClosedCandle;
+  const closedSec = closed ? Date.parse(closed.openTime) / 1000 : NaN;
+  const bound = Number.isFinite(closedSec) ? samples.find(s => s.time === closedSec) : undefined;
+  if (!closed || !bound || !sameTuple(bound.source, [closed.open, closed.high, closed.low, closed.close])) {
+    return { status: "unbound", detail: "Renderer evidence is unbound: the Heikin Ashi samples do not carry the served closed candle." };
+  }
+  const derived = heikinAshiRun(samples.map(s => ({ open: s.source[0], high: s.source[1], low: s.source[2], close: s.source[3] })), check.seed);
+  const off = samples.filter((s, i) => { const d = derived[i]!; return !sameTuple(s.drawn, [d.open, d.high, d.low, d.close]); });
+  const problems: string[] = [];
+  if (off.length) problems.push(`${off.length} drawn Heikin Ashi bar(s) differ from the server's own transform of the source (first at ${new Date(off[0]!.time * 1000).toISOString()})`);
+  if (e.transformVerified !== true) problems.push("the chart reports its drawn Heikin Ashi bars do not equal a fresh transform of the source");
+  return { status: "ok", problems };
 }
 
 /** Apply the user's renderer evidence to a state's Render Accuracy check.

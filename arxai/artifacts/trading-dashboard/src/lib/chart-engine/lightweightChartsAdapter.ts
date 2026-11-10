@@ -37,7 +37,10 @@ import type {
   ChartStructureMarker,
   RenderFidelity,
   RenderedProjection,
+  HeikinAshiTransformCheck,
+  OhlcTuple,
 } from "./types";
+import { HA_TRANSFORM_SAMPLE_LIMIT } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer";
@@ -1030,6 +1033,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       if (!same) mismatched++;
     }
     mismatched += Math.max(0, drawn.length - expected.length);
+    const transform = mode === "heikinAshi" ? this.heikinAshiTransformCheck(drawn, expected, mismatched) : null;
 
     const newest = this.candles[this.candles.length - 1]!;
     const step = this.priceStep();
@@ -1074,6 +1078,27 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         this.measureLineSeries(this.researchLinesRaw, this.researchSeries, step),
       ),
       projections: this.measureProjections(step),
+      ...(transform ?? {}),
+    };
+  }
+
+  /** Heikin Ashi transform evidence: the chart's own bar-for-bar verdict and
+   * the newest bars (source candle + HA bar the engine holds) for the server
+   * to re-derive with its own copy of the formula (renderEvidence.ts). */
+  private heikinAshiTransformCheck(drawn: readonly unknown[], expected: readonly ChartEngineCandle[], mismatched: number) {
+    const from = Math.max(0, this.candles.length - HA_TRANSFORM_SAMPLE_LIMIT);
+    const tuple = (r: Record<string, unknown> | undefined): OhlcTuple =>
+      [Number(r?.["open"]), Number(r?.["high"]), Number(r?.["low"]), Number(r?.["close"])];
+    const samples: HeikinAshiTransformCheck["samples"] = [];
+    for (let i = from; i < this.candles.length; i++) {
+      const c = this.candles[i]!;
+      samples.push({ time: c.time, source: [c.open, c.high, c.low, c.close], drawn: tuple(drawn[i] as Record<string, unknown> | undefined) });
+    }
+    const prev = from > 0 ? expected[from - 1]! : null;
+    return {
+      transform: "heikinAshi" as const,
+      transformVerified: mismatched === 0,
+      transformCheck: { seed: prev ? { open: prev.open, close: prev.close } : null, samples },
     };
   }
 

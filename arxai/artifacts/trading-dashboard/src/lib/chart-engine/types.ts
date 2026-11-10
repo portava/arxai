@@ -152,6 +152,22 @@ export interface RenderFidelity {
   /** AI setup/prediction levels as the chart drew them, read back from the
    * engine (the server checks each against the payload it issued). */
   projections: RenderedProjection[];
+  /** Heikin Ashi only (absent in other styles): the transform drawn, the
+   * chart's own verdict that every drawn bar equals a fresh transform of the
+   * source, and the newest bars for the server to re-derive itself. */
+  transform?: "heikinAshi";
+  transformVerified?: boolean;
+  transformCheck?: HeikinAshiTransformCheck;
+}
+
+/** Newest bars an HA report carries (server HA_SAMPLE_LIMIT). */
+export const HA_TRANSFORM_SAMPLE_LIMIT = 64;
+export type OhlcTuple = [number, number, number, number];
+export interface HeikinAshiTransformCheck {
+  /** HA bar before the first sample (null when samples start at the first bar). */
+  seed: { open: number; close: number } | null;
+  /** Oldest first: each source candle and the HA bar the engine holds for it. */
+  samples: { time: number; source: OhlcTuple; drawn: OhlcTuple }[];
 }
 
 export interface RenderDrawingFidelity { checked: number; failed: number; unplaced: number; failedIds: string[] }
