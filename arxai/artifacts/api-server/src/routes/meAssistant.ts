@@ -97,6 +97,9 @@ import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { neutralizeFeedCopyDeep } from "../lib/honesty/feedTruthCopy.js";
 import { recordSignalOnAppear } from "../lib/eleanorQuality/index.js";
 import { mintRealtimeSession, getVoiceModeStatus, VOICE_NO_TOOLS_INSTRUCTION } from "../lib/assistant/realtimeSession.js";
+import { gateVoiceTurn } from "../lib/assistant/voice/speechGate.js";
+import { openVerifiedSpeechTurn, recordVerifiedSpeechSource } from "../lib/assistant/voice/speechLedger.js";
+import { voiceCommandDecision } from "../lib/assistant/voice/voiceCommandPolicy.js";
 import { computeEleanorSignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
 import {
   computeSurfaceGovernance,
@@ -270,6 +273,9 @@ router.get("/me/assistant/briefing", requireUser, safe(async (req, res) => {
   try {
     const ctx = await buildEleanorContext(userId, role, page, symbol);
     const briefing = composeEleanorBriefing(ctx);
+    // The briefing is composed from real ARX state, so it may be read aloud
+    // with its figures (the TTS route checks speech against this ledger).
+    recordVerifiedSpeechSource(userId, [briefing.headline, ...briefing.lines].join("\n"));
     res.json({ briefing, ...(await buildPerUserEnvelope(userId)) });
   } catch (e) {
     try { req.log?.error({ err: (e as Error)?.message }, "eleanor_briefing_failed"); } catch { /* noop */ }
@@ -1284,6 +1290,9 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // harness runs the same code. Every visible sentence passes the runtime claim
   // verifier (lib/assistant/grounding) before it is sent; resolveAssistantToolChoice
   // is applied per turn inside the loop with MAX_TURNS_PER_REQUEST.
+  // Every content event is already verified text: record it in the speech
+  // ledger so the TTS route can read this answer aloud with its checked figures.
+  const recordVerifiedSpeech = openVerifiedSpeechTurn(userId);
   const loop = await runChatTurnLoop({
     model: MODEL,
     messages,
@@ -1294,7 +1303,10 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     toolResultChars: TOOL_RESULT_MODEL_CHARS,
     streamChat: streamToolChat,
     dispatch: (name, parsedArgs) => dispatchTool(name, parsedArgs, userId, req, safetyEnvelope),
-    send,
+    send: (event) => {
+      if (event?.type === "content" && typeof event.content === "string") recordVerifiedSpeech(event.content);
+      send(event);
+    },
     isAborted: () => aborted,
     onToolResult: async (r) => {
       try {
@@ -1411,6 +1423,9 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
 }));
 
 // ── streaming voice (gpt-audio speech-to-speech) ─────────────────────────
+// Held model audio is capped (base64 chars, ~60 s of pcm16 at 24 kHz). Past the
+// cap the audio is dropped and the verified text is spoken through TTS instead.
+const MAX_HELD_VOICE_AUDIO_CHARS = 4_000_000;
 router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.single("audio"), safe(async (req, res) => {
   const userId = req.authUser!.id;
   const id = Number(req.params.id);
@@ -1435,7 +1450,7 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   // "user_transcript", "audio_chunk", and any future additions). We
   // translate the ones we care about into ARX canonical events and DROP
   // every other shape. Raw provider events MUST NOT reach the browser.
-  const VOICE_CANONICAL = new Set(["safety", "content", "transcript", "user_transcript", "audio_chunk", "error", "done", "ping"]);
+  const VOICE_CANONICAL = new Set(["safety", "content", "transcript", "user_transcript", "audio_chunk", "speech_replaced", "error", "done", "ping"]);
   const sendVoice = (event: Record<string, unknown>) => {
     const t = typeof event?.type === "string" ? event.type : "";
     if (!VOICE_CANONICAL.has(t)) {
@@ -1501,6 +1516,17 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
     } catch (e) {
       try { (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn({ err: (e as Error)?.message }, "assistant_voice_transcribe_failed"); } catch { /* noop */ }
     }
+    // Claim gate for speech (owner ruling 2026-11-09): the model's audio and
+    // transcript are HELD until the whole turn is generated, then the transcript
+    // passes the same claims checker as text (voice has no tools, so the only
+    // evidence is the user's own words). Clean turn: the held audio plays
+    // unchanged. Any finding: the model audio is dropped, the bubble shows the
+    // verified text, and `speech_replaced` carries the speakable text the client
+    // reads through the TTS route. Trade-off: first audio waits for the full
+    // reply instead of streaming (see docs/VOICE_AND_NEWS_GRADES.md).
+    const heldAudio: string[] = [];
+    let heldAudioChars = 0;
+    let audioOverflow = false;
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {
       if (voiceAborted) break;
@@ -1508,7 +1534,6 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
       const evType = typeof ev?.type === "string" ? ev.type : "";
       if (evType === "transcript" && typeof ev.data === "string") {
         assistantTranscript += ev.data;
-        sendVoice({ type: "transcript", data: ev.data });
       } else if (evType === "user_transcript" && typeof ev.data === "string") {
         // Only if a provider ever supplies it AND transcription above failed.
         if (!userTranscript) {
@@ -1516,14 +1541,30 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
           sendVoice({ type: "user_transcript", data: ev.data });
         }
       } else if ((evType === "audio" || evType === "audio_chunk") && typeof ev.data === "string") {
-        // The provider yields {type:"audio"} (base64 pcm16); the canonical
-        // client event is audio_chunk.
-        // Pass through base64 audio chunk, no transformation. Frontend
-        // already understands this canonical shape.
-        sendVoice({ type: "audio_chunk", data: ev.data });
+        heldAudioChars += ev.data.length;
+        if (heldAudioChars > MAX_HELD_VOICE_AUDIO_CHARS) audioOverflow = true;
+        else heldAudio.push(ev.data);
       } else {
         // Unknown / future provider event — log server-side, drop client-side.
         try { (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn({ type: evType }, "assistant_voice_provider_event_unmapped"); } catch { /* noop */ }
+      }
+    }
+    if (!voiceAborted && assistantTranscript.trim()) {
+      const gated = gateVoiceTurn(assistantTranscript, userTranscript);
+      assistantTranscript = gated.display;
+      sendVoice({ type: "transcript", data: gated.display });
+      if (gated.audioMayPlay && !audioOverflow) {
+        for (const chunk of heldAudio) sendVoice({ type: "audio_chunk", data: chunk });
+      } else {
+        sendVoice({ type: "speech_replaced", data: gated.speech, withheld: gated.withheld });
+        if (gated.findings.length > 0) {
+          try {
+            (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn(
+              { userId, conversationId: id, findings: gated.findings.map((f) => ({ kind: f.kind, claim: f.claim.text })) },
+              "eleanor_voice_claims_withheld",
+            );
+          } catch { /* noop */ }
+        }
       }
     }
   } catch (e) {
@@ -1690,6 +1731,19 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       metadata: JSON.stringify({ reason: "MISSING_TEXT", source }),
     });
     res.status(400).json({ ok: false, error: "MISSING_TEXT" });
+    return;
+  }
+
+  // Voice never places, changes, closes or confirms an order (owner ruling
+  // 2026-11-09). Only "keep it / hold" alert answers are accepted by voice;
+  // they send nothing to a broker.
+  const voiceDecision = voiceCommandDecision({ source, text, confirm: body.confirm === true });
+  if (!voiceDecision.allowed) {
+    await db.insert(oneClickAuditTable).values({
+      userId, action: "ELEANOR_TRADE_COMMAND_VOICE_BLOCKED", ip: ipEarly, userAgent: uaEarly,
+      metadata: JSON.stringify({ text, source, confirm: body.confirm === true }),
+    });
+    res.json({ ok: false, classification: voiceDecision.classification, message: voiceDecision.message });
     return;
   }
 

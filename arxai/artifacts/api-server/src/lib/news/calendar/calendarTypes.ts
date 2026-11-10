@@ -22,6 +22,23 @@ export type EconomicCalendarStatus = "ok" | "empty" | "missing" | "error";
 
 export type CalendarFreshness = "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
 
+/**
+ * How exact `eventTimeUtc` is:
+ *  - `exact` — a real clock time (provider timestamp, or the agency's published
+ *    release time converted to UTC for that date, DST-aware).
+ *  - `date`  — the source gives a date only; `eventTimeUtc` is a midnight-UTC
+ *    sentinel that must never be shown as a clock time or used for a countdown.
+ */
+export type CalendarTimePrecision = "exact" | "date";
+export type CalendarTimeSource = "provider" | "official_release_schedule" | "date_only";
+
+/**
+ * What the `impact` bucket is based on. It is a CATEGORY, never a forecast:
+ * no calendar surface shows an "expected move" or impact number unless it is
+ * measured from history with its sample size (none is today).
+ */
+export type CalendarImpactBasis = "provider_importance" | "arx_release_classifier";
+
 /** Rich, normalized economic-calendar event — the single shared shape. */
 export interface CalendarEvent {
   /** Stable provider-scoped id (e.g. Trading Economics CalendarId). */
@@ -60,6 +77,12 @@ export interface CalendarEvent {
   lastUpdatedAt: string;
   /** Freshness of the underlying fetch. */
   freshness: CalendarFreshness;
+  /** How exact eventTimeUtc is (absent on legacy fixtures ⇒ treat as provider-exact). */
+  timePrecision?: CalendarTimePrecision;
+  /** Where the clock time came from. */
+  timeSource?: CalendarTimeSource;
+  /** What the impact bucket is based on (a category, not a forecast). */
+  impactBasis?: CalendarImpactBasis;
   /** ARX symbols this event maps to (derived from currency/country). */
   affectedSymbols: string[];
   /** Short risk note for high/critical events; null for low-impact. */

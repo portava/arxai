@@ -371,9 +371,9 @@ test("14. pickNewsProvider returns the FRED provider and syncs real events when 
   assert.ok(events.length >= 1, "configured FRED provider should sync the real event");
 });
 
-// ── 15. Legacy default: no provider selected ⇒ mock back-compat ───────────────
+// ── 15. No provider selected ⇒ honest-empty "none" (the mock is gone) ────────
 
-test("15. pickNewsProvider falls back to mock ONLY when no provider is selected", async () => {
+test("15. pickNewsProvider returns the honest-empty provider when no provider is selected", async () => {
   delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
   delete process.env["FRED_API_KEY"];
   delete process.env["TRADING_ECONOMICS_KEY"];
@@ -381,12 +381,13 @@ test("15. pickNewsProvider falls back to mock ONLY when no provider is selected"
   assert.equal(selectedEconomicCalendarProvider(), null);
   assert.equal(isEconomicCalendarProviderSelected(), false);
   const provider = pickNewsProvider();
-  assert.equal(provider.name, "mock");
+  assert.equal(provider.name, "none");
+  assert.deepEqual(await provider.fetchEvents(7), []);
 });
 
 // ── 16. FRED honesty: no clock time / forecast / actual is ever fabricated ────
 
-test("16. normalize emits null forecast/actual/previous/importance + null local time + date sentinel", () => {
+test("16. normalize emits null forecast/actual/previous/importance + null local time + the published ET release time in UTC", () => {
   const now = Date.UTC(2030, 0, 1);
   const events = normalizeFredReleaseDates(
     [{ release_id: "9", release_name: "Consumer Price Index", date: "2030-01-03" }],
@@ -398,7 +399,10 @@ test("16. normalize emits null forecast/actual/previous/importance + null local 
   assert.equal(e.source, "FRED");
   assert.equal(e.currency, "USD");
   assert.equal(e.impact, "high");
-  assert.equal(e.eventTimeUtc, "2030-01-03T00:00:00.000Z"); // date-granularity sentinel
+  // BLS publishes CPI at 08:30 US Eastern; 3 Jan 2030 is EST (UTC-5).
+  assert.equal(e.eventTimeUtc, "2030-01-03T13:30:00.000Z");
+  assert.equal(e.timePrecision, "exact");
+  assert.equal(e.timeSource, "official_release_schedule");
   assert.equal(e.eventTimeLocal, null); // never a guessed clock time
   assert.equal(e.forecast, null); // FRED carries no forecast
   assert.equal(e.actual, null); // never fabricated

@@ -195,6 +195,8 @@ function teToProvider(e: TeEvent): ProviderEvent | null {
     eventTime: new Date(raw.eventTimeIso),
     source: "trading_economics",
     affectedSymbols: raw.affectedMarkets.length > 0 ? raw.affectedMarkets : null,
+    // Normalized at fetch time, so "now" is the fetch time.
+    fetchedAt: new Date(),
   };
 }
 

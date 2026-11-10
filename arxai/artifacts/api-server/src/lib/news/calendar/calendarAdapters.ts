@@ -66,6 +66,7 @@ export function toProviderEvents(events: CalendarEvent[]): ProviderEvent[] {
     eventTime: new Date(e.eventTimeUtc),
     source: e.source,
     affectedSymbols: e.affectedSymbols.length > 0 ? e.affectedSymbols : null,
+    fetchedAt: new Date(e.lastUpdatedAt),
   }));
 }
 
@@ -83,5 +84,10 @@ export function toMockShapeEvents(events: CalendarEvent[]): MockEconomicEvent[] 
     eventTime: e.eventTimeUtc,
     affectedMarkets: e.affectedSymbols,
     source: e.source,
+    provider: e.provider,
+    fetchedAt: e.lastUpdatedAt,
+    freshness: e.freshness,
+    stale: e.freshness === "STALE" || e.freshness === "UNAVAILABLE",
+    timePrecision: e.timePrecision ?? "exact",
   }));
 }

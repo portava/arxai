@@ -7,12 +7,19 @@ interface StreamCallbacks {
   onTranscript?: (text: string, full: string) => void;
   onComplete?: (transcript: string) => void;
   onError?: (error: Error) => void;
+  /**
+   * The server's claim gate withheld part of the spoken answer, so the model's
+   * own audio was dropped. `speech` is the verified text to read aloud (the
+   * caller routes it through the TTS route).
+   */
+  onSpeechReplaced?: (speech: string) => void;
 }
 
 type TypedVoiceStreamEvent =
   | { type: "user_transcript"; data: string }
   | { type: "transcript"; data: string }
   | { type: "audio"; data: string }
+  | { type: "speech_replaced"; data: string }
   | { type: "error"; error: string };
 
 type DoneEvent = { done: true };
@@ -75,6 +82,10 @@ export function normalizeVoiceStreamEvent(value: unknown): VoiceStreamEvent | nu
     case "audio_chunk":
       return typeof record.data === "string"
         ? { type: "audio", data: record.data }
+        : null;
+    case "speech_replaced":
+      return typeof record.data === "string"
+        ? { type: "speech_replaced", data: record.data }
         : null;
     case "error": {
       const msg =
@@ -191,6 +202,10 @@ function handleVoiceStreamEvent(
 
     case "audio":
       playback.pushAudio(event.data);
+      return;
+
+    case "speech_replaced":
+      callbacks.onSpeechReplaced?.(event.data);
       return;
 
     case "error":

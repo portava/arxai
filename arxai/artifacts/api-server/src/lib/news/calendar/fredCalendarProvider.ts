@@ -20,6 +20,7 @@
 import type { CalendarEvent, EconomicCalendarImpact } from "./calendarTypes.js";
 import type { CalendarHttpFetcher } from "./tradingEconomicsProvider.js";
 import { affectedSymbolsFor, riskNoteFor } from "./calendarSymbolMap.js";
+import { scheduledFredReleaseTime } from "./releaseSchedule.js";
 
 export const FRED_PROVIDER = "fred";
 
@@ -156,7 +157,11 @@ export function normalizeFredReleaseDates(
     const cls = classify(name);
     if (!cls) continue; // unrecognized data series → dropped (honest curation).
     const releaseId = str(r.release_id);
-    const eventTimeUtc = `${date}T00:00:00.000Z`; // date-granularity sentinel.
+    // FRED gives the date only. The agency's published ET release time is
+    // converted to UTC for THIS date (DST-aware); a release with no published
+    // time keeps the date-only sentinel and timePrecision "date".
+    const when = scheduledFredReleaseTime(name, date);
+    const eventTimeUtc = when.eventTimeUtc;
     const id = `fred_${releaseId ?? name.replace(/\s+/g, "_")}_${date}`;
     out.push({
       id,
@@ -177,6 +182,9 @@ export function normalizeFredReleaseDates(
       importance: null,
       lastUpdatedAt,
       freshness: opts.freshness,
+      timePrecision: when.timePrecision,
+      timeSource: when.timeSource,
+      impactBasis: "arx_release_classifier",
       affectedSymbols: affectedSymbolsFor(cls.currency, cls.country),
       riskNote: riskNoteFor(cls.impact, cls.currency),
     });

@@ -23,7 +23,8 @@ export interface UseSpeakResponsesApi {
   setEnabled: (v: boolean) => void;
   supported: boolean;
   state: SpeakState;
-  speak: (text: string) => void;
+  /** `force` speaks even when "Speak responses" is off (a voice-mode reply). */
+  speak: (text: string, opts?: { force?: boolean }) => void;
   stop: () => void;
   // ── Streaming speech (read aloud while Eleanor types) ────────────────────
   // Begin a fresh streaming utterance for a new turn. Clears any queued
@@ -81,9 +82,32 @@ export function extractCompleteSentences(rest: string): { sentences: string[]; c
 // Sanitize text before sending to the TTS engine. Defense-in-depth:
 // Phase 22F tools never return secrets, but we additionally strip anything
 // that looks like a token / hash / URL / code so it is not spoken aloud.
+// Claim gate for speech, client half (owner ruling 2026-11-09). Text the ARX
+// verifier marked or removed is never read aloud, not even by the browser
+// speechSynthesis fallback (which does not go through the server TTS gate).
+// The whole sentence goes: a listener cannot see an "[unverified]" mark.
+const VERIFIER_MARKUP_RE = /\[unverified\]|\[Removed by the ARX verifier|\[Withheld:|ARX verifier:/;
+export const SPOKEN_WITHHELD_NOTICE_CLIENT = "I've left out a figure I couldn't check against ARX data. The text chat shows the checked numbers.";
+export function dropUnverifiedForSpeech(input: string): string {
+  if (!input || !VERIFIER_MARKUP_RE.test(input)) return input;
+  const parts = input.split(/(?<=[.!?])\s+|\n+/);
+  const out: string[] = [];
+  let noticed = false;
+  for (const p of parts) {
+    if (VERIFIER_MARKUP_RE.test(p)) {
+      if (!noticed) out.push(SPOKEN_WITHHELD_NOTICE_CLIENT);
+      noticed = true;
+    } else if (p.trim()) {
+      out.push(p.trim());
+      noticed = false;
+    }
+  }
+  return out.join(" ");
+}
+
 export function sanitizeForSpeech(input: string): string {
   if (!input) return "";
-  let s = input;
+  let s = dropUnverifiedForSpeech(input);
   // Strip fenced code blocks entirely
   s = s.replace(/```[\s\S]*?```/g, " ");
   // Strip inline code
@@ -363,8 +387,8 @@ export function useSpeakResponses(): UseSpeakResponsesApi {
     }
   }, [supported]);
 
-  const speak = useCallback((text: string) => {
-    if (!supported || !enabled) return;
+  const speak = useCallback((text: string, opts?: { force?: boolean }) => {
+    if (!supported || (!enabled && opts?.force !== true)) return;
     const clean = sanitizeForSpeech(text);
     if (!clean) return;
 

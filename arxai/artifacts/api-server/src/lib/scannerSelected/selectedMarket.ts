@@ -13,6 +13,7 @@
 // dispatches anything. The function is idempotent and cheap to call. The
 // simulator is unreachable from this envelope — Task #518.
 
+import { isDateOnlyCalendarTime } from "../news/calendar/releaseSchedule.js";
 import {
   analyzeMarketFromCandles,
   type MarketAnalysis,
@@ -416,10 +417,13 @@ export function filterEventRowsForSymbol<R extends EventRowLike>(
   });
 }
 
-/** Calendar sources that publish only a release DATE: their eventTime is a
- *  midnight-UTC date marker (fredCalendarProvider), not a release time. */
-export function isDateOnlyEventSource(source: string | null | undefined): boolean {
-  return typeof source === "string" && source.trim().toLowerCase() === "fred";
+/** Calendar sources that can publish only a release DATE. FRED events carry
+ *  the agency's published ET release time converted to UTC when one is known
+ *  (releaseSchedule.ts); otherwise their eventTime is a midnight-UTC date
+ *  marker. Pass the eventTime to tell the two apart: a FRED event whose time is
+ *  not the midnight marker is a real release time. */
+export function isDateOnlyEventSource(source: string | null | undefined, eventTime?: Date | string | null): boolean {
+  return isDateOnlyCalendarTime(source, eventTime);
 }
 
 function utcDayStartMs(ms: number): number {
@@ -439,7 +443,7 @@ export function selectListedEventRows<R extends { eventTime: Date | string; sour
   return rows.filter((r) => {
     const t = +new Date(r.eventTime);
     if (!Number.isFinite(t)) return false;
-    return t >= nowMs || (isDateOnlyEventSource(r.source) && t >= dayStart);
+    return t >= nowMs || (isDateOnlyEventSource(r.source, r.eventTime) && t >= dayStart);
   });
 }
 
@@ -455,7 +459,7 @@ export function toSelectedMarketEvent(r: {
     eventTime: new Date(r.eventTime).toISOString(),
     minutesUntil: Math.round((+new Date(r.eventTime) - nowMs) / 60000),
     source: r.source ?? null,
-    timePublished: !isDateOnlyEventSource(r.source),
+    timePublished: !isDateOnlyEventSource(r.source, r.eventTime),
   };
 }
 
@@ -492,7 +496,7 @@ export function newsLevelBasis(
   news: { upcomingEvent: EconomicEvent | null }, listed: SelectedMarketEvent[], nowMs: number,
 ): NewsLevelBasis {
   if (untimedTodayEvents(listed, nowMs, news.upcomingEvent).length > 0) return "unscored";
-  if (news.upcomingEvent && isDateOnlyEventSource(news.upcomingEvent.source)) return "date_only";
+  if (news.upcomingEvent && isDateOnlyEventSource(news.upcomingEvent.source, news.upcomingEvent.eventTime)) return "date_only";
   return "release_time";
 }
 
@@ -511,7 +515,7 @@ function dateOnlyAwareNewsReason(
   listed: SelectedMarketEvent[], symbol: string, nowMs: number,
 ): string {
   const ev = news.upcomingEvent;
-  const base = ev && isDateOnlyEventSource(ev.source)
+  const base = ev && isDateOnlyEventSource(ev.source, ev.eventTime)
     ? `${ev.impact.toUpperCase()} impact ${ev.title} dated ${ev.eventTime.slice(0, 10)} (release time not published) — ${news.blockTrading ? `trading blocked for ${symbol}` : "proceed with caution"}.`
     : ev ? news.reason : null;
   const untimed = untimedTodayEvents(listed, nowMs, ev);

@@ -18,7 +18,7 @@ import {
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, ne, or } from "drizzle-orm";
 import { z } from "zod/v4";
 import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -159,7 +159,7 @@ async function gatherSignals(userId: number) {
   const brokerLog = await readLatestBrokerHealthLog();
   const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const upcomingNews = await db.select().from(economicEventsTable)
-    .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
+    .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h), ne(economicEventsTable.source, "mock")))
     .orderBy(asc(economicEventsTable.eventTime)).limit(20);
   // The stored calendar is filled only by a manual sync; an empty read is a
   // real "no news" only when that calendar reaches the end of the window.
