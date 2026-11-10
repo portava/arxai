@@ -1,0 +1,2 @@
+# Hash-pinned real-history fixture: bytes must never be EOL-normalised.
+arxai/scripts/fixtures/real-history-v1/** -text
