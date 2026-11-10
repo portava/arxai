@@ -1,8 +1,10 @@
 import { pgTable, serial, text, integer, timestamp, real, index, uniqueIndex } from "drizzle-orm/pg-core";
 
-// (N) Build N — Economic events table. Sourced from a pluggable provider
-// (mock by default; real API replaceable). Append-on-sync, deduped by
-// (source, externalId). Indexed by event_time for upcoming-events queries.
+// (N) Build N — Economic events table. Filled only by POST /economic-events/sync
+// from the shared provider-backed calendar (Trading Economics or FRED).
+// Append-on-sync, deduped by (source, externalId). Indexed by event_time for
+// upcoming-events queries. Legacy rows with source "mock" (the removed mock
+// generator) are excluded from every read.
 export const economicEventsTable = pgTable("economic_events", {
   id: serial("id").primaryKey(),
   externalId: text("external_id").notNull(),                // provider's stable id
@@ -20,6 +22,9 @@ export const economicEventsTable = pgTable("economic_events", {
   // Heuristic flag set when actual differs heavily from forecast (>50% delta).
   volatilityFlag: integer("volatility_flag").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // When ARX last fetched this row from the provider (set on insert AND on every
+  // re-sync). Null on rows synced before it was recorded ⇒ served as STALE.
+  fetchedAt: timestamp("fetched_at"),
 }, (t) => ({
   byEventTime:  index("eco_events_event_time_idx").on(t.eventTime),
   byImpact:     index("eco_events_impact_idx").on(t.impactLevel),

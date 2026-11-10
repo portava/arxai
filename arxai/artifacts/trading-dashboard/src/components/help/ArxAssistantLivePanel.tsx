@@ -382,6 +382,11 @@ export function ArxAssistantLivePanel() {
         return [...cur, { id: `a-v-${Date.now()}`, role: "assistant", content: full, pending: true }];
       });
     },
+    // Claim gate (owner ruling 2026-11-09): the server withheld part of the
+    // spoken answer and dropped the model audio; read the verified text instead.
+    onSpeechReplaced: (speech) => {
+      if (speech.trim()) activeTTS.speak(speech, { force: true });
+    },
     onComplete: () => {
       const heard = voiceUserTranscriptRef.current.trim();
       setMessages((cur) => {
@@ -426,6 +431,9 @@ export function ArxAssistantLivePanel() {
         return [...cur, { id: `a-rt-${Date.now()}`, role: "assistant", content: text, pending: !isFinal }];
       });
     },
+    // Realtime answers arrive as text, pass the server claim gate, and only the
+    // gated speech is read aloud (through the TTS route, which gates again).
+    onSpeak: (speech) => activeTTS.speak(speech, { force: true }),
     onMode: (mode, _reason) => {
       // Phase 22G — track the mode honestly but DO NOT spam the chat with
       // technical reason codes. The voice badge handles the user-visible

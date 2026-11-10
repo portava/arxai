@@ -1,14 +1,8 @@
-// (N) Pluggable news provider interface. The mock provider mirrors the
-// existing in-memory generator (kept for /news/calendar back-compat) but
-// produces records in the spec shape (CRITICAL impact level supported,
-// stable externalId, eventTime as ISO). Replace this file's `pickProvider`
-// with a real API client when one is configured.
-//
-// When TRADING_ECONOMICS_KEY is set, `pickNewsProvider()` returns the real
-// Trading Economics provider instead of the mock. Both providers implement
-// the same `NewsProvider` interface so no downstream caller changes.
+// (N) Pluggable news provider interface for the DB-sync path. Every provider
+// reads the single shared calendar service (Trading Economics or FRED). With no
+// provider selected the picker returns an honest-empty provider named "none":
+// the former mock generator (invented FOMC/CPI/NFP times) is gone.
 
-import { getMockEvents } from "./economicEvents.js";
 import {
   getEconomicCalendarResult,
   selectedEconomicCalendarProvider,
@@ -27,6 +21,8 @@ export interface ProviderEvent {
   eventTime: Date;
   source: string;
   affectedSymbols: string[] | null;
+  /** When ARX fetched this event from the provider. */
+  fetchedAt: Date;
 }
 
 export interface NewsProvider {
@@ -34,36 +30,11 @@ export interface NewsProvider {
   fetchEvents(daysAhead: number): Promise<ProviderEvent[]>;
 }
 
-const IMPACT_UPPER: Record<string, "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"> = {
-  low: "LOW", medium: "MEDIUM", high: "HIGH", critical: "CRITICAL",
-};
-
-// Heuristic: certain titles are de-facto CRITICAL (rate decisions of major
-// central banks). Mock data only flags them as HIGH; promote here so the
-// downstream rules can exercise the CRITICAL path.
-const CRITICAL_TITLES = [/FOMC Rate Decision/i, /ECB Rate Decision/i, /BoE Rate Decision/i, /BoJ Policy/i];
-
-export const mockNewsProvider: NewsProvider = {
-  name: "mock",
-  async fetchEvents(daysAhead: number): Promise<ProviderEvent[]> {
-    const raw = getMockEvents(daysAhead);
-    return raw.map((e) => {
-      const baseImpact = IMPACT_UPPER[e.impact] ?? "LOW";
-      const promoted = CRITICAL_TITLES.some((rx) => rx.test(e.title));
-      return {
-        externalId: e.id,
-        eventName: e.title,
-        country: e.country,
-        currency: e.currency,
-        impactLevel: promoted ? "CRITICAL" : baseImpact,
-        forecast: e.forecast,
-        previous: e.previous,
-        actual: e.actual,
-        eventTime: new Date(e.eventTime),
-        source: "mock",
-        affectedSymbols: e.affectedMarkets ?? null,
-      };
-    });
+// No provider selected: honest-empty. Never fabricated rows.
+export const unconfiguredNewsProvider: NewsProvider = {
+  name: "none",
+  async fetchEvents(): Promise<ProviderEvent[]> {
+    return [];
   },
 };
 
@@ -95,9 +66,8 @@ export const fredNewsProvider: NewsProvider = {
 // Selector — env-driven. The returned provider's NAME always reflects the
 // SELECTED provider (honesty: never report TE while serving FRED). A selected
 // provider serves honest-empty when its key is missing or the upstream errors —
-// never fabricated events. The mock is back-compat ONLY when NO provider is
-// selected (true legacy default), so a selected-but-unconfigured provider never
-// silently syncs fabricated rows.
+// never fabricated events. No selection at all returns the honest-empty
+// "none" provider.
 export function pickNewsProvider(): NewsProvider {
   switch (selectedEconomicCalendarProvider()) {
     case "fred":
@@ -105,6 +75,6 @@ export function pickNewsProvider(): NewsProvider {
     case "trading_economics":
       return tradingEconomicsNewsProvider;
     default:
-      return mockNewsProvider;
+      return unconfiguredNewsProvider;
   }
 }

@@ -33,6 +33,9 @@ interface EconomicEvent {
   eventTime: string; source: string;
   affectedSymbols: string[] | null;
   volatilityFlag: number;
+  /** When ARX fetched this row from the provider (null on rows synced before this was recorded). */
+  fetchedAt?: string | null;
+  freshness?: string | null;
 }
 
 // ── Live-provider event shape (from /api/economic-calendar/events) ─────────
@@ -55,6 +58,9 @@ interface LiveCalendarEvent {
   previous: string | null;
   actual: string | null;
   riskNote: string | null;
+  timePrecision?: "exact" | "date";
+  fetchedAt?: string;
+  freshness?: string;
 }
 
 // ── Unified display event (normalises both sources) ────────────────────────
@@ -80,12 +86,23 @@ interface DisplayEvent {
    * shown as a clock time, a countdown or "already happened".
    */
   timeKnown: boolean;
+  /** Where the event came from (provider/agency label). */
+  source: string;
+  /** When ARX fetched this event from its source; null when unknown. */
+  fetchedAt: string | null;
+  /** LIVE / DELAYED / STALE / UNAVAILABLE, as the server labelled it. */
+  freshness: string | null;
 }
 
-// FRED's releases/dates feed is date-granularity only (api-server
-// fredCalendarProvider.ts emits `${date}T00:00:00.000Z` and eventTimeLocal=null).
-function isDateOnlySource(source: string | null | undefined): boolean {
-  return typeof source === "string" && source.trim().toLowerCase() === "fred";
+// FRED's releases/dates feed is date-granularity. The api-server converts the
+// agency's published US-Eastern release time to UTC when one is known
+// (releaseSchedule.ts, DST-aware) and sends timePrecision "exact"; otherwise the
+// time is a `${date}T00:00:00.000Z` sentinel with timePrecision "date".
+function isDateOnlySource(source: string | null | undefined, eventTime?: string | null, timePrecision?: string | null): boolean {
+  if (timePrecision === "date") return true;
+  if (timePrecision === "exact") return false;
+  if (!(typeof source === "string" && source.trim().toLowerCase() === "fred")) return false;
+  return typeof eventTime !== "string" || eventTime.endsWith("T00:00:00.000Z");
 }
 
 const IMPACT_UP: Record<string, ImpactLevel> = {
@@ -108,12 +125,33 @@ function fromLive(e: LiveCalendarEvent): DisplayEvent {
     affectedSymbols: e.affectedSymbols.length > 0 ? e.affectedSymbols : (e.affectedMarkets.length > 0 ? e.affectedMarkets : null),
     volatilityFlag: 0,
     riskNote: e.riskNote,
-    timeKnown: !isDateOnlySource(e.source),
+    timeKnown: !isDateOnlySource(e.source, e.eventTimeUtc ?? e.eventTimeIso, e.timePrecision),
+    source: e.source,
+    fetchedAt: e.fetchedAt ?? null,
+    freshness: e.freshness ?? null,
   };
 }
 
 function fromDb(e: EconomicEvent): DisplayEvent {
-  return { ...e, impactLevel: IMPACT_UP[String(e.impactLevel ?? "").toLowerCase()] ?? "UNKNOWN", key: String(e.id), timeKnown: !isDateOnlySource(e.source) };
+  return { ...e, impactLevel: IMPACT_UP[String(e.impactLevel ?? "").toLowerCase()] ?? "UNKNOWN", key: String(e.id), timeKnown: !isDateOnlySource(e.source, e.eventTime), fetchedAt: e.fetchedAt ?? null, freshness: e.freshness ?? null };
+}
+
+// Every listed event names its source, when ARX fetched it and whether that
+// fetch is still fresh. A stale or unknown fetch is labelled, never shown as live.
+export function eventProvenanceText(source: string, fetchedAt: string | null, freshness: string | null): { text: string; stale: boolean } {
+  const src = source && source.trim() ? source.trim() : "unknown source";
+  const ms = fetchedAt ? Date.parse(fetchedAt) : NaN;
+  const at = Number.isFinite(ms) ? new Date(ms) : null;
+  const when = at ? `fetched ${at.toISOString().slice(0, 16).replace("T", " ")} UTC` : "fetch time not recorded";
+  const f = (freshness ?? "").toUpperCase();
+  const stale = !at || f === "STALE" || f === "UNAVAILABLE";
+  return { text: `Source: ${src} · ${when}${stale ? " · Stale" : f === "DELAYED" ? " · Delayed" : ""}`, stale };
+}
+function EventProvenanceLine({ source, fetchedAt, freshness }: { source: string; fetchedAt: string | null; freshness: string | null }) {
+  const p = eventProvenanceText(source, fetchedAt, freshness);
+  return (
+    <div data-testid="eco-event-provenance" className={cn("mt-0.5 text-[10px]", p.stale ? "text-warning" : "text-txt-muted")}>{p.text}</div>
+  );
 }
 
 // Open the existing Eleanor live chat (same cross-tab mechanism the AI hub uses).
@@ -744,6 +782,7 @@ export default function EconomicCalendarPage() {
                           <span className="text-xs text-txt-muted">{e.currency}</span>
                         </div>
                         <div className="mt-0.5 text-sm font-semibold text-foreground">{e.eventName}</div>
+                        <EventProvenanceLine source={e.source} fetchedAt={e.fetchedAt} freshness={e.freshness} />
                         {e.affectedSymbols && e.affectedSymbols.length > 0 && (
                           <div className="mt-0.5 text-[11px] text-txt-muted">
                             Affects: <span className="text-primary">{e.affectedSymbols.join(", ")}</span>

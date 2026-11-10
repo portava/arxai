@@ -366,7 +366,7 @@ test("13. pickNewsProvider returns honest-empty TE provider when selected but ke
   assert.equal(events.length, 0);
 });
 
-test("14. pickNewsProvider falls back to mock ONLY when no provider is selected (legacy default)", async () => {
+test("14. pickNewsProvider returns the honest-empty provider when no provider is selected (the mock is gone)", async () => {
   // True legacy default: no provider selected at all.
   delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
   delete process.env["TRADING_ECONOMICS_KEY"];
@@ -374,7 +374,8 @@ test("14. pickNewsProvider falls back to mock ONLY when no provider is selected 
   assert.equal(isEconomicCalendarProviderSelected(), false);
 
   const provider = pickNewsProvider();
-  assert.equal(provider.name, "mock");
+  assert.equal(provider.name, "none");
+  assert.deepEqual(await provider.fetchEvents(7), []);
 });
 
 // ── 15. Cache is keyed by horizon — no cross-window contamination ─────────────

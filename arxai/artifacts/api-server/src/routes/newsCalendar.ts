@@ -24,7 +24,7 @@
 
 import { Router } from "express";
 import { db, economicEventsTable, newsRiskReportsTable, vaultEventsTable } from "@workspace/db";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   scoreNewsRisk,
@@ -34,6 +34,7 @@ import {
   type EconomicEventInput,
 } from "@workspace/domain/news-risk";
 import { pickNewsProvider } from "../lib/news/calendar/newsProvider.js";
+import { storedEventFreshness } from "../lib/news/calendar/storedEventProvenance.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
 import {
   isCalendarProviderEnabled,
@@ -55,9 +56,22 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   }).catch(() => { /* non-fatal */ });
 }
 
-function serializeEvent(r: typeof economicEventsTable.$inferSelect) {
-  return { ...r, eventTime: r.eventTime.toISOString(), createdAt: r.createdAt.toISOString() };
+// Every served stored event carries its source, when ARX fetched it and a
+// freshness state (lib/news/calendar/storedEventProvenance.ts).
+export function serializeEvent(r: typeof economicEventsTable.$inferSelect, nowMs: number = Date.now()) {
+  const freshness = storedEventFreshness(r.fetchedAt ?? null, nowMs);
+  return {
+    ...r,
+    eventTime: r.eventTime.toISOString(),
+    createdAt: r.createdAt.toISOString(),
+    fetchedAt: r.fetchedAt ? r.fetchedAt.toISOString() : null,
+    freshness,
+    stale: freshness === "STALE",
+  };
 }
+
+/** The removed mock generator's legacy rows are never served. */
+const NOT_MOCK = ne(economicEventsTable.source, "mock");
 function serializeReport(r: typeof newsRiskReportsTable.$inferSelect) {
   return { ...r, createdAt: r.createdAt.toISOString() };
 }
@@ -92,7 +106,7 @@ export async function readStoredCalendarCoverage(windowEnd: Date): Promise<Store
   const [agg] = await db.select({
     n: sql<number>`count(*)::int`,
     latest: sql<string | Date | null>`max(${economicEventsTable.eventTime})`,
-  }).from(economicEventsTable);
+  }).from(economicEventsTable).where(NOT_MOCK);
   const storedEventCount = Number(agg?.n ?? 0);
   const latestMs = agg?.latest != null ? new Date(agg.latest).getTime() : NaN;
   const coveredThrough = Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
@@ -274,12 +288,13 @@ router.post("/economic-events/sync", async (req, res): Promise<void> => {
             forecast: e.forecast, previous: e.previous, actual: e.actual,
             eventTime: e.eventTime, source: e.source,
             affectedSymbols: e.affectedSymbols, volatilityFlag: volatility,
+            fetchedAt: e.fetchedAt,
           }).onConflictDoUpdate({
             target: [economicEventsTable.source, economicEventsTable.externalId],
             set: {
               forecast: e.forecast, previous: e.previous, actual: e.actual,
               impactLevel: e.impactLevel, eventTime: e.eventTime,
-              volatilityFlag: volatility,
+              volatilityFlag: volatility, fetchedAt: e.fetchedAt,
             },
           });
           upserted++;
@@ -320,6 +335,7 @@ router.get("/economic-events", async (req, res): Promise<void> => {
     const conds = [
       gte(economicEventsTable.eventTime, since),
       lte(economicEventsTable.eventTime, until),
+      NOT_MOCK,
     ];
     if (q.currency) conds.push(eq(economicEventsTable.currency, q.currency));
     if (q.impact)   conds.push(eq(economicEventsTable.impactLevel, q.impact));
@@ -327,7 +343,7 @@ router.get("/economic-events", async (req, res): Promise<void> => {
       .where(and(...conds))
       .orderBy(economicEventsTable.eventTime)
       .limit(500);
-    res.json({ events: rows.map(serializeEvent) });
+    res.json({ events: rows.map((r) => serializeEvent(r)) });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /economic-events failed");
     res.status(400).json({ error: "Invalid request" });
@@ -355,12 +371,13 @@ router.get("/economic-events/upcoming", async (req, res): Promise<void> => {
       .where(and(
         gte(economicEventsTable.eventTime, since),
         lte(economicEventsTable.eventTime, until),
+        NOT_MOCK,
       ))
       .orderBy(economicEventsTable.eventTime);
     const filtered = rows.filter((r) => allowed.includes(r.impactLevel));
     const calendarCoverage = await readStoredCalendarCoverage(until);
     res.json({
-      events: filtered.map(serializeEvent),
+      events: filtered.map((r) => serializeEvent(r)),
       windowHours: q.hours,
       minImpact: q.minImpact,
       pastMinutes: q.pastMinutes,
@@ -384,6 +401,7 @@ export async function generateNewsRiskForSymbol(symbol: string) {
     .where(and(
       gte(economicEventsTable.eventTime, since),
       lte(economicEventsTable.eventTime, until),
+      NOT_MOCK,
     ));
   const result = scoreNewsRisk({
     symbol, events: eventRows.map(rowToEventInput),

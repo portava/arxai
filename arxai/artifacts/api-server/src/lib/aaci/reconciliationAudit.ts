@@ -305,7 +305,7 @@ async function raiseChainAnomaly(
 async function assessPreNewsExposure(openSymbols: string[]): Promise<string[]> {
   if (openSymbols.length === 0) return [];
   const provider = pickNewsProvider();
-  if (provider.name === "mock") return []; // no real calendar → honest no-op
+  if (provider.name === "none") return []; // no real calendar → honest no-op
   try {
     const events = await provider.fetchEvents(1);
     const now = Date.now();
