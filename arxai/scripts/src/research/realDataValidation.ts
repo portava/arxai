@@ -314,6 +314,39 @@ export function plantedEdgeReturns(closes: readonly number[], spec: PlantedEdgeS
   return netReturns(positions, closes, costPerTurnover).returns;
 }
 
+/**
+ * PLATFORM-STABLE identity of a run's FINDING.
+ *
+ * `resultHash` covers every float at full precision, and V8's libm is not
+ * bit-identical across CPU architectures (e.g. fused multiply-add on arm64 vs
+ * x64), so the same run can differ in the last ulp between a Mac and the Linux
+ * CI runner. The finding digest hashes the same body with every non-integer
+ * number quantised to float32 (Math.fround: ~7 significant digits; −0 → 0,
+ * non-finite → its name) and drops the fields that only re-hash full-precision floats
+ * (resultHash, validationReportHashes). Every discrete outcome — verdicts,
+ * vetoes, FDR decisions, walk-forward selections, survivors — is hashed exactly.
+ *
+ * Why binary and not decimal: the run already rounds most floats to 10
+ * decimals (r10), so a DECIMAL canonicaliser lands values exactly on rounding
+ * ties, where one ulp of noise flips the digit. A decimal value essentially
+ * never sits on a float32 rounding midpoint (odds ~2^-28 per value).
+ */
+export function findingDigest(r: RealDataRunResult): string {
+  const canon = (v: unknown): unknown => {
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return String(v);
+      if (Number.isInteger(v)) return v === 0 ? 0 : v;
+      const x = Math.fround(v);
+      return x === 0 ? 0 : x;
+    }
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, canon(x)]));
+    return v;
+  };
+  const { resultHash: _r, validationReportHashes: _v, ...body } = r;
+  return sha256(stableStringify(canon(body)));
+}
+
 /** The cost charged on an instrument. Missing ⇒ throw: an uncosted run would overstate every edge. */
 export function costOf(inst: Pick<RunnerInstrument, "symbol" | "assetClass" | "costPerTurnover">, params: RunnerParams): number {
   const c = inst.costPerTurnover ?? params.costPerTurnover[inst.assetClass];

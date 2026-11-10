@@ -9,9 +9,13 @@
 //                an off-grid (partial) bar is refused even with a re-signed
 //                manifest, every page boundary was cross-checked at fetch, and
 //                short series are listed as excluded rather than padded.
-//   2. RESULT    the real run is reported EXACTLY: its result hash and its
-//                survivor count per symbol × timeframe are pinned. Whatever they
-//                are, a change in code or data that moves them fails here.
+//   2. RESULT    the real run is reported EXACTLY: its platform-stable finding
+//                digest (every float at 8 significant figures, every verdict,
+//                veto, FDR decision and walk-forward pick exact), its survivor
+//                set and its survivor count per symbol × timeframe are pinned.
+//                The full-precision resultHash is NOT pinned: V8's libm differs
+//                in the last ulp between arm64 and x64, so it is a per-machine
+//                identity. A change in code or data that moves the finding fails.
 //   3. GROSS     the same search at ZERO cost is reported and pinned too, so no
 //                cost assumption can be what hides an edge.
 //   4. CONTROL   a seeded synthetic edge planted in a real intraday series IS
@@ -32,7 +36,7 @@ import {
   loadVerifiedIntradayFixture, intradayDatasetHashOf, TIMEFRAME_ORDER, type IntradayFixtureManifest,
 } from "./research/intradayHistoryFixture.js";
 import {
-  runRealDataValidation, INTRADAY_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams, paramsHashOf,
+  runRealDataValidation, INTRADAY_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams, paramsHashOf, findingDigest,
   type RealDataRunResult,
 } from "./research/realDataValidation.js";
 import {
@@ -46,11 +50,11 @@ import { isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js
  * fixture; if either moves, a human must look at why before it is re-pinned.
  */
 export const PINNED_INTRADAY_RESULT = {
-  resultHash: "54c7172042ebb36c8deab2448f31171ab52db22dd0ac567e657f93e294730ba9",
-  survivors: 0,
-  grossResultHash: "e7f761c4e0c01e32d90235c7b3618d4832422d778768fea32e2a609b3d218988",
-  grossSurvivors: 0,
-} as const;
+  findingDigest: "7ab4ae53718d46eb39544cab9ea4180ba03c3c52161006ef3133e3cbedbb3ac5",
+  survivorKeys: [] as string[],
+  grossFindingDigest: "3a2973f747e2e72d4e2656ea2e9deec788e003864c447e1629fd92f2639d4556",
+  grossSurvivorKeys: [] as string[],
+};
 
 /** The daily lane's params hash must not move because the intraday lane exists. */
 const DAILY_PARAMS_HASH_PREFIX = "729e1ec9e6f8692198dc0dd0e175e82e7647ba8107c80e536bff6ba246c315c1";
@@ -141,8 +145,24 @@ export async function run(): Promise<CiTestResultLike> {
   assert(FAMILY_KEYS.every((f) => real.summary.some((s) => s.familyKey === f && s.activeVariants > 0)), "every family actually traded on at least one series");
   const allP = [...real.variants.map((v) => v.pValue), ...real.walkForward.map((w) => w.pValue)];
   console.log(`    naive per-test p<0.05 "discoveries": ${allP.filter((p) => p < 0.05).length}; after BH: ${real.fdr.rejections}`);
-  assert(real.survivors.length === PINNED_INTRADAY_RESULT.survivors, `the real finding is reported exactly: ${real.survivors.length} survivors (pinned ${PINNED_INTRADAY_RESULT.survivors})`);
-  assert(real.resultHash === PINNED_INTRADAY_RESULT.resultHash, `the real result hash is the pinned one (${real.resultHash})`);
+  const keysOf = (r: RealDataRunResult) => r.survivors.map((x) => x.key).sort();
+  console.log(`    resultHash (full precision, this machine) ${real.resultHash}`);
+  assert(JSON.stringify(keysOf(real)) === JSON.stringify(PINNED_INTRADAY_RESULT.survivorKeys),
+    `the real survivor set is reported exactly: [${keysOf(real).join(", ")}] (pinned [${PINNED_INTRADAY_RESULT.survivorKeys.join(", ")}])`);
+  assert(findingDigest(real) === PINNED_INTRADAY_RESULT.findingDigest, `the real finding digest is the pinned one (${findingDigest(real)})`);
+  {
+    // The digest must ignore last-ulp platform noise and still catch a real change.
+    const jitter = (v: unknown): unknown => typeof v === "number" && Number.isFinite(v) && !Number.isInteger(v) ? v * (1 + 4e-16)
+      : Array.isArray(v) ? v.map(jitter) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, jitter(x)])) : v;
+    const noisy = jitter(real) as RealDataRunResult;
+    assert(findingDigest(noisy) === findingDigest(real), "the finding digest is unchanged by last-ulp float noise (the arm64/x64 difference)");
+    const moved = structuredClone(real);
+    moved.variants[0]!.dsr += 1e-5;
+    assert(findingDigest(moved) !== findingDigest(real), "…but a real change (one DSR moved by 1e-5) changes it");
+    const vetoed = structuredClone(real);
+    vetoed.variants[0]!.vetoes = [...vetoed.variants[0]!.vetoes, "X"];
+    assert(findingDigest(vetoed) !== findingDigest(real), "…and so does any change to a verdict or veto");
+  }
 
   // ── 3. Zero-cost diagnostic ───────────────────────────────────────────────
   console.log("\n3. Same search at ZERO cost (diagnostic — no cost assumption can hide an edge)");
@@ -151,8 +171,9 @@ export async function run(): Promise<CiTestResultLike> {
   console.log(`    survivors per symbol × timeframe (gross):\n${survivorGrid(gross).split("\n").map((l) => `      ${l}`).join("\n")}`);
   for (const s of gross.survivors) console.log(`      gross survivor ${s.key} ann.SR ${s.annualisedSharpe.toFixed(2)} DSR ${s.dsr.toFixed(3)} p ${s.pValue.toExponential(2)}`);
   assert(gross.paramsHash !== real.paramsHash && Object.values(gross.params.costPerTurnover).every((c) => c === 0), "the diagnostic really is zero-cost, and hashes as different parameters");
-  assert(gross.survivors.length === PINNED_INTRADAY_RESULT.grossSurvivors, `gross finding reported exactly: ${gross.survivors.length} survivors (pinned ${PINNED_INTRADAY_RESULT.grossSurvivors})`);
-  assert(gross.resultHash === PINNED_INTRADAY_RESULT.grossResultHash, `the gross result hash is the pinned one (${gross.resultHash})`);
+  assert(JSON.stringify(keysOf(gross)) === JSON.stringify(PINNED_INTRADAY_RESULT.grossSurvivorKeys),
+    `gross survivor set reported exactly: [${keysOf(gross).join(", ")}] (pinned [${PINNED_INTRADAY_RESULT.grossSurvivorKeys.join(", ")}])`);
+  assert(findingDigest(gross) === PINNED_INTRADAY_RESULT.grossFindingDigest, `the gross finding digest is the pinned one (${findingDigest(gross)})`);
 
   // ── 4. Positive control ───────────────────────────────────────────────────
   console.log("\n4. Positive control — a seeded synthetic edge in a real intraday series IS detected");
