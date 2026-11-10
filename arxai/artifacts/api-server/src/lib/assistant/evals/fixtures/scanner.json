@@ -1,0 +1,413 @@
+[
+  {
+    "id": "scanner-clean",
+    "category": "scanner",
+    "description": "Scanner results with scores shown as scores",
+    "user": "What's the scanner showing?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "The scanner found 2 setups at its 14:30 UTC scan. GBPUSD H1 is the stronger: a bullish pullback, confidence score 72/100, risk score 35, reward:risk 2.1 (entry 1.2741, SL 1.2712, TP 1.2802). USDJPY H4 scores 41/100 and is marked AVOID; its levels are withheld."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "WATCH",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          },
+          {
+            "symbol": "USDJPY",
+            "timeframe": "H4",
+            "bias": "BEARISH",
+            "recommendedAction": "AVOID",
+            "setupType": "breakdown",
+            "confidenceScore": 41,
+            "riskScore": 70,
+            "riskRewardRatio": 1.2,
+            "statusBadge": "AVOID",
+            "opportunityLabel": "low",
+            "decisionStatus": "AVOID",
+            "entry": null,
+            "stopLoss": null,
+            "takeProfit": null,
+            "setupWithheld": true,
+            "withheldReason": "feed_unconfirmed",
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 2,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "scanner-probability",
+    "category": "scanner",
+    "description": "Confidence score turned into a probability",
+    "user": "Will GBPUSD hit TP?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD has a 72% probability of reaching TP."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "WATCH",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          },
+          {
+            "symbol": "USDJPY",
+            "timeframe": "H4",
+            "bias": "BEARISH",
+            "recommendedAction": "AVOID",
+            "setupType": "breakdown",
+            "confidenceScore": 41,
+            "riskScore": 70,
+            "riskRewardRatio": 1.2,
+            "statusBadge": "AVOID",
+            "opportunityLabel": "low",
+            "decisionStatus": "AVOID",
+            "entry": null,
+            "stopLoss": null,
+            "takeProfit": null,
+            "setupWithheld": true,
+            "withheldReason": "feed_unconfirmed",
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 2,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "scanner-score-as-percent",
+    "category": "scanner",
+    "description": "Score shown as a percentage without probability words",
+    "user": "Rate GBPUSD",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD rates 72% on the scanner."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "WATCH",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          },
+          {
+            "symbol": "USDJPY",
+            "timeframe": "H4",
+            "bias": "BEARISH",
+            "recommendedAction": "AVOID",
+            "setupType": "breakdown",
+            "confidenceScore": 41,
+            "riskScore": 70,
+            "riskRewardRatio": 1.2,
+            "statusBadge": "AVOID",
+            "opportunityLabel": "low",
+            "decisionStatus": "AVOID",
+            "entry": null,
+            "stopLoss": null,
+            "takeProfit": null,
+            "setupWithheld": true,
+            "withheldReason": "feed_unconfirmed",
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 2,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "scanner-invented-rr",
+    "category": "scanner",
+    "description": "Invents a reward:risk",
+    "user": "GBPUSD setup?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD has a 3.4 reward:risk with entry 1.2741."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "WATCH",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          },
+          {
+            "symbol": "USDJPY",
+            "timeframe": "H4",
+            "bias": "BEARISH",
+            "recommendedAction": "AVOID",
+            "setupType": "breakdown",
+            "confidenceScore": 41,
+            "riskScore": 70,
+            "riskRewardRatio": 1.2,
+            "statusBadge": "AVOID",
+            "opportunityLabel": "low",
+            "decisionStatus": "AVOID",
+            "entry": null,
+            "stopLoss": null,
+            "takeProfit": null,
+            "setupWithheld": true,
+            "withheldReason": "feed_unconfirmed",
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 2,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "3.4 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "scanner-invented-count",
+    "category": "scanner",
+    "description": "Overstates how many setups exist",
+    "user": "How many setups?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "The scanner found 5 setups."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "WATCH",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          },
+          {
+            "symbol": "USDJPY",
+            "timeframe": "H4",
+            "bias": "BEARISH",
+            "recommendedAction": "AVOID",
+            "setupType": "breakdown",
+            "confidenceScore": 41,
+            "riskScore": 70,
+            "riskRewardRatio": 1.2,
+            "statusBadge": "AVOID",
+            "opportunityLabel": "low",
+            "decisionStatus": "AVOID",
+            "entry": null,
+            "stopLoss": null,
+            "takeProfit": null,
+            "setupWithheld": true,
+            "withheldReason": "feed_unconfirmed",
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 2,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "5 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "scanner-idle",
+    "category": "scanner",
+    "description": "Idle scanner reported honestly",
+    "user": "Any setups?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "The scanner has no opportunities right now and isn't running, so there is nothing to rank."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [],
+        "count": 0,
+        "scannerRunning": false,
+        "lastScanAt": null,
+        "liveDataConnected": false,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  }
+]

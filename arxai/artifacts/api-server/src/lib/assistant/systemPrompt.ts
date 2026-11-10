@@ -842,6 +842,19 @@ function buildSafetyStateBlock(env?: AssistantEnvelopeFields | null): string {
   ].join("\n");
 }
 
+// Every answer is checked by the runtime claims verifier
+// (lib/assistant/grounding) before the user sees it. This block tells the model
+// the rules the verifier enforces, so a correct answer passes unmarked.
+export const GROUNDING_CONTRACT = [
+  "GROUNDING CONTRACT (enforced: a verifier checks every answer before the user sees it).",
+  "- Every number, price, P&L, size, count, ticket/order id, time and date you state must come from a tool output in THIS turn (or be the user's own number). Copy figures at the precision the tool gave; do not invent, estimate or carry figures over from earlier turns. If you need a figure, call the tool.",
+  "- Times: state tool timestamps in UTC as HH:MM UTC.",
+  "- If a tool marks data stale / delayed / not live (stale:true, freshness STALE, isLive:false), say it is stale and give its as-of time. Never call it live, current or real-time.",
+  "- ARX scores (quality, confidence, strength, cohesion, rank) are NOT calibrated probabilities. Never present a score as a percentage, probability, chance or odds. Report it as a score (e.g. 72/100).",
+  "- Only say an order was executed / filled / placed when a tool result this turn shows an executed status (e.g. status executed with a fill). Otherwise say what the status actually is.",
+  "- Ungrounded figures are shown to the user marked [unverified]; wrong figures, stale-as-live, score-as-probability and unconfirmed-execution sentences are removed.",
+].join("\n");
+
 export function buildSessionSystemMessages(
   userId: number,
   pageContext?: PageContext | null,
@@ -853,6 +866,7 @@ export function buildSessionSystemMessages(
     { role: "system", content: buildArxAssistantSystemPrompt(assistantName) },
     { role: "system", content: `Session context: signed-in user id = ${userId}. All tool calls are automatically scoped to this user.` },
     { role: "system", content: buildSafetyStateBlock(envelope) },
+    { role: "system", content: GROUNDING_CONTRACT },
     { role: "system", content: [
       "Phase Playbook — Strategy Playbook & Setup Quality awareness.",
       "When the user asks about playbooks, setups, or whether a trade matches their strategy:",

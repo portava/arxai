@@ -66,6 +66,7 @@ const { FAIL_CLOSED_ENVELOPE } = await import("../derivedEnvelope.js");
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const routeSrc = readFileSync(`${here}../../../routes/meAssistant.ts`, "utf8");
+const loopSrc = readFileSync(`${here}../chatTurnLoop.ts`, "utf8");
 
 // ── AICS-1: SL/TP on open commands ─────────────────────────────────────────
 test("AICS-1: 'buy EURUSD 0.01 sl 1.0850 tp 1.0950' is an OPEN carrying both levels", () => {
@@ -233,7 +234,9 @@ test("AICS-4: the final turn forces tool_choice none and the route reports an em
   assert.equal(resolveAssistantToolChoice(2, false, 4), "auto");
   assert.equal(resolveAssistantToolChoice(3, false, 4), "none");
   assert.equal(resolveAssistantToolChoice(3, true), "auto", "back-compat without maxTurns");
-  assert.match(routeSrc, /resolveAssistantToolChoice\(turn, forceStructuralRead, MAX_TURNS_PER_REQUEST\)/);
+  // The loop moved to chatTurnLoop.ts (shared with the eval harness); the route passes the cap.
+  assert.match(loopSrc, /resolveAssistantToolChoice\(turn, input\.forceStructuralRead, input\.maxTurns\)/);
+  assert.match(routeSrc, /maxTurns: MAX_TURNS_PER_REQUEST,\s*forceStructuralRead,/);
   assert.match(routeSrc, /assistantText\.trim\(\)\.length === 0\) \{\s*send\(\{ type: "error", message: EMPTY_REPLY_MESSAGE \}\)/);
 });
 
@@ -264,7 +267,7 @@ test("AICS-9: getCurrentEvents is not advertised and the prompt says current eve
 
 // ── AICS-10: one envelope per request ──────────────────────────────────────
 test("AICS-10: the chat route derives the envelope once and passes it to every tool call", () => {
-  assert.match(routeSrc, /dispatchTool\(c\.name, parsedArgs, userId, req, safetyEnvelope\)/);
+  assert.match(routeSrc, /dispatchTool\(name, parsedArgs, userId, req, safetyEnvelope\)/);
   assert.match(routeSrc, /const envelope = assistantEnvelopeFields\(safetyEnvelope\)/);
 });
 
