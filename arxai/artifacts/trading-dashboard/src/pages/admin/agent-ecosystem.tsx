@@ -17,6 +17,7 @@
 // AdminDiagnosticsGate (also blocks admin-previewing-as-user). The server
 // independently requires an ADMIN/OWNER session on every endpoint and a trimmed
 // reason (>=3 chars) on every mutation (fail-closed audit row).
+import { measuredTrustText, type MeasuredTrust } from "@/lib/measuredTrustText";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,9 @@ type Agent = {
   authorityWeight: number; trustScore: number; qualityScore: number; speedScore: number;
   protectionScore: number; usefulnessScore: number; calibrationScore: number;
   liveInfluenceAllowed: boolean; canCreateAgents: boolean; parentAgentKey: string | null;
+  /** MEASURED trust (calibration engine on the agent's own graded record):
+   *  what actually drives advisory influence. Registry scores above do not. */
+  measuredTrust?: MeasuredTrust;
 };
 type FamilyNode = {
   agentKey: string; name: string; department: string; rank: string; status: string;
@@ -431,7 +435,7 @@ function EcosystemInner() {
           <table className="w-full text-left text-xs">
             <thead className="text-txt-muted"><tr>
               <th className="py-1 pr-2">Name</th><th className="pr-2">Dept</th><th className="pr-2">Status</th>
-              <th className="pr-2">Mode</th><th className="pr-2">Auth</th><th className="pr-2">Trust</th>
+              <th className="pr-2">Mode</th><th className="pr-2" title="Influence the advisory layer actually uses, measured from the agent's own graded record">Measured influence</th><th className="pr-2">N</th>
             </tr></thead>
             <tbody>
               {agents.map((a) => (
@@ -442,8 +446,8 @@ function EcosystemInner() {
                   <td className="pr-2 text-txt-muted">{a.department}</td>
                   <td className="pr-2">{statusBadge(a.currentStatus)}</td>
                   <td className="pr-2 text-txt-muted">{a.currentMode}</td>
-                  <td className="pr-2 text-txt-secondary">{a.authorityWeight.toFixed(2)}</td>
-                  <td className="pr-2 text-txt-secondary">{Math.round(a.trustScore)}</td>
+                  <td className="pr-2 text-txt-secondary" data-testid={`agent-influence-${a.agentKey}`}>{a.measuredTrust ? a.measuredTrust.influence.toFixed(3) : "—"}</td>
+                  <td className="pr-2 text-txt-muted">{a.measuredTrust ? a.measuredTrust.n : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -463,13 +467,22 @@ function EcosystemInner() {
                 <Badge variant="outline" className="border-border text-txt-secondary">{selected.currentMode}</Badge>
                 {selected.isCore && <Badge variant="outline" className="border-violet-500/40 text-violet-300">core</Badge>}
               </div>
+              <div className="rounded border border-border p-2 text-xs" data-testid="agent-measured-trust">
+                <div className="text-txt-muted">Measured trust (drives influence)</div>
+                <div className="text-foreground">
+                  Influence {selected.measuredTrust ? selected.measuredTrust.influence.toFixed(3) : "—"}
+                  {selected.measuredTrust ? ` · N=${selected.measuredTrust.n} · effective authority ${selected.measuredTrust.effectiveAuthorityWeight.toFixed(3)}` : ""}
+                </div>
+                <div className="text-txt-muted">{measuredTrustText(selected.measuredTrust)}</div>
+              </div>
+              <div className="text-xs text-txt-muted">Registry scores below are not validated against outcomes and do not drive influence.</div>
               <div className="grid grid-cols-3 gap-2 text-xs">
-                {([["Trust", selected.trustScore], ["Quality", selected.qualityScore], ["Speed", selected.speedScore],
+                {([["Registry trust", selected.trustScore], ["Quality", selected.qualityScore], ["Speed", selected.speedScore],
                   ["Protect", selected.protectionScore], ["Useful", selected.usefulnessScore], ["Calib", selected.calibrationScore]] as const).map(([l, v]) => (
                   <div key={l} className="rounded border border-border p-2"><div className="text-txt-muted">{l}</div><div className="text-foreground">{Math.round(v)}</div></div>
                 ))}
               </div>
-              <div className="text-xs text-txt-muted">Authority weight: <span className="text-foreground">{selected.authorityWeight.toFixed(2)}</span> · Live influence: {selected.liveInfluenceAllowed ? "yes" : "no"}</div>
+              <div className="text-xs text-txt-muted">Registry authority cap: <span className="text-foreground">{selected.authorityWeight.toFixed(2)}</span> (can only lower measured influence) · Live influence: {selected.liveInfluenceAllowed ? "yes" : "no"}</div>
 
               {(selected.currentMode === "SHADOW" || selected.currentStatus === "SHADOW") && (
                 <Button size="sm" disabled={busy} className="w-full"

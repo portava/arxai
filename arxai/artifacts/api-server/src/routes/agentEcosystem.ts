@@ -26,7 +26,7 @@ import { seedCoreAgents } from "../lib/agentEcosystem/seedCoreAgents.js";
 import { resolveAndScorePending } from "../lib/agentEcosystem/reviewScoring.js";
 import { runPromotionBoard } from "../lib/agentEcosystem/promotionLifecycle.js";
 import { listLearningCampRecords, advanceLearningCamp } from "../lib/agentEcosystem/learningCamp.js";
-import { getAdvisoryTraces, type AdvisoryTraceEntry } from "../lib/agentEcosystem/advisoryInfluence.js";
+import { getAdvisoryTraces, measuredSnapshot, type AdvisoryTraceEntry } from "../lib/agentEcosystem/advisoryInfluence.js";
 import {
   getGovernanceTraces,
   listPersistedGovernanceTraces,
@@ -85,7 +85,32 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
 router.get("/admin/agent-ecosystem/agents", async (req, res) => {
   const admin = requireAdmin(req, res); if (!admin) return;
   const rows = await db.select().from(agentsTable).orderBy(asc(agentsTable.id));
-  res.json({ ok: true, total: rows.length, agents: rows });
+  // The registry's trustScore / authorityWeight were never validated against
+  // outcomes and do not drive influence. Each row also carries the MEASURED
+  // trust the advisory layer actually uses: influence, N and its basis (incl.
+  // the stated reason when an agent has no replayable record).
+  const agents = rows.map((r) => {
+    const m = measuredSnapshot({
+      agentKey: r.agentKey,
+      name: r.name,
+      department: r.department,
+      registryAuthorityWeight: r.authorityWeight ?? 0,
+      currentStatus: r.currentStatus,
+    });
+    const t = m.measuredTrust;
+    return {
+      ...r,
+      measuredTrust: {
+        status: t.status,
+        n: t.n,
+        influence: t.influence,
+        trustScore: t.trustScore,
+        basis: t.basis,
+        effectiveAuthorityWeight: m.authorityWeight,
+      },
+    };
+  });
+  res.json({ ok: true, total: agents.length, agents });
 });
 
 router.get("/admin/agent-ecosystem/constitution", async (req, res) => {

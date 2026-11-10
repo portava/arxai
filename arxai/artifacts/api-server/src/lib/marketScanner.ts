@@ -290,7 +290,12 @@ export interface ScannerOpportunity {
   bias: MarketAnalysis["marketBias"];
   recommendedAction: MarketAnalysis["recommendedAction"];
   setupType: string;
-  /** Raw, uncalibrated 0-100 heuristic (kept for stored-row compatibility). */
+  /** Raw, UNCALIBRATED 0-100 heuristic score of the setup. Not a probability
+   *  and not a confidence: the measured probability is `calibratedProbability`
+   *  (with its N in `calibration`). This is the field consumers read. */
+  score: number;
+  /** @deprecated Same value as `score`. Kept only for stored rows and older
+   *  clients that still read the scanner row's historical field name. */
   confidenceScore: number;
   /** Calibration engine: MEASURED probability the call works, from graded
    *  scanner-signal outcomes (scope/fallback in `calibration`), or null when
@@ -1832,7 +1837,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
       setupType: setupTypeFor(a, mayShowBias),
-      confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
+      score: displayConfidenceScore, confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,
       reasonForTrade: displayReasonForTrade, reasonToAvoid: displayReasonToAvoid,

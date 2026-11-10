@@ -103,6 +103,7 @@ export function maskSimulatedOpportunity(opp: ScannerOpportunity): ScannerOpport
   if (opp.dataSource !== "SIMULATOR") return opp;
   return {
     ...opp,
+    score: 0,
     confidenceScore: 0,
     riskScore: 0,
     entrySniperScore: 0,

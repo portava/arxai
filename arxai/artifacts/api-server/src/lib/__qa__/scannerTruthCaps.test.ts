@@ -26,6 +26,7 @@ function opp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity {
     bias: "bullish",
     recommendedAction: "BUY",
     setupType: "Continuation",
+    score: 88,
     confidenceScore: 88, // strong technical by default
     riskScore: 20,
     entrySniperScore: 80,

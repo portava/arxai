@@ -127,6 +127,22 @@ describe("bootstrap on the committed real history", () => {
     for (const r of rows.filter((x) => x.n < CALIBRATION_MIN_SAMPLE)) {
       assert.ok(r.note, `${r.strategy} below N=30 must say why`);
     }
+    // Session Breakout now replays on bar time and the intraday fixture gives
+    // it London/NY bars: it must be MEASURED, not merely explained.
+    if (ev.discovery.fixtures.some((f) => f.fixtureId === "real-history-intraday-v1")) {
+      const sb = rows.find((x) => x.strategy === "Session Breakout");
+      assert.equal(sb?.status, "measured", `Session Breakout: ${JSON.stringify(sb)}`);
+      assert.ok((sb?.n ?? 0) >= CALIBRATION_MIN_SAMPLE);
+    }
+    // KNOWN DEFECT, pinned so it cannot be forgotten: Mean Reversion requires
+    // RSI(14) < 28 (or > 72) AND a 20-bar close range under 1.2 x ATR. An RSI
+    // that extreme needs a one-way move that makes the close range far wider
+    // than 1.2 x ATR, so the rule cannot fire: 0 calls on every committed
+    // real series. Redesigning the rule is an owner decision; when it is
+    // redesigned this assertion must be replaced by a measured one.
+    const mr = rows.find((x) => x.strategy === "Mean Reversion");
+    assert.equal(mr?.n, 0, "Mean Reversion fired: the known-defect pin is stale, measure it instead");
+    assert.match(mr?.note ?? "", /fired 0 time/);
   });
 
   it("puts provenance on every stamp a payload reads", () => {
@@ -287,6 +303,13 @@ describe("agents on the committed real history", () => {
       assert.equal(snap.measuredTrust.influence, report.get(a.agentKey)?.influence, a.agentKey);
       assert.equal(snap.measuredTrust.n, report.get(a.agentKey)?.n, a.agentKey);
       assert.ok(snap.authorityWeight <= snap.measuredTrust.influence);
+      // What the admin agents route serves: an agent with no replayable record
+      // carries its stated reason, never a bare "unmeasured".
+      if (!REPLAYABLE_AGENT_KEYS.includes(a.agentKey)) {
+        assert.equal(snap.measuredTrust.influence, 0, a.agentKey);
+        assert.match(snap.measuredTrust.basis, /^no_replayable_record:.{10,}/, a.agentKey);
+        assert.equal(snap.measuredTrust.basis, report.get(a.agentKey)?.basis, a.agentKey);
+      }
     }
     assert.ok(entries.some(([k]) => k === fitKey(agentCalibrationKey("STRUCT"), POOLED, POOLED)));
     clearCalibrationCache();

@@ -36,6 +36,7 @@ function opp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity {
     bias: "bullish",
     recommendedAction: "BUY",
     setupType: "TREND_CONTINUATION",
+    score: 82,
     confidenceScore: 82,
     riskScore: 30,
     entrySniperScore: 70,
@@ -110,6 +111,7 @@ test("viewerSeesSimulatorDetail only for ADMIN/OWNER", () => {
 test("maskSimulatedOpportunity strips every simulator-derived indicator number", () => {
   const masked = maskSimulatedOpportunity(opp({ dataSource: "SIMULATOR" }));
   assert.equal(masked.confidenceScore, 0);
+  assert.equal(masked.score, 0, "the score field must be masked too, not just its legacy alias");
   assert.equal(masked.riskScore, 0);
   assert.equal(masked.entrySniperScore, 0);
   assert.equal(masked.riskRewardRatio, 0);
@@ -138,7 +140,9 @@ test("projectOpportunitiesForViewer masks for non-admin, preserves for admin", (
 
   const asUser = projectOpportunitiesForViewer(rows, "USER");
   assert.equal(asUser[0]!.confidenceScore, 0, "user must not see simulator confidence");
+  assert.equal(asUser[0]!.score, 0, "user must not see the simulator score");
   assert.equal(asUser[1]!.confidenceScore, 82, "live row unchanged for user");
+  assert.equal(asUser[1]!.score, 82, "live row score unchanged for user");
 
   const asAdmin = projectOpportunitiesForViewer(rows, "ADMIN");
   assert.equal(asAdmin[0]!.confidenceScore, 82, "admin sees full simulator detail");

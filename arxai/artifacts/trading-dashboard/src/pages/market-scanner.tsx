@@ -1,4 +1,5 @@
 import { memo, useRef, useEffect, useMemo, useState, useCallback } from "react";
+import { rowScore } from "@/lib/scannerRowScore";
 import { formatUtcClock } from "@/components/scanner/scannerChartFormat";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
@@ -60,9 +61,10 @@ import {
 type Opp = {
   symbol: string; timeframe: string;
   bias: string; recommendedAction: string;
-  /** Raw technical score 0-100 (field name kept from the API row). An
-   *  uncalibrated heuristic: shown as "Score", never as confidence. */
-  setupType: string; confidenceScore: number; riskScore: number;
+  /** Raw technical score 0-100: an uncalibrated heuristic, shown as "Score",
+   *  never as confidence or probability. `confidenceScore` is the API row's
+   *  deprecated alias of `score`; read it through rowScore(). */
+  setupType: string; score?: number; confidenceScore: number; riskScore: number;
   /** Calibration engine reading for that score (probability + N, or unmeasured). */
   calibration?: CalibrationReading | null;
   /** Three-tier measured ranking basis + its label. */
@@ -235,6 +237,7 @@ export function scalpResultToSignal(r: ScalpResult) {
     timeframe: SCALP_TICKET_TIMEFRAME,
     recommendedAction: r.direction ?? "BUY",
     bias: r.direction ?? "NEUTRAL",
+    score: r.qualityScore,
     confidenceScore: r.qualityScore,
     reasonForTrade: r.plainEnglishReason,
     reasonToAvoid: r.riskWarning ?? r.noTradeReason ?? undefined,
@@ -812,7 +815,8 @@ export default function MarketScanner() {
                 {(() => {
                   const c = cohesionMap.get(o.symbol);
                   const mult = c?.confidenceMultiplier ?? 1;
-                  const adjusted = mult < 1 ? Math.round(o.confidenceScore * mult) : o.confidenceScore;
+                  const raw = rowScore(o);
+                  const adjusted = mult < 1 ? Math.round(raw * mult) : raw;
                   return (
                     <>
                       <div className="grid grid-cols-4 gap-1 text-center">
@@ -825,7 +829,7 @@ export default function MarketScanner() {
                           <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
                             {adjusted}
                             {mult < 1 && (
-                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{o.confidenceScore}</span>
+                              <span className="ml-1 text-[10px] font-normal text-muted-foreground line-through">{raw}</span>
                             )}
                           </div>
                         </div>
