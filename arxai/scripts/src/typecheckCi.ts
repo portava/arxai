@@ -34,7 +34,10 @@ const units: TypecheckUnit[] = [
     name: "@workspace/scripts",
     command: "pnpm",
     args: ["--filter", "@workspace/scripts", "run", "typecheck"],
-    maxOldSpaceMb: 2560,
+    // scripts typechecks most of api-server through its test imports and
+    // outgrew 2560MB (deterministic OOM, exit 134, after the 2026-11-09
+    // slice6 merges). Units run one at a time on a 16GB runner.
+    maxOldSpaceMb: 4096,
   },
   {
     name: "@workspace/trading-dashboard",
