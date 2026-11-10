@@ -17,6 +17,9 @@ type TypecheckResult = {
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
+// Heaps: api-server and scripts outgrew 2560MB (V8 "heap out of memory" in
+// CI, 2026-11-09, PRs #127-#129). Units run sequentially, so 4608MB fits the
+// 16GB GitHub runner. This flag overrides the inherited NODE_OPTIONS heap.
 const units: TypecheckUnit[] = [
   {
     name: "lib/* (composite, tsc --build)",
@@ -28,13 +31,13 @@ const units: TypecheckUnit[] = [
     name: "@workspace/api-server",
     command: "pnpm",
     args: ["--filter", "@workspace/api-server", "run", "typecheck"],
-    maxOldSpaceMb: 2560,
+    maxOldSpaceMb: 4608,
   },
   {
     name: "@workspace/scripts",
     command: "pnpm",
     args: ["--filter", "@workspace/scripts", "run", "typecheck"],
-    maxOldSpaceMb: 2560,
+    maxOldSpaceMb: 4608,
   },
   {
     name: "@workspace/trading-dashboard",
