@@ -1,4 +1,4 @@
-// Strategy replay: graded samples for the strategy engine's confidence scores.
+// Strategy replay: graded samples for the strategy engine's (uncalibrated) scores.
 //
 // Each strategy is run on a rolling window of candles; every actionable signal
 // is graded first-touch (target before stop) on the bars AFTER the signal bar
@@ -6,9 +6,10 @@
 // resolved, so samples do not overlap (overlapping trades are correlated and
 // would make the cross-validated edge test over-confident).
 //
-// Session Breakout is NOT replayed: its rule reads the wall clock
-// (detectSession), so a replay would grade it on today's session, not the
-// bar's. It stays unmeasured rather than measured wrongly.
+// Session Breakout reads the session of the signal bar's own time (not the wall
+// clock), so it is replayed like the rest. On daily bars every bar opens at
+// 00:00 UTC (the Asia session), so it never fires there and stays unmeasured
+// on D1: that is the rule, not a missing replay.
 
 import {
   labelFirstTouch,
@@ -19,6 +20,7 @@ import {
   liquiditySweepStrategy,
   meanReversionStrategy,
   pullbackContinuationStrategy,
+  sessionBreakoutStrategy,
   trendContinuationStrategy,
   volatilityExpansionStrategy,
   type Candle,
@@ -38,6 +40,7 @@ export const REPLAYABLE_STRATEGIES: { name: string; fn: StrategyFn }[] = [
   { name: "Volatility Expansion", fn: volatilityExpansionStrategy },
   { name: "Pullback Continuation", fn: pullbackContinuationStrategy },
   { name: "Mean Reversion", fn: meanReversionStrategy },
+  { name: "Session Breakout", fn: sessionBreakoutStrategy },
 ];
 
 export interface ReplaySample extends CalibrationSample {
@@ -68,11 +71,8 @@ export function replayStrategies(
         nextAllowed.set(s.name, i + horizon + 1);
         continue;
       }
-      // Find the resolution bar so the next signal starts after it.
-      let j = i + 1;
-      for (; j <= Math.min(candles.length - 1, i + horizon); j++) {
-        if (labelFirstTouch(candles, i, sig.direction, sig.stopLoss, sig.takeProfit, j - i) !== null) break;
-      }
+      // The next signal starts after this one resolved.
+      const j = resolutionBar(candles, i, sig.direction, sig.stopLoss, sig.takeProfit, horizon);
       nextAllowed.set(s.name, j + 1);
       out.push({
         strategyKey: strategyCalibrationKey(s.name),
@@ -85,4 +85,20 @@ export function replayStrategies(
     }
   }
   return out;
+}
+
+/** Index of the bar on which a first-touch grade resolved (target or stop). */
+export function resolutionBar(
+  candles: readonly { high: number; low: number; close: number }[],
+  i: number,
+  direction: "BUY" | "SELL",
+  stopLoss: number,
+  takeProfit: number,
+  horizon: number,
+): number {
+  let j = i + 1;
+  for (; j <= Math.min(candles.length - 1, i + horizon); j++) {
+    if (labelFirstTouch(candles, i, direction, stopLoss, takeProfit, j - i) !== null) break;
+  }
+  return j;
 }

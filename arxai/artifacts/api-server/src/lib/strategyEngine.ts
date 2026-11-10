@@ -198,13 +198,27 @@ function computeATR(candles: Candle[], period = 14): number {
 
 // ─── Session detection ────────────────────────────────────────────────────────
 
-export function detectSession(): "Asia" | "London" | "London/NY Overlap" | "New York" | "Closed" {
-  const utcHour = new Date().getUTCHours();
+export type TradingSession = "Asia" | "London" | "London/NY Overlap" | "New York" | "Closed";
+
+/**
+ * Session of a moment in time (UTC hours). With no argument it is the session
+ * now; pass a bar's time to get the session that bar traded in.
+ */
+export function detectSession(at?: Date | string | number): TradingSession {
+  const d = at === undefined ? new Date() : new Date(at);
+  const utcHour = Number.isFinite(d.getTime()) ? d.getUTCHours() : new Date().getUTCHours();
   if (utcHour >= 0 && utcHour < 8) return "Asia";
   if (utcHour >= 8 && utcHour < 13) return "London";
   if (utcHour >= 13 && utcHour < 17) return "London/NY Overlap";
   if (utcHour >= 17 && utcHour < 22) return "New York";
   return "Closed";
+}
+
+/** A candle's time as epoch ms, or undefined when it has none parseable. */
+function barTimeOf(c: Candle | undefined): number | undefined {
+  if (!c?.time) return undefined;
+  const ms = Date.parse(c.time);
+  return Number.isFinite(ms) ? ms : undefined;
 }
 
 // ─── Market condition labeling ────────────────────────────────────────────────
@@ -519,7 +533,10 @@ function sessionBreakoutCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Session Breakout", riskWarning: "" };
   }
-  const session = detectSession();
+  // The session is the signal bar's own (its open time), not the wall clock,
+  // so the rule reads the same on a replay as it did live and can be
+  // calibrated on history. A bar with no parseable time falls back to now.
+  const session = detectSession(barTimeOf(candles[candles.length - 1]));
   // Only active during London and NY opens
   if (session !== "London" && session !== "London/NY Overlap") {
     return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "inactive_session"), 0), entryPrice: candles[candles.length - 1].close, stopLoss: 0, takeProfit: 0, reason: `Session Breakout inactive during ${session} session`, strategy: "Session Breakout", riskWarning: "" };

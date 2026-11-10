@@ -22,7 +22,7 @@ export const UNVERIFIED_MARK = " [unverified]";
 export const VERIFIER_NOTICES: Record<Exclude<FindingKind, "FABRICATION">, string> = {
   WRONG_NUMBER: "[Removed by the ARX verifier: a figure here did not match ARX data for this turn.]",
   STALE_AS_LIVE: "[Removed by the ARX verifier: that price came from stale data and was presented as live.]",
-  UNCALIBRATED_PROBABILITY: "[Removed by the ARX verifier: a score was presented as a probability. ARX scores are not calibrated probabilities.]",
+  UNCALIBRATED_PROBABILITY: "[Removed by the ARX verifier: a figure was presented as a probability or edge that ARX has not measured. Raw scores are not probabilities, and a base rate is not an edge.]",
   EXECUTION_UNCONFIRMED: "[Removed by the ARX verifier: no executed result came back from ARX this turn, so I can't say the order executed.]",
 };
 export const VERIFIER_FAILED_NOTICE = "[Withheld: the ARX verifier could not check this part of the answer.]";

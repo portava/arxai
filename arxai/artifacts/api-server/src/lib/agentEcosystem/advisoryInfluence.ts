@@ -32,6 +32,7 @@ import {
   type MeasuredAgentTrust,
 } from "@workspace/domain/calibration";
 import { agentCalibrationKey, calibrationLookup } from "../calibration/cache.js";
+import { agentNoReplayReason } from "../calibration/agentReplaySpecs.js";
 
 // ── Registry snapshot cache ────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ export function measuredSnapshot(r: {
   currentStatus: string;
 }): AdvisoryAgentSnapshot & { measuredTrust: MeasuredAgentTrust } {
   const cached = calibrationLookup.get(fitKey(agentCalibrationKey(r.agentKey), POOLED, POOLED));
-  const measured = agentTrustFromFit(r.agentKey, cached?.fit);
+  const measured = agentTrustFromFit(r.agentKey, cached?.fit, agentNoReplayReason(r.agentKey));
   return {
     agentKey: r.agentKey,
     name: r.name,
@@ -155,27 +156,38 @@ function alignFromStrength(strength01: number): AgentAlignment {
   return "NEUTRAL";
 }
 
+/**
+ * The 0..1 strength each scanner-ranking department reads off a scanner row,
+ * or null when the department does not rank the scanner. scannerAlignment maps
+ * it to SUPPORT / NEUTRAL / OPPOSE; the calibration replay grades the same
+ * number on history, so the record measures exactly the read that is served.
+ */
+export function scannerStrength(department: string, ctx: ScannerAdvisoryContext): number | null {
+  const f = ctx.factors;
+  switch (department) {
+    case "MARKET_STRUCTURE":
+      return (f.trendAlignment / 15 + f.supportResistanceQuality / 15) / 2;
+    case "ENTRY":
+      return f.entryTiming / 15;
+    case "EXECUTION":
+      return f.spreadCondition / 10;
+    case "RISK":
+      // Risk reads safety (low risk = support, high risk = push back).
+      return 1 - ctx.riskScore / 100;
+    case "SCANNER":
+      // Overall opportunity-quality read (shadow until promoted → 0 influence).
+      return ctx.baseScore / 100;
+    default:
+      return null; // operations / scalp / exit / review agents don't rank the scanner
+  }
+}
+
 export function scannerAlignment(
   snap: AdvisoryAgentSnapshot,
   ctx: ScannerAdvisoryContext,
 ): AgentAlignment | null {
-  const f = ctx.factors;
-  switch (snap.department) {
-    case "MARKET_STRUCTURE":
-      return alignFromStrength((f.trendAlignment / 15 + f.supportResistanceQuality / 15) / 2);
-    case "ENTRY":
-      return alignFromStrength(f.entryTiming / 15);
-    case "EXECUTION":
-      return alignFromStrength(f.spreadCondition / 10);
-    case "RISK":
-      // Risk reads safety (low risk = support, high risk = push back).
-      return alignFromStrength(1 - ctx.riskScore / 100);
-    case "SCANNER":
-      // Overall opportunity-quality read (shadow until promoted → 0 influence).
-      return alignFromStrength(ctx.baseScore / 100);
-    default:
-      return null; // operations / scalp / exit / review agents don't rank the scanner
-  }
+  const strength = scannerStrength(snap.department, ctx);
+  return strength === null ? null : alignFromStrength(strength);
 }
 
 export async function computeScannerAdvisory(

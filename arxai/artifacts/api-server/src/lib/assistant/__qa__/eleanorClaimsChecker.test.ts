@@ -80,7 +80,7 @@ test("stale data presented as live is flagged; disclosed staleness is not", () =
 });
 
 test("scores and unsupported figures presented as probabilities are flagged", () => {
-  const scan = [{ name: "getMarketScannerOpportunities", result: { opportunities: [{ symbol: "GBPUSD", confidenceScore: 72, riskRewardRatio: 2.1 }] } }];
+  const scan = [{ name: "getMarketScannerOpportunities", result: { opportunities: [{ symbol: "GBPUSD", score: 72, riskRewardRatio: 2.1 }] } }];
   assert.deepEqual(kinds("GBPUSD has a 72% chance of hitting TP.", scan), ["UNCALIBRATED_PROBABILITY"]);
   assert.deepEqual(kinds("GBPUSD is 72% likely to work.", scan), ["UNCALIBRATED_PROBABILITY"]);
   assert.deepEqual(kinds("GBPUSD rates 72% on the scanner.", scan), ["UNCALIBRATED_PROBABILITY"], "score shown as a percent");

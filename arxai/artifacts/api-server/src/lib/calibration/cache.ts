@@ -13,12 +13,15 @@ import {
   type FitLookup,
   type ScopedReading,
 } from "@workspace/domain/calibration";
+import { toStampProvenance, type FitProvenance, type StampProvenance } from "./provenance.js";
 
-interface CachedFit {
+export interface CachedFit {
   fit: CalibrationFit;
   version: number;
   source: string;
   fittedAt: string;
+  /** Evidence behind N; null for fits persisted before provenance existed. */
+  provenance?: FitProvenance | null;
 }
 
 const fits = new Map<string, CachedFit>();
@@ -65,6 +68,12 @@ export interface CalibrationStamp {
   /** Ready-to-render text: "62% (N=143)" or "unmeasured (N=12)". */
   label: string;
   reason: string | null;
+  /** Where N came from: the fit's source ("historical_replay", "eleanor_outcomes",
+   *  "historical_replay+strategy_replay", ...) or "none" when no fit was read. */
+  source: string;
+  /** The evidence behind N: live vs replay counts, the fixtures (id + dataset
+   *  hash) a replay ran on, and the precedence rule. Always present. */
+  provenance: StampProvenance;
 }
 
 export function formatCalibrationLabel(probability: number | null, n: number): string {
@@ -73,7 +82,10 @@ export function formatCalibrationLabel(probability: number | null, n: number): s
     : `${Math.round(probability * 100)}% (N=${n})`;
 }
 
-export function toCalibrationStamp(r: ScopedReading): CalibrationStamp {
+export function toCalibrationStamp(
+  r: ScopedReading,
+  entry?: Pick<CachedFit, "source" | "provenance"> | null,
+): CalibrationStamp {
   return {
     probability: r.probability,
     status: r.status,
@@ -86,6 +98,8 @@ export function toCalibrationStamp(r: ScopedReading): CalibrationStamp {
     edgeDetected: r.edgeDetected,
     label: formatCalibrationLabel(r.probability, r.n),
     reason: r.reason,
+    source: entry?.source ?? "none",
+    provenance: toStampProvenance(entry?.provenance),
   };
 }
 
@@ -96,7 +110,8 @@ export function calibrate(
   timeframe: string,
   rawScore: number,
 ): CalibrationStamp {
-  return toCalibrationStamp(readScoped(calibrationLookup, strategy, symbol, timeframe, rawScore));
+  const r = readScoped(calibrationLookup, strategy, symbol, timeframe, rawScore);
+  return toCalibrationStamp(r, r.fitKey ? fits.get(r.fitKey) : null);
 }
 
 export { rankByCalibration };

@@ -22,6 +22,13 @@ export interface CalibrationFitView {
   fitKey: string;
   version: number;
   source: string;
+  /** Evidence behind N (null for fits that predate provenance). */
+  provenance?: {
+    basis: string;
+    liveN: number;
+    replayN: number;
+    components: { id: string; source: string; n: number; fixtureId?: string; datasetHash?: string }[];
+  } | null;
   strategy: string;
   symbol: string;
   timeframe: string;
@@ -57,9 +64,24 @@ async function getSummary(): Promise<CalibrationSummaryView> {
 
 const SOURCE_LABEL: Record<string, string> = {
   strategy_replay: "Strategy replay on stored candles",
+  historical_replay: "Replay on committed real price history",
   eleanor_outcomes: "Eleanor signal outcomes",
   scanner_outcomes: "Scanner signal outcomes",
 };
+
+/** Where a fit's N came from, in words: every source, plus the fixtures a
+ *  historical replay ran on (id + short dataset hash). */
+export function sourceText(f: Pick<CalibrationFitView, "source" | "provenance">): string {
+  const parts = f.source.split("+").map((s) => SOURCE_LABEL[s] ?? s);
+  const fixtures = [
+    ...new Set(
+      (f.provenance?.components ?? [])
+        .filter((c) => c.fixtureId && c.datasetHash)
+        .map((c) => `${c.fixtureId} ${String(c.datasetHash).slice(0, 8)}`),
+    ),
+  ];
+  return fixtures.length ? `${parts.join(" + ")} (${fixtures.join(", ")})` : parts.join(" + ");
+}
 
 export function fitTitle(f: CalibrationFitView): string {
   const strat = f.strategy.replace(/^strategy:/, "").replace(/_/g, " ");
@@ -114,7 +136,7 @@ export function CalibrationFitDetail({ fit }: { fit: CalibrationFitView }) {
       <ReliabilityDiagram fit={fit} />
       <div className="text-xs space-y-1 min-w-0">
         <div className="font-medium">{fitTitle(fit)}</div>
-        <div className="text-muted-foreground">{SOURCE_LABEL[fit.source] ?? fit.source} · fit v{fit.version}</div>
+        <div className="text-muted-foreground">{sourceText(fit)} · fit v{fit.version}</div>
         <div data-testid="calibration-fit-n">
           N = {fit.n} graded outcomes · base rate{" "}
           {fit.baseRate == null ? "unmeasured" : `${Math.round(fit.baseRate * 100)}%`}

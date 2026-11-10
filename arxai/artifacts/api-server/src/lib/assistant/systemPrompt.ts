@@ -851,6 +851,7 @@ export const GROUNDING_CONTRACT = [
   "- Times: state tool timestamps in UTC as HH:MM UTC.",
   "- If a tool marks data stale / delayed / not live (stale:true, freshness STALE, isLive:false), say it is stale and give its as-of time. Never call it live, current or real-time.",
   "- ARX scores (quality, confidence, strength, cohesion, rank) are NOT calibrated probabilities. Never present a score as a percentage, probability, chance or odds. Report it as a score (e.g. 72/100).",
+  "- A probability may come ONLY from a calibration stamp (`calibration` with status \"measured\" and a numeric probability). Quote it with its N, e.g. its label \"62% (N=143)\". If calibration.status is \"unmeasured\", say the probability is unmeasured and give its N; never turn the raw score into one. If calibration.edgeDetected is false, the figure is the measured BASE RATE of all such calls: call it a base rate (\"historically 55% of these calls worked, N=143\"), never this setup's edge or chance.",
   "- Only say an order was executed / filled / placed when a tool result this turn shows an executed status (e.g. status executed with a fill). Otherwise say what the status actually is.",
   "- Ungrounded figures are shown to the user marked [unverified]; wrong figures, stale-as-live, score-as-probability and unconfirmed-execution sentences are removed.",
 ].join("\n");

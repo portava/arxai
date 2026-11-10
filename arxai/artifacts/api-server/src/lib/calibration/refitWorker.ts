@@ -6,10 +6,21 @@
 // payloads read from.
 //
 // Sources (all real, all graded on evidence; nothing is graded on time alone):
-//   eleanor_outcomes   resolved WIN/LOSS directional eleanor_signal_outcomes
-//   scanner_outcomes   the same rows that originated in the scanner
-//   strategy_replay    the strategy engine replayed on STORED broker candles
-//   agent_predictions  each agent's own graded predictions (agent trust)
+//   eleanor_outcomes   live: resolved WIN/LOSS directional eleanor_signal_outcomes
+//   scanner_outcomes   live: the same rows that originated in the scanner
+//   agent_predictions  live: each agent's own graded predictions (agent trust)
+//   strategy_replay    replay: strategies + replayable agents on STORED broker candles
+//   historical_replay  replay: the same on every verified committed real-history
+//                      fixture (scripts/fixtures/real-history-*), see
+//                      historicalBootstrap.ts
+// Per fit key the live and replay samples are combined by the precedence rule
+// in provenance.ts (live only once live N >= 30) and the fit is persisted with
+// its provenance, so every served number says where its N came from.
+//
+// BOOTSTRAP: on start the worker runs one refit right away (after a short
+// delay), so a fresh deploy serves replay-measured fits instead of reading
+// "unmeasured" until live outcomes accrue. Idempotent: unchanged evidence
+// writes no new version. ARX_CALIBRATION_BOOTSTRAP=0 turns the startup run off.
 //
 // SAFETY: observation only. Reads outcomes and candles, writes calibration
 // fits. Never touches an order, the bridge or the live pipeline. Started from
@@ -25,16 +36,14 @@ import {
   brokerCandlesTable,
   eleanorSignalOutcomesTable,
 } from "@workspace/db";
-import {
-  fitCalibration,
-  fitKey,
-  POOLED,
-  type CalibrationSample,
-} from "@workspace/domain/calibration";
+import { POOLED } from "@workspace/domain/calibration";
 import { startIntervalWorker } from "../perf/intervalWorker.js";
 import { logger } from "../logger.js";
 import { persistFit, reloadCalibrationCache } from "./store.js";
-import { replayStrategies } from "./strategyReplay.js";
+import type { EvidenceComponent, TimedSample } from "./provenance.js";
+import { buildFitGroups } from "./fitGroups.js";
+import { historicalReplayEvidence, replaySeries, type ReplayEvidence, type ReplaySeriesInput } from "./historicalBootstrap.js";
+import type { FixtureDiscovery } from "./historicalFixtures.js";
 import {
   ELEANOR_CALIBRATION_KEY,
   SCANNER_CALIBRATION_KEY,
@@ -47,11 +56,7 @@ const OUTCOME_ROW_CAP = 20_000;
 const REPLAY_SERIES_CAP = 24;
 const REPLAY_BARS = 3_000;
 
-export interface TimedSample extends CalibrationSample {
-  at: Date;
-  symbol: string;
-  timeframe: string;
-}
+export type { TimedSample } from "./provenance.js";
 
 export interface FitGroupResult {
   keys: number;
@@ -60,47 +65,26 @@ export interface FitGroupResult {
 
 /**
  * Fit one strategy's samples at three levels: exact symbol × timeframe, pooled
- * symbols per timeframe, and pooled all. Samples must be oldest first.
+ * symbols per timeframe, and pooled all. Within each key the live and replay
+ * samples are combined by the precedence rule (provenance.composeEvidence).
  */
 export async function fitAndPersistGroups(
-  source: string,
   strategy: string,
   samples: TimedSample[],
   opts: { exact?: boolean } = {},
 ): Promise<FitGroupResult> {
-  const groups = new Map<string, { symbol: string; timeframe: string; rows: TimedSample[] }>();
-  const add = (symbol: string, timeframe: string, s: TimedSample) => {
-    const k = fitKey(strategy, symbol, timeframe);
-    let g = groups.get(k);
-    if (!g) {
-      g = { symbol, timeframe, rows: [] };
-      groups.set(k, g);
-    }
-    g.rows.push(s);
-  };
-  for (const s of samples) {
-    if (opts.exact !== false) add(s.symbol, s.timeframe, s);
-    if (opts.exact !== false) add(POOLED, s.timeframe, s);
-    add(POOLED, POOLED, s);
-  }
+  const groups = buildFitGroups(strategy, samples, opts);
   let written = 0;
-  for (const [key, g] of groups) {
-    const rows = g.rows.sort((a, b) => a.at.getTime() - b.at.getTime());
-    const fit = fitCalibration(rows);
-    const r = await persistFit({
-      fitKey: key,
-      source,
-      strategy,
-      symbol: g.symbol,
-      timeframe: g.timeframe,
-      fit,
-      dataFrom: rows[0]?.at ?? null,
-      dataTo: rows[rows.length - 1]?.at ?? null,
-    });
+  for (const g of groups) {
+    const r = await persistFit(g);
     if (r.written) written++;
   }
-  return { keys: groups.size, written };
+  return { keys: groups.length, written };
 }
+
+const ELEANOR_LIVE: EvidenceComponent = { id: "eleanor_outcomes", kind: "live", source: "eleanor_outcomes" };
+const SCANNER_LIVE: EvidenceComponent = { id: "scanner_outcomes", kind: "live", source: "scanner_outcomes" };
+const AGENT_LIVE: EvidenceComponent = { id: "agent_predictions", kind: "live", source: "agent_predictions" };
 
 async function eleanorSamples(): Promise<{ all: TimedSample[]; scanner: TimedSample[] }> {
   const rows = await db
@@ -122,20 +106,21 @@ async function eleanorSamples(): Promise<{ all: TimedSample[]; scanner: TimedSam
   const all: TimedSample[] = [];
   const scanner: TimedSample[] = [];
   for (const r of rows) {
-    const s: TimedSample = {
+    const s = {
       score: r.confidenceScore,
-      outcome: r.outcomeStatus === "WIN" ? 1 : 0,
+      outcome: (r.outcomeStatus === "WIN" ? 1 : 0) as 0 | 1,
       at: r.createdAt,
       symbol: r.symbol,
       timeframe: r.timeframe || POOLED,
     };
-    all.push(s);
-    if (r.scannerSignalId) scanner.push(s);
+    all.push({ ...s, component: ELEANOR_LIVE });
+    if (r.scannerSignalId) scanner.push({ ...s, component: SCANNER_LIVE });
   }
   return { all, scanner };
 }
 
-async function replaySamples(): Promise<Map<string, TimedSample[]>> {
+/** Strategies + replayable agents replayed on stored broker candles. */
+async function brokerReplayEvidence(): Promise<ReplayEvidence> {
   const series = await db
     .select({
       symbol: brokerCandlesTable.symbol,
@@ -155,7 +140,7 @@ async function replaySamples(): Promise<Map<string, TimedSample[]>> {
     if (!picked.has(k) && s.bars >= 400) picked.set(k, s);
     if (picked.size >= REPLAY_SERIES_CAP) break;
   }
-  const byStrategy = new Map<string, TimedSample[]>();
+  const inputs: ReplaySeriesInput[] = [];
   for (const s of picked.values()) {
     const bars = await db
       .select({
@@ -183,24 +168,24 @@ async function replaySamples(): Promise<Map<string, TimedSample[]>> {
       close: b.close,
       volume: b.tickVolume ?? 0,
     }));
-    for (const r of replayStrategies(candles, s.symbol)) {
-      let list = byStrategy.get(r.strategyKey);
-      if (!list) {
-        list = [];
-        byStrategy.set(r.strategyKey, list);
-      }
-      list.push({
-        score: r.score,
-        outcome: r.outcome,
-        at: new Date(candles[r.barIndex].time),
+    inputs.push({
+      candles,
+      symbol: s.symbol,
+      timeframe: s.timeframe,
+      component: {
+        id: `strategy_replay:broker_candles:${s.symbol}:${s.timeframe}`,
+        kind: "replay",
+        source: "strategy_replay",
         symbol: s.symbol,
         timeframe: s.timeframe,
-      });
-    }
+        ranges: "ohlc",
+      },
+    });
   }
-  return byStrategy;
+  return replaySeries(inputs);
 }
 
+/** Live graded agent predictions, keyed by agent calibration key. */
 async function agentSamples(): Promise<Map<string, TimedSample[]>> {
   const rows = await db
     .select({
@@ -220,10 +205,11 @@ async function agentSamples(): Promise<Map<string, TimedSample[]>> {
     .limit(OUTCOME_ROW_CAP);
   const by = new Map<string, TimedSample[]>();
   for (const r of rows) {
-    let list = by.get(r.agentKey);
+    const k = agentCalibrationKey(r.agentKey);
+    let list = by.get(k);
     if (!list) {
       list = [];
-      by.set(r.agentKey, list);
+      by.set(k, list);
     }
     list.push({
       score: r.confidenceScore,
@@ -231,6 +217,7 @@ async function agentSamples(): Promise<Map<string, TimedSample[]>> {
       at: r.at,
       symbol: POOLED,
       timeframe: POOLED,
+      component: AGENT_LIVE,
     });
   }
   return by;
@@ -243,18 +230,49 @@ export interface RefitCycleReport {
   written: number;
   cached: number;
   errors: string[];
+  /** Real-history fixtures replayed this cycle (id, dataset hash, series). */
+  historical: { fixtures: { fixtureId: string; datasetHash: string; pinned: boolean; series: number }[]; skipped: { fixtureId: string; reason: string }[] } | null;
 }
+
+export interface RefitOptions {
+  /** Replay the committed real-history fixtures (default true). */
+  historical?: boolean;
+  /** Override fixture discovery (tests). */
+  discovery?: FixtureDiscovery;
+  /** Read live + broker sources from the DB (default true). */
+  dbSources?: boolean;
+}
+
+const BOOTSTRAP_DELAY_MS = Number(process.env["ARX_CALIBRATION_BOOTSTRAP_DELAY_MS"] ?? 20_000);
 
 let lastReport: RefitCycleReport | null = null;
 let started = false;
 let worker: ReturnType<typeof startIntervalWorker> | undefined;
+let inFlight: Promise<RefitCycleReport> | null = null;
+let bootstrapTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function getCalibrationRefitStatus() {
   return { running: started, intervalMs: INTERVAL_MS, lastCycle: lastReport };
 }
 
-/** One full refit. Each source fails soft on its own. */
-export async function runCalibrationRefit(): Promise<RefitCycleReport> {
+function mergeInto(target: Map<string, TimedSample[]>, src: Map<string, TimedSample[]>) {
+  for (const [k, list] of src) {
+    const t = target.get(k);
+    if (t) t.push(...list);
+    else target.set(k, [...list]);
+  }
+}
+
+/** One full refit. Each source fails soft on its own. Concurrent calls share one run. */
+export function runCalibrationRefit(opts: RefitOptions = {}): Promise<RefitCycleReport> {
+  if (inFlight) return inFlight;
+  inFlight = refitOnce(opts).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function refitOnce(opts: RefitOptions): Promise<RefitCycleReport> {
   const t0 = Date.now();
   let keys = 0;
   let written = 0;
@@ -263,26 +281,55 @@ export async function runCalibrationRefit(): Promise<RefitCycleReport> {
     keys += r.keys;
     written += r.written;
   };
-  try {
-    const { all, scanner } = await eleanorSamples();
-    tally(await fitAndPersistGroups("eleanor_outcomes", ELEANOR_CALIBRATION_KEY, all));
-    tally(await fitAndPersistGroups("scanner_outcomes", SCANNER_CALIBRATION_KEY, scanner));
-  } catch (e) {
-    errors.push(`eleanor:${String(e).slice(0, 160)}`);
+  const useDb = opts.dbSources !== false;
+  if (useDb) {
+    try {
+      const { all, scanner } = await eleanorSamples();
+      tally(await fitAndPersistGroups(ELEANOR_CALIBRATION_KEY, all));
+      tally(await fitAndPersistGroups(SCANNER_CALIBRATION_KEY, scanner));
+    } catch (e) {
+      errors.push(`eleanor:${String(e).slice(0, 160)}`);
+    }
+  }
+  const strategies = new Map<string, TimedSample[]>();
+  const agents = new Map<string, TimedSample[]>();
+  let historical: RefitCycleReport["historical"] = null;
+  if (opts.historical !== false) {
+    try {
+      const h = await historicalReplayEvidence(opts.discovery);
+      mergeInto(strategies, h.strategies);
+      mergeInto(agents, h.agents);
+      historical = {
+        fixtures: h.discovery.fixtures.map((f) => ({ fixtureId: f.fixtureId, datasetHash: f.datasetHash, pinned: f.pinned, series: f.series.length })),
+        skipped: h.discovery.skipped,
+      };
+    } catch (e) {
+      errors.push(`historical:${String(e).slice(0, 160)}`);
+    }
+  }
+  if (useDb) {
+    try {
+      const b = await brokerReplayEvidence();
+      mergeInto(strategies, b.strategies);
+      mergeInto(agents, b.agents);
+    } catch (e) {
+      errors.push(`replay:${String(e).slice(0, 160)}`);
+    }
+    try {
+      mergeInto(agents, await agentSamples());
+    } catch (e) {
+      errors.push(`agents:${String(e).slice(0, 160)}`);
+    }
   }
   try {
-    for (const [strategy, samples] of await replaySamples()) {
-      tally(await fitAndPersistGroups("strategy_replay", strategy, samples));
-    }
+    for (const [strategy, samples] of strategies) tally(await fitAndPersistGroups(strategy, samples));
   } catch (e) {
-    errors.push(`replay:${String(e).slice(0, 160)}`);
+    errors.push(`strategies:${String(e).slice(0, 160)}`);
   }
   try {
-    for (const [agentKey, samples] of await agentSamples()) {
-      tally(await fitAndPersistGroups("agent_predictions", agentCalibrationKey(agentKey), samples, { exact: false }));
-    }
+    for (const [agentKey, samples] of agents) tally(await fitAndPersistGroups(agentKey, samples, { exact: false }));
   } catch (e) {
-    errors.push(`agents:${String(e).slice(0, 160)}`);
+    errors.push(`agent_fits:${String(e).slice(0, 160)}`);
   }
   let cached = 0;
   try {
@@ -290,27 +337,52 @@ export async function runCalibrationRefit(): Promise<RefitCycleReport> {
   } catch (e) {
     errors.push(`cache:${String(e).slice(0, 160)}`);
   }
-  lastReport = { at: new Date().toISOString(), ms: Date.now() - t0, keys, written, cached, errors };
+  lastReport = { at: new Date().toISOString(), ms: Date.now() - t0, keys, written, cached, errors, historical };
   if (errors.length) logger.warn({ errors }, "[calibration] refit cycle had source errors");
   return lastReport;
+}
+
+/**
+ * Startup-safe bootstrap step: one refit (historical replay included) shortly
+ * after start. Fail-soft and idempotent. Called only from
+ * startCalibrationRefitWorker, which app.ts starts behind isPreviewSafeStart().
+ */
+export async function runCalibrationBootstrap(opts: RefitOptions = {}): Promise<RefitCycleReport> {
+  const r = await runCalibrationRefit(opts);
+  logger.info(
+    { keys: r.keys, written: r.written, cached: r.cached, ms: r.ms, fixtures: r.historical?.fixtures, skipped: r.historical?.skipped, errors: r.errors },
+    "[calibration] bootstrap refit done",
+  );
+  return r;
 }
 
 export function startCalibrationRefitWorker(): void {
   if (started) return;
   started = true;
-  // Serve the persisted fits right away; the first refit runs after one interval.
+  // Serve the persisted fits right away, then bootstrap from real history.
   void reloadCalibrationCache().catch((e) =>
     logger.warn({ err: String(e).slice(0, 160) }, "[calibration] initial cache load failed"),
   );
+  if (process.env["ARX_CALIBRATION_BOOTSTRAP"] !== "0") {
+    bootstrapTimer = setTimeout(() => {
+      bootstrapTimer = null;
+      void runCalibrationBootstrap().catch((e) =>
+        logger.warn({ err: String(e).slice(0, 160) }, "[calibration] bootstrap refit failed"),
+      );
+    }, BOOTSTRAP_DELAY_MS);
+    bootstrapTimer.unref?.();
+  }
   const tick = async () => {
     await runCalibrationRefit();
   };
   if (worker) worker.start();
   else worker = startIntervalWorker(tick, INTERVAL_MS, (err) => logger.error({ err }, "[calibration] refit worker failure"));
-  logger.info({ intervalMs: INTERVAL_MS }, "[calibration] refit worker started");
+  logger.info({ intervalMs: INTERVAL_MS, bootstrapDelayMs: BOOTSTRAP_DELAY_MS }, "[calibration] refit worker started");
 }
 
 export function stopCalibrationRefitWorker(): void {
   worker?.stop();
+  if (bootstrapTimer) clearTimeout(bootstrapTimer);
+  bootstrapTimer = null;
   started = false;
 }
