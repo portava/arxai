@@ -170,6 +170,10 @@ export function normalizeTradingEconomicsEvents(
       importance,
       lastUpdatedAt,
       freshness: opts.freshness,
+      // TE timestamps are UTC clock times from the provider.
+      timePrecision: "exact",
+      timeSource: "provider",
+      impactBasis: "provider_importance",
       affectedSymbols: affectedSymbolsFor(currency, country),
       riskNote: riskNoteFor(impact, currency),
     });

@@ -233,6 +233,8 @@
     "test:market-heat-radar-honesty": "node --import tsx --test --test-force-exit src/lib/news/__qa__/marketImpactRadarHonesty.test.ts",
     "test:trading-economics-calendar": "node --import tsx --test --test-force-exit src/lib/news/calendar/__qa__/tradingEconomicsCalendar.test.ts",
     "test:fred-calendar": "node --import tsx --test --test-force-exit src/lib/news/calendar/__qa__/fredCalendar.test.ts",
+    "test:news-calendar-provenance": "node --import tsx --test --test-force-exit src/lib/news/calendar/__qa__/calendarProvenance.test.ts",
+    "test:voice-claim-gate": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/voiceClaimGate.test.ts",
     "test:economic-calendar-route": "node --import tsx --test --test-force-exit src/routes/__qa__/economicCalendarRoute.test.ts",
     "test:eleanor-news-risk-honesty": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/eleanorNewsRiskHonesty.test.ts",
     "test:news-risk-fabrication": "node --import tsx --test --test-force-exit src/lib/news/__qa__/newsRiskFabrication.test.ts",

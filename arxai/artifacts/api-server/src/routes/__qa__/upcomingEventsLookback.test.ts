@@ -16,15 +16,21 @@ mock.method(database.pool, "connect", () => { throw new Error("Unexpected databa
 
 let lastWhere: SQL | undefined;
 const fakeDb = {
-  select: () => ({
-    // Awaited directly by the stored-calendar coverage aggregate (empty calendar);
-    // .where(...) is the window query under test.
-    from: () => Object.assign(Promise.resolve([{ n: 0, latest: null }]), {
-      where: (cond: SQL) => {
-        lastWhere = cond;
-        return { orderBy: async () => [] };
-      },
-    }),
+  // db.select({ n, latest }) is the stored-calendar coverage aggregate (empty
+  // calendar). It filters out legacy mock rows with .where(NOT_MOCK), so it is
+  // awaitable both directly and after .where(...). db.select() with no fields is
+  // the window query under test: only its where clause is captured.
+  select: (fields?: unknown) => ({
+    from: () => {
+      const coverage = Promise.resolve([{ n: 0, latest: null }]);
+      return Object.assign(coverage, {
+        where: (cond: SQL) => {
+          if (fields !== undefined) return coverage;
+          lastWhere = cond;
+          return { orderBy: async () => [] };
+        },
+      });
+    },
   }),
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
