@@ -151,7 +151,17 @@ describe("bootstrap on the committed real history", () => {
               assert.equal(st.source, "historical_replay");
               assert.equal(st.provenance.basis, "replay_only");
               assert.ok(st.provenance.replayN >= CALIBRATION_MIN_SAMPLE);
-              assert.deepEqual(st.provenance.fixtures, [{ fixtureId: V1, datasetHash: PINNED_REAL_HISTORY[V1] }]);
+              // Every fixture behind a measured number is a discovered,
+              // verified real-history fixture named with its PINNED dataset
+              // hash. Which ones depends on which fixtures fired for this key
+              // (daily real-history-v1, intraday real-history-intraday-v1, …),
+              // so pin the provenance contract, not one fixture id.
+              const discovered = new Set(ev.discovery.fixtures.map((f) => f.fixtureId));
+              assert.ok(st.provenance.fixtures.length > 0, `${name} ${sym} ${tf}: names its fixtures`);
+              for (const f of st.provenance.fixtures) {
+                assert.ok(discovered.has(f.fixtureId), `${name} ${sym} ${tf}: ${f.fixtureId} was discovered`);
+                assert.equal(f.datasetHash, PINNED_REAL_HISTORY[f.fixtureId], `${name} ${sym} ${tf}: ${f.fixtureId} pinned hash`);
+              }
               // A borrowed number says it is borrowed.
               if (sym === "NOT_IN_HISTORY") assert.notEqual(st.scope, "exact");
             } else {
