@@ -34,7 +34,10 @@ const units: TypecheckUnit[] = [
     name: "@workspace/scripts",
     command: "pnpm",
     args: ["--filter", "@workspace/scripts", "run", "typecheck"],
-    maxOldSpaceMb: 2560,
+    // Measured ~2.3GB peak (tsc --extendedDiagnostics); 2560 left no GC
+    // headroom and OOM'd intermittently. Units run serially, so 4096 fits
+    // a 16GB runner with room to spare.
+    maxOldSpaceMb: 4096,
   },
   {
     name: "@workspace/trading-dashboard",
