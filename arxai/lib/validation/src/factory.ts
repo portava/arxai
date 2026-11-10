@@ -115,6 +115,15 @@ export function validateFamily(
      * niche-selection trials — choosing where to look is itself multiplicity.
      */
     chargedTrials?: number;
+    /**
+     * Spread of Sharpe ratios across the WHOLE search, for the DSR's expected
+     * maximum. Defaults to the spread within this family. A multi-instrument
+     * search passes the run-wide spread: inside a small family a single strong
+     * candidate dominates the within-family spread and so raises its own bar
+     * (with ~13 trials, sd ∝ the candidate's own Sharpe), which makes the DSR
+     * unclearable by any real edge. The multiplicity charged is unchanged.
+     */
+    trialSharpeSd?: number;
   },
 ): SignedValidationReport {
   const thresholds = opts.thresholds ?? DEFAULT_THRESHOLDS;
@@ -126,7 +135,7 @@ export function validateFamily(
   }
 
   const inSampleSharpes = trials.map((t) => sharpe(t.returns));
-  const trialSharpeSd = stdev(inSampleSharpes);
+  const trialSharpeSd = opts.trialSharpeSd ?? stdev(inSampleSharpes);
 
   // PBO is a property of the SELECTION over the whole field, computed once.
   const pboResult: PboResult = estimatePbo(

@@ -609,6 +609,11 @@ router.use(adminOneClickRouter);
 import adminLearningVersionsRouter from "./adminLearningVersions.js";
 router.use(adminLearningVersionsRouter);
 
+// Real-data validation evidence — READ-ONLY admin research surface over
+// validation_evidence_v1 (hash-verified on every read). ADMIN/OWNER gated.
+import adminValidationEvidenceRouter from "./adminValidationEvidence.js";
+router.use(adminValidationEvidenceRouter);
+
 // Owner Decision Registry (blueprint Phase 0) — append-only rulings ledger.
 // ADMIN/OWNER gated inside the router; no update/delete surface exists.
 // Multi-broker spec §15 — GET /api/brokers/catalog. Read-only venue catalog:

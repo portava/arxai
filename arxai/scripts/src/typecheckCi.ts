@@ -34,9 +34,9 @@ const units: TypecheckUnit[] = [
     name: "@workspace/scripts",
     command: "pnpm",
     args: ["--filter", "@workspace/scripts", "run", "typecheck"],
-    // Measured ~2.3GB peak (tsc --extendedDiagnostics); 2560 left no GC
-    // headroom and OOM'd intermittently. Units run serially, so 4096 fits
-    // a 16GB runner with room to spare.
+    // scripts typechecks most of api-server through its test imports and
+    // outgrew 2560MB (deterministic OOM, exit 134, after the 2026-11-09
+    // slice6 merges). Units run one at a time on a 16GB runner.
     maxOldSpaceMb: 4096,
   },
   {
