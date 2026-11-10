@@ -58,7 +58,12 @@ What held it back:
 | Realtime | ~0.3–0.6 s speech-to-speech | Text reply, then the gate, then TTS first byte (~0.6–1.5 s) |
 
 - The gate itself is measured in CI: a 2,000-character turn takes a median of about 0.5 ms (`[voice-claim-gate]` line).
-- The provider latencies above are estimates, not measured. They cannot be measured offline.
+- The provider latencies in the table are estimates. **The real cost is now measured on every voice turn** (`lib/assistant/voice/voiceLatency.ts`) and served to operators at `GET /api/admin/voice/latency`:
+  - `gpt_audio`: the model's first audio byte (when unchecked streaming would have started), the model finishing, the gate time, and when ARX actually releases first audio. `addedMs` is the difference: the delay the gate costs the listener.
+  - `tts`: gate time, the TTS provider's first audio byte, and the first byte sent to the client.
+  - `speech_gate`: the realtime path's text check.
+  - Each path reports p50 / p95 / max with N, and says `unmeasured (N=…, needs 20)` with no number until it has 20 turns. Readings are per process and reset on restart.
+  - These numbers exist only once voice is used on a deployed server; until then the table above remains an estimate and is labelled as one.
 - We accept the delay because the owner ruling forbids unchecked figures reaching the listener.
 
 **Tests.**

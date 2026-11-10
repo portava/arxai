@@ -98,6 +98,7 @@ import { neutralizeFeedCopyDeep } from "../lib/honesty/feedTruthCopy.js";
 import { recordSignalOnAppear } from "../lib/eleanorQuality/index.js";
 import { mintRealtimeSession, getVoiceModeStatus, VOICE_NO_TOOLS_INSTRUCTION } from "../lib/assistant/realtimeSession.js";
 import { gateVoiceTurn } from "../lib/assistant/voice/speechGate.js";
+import { nowMs, recordVoiceLatency } from "../lib/assistant/voice/voiceLatency.js";
 import { openVerifiedSpeechTurn, recordVerifiedSpeechSource } from "../lib/assistant/voice/speechLedger.js";
 import { voiceCommandDecision } from "../lib/assistant/voice/voiceCommandPolicy.js";
 import { computeEleanorSignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
@@ -1533,6 +1534,11 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
     const heldAudio: string[] = [];
     let heldAudioChars = 0;
     let audioOverflow = false;
+    // Measured latency (lib/assistant/voice/voiceLatency.ts): the baseline is
+    // the model's first audio byte, when unchecked streaming would have
+    // started; firstAudio is when ARX actually releases audio.
+    const tStart = nowMs();
+    let tProviderFirstAudio: number | null = null;
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {
       if (voiceAborted) break;
@@ -1547,6 +1553,7 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
           sendVoice({ type: "user_transcript", data: ev.data });
         }
       } else if ((evType === "audio" || evType === "audio_chunk") && typeof ev.data === "string") {
+        if (tProviderFirstAudio === null) tProviderFirstAudio = nowMs();
         heldAudioChars += ev.data.length;
         if (heldAudioChars > MAX_HELD_VOICE_AUDIO_CHARS) audioOverflow = true;
         else heldAudio.push(ev.data);
@@ -1556,10 +1563,25 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
       }
     }
     if (!voiceAborted && assistantTranscript.trim()) {
+      const tProviderDone = nowMs();
       const gated = gateVoiceTurn(assistantTranscript, userTranscript);
+      const tGated = nowMs();
       assistantTranscript = gated.display;
       sendVoice({ type: "transcript", data: gated.display });
-      if (gated.audioMayPlay && !audioOverflow) {
+      const playHeld = gated.audioMayPlay && !audioOverflow;
+      // First audio leaves ARX now: the held chunks, or (withheld turn) the
+      // speech_replaced hand-off, after which the TTS route's own
+      // measurement covers the synthesis leg.
+      const tFirstAudio = nowMs();
+      recordVoiceLatency("gpt_audio", {
+        providerFirstAudioMs: tProviderFirstAudio === null ? undefined : tProviderFirstAudio - tStart,
+        providerDoneMs: tProviderDone - tStart,
+        gateMs: tGated - tProviderDone,
+        firstAudioMs: tFirstAudio - tStart,
+        addedMs: tProviderFirstAudio === null ? undefined : tFirstAudio - tProviderFirstAudio,
+        withheld: !playHeld,
+      });
+      if (playHeld) {
         for (const chunk of heldAudio) sendVoice({ type: "audio_chunk", data: chunk });
       } else {
         sendVoice({ type: "speech_replaced", data: gated.speech, withheld: gated.withheld });

@@ -203,7 +203,9 @@ test("gpt-audio route holds model audio until the transcript is gated", () => {
   const loop = voice.slice(loopStart, gateAt);
   assert.ok(!/sendVoice\(\{ type: "audio_chunk"/.test(loop), "no audio is sent while the model is still generating");
   assert.ok(!/sendVoice\(\{ type: "transcript"/.test(loop), "no unchecked transcript is shown while streaming");
-  assert.match(voice.slice(gateAt), /if \(gated\.audioMayPlay && !audioOverflow\)/);
+  // Held audio plays only for a clean turn that fit the hold buffer.
+  assert.match(voice.slice(gateAt), /const playHeld = gated\.audioMayPlay && !audioOverflow;/);
+  assert.match(voice.slice(gateAt), /if \(playHeld\) \{\s*for \(const chunk of heldAudio\) sendVoice\(\{ type: "audio_chunk"/);
   assert.match(voice.slice(gateAt), /type: "speech_replaced"/);
   assert.match(route, /VOICE_CANONICAL = new Set\(\[[^\]]*"speech_replaced"/);
 });

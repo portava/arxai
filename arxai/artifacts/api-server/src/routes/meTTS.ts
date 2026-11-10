@@ -27,6 +27,8 @@ import { db, arxAssistantMessagesTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { gateSpeech, gateVoiceTurn } from "../lib/assistant/voice/speechGate.js";
 import { recordVerifiedSpeechSource, trustedSpeechFor } from "../lib/assistant/voice/speechLedger.js";
+import { nowMs, recordVoiceLatency, summarizeVoiceLatency } from "../lib/assistant/voice/voiceLatency.js";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 
 const log = logger.child({ component: "ttsRoute" });
 const router = Router();
@@ -105,7 +107,9 @@ const SpeechGateBody = z.object({
 router.post("/me/assistant/voice/speech-gate", requireUser, (req, res) => {
   const parsed = SpeechGateBody.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ ok: false, error: "BAD_BODY" });
+  const tGate = nowMs();
   const gated = gateVoiceTurn(parsed.data.text, parsed.data.userText);
+  recordVoiceLatency("speech_gate", { gateMs: nowMs() - tGate, withheld: !gated.audioMayPlay });
   if (gated.speech) recordVerifiedSpeechSource(req.authUser!.id, gated.speech);
   return res.json({
     ok: true,
@@ -153,7 +157,9 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
   }
 
   const userId = req.authUser!.id;
+  const tStart = nowMs();
   const gated = gateSpeech({ text: sanitized, trusted: await trustedSpeechSources(userId) });
+  const tGated = nowMs();
   const text = gated.speech;
   res.setHeader("X-ARX-Speech-Gate", gated.clean ? "clean" : "withheld");
   res.setHeader("X-ARX-Speech-Withheld", String(gated.withheld));
@@ -183,6 +189,7 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
       const apiKey = process.env["ELEVENLABS_API_KEY"]!;
       const voiceId = voice;
 
+      const tProviderStart = nowMs();
       const response = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream`,
         {
@@ -218,9 +225,15 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
       if (!reader) {
         return res.status(502).json({ ok: false, error: "NO_STREAM" });
       }
+      let first = true;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (first) {
+          first = false;
+          const tFirst = nowMs();
+          recordVoiceLatency("tts", { gateMs: tGated - tStart, providerFirstByteMs: tFirst - tProviderStart, firstAudioMs: tFirst - tStart, withheld: !gated.clean });
+        }
         res.write(value);
       }
       return res.end();
@@ -230,6 +243,7 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
       const openaiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"]!;
       const openaiBase = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ?? "https://api.openai.com/v1";
 
+      const tProviderStart = nowMs();
       const response = await fetch(`${openaiBase}/audio/speech`, {
         method: "POST",
         headers: {
@@ -255,9 +269,15 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
       res.setHeader("Cache-Control", "no-store");
       const reader = response.body?.getReader();
       if (!reader) return res.status(502).json({ ok: false, error: "NO_STREAM" });
+      let first = true;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (first) {
+          first = false;
+          const tFirst = nowMs();
+          recordVoiceLatency("tts", { gateMs: tGated - tStart, providerFirstByteMs: tFirst - tProviderStart, firstAudioMs: tFirst - tStart, withheld: !gated.clean });
+        }
         res.write(value);
       }
       return res.end();
@@ -270,6 +290,13 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
     log.error({ err: (e as Error).message }, "tts_route_failed");
     return res.status(500).json({ ok: false, error: "TTS_FAILED", message: "TTS request failed." });
   }
+});
+
+// ── GET /api/admin/voice/latency ─────────────────────────────────────────────
+// Measured voice latency per path (p50/p95 with N; "unmeasured" below the
+// minimum sample). Operator only: server-wide, per-process readings.
+router.get("/admin/voice/latency", requireUser, requireOperator, (_req, res) => {
+  return res.json({ ok: true, ...summarizeVoiceLatency() });
 });
 
 // ── Default-voice helpers (imported by adminEleanorVoice.ts) ───────────────────
