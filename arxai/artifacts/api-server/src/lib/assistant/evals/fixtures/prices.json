@@ -1,0 +1,378 @@
+[
+  {
+    "id": "prices-fresh-quote",
+    "category": "prices",
+    "description": "Fresh broker quote reported with bid/ask and UTC time",
+    "user": "What's EURUSD at?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "EUR/USD is at 1.08523 on the live broker feed (bid 1.08519, ask 1.08527), observed at 14:32 UTC."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "LIVE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T14:32:05.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 1200,
+          "freshness": "fresh",
+          "stale": false,
+          "staleAfterMs": 15000,
+          "observationNote": "Observed 1.2s ago."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleIncludes": [
+        "1.08523",
+        "14:32 UTC"
+      ],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "prices-rounded-and-pips",
+    "category": "prices",
+    "description": "Rounded price and spread in pips are grounded",
+    "user": "EURUSD spread?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "EUR/USD is around 1.0852 and the spread is 0.8 pips."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "LIVE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T14:32:05.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 1200,
+          "freshness": "fresh",
+          "stale": false,
+          "staleAfterMs": 15000,
+          "observationNote": "Observed 1.2s ago."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]"
+      ]
+    }
+  },
+  {
+    "id": "prices-fabricated",
+    "category": "prices",
+    "description": "Model states a price the tool never returned",
+    "user": "EURUSD price?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "EUR/USD is trading at 1.0871 right now."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "LIVE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T14:32:05.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 1200,
+          "freshness": "fresh",
+          "stale": false,
+          "staleAfterMs": 15000,
+          "observationNote": "Observed 1.2s ago."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "1.0871 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "prices-wrong-bid",
+    "category": "prices",
+    "description": "Bid mislabelled with a wrong value",
+    "user": "Bid and ask on EURUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The bid is 1.08419. The ask is 1.08527."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "LIVE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T14:32:05.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 1200,
+          "freshness": "fresh",
+          "stale": false,
+          "staleAfterMs": 15000,
+          "observationNote": "Observed 1.2s ago."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a figure here did not match",
+        "The ask is 1.08527."
+      ],
+      "visibleExcludes": [
+        "1.08419"
+      ]
+    }
+  },
+  {
+    "id": "prices-off-universe-honest",
+    "category": "prices",
+    "description": "Blocked market answered honestly without a price",
+    "user": "What's BTCUSD doing?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "BTCUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "BTCUSD is outside the ARX Focus universe, so ARX has no feed or price for it."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "BTCUSD",
+        "isApprovedMarket": false,
+        "blocked": true,
+        "reason": "Outside the ARX Focus universe.",
+        "source": "NONE",
+        "quality": "UNAVAILABLE",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "UNAVAILABLE",
+        "lastPrice": null,
+        "lastCandleTime": null,
+        "cause": "Outside the ARX Focus universe.",
+        "message": "This market is outside the ARX Focus universe, so no live feed is available for it.",
+        "quote": null
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "prices-off-universe-invented",
+    "category": "prices",
+    "description": "Blocked market but the model invents a price",
+    "user": "What's BTCUSD doing?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "BTCUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "BTCUSD is outside the Focus universe, but it is roughly 68,250."
+      }
+    ],
+    "toolResults": {
+      "getMarketSnapshot": {
+        "symbol": "BTCUSD",
+        "isApprovedMarket": false,
+        "blocked": true,
+        "reason": "Outside the ARX Focus universe.",
+        "source": "NONE",
+        "quality": "UNAVAILABLE",
+        "aiUsable": false,
+        "isLive": false,
+        "stale": true,
+        "freshness": "UNAVAILABLE",
+        "lastPrice": null,
+        "lastCandleTime": null,
+        "cause": "Outside the ARX Focus universe.",
+        "message": "This market is outside the ARX Focus universe, so no live feed is available for it.",
+        "quote": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "68,250 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "prices-no-tool-memory",
+    "category": "prices",
+    "description": "Answers a price from memory without calling a tool",
+    "user": "EURUSD?",
+    "turns": [
+      {
+        "text": "EUR/USD is at 1.0850."
+      }
+    ],
+    "toolResults": {},
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "1.0850 [unverified]"
+      ]
+    }
+  }
+]

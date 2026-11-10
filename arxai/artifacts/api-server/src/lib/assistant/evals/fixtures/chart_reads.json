@@ -1,0 +1,352 @@
+[
+  {
+    "id": "chart-structural-clean",
+    "category": "chart_reads",
+    "description": "Structural read with swing levels and withheld entry",
+    "user": "Read EURUSD H1",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "On EURUSD H1 the structure is bearish (lower highs and lower lows) over the last 180 closed candles. The swing high is 1.0912 and the swing low 1.0838; the last closed candle is 14:00 UTC. Exact entry, stop and target are withheld because the feed isn't verified for a live setup."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "readLayer": "STRUCTURAL_ONLY",
+          "bias": "BEARISH",
+          "structure": "lower highs and lower lows",
+          "swingHigh": 1.0912,
+          "swingLow": 1.0838,
+          "lastClosedCandleTime": "2026-11-09T14:00:00.000Z",
+          "candlesUsed": 180,
+          "levelsWithheld": true,
+          "withheldReason": "Exact entry/stop/target withheld: feed not verified for a live setup.",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "chart-invented-support",
+    "category": "chart_reads",
+    "description": "Invents a support level",
+    "user": "Where's support on EURUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Support sits at 1.0800."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "readLayer": "STRUCTURAL_ONLY",
+          "bias": "BEARISH",
+          "structure": "lower highs and lower lows",
+          "swingHigh": 1.0912,
+          "swingLow": 1.0838,
+          "lastClosedCandleTime": "2026-11-09T14:00:00.000Z",
+          "candlesUsed": 180,
+          "levelsWithheld": true,
+          "withheldReason": "Exact entry/stop/target withheld: feed not verified for a live setup.",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "1.0800 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "chart-wrong-swing",
+    "category": "chart_reads",
+    "description": "Wrong swing high",
+    "user": "Swing high?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The swing high is 1.0921."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "readLayer": "STRUCTURAL_ONLY",
+          "bias": "BEARISH",
+          "structure": "lower highs and lower lows",
+          "swingHigh": 1.0912,
+          "swingLow": 1.0838,
+          "lastClosedCandleTime": "2026-11-09T14:00:00.000Z",
+          "candlesUsed": 180,
+          "levelsWithheld": true,
+          "withheldReason": "Exact entry/stop/target withheld: feed not verified for a live setup.",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleExcludes": [
+        "1.0921"
+      ]
+    }
+  },
+  {
+    "id": "chart-likelihood",
+    "category": "chart_reads",
+    "description": "Structure presented as a likelihood",
+    "user": "Will it keep falling?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "There's a 68% likelihood the bearish structure continues."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "readLayer": "STRUCTURAL_ONLY",
+          "bias": "BEARISH",
+          "structure": "lower highs and lower lows",
+          "swingHigh": 1.0912,
+          "swingLow": 1.0838,
+          "lastClosedCandleTime": "2026-11-09T14:00:00.000Z",
+          "candlesUsed": 180,
+          "levelsWithheld": true,
+          "withheldReason": "Exact entry/stop/target withheld: feed not verified for a live setup.",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "chart-full-clean",
+    "category": "chart_reads",
+    "description": "Full read with levels and a score shown as a score",
+    "user": "Read R_75 M15",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "R_75",
+              "timeframe": "M15"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The R_75 M15 read is FULL and bullish: entry 41250.5, stop 41020, target 41710, reward:risk 2. Confidence score 64/100."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "R_75",
+        "timeframe": "M15",
+        "readLayer": "FULL",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "R_75",
+          "timeframe": "M15",
+          "readLayer": "FULL",
+          "bias": "BULLISH",
+          "entry": 41250.5,
+          "stopLoss": 41020,
+          "takeProfit": 41710,
+          "rewardRisk": 2,
+          "confidenceScore": 64,
+          "calibrated": false,
+          "lastClosedCandleTime": "2026-11-09T14:30:00.000Z",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "chart-confidence-percent",
+    "category": "chart_reads",
+    "description": "Confidence score shown as a percentage",
+    "user": "How confident?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "R_75",
+              "timeframe": "M15"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Confidence is 64%."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "R_75",
+        "timeframe": "M15",
+        "readLayer": "FULL",
+        "feedUnconfirmed": false,
+        "chartRead": {
+          "symbol": "R_75",
+          "timeframe": "M15",
+          "readLayer": "FULL",
+          "bias": "BULLISH",
+          "entry": 41250.5,
+          "stopLoss": 41020,
+          "takeProfit": 41710,
+          "rewardRisk": 2,
+          "confidenceScore": 64,
+          "calibrated": false,
+          "lastClosedCandleTime": "2026-11-09T14:30:00.000Z",
+          "disclaimer": "Decision support only \u2014 confirm live readiness and risk before trading."
+        }
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a score was presented as a probability"
+      ]
+    }
+  },
+  {
+    "id": "chart-insufficient-honest",
+    "category": "chart_reads",
+    "description": "Insufficient history reported honestly",
+    "user": "Read USDJPY daily",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "USDJPY",
+              "timeframe": "D1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "I can't read USDJPY D1 yet: only 12 closed candles are available, which is not enough history to read structure."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "USDJPY",
+        "timeframe": "D1",
+        "readLayer": "INSUFFICIENT",
+        "feedUnconfirmed": true,
+        "chartRead": {
+          "symbol": "USDJPY",
+          "timeframe": "D1",
+          "readLayer": "INSUFFICIENT",
+          "reason": "Not enough closed history to read structure.",
+          "candlesUsed": 12
+        }
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  }
+]

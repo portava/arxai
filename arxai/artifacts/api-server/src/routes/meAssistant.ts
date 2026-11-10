@@ -47,15 +47,15 @@ import { evaluateEleanorWatchesForUser, acknowledgeEleanorWatch, listEleanorWatc
 import { isSweeperEnabled, getEleanorSweeperStatus } from "../lib/assistant/eleanorWatchSweeper.js";
 import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/eleanorMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
-import { toolResultText } from "../lib/assistant/toolResultText.js";
+import { runChatTurnLoop, type ChatMessage } from "../lib/assistant/chatTurnLoop.js";
 import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
-import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
+import { chatProviderConfigured, streamToolChat, voiceAudio } from "../lib/ai/llmGateway.js";
 import {
   TOOL_DEFINITIONS, dispatchTool, classifyIntent,
   setRequestPageContext,
-  detectChartReadIntent, detectTradeOptionsIntent, resolveAssistantToolChoice,
+  detectChartReadIntent, detectTradeOptionsIntent,
 } from "../lib/assistant/tools.js";
 import {
   deriveAssistantEnvelope,
@@ -1206,12 +1206,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     getRecentToolResults(userId, id, 5),
   ]).catch(() => [EMPTY_MEMORY_SNAPSHOT, null, [] as Array<{ toolName: string; status: string; result: unknown; createdAt: string }>] as const);
 
-  // Build OpenAI chat messages.
-  type ChatMessage =
-    | { role: "system"; content: string }
-    | { role: "user"; content: string }
-    | { role: "assistant"; content: string | null; tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> }
-    | { role: "tool"; content: string; tool_call_id: string };
+  // Build OpenAI chat messages (ChatMessage: lib/assistant/chatTurnLoop.ts).
 
   // Phase 22F — strict canonical ARX stream contract.
   // ONLY these event types may reach the frontend:
@@ -1285,171 +1280,59 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown> },
   }));
 
-  for (let turn = 0; turn < MAX_TURNS_PER_REQUEST; turn++) {
-    if (aborted) break;
-    let stream: AsyncIterable<ToolChatStreamChunk>;
-    try {
-      stream = await streamToolChat({
-        model: MODEL,
-        maxTokens: 8192,
-        messages,
-        tools,
-        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead, MAX_TURNS_PER_REQUEST),
-      });
-    } catch (e) {
-      try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_openai_failed"); } catch { /* noop */ }
-      send({ type: "error", message: "AI provider unavailable. Please try again in a moment." });
-      send({ type: "done" });
-      cleanupStream();
-      res.end();
-      return;
-    }
-
-    let turnContent = "";
-    const toolCallsAcc: Record<number, { id: string; name: string; args: string }> = {};
-    let finishReason: string | null = null;
-    // Phase 22V Part-4 — live token streaming with deferred preamble drop.
-    //
-    // We now flush `delta.content` to the client as it arrives so users see
-    // Eleanor's reply build up token-by-token (natural typewriter feel)
-    // instead of receiving the whole answer in one paste-block at the end
-    // of the turn. We also track the running per-turn char count so that
-    // IF this turn turns out to be preamble (i.e. tool_calls followed),
-    // we can emit `content_clear` with the exact number of characters to
-    // strip from the visible message — preserving the original Phase 22S2
-    // invariant that preamble never reaches the final visible reply or
-    // TTS, while still giving the user immediate feedback.
-
-    // Phase 22F — wrap the consumer loop so a mid-stream provider
-    // exception (network blip, malformed chunk, abort) becomes a clean
-    // canonical ARX error instead of crashing the request and letting
-    // Express send an HTML error page through the SSE socket.
-    try {
-      for await (const chunk of stream) {
-        if (aborted) break;
-        const choice = chunk.choices?.[0];
-        if (!choice) continue;
-        const delta = choice.delta ?? {};
-        if (delta.content) {
-          // Phase 22V Part-4 — stream live AND track for a possible drop.
-          turnContent += delta.content;
-          send({ type: "content", content: delta.content });
-        }
-        if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index ?? 0;
-            if (!toolCallsAcc[idx]) toolCallsAcc[idx] = { id: tc.id ?? `call_${idx}`, name: "", args: "" };
-            if (tc.id) toolCallsAcc[idx].id = tc.id;
-            if (tc.function?.name) toolCallsAcc[idx].name += tc.function.name;
-            if (tc.function?.arguments) toolCallsAcc[idx].args += tc.function.arguments;
-          }
-        }
-        if (choice.finish_reason) finishReason = choice.finish_reason;
-      }
-    } catch (e) {
-      try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_stream_consume_failed"); } catch { /* noop */ }
-      // Phase 22V Part-4 — if we already streamed any preamble live for
-      // this turn, strip it from the client before sending `done` so the
-      // TTS path won't speak a partial/preamble fragment. Same invariant
-      // as the tool-calls branch: nothing the user sees or hears should
-      // be a mid-turn fragment that the model never finalised.
-      if (turnContent.length > 0) {
-        send({ type: "content_clear", chars: turnContent.length });
-      }
-      send({ type: "error", message: "AI stream interrupted. Please try again." });
-      send({ type: "done" });
-      cleanupStream();
-      res.end();
-      return;
-    }
-
-    if (aborted) break;
-
-    const calls = Object.values(toolCallsAcc).filter((c) => c.name);
-    if (calls.length === 0) {
-      // Phase 22V Part-4 — final turn. Content was already streamed live
-      // above; just commit it to `assistantText` for persistence + TTS.
-      if (turnContent) assistantText += turnContent;
-      // Plain text reply done.
-      break;
-    }
-
-    // Phase 22V Part-4 — this turn produced tool_calls. Any text it also
-    // produced was preamble streamed live above ("Let's check the
-    // scanner..."). Tell the client to strip exactly those characters
-    // from the visible message before we send tool events; the model
-    // still sees its own narration in `turnContent` (passed back as the
-    // assistant message in history) so its reasoning is preserved across
-    // turns, and the user never sees / hears the preamble.
-    if (turnContent.length > 0) {
-      send({ type: "content_clear", chars: turnContent.length });
-    }
-    messages.push({
-      role: "assistant",
-      content: turnContent || null,
-      tool_calls: calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.args || "{}" } })),
-    });
-
-    // Execute each tool; report progress; append tool results.
-    for (const c of calls) {
-      let parsedArgs: Record<string, unknown> = {};
-      try { parsedArgs = c.args ? (JSON.parse(c.args) as Record<string, unknown>) : {}; } catch { parsedArgs = {}; }
-      send({ type: "tool_call", name: c.name });
-      const t0 = Date.now();
-      let result: unknown;
-      let status = "ok";
-      try {
-        result = await dispatchTool(c.name, parsedArgs, userId, req, safetyEnvelope);
-      } catch (e) {
-        status = "error";
-        result = { error: "tool_failed", name: c.name, message: (e as Error)?.message ?? "unknown" };
-      }
-      const ms = Date.now() - t0;
-      send({ type: "tool_result", name: c.name, status, durationMs: ms });
-      // Surface the SAME honesty-gated structural read the Scanner Eleanor Chart
-      // Read uses so the chat can render the ONE standardized, always-visible
-      // Eleanor Reasoning Block. This forwards ONLY the structured read object the
-      // tool already produced (display tier `readLayer` + `chartRead`) — never
-      // fabricated prose, never an execution signal. The client builds the block
-      // from this via buildReasoningFromChartRead; a gated/insufficient read
-      // therefore renders WAIT/conditional with the limit stated, never a faked
-      // direction or level.
-      if (c.name === "readChartStructure" && status === "ok" && result && typeof result === "object") {
-        const r = result as { chartRead?: Record<string, unknown>; readLayer?: string; feedUnconfirmed?: boolean };
-        const read = r.chartRead;
-        if (read && typeof read === "object") {
-          const sym = typeof read.symbol === "string" ? read.symbol : "";
-          const tf = typeof read.timeframe === "string" ? read.timeframe : "";
-          send({
-            type: "reasoning",
-            read,
-            symbol: sym,
-            timeframe: tf,
-            readLayer: typeof r.readLayer === "string" ? r.readLayer : "INSUFFICIENT",
-            // DISPLAY-ONLY: mirror the Scanner panel's INDEPENDENT feed-not-confirmed
-            // signal so the chat reasoning block can flag an unconfirmed feed even on
-            // a STRUCTURAL_ONLY read (where readLayer alone can't tell the two apart).
-            feedUnconfirmed: r.feedUnconfirmed === true,
-          });
-        }
-      }
+  // The model/tool loop lives in lib/assistant/chatTurnLoop.ts so the eval
+  // harness runs the same code. Every visible sentence passes the runtime claim
+  // verifier (lib/assistant/grounding) before it is sent; resolveAssistantToolChoice
+  // is applied per turn inside the loop with MAX_TURNS_PER_REQUEST.
+  const loop = await runChatTurnLoop({
+    model: MODEL,
+    messages,
+    tools,
+    maxTurns: MAX_TURNS_PER_REQUEST,
+    forceStructuralRead,
+    userText,
+    toolResultChars: TOOL_RESULT_MODEL_CHARS,
+    streamChat: streamToolChat,
+    dispatch: (name, parsedArgs) => dispatchTool(name, parsedArgs, userId, req, safetyEnvelope),
+    send,
+    isAborted: () => aborted,
+    onToolResult: async (r) => {
       try {
         (req as { log?: { info: (...a: unknown[]) => void } }).log?.info(
-          { userId, conversationId: id, tool: c.name, status, durationMs: ms },
+          { userId, conversationId: id, tool: r.name, status: r.status, durationMs: r.durationMs },
           "eleanor_tool_call",
         );
       } catch { /* noop */ }
       try {
         await db.insert(arxAssistantToolCallsTable).values({
           userId, conversationId: id, messageId: userMessageId ?? null,
-          toolName: c.name, args: parsedArgs as Record<string, unknown>,
-          result: result as Record<string, unknown>, status, durationMs: ms,
+          toolName: r.name, args: r.args,
+          result: r.result as Record<string, unknown>, status: r.status, durationMs: r.durationMs,
         });
       } catch { /* tool log non-fatal */ }
-      messages.push({ role: "tool", tool_call_id: c.id, content: toolResultText(result, TOOL_RESULT_MODEL_CHARS) });
-    }
-
-    if (finishReason && finishReason !== "tool_calls") break;
+    },
+    logError: (msg, e) => {
+      try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, msg); } catch { /* noop */ }
+    },
+  });
+  if (loop.status === "provider_error" || loop.status === "stream_error") {
+    send({ type: "done" });
+    cleanupStream();
+    res.end();
+    return;
+  }
+  assistantText = loop.assistantText;
+  if (loop.findings.length > 0 || loop.verifierFailedClosed) {
+    try {
+      (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn(
+        {
+          userId, conversationId: id,
+          findings: loop.findings.map((f) => ({ kind: f.kind, claim: f.claim.text, detail: f.detail.slice(0, 200) })),
+          failedClosed: loop.verifierFailedClosed,
+        },
+        "eleanor_claims_verifier_flagged",
+      );
+    } catch { /* noop */ }
   }
 
   // AICS-4: never end on a blank bubble. The last turn runs with
