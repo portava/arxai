@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { ScoreBasis } from "./scoreBasis";
 
 export interface WatchlistItemDetail {
   id: number;
@@ -14,7 +15,17 @@ export interface WatchlistItemDetail {
   favorite: number;
   /** @nullable */
   signal?: string | null;
-  /** @nullable */
+  /**
+   * Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.
+   * @nullable
+   */
+  score?: number | null;
+  scoreBasis?: ScoreBasis | null;
+  /**
+   * Deprecated alias of score (same number), kept for existing API clients.
+   * @deprecated
+   * @nullable
+   */
   confidence?: number | null;
   /** @nullable */
   trend?: string | null;

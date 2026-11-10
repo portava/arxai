@@ -18,6 +18,10 @@ router.get("/signals", async (req, res) => {
     const filtered = params.symbol ? rows.filter((r) => r.symbol === params.symbol) : rows;
     const data = GetSignalsResponse.parse(filtered.map((r) => ({
       ...r,
+      // `score` is the stored confidence column under its honest name: an
+      // uncalibrated heuristic strategy score. `confidence` stays as a
+      // deprecated alias for external clients (OpenAPI Signal).
+      score: r.confidence,
       createdAt: r.createdAt?.toISOString() ?? new Date().toISOString(),
     })));
     res.json(data);
@@ -49,6 +53,10 @@ router.get("/signals/latest", async (req, res) => {
     });
     const data = GetLatestSignalsResponse.parse(latest.map((r) => ({
       ...r,
+      // `score` is the stored confidence column under its honest name: an
+      // uncalibrated heuristic strategy score. `confidence` stays as a
+      // deprecated alias for external clients (OpenAPI Signal).
+      score: r.confidence,
       createdAt: r.createdAt?.toISOString() ?? new Date().toISOString(),
     })));
     res.json(data);

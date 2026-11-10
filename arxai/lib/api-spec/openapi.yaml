@@ -18421,9 +18421,37 @@ components:
           enum: [PLATFORM, YOUR_ACCOUNT]
           description: PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.
 
+    ScoreBasis:
+      type: object
+      description: >-
+        How a strategy score was produced. score = min(cap, base + sum(terms.value))
+        (plain sum when cap is null), and each term's expr evaluates to its value
+        over inputs, so the number can be recomputed from the payload.
+      required: [kind, calibrated, rule, formula, inputs, base, terms, cap, note]
+      properties:
+        kind: { type: string, enum: [heuristic_rule] }
+        calibrated: { type: boolean, enum: [false] }
+        rule: { type: string, description: 'Stable rule id, e.g. "trend_continuation.buy".' }
+        formula: { type: string, description: 'Whole score as one expression, e.g. "min(95, 70 + floor((rsi - 50) * 1.5))".' }
+        inputs:
+          type: object
+          additionalProperties: { type: number }
+        base: { type: number }
+        terms:
+          type: array
+          items:
+            type: object
+            required: [label, expr, value]
+            properties:
+              label: { type: string }
+              expr: { type: string }
+              value: { type: number }
+        cap: { type: ["number", "null"] }
+        note: { type: string }
+
     Signal:
       type: object
-      required: [id, symbol, direction, confidence, entryPrice, stopLoss, takeProfit, strategy, reason, riskWarning, createdAt]
+      required: [id, symbol, direction, score, confidence, entryPrice, stopLoss, takeProfit, strategy, reason, riskWarning, createdAt]
       properties:
         id:
           type: integer
@@ -18432,8 +18460,17 @@ components:
         direction:
           type: string
           enum: [BUY, SELL, WAIT]
+        score:
+          type: integer
+          description: >-
+            Uncalibrated heuristic strategy score, 0-100. NOT a probability or
+            a confidence. Read from the stored signals.confidence column.
         confidence:
           type: integer
+          deprecated: true
+          description: >-
+            Deprecated alias of score (same number). Kept because stored
+            signals rows carry this column name and external clients read it.
         entryPrice:
           type: number
         stopLoss:
@@ -18472,6 +18509,10 @@ components:
           type: string
         confidence:
           type: integer
+          description: >-
+            Uncalibrated heuristic strategy score (0-100) recorded with the
+            trade. Field name kept because it is the stored trades.confidence
+            column; it is not a probability or a confidence.
         status:
           type: string
           enum: [OPEN, CLOSED_WIN, CLOSED_LOSS, CANCELLED]
@@ -18525,6 +18566,9 @@ components:
           type: string
         confidence:
           type: integer
+          description: >-
+            Uncalibrated heuristic strategy score (0-100). Name kept for
+            existing API clients that submit trades; not a probability.
         # Build F — Live Execution Safety Layer.
         # Optional today (PAPER/SIMULATED stays open). When safety_core
         # operationalMode escalates to LIVE_TRADING, the trades route REQUIRES
@@ -20690,7 +20734,21 @@ components:
         marketType: { type: string }
         favorite: { type: integer }
         signal: { type: ["string", "null"] }
-        confidence: { type: ["integer", "null"] }
+        score:
+          type: ["integer", "null"]
+          description: >-
+            Uncalibrated heuristic strategy score, 0-100. Hand-written rule
+            arithmetic, NOT a probability or a confidence; scoreBasis shows the
+            rule and inputs. The measured probability, when one exists, is
+            calibratedProbability.
+        scoreBasis:
+          oneOf:
+            - $ref: "#/components/schemas/ScoreBasis"
+            - type: "null"
+        confidence:
+          type: ["integer", "null"]
+          deprecated: true
+          description: Deprecated alias of score (same number), kept for existing API clients.
         trend: { type: ["string", "null"] }
         spread: { type: ["number", "null"] }
         newsRisk: { type: ["string", "null"] }

@@ -72,6 +72,12 @@ export interface SetupPreview {
   bridgeStatus: SetupPreviewBridge | null;
   allocationKnown: boolean;
   scannerScore: number | null;
+  /** Timeframe scannerScore was computed on: the chart's own, or the nearest
+   *  higher one on fallback. Absent on older responses (= chart timeframe). */
+  scannerTimeframe?: string | null;
+  scannerTimeframeBasis?: "exact" | "higher_timeframe_fallback" | null;
+  /** Server label for a fallback, e.g. "M5: no signal … showing the H1 reading (higher-timeframe fallback)". */
+  scannerFallbackLabel?: string | null;
   flameStage: string | null;
   runOnQuality: string | null;
   riskScore: number | null;
@@ -200,22 +206,37 @@ export function formatSignalScore(score: number | null): string | null {
 
 // ── Scanner chip context (CS2) ───────────────────────────────────────────────
 // The draw-setup scanner score comes from the assistant's live candidate
-// scanner, which scores only these timeframes. The server only returns a score
-// computed on the chart's own timeframe, so a non-null score is labelled with
-// the preview timeframe; a null on any other timeframe says so plainly.
-export const ASSISTANT_SCANNER_TIMEFRAMES: readonly string[] = ["M15", "H1"];
+// scanner, which scores every chart timeframe M1..D1. The score is computed on
+// the chart's own timeframe; when that timeframe has no directional reading
+// the server falls back to the nearest HIGHER timeframe and says so, and the
+// chip label then names that timeframe and the word "fallback". Never silent.
+export const ASSISTANT_SCANNER_TIMEFRAMES: readonly string[] = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
 
-export function setupScannerChipContext(preview: Pick<SetupPreview, "scannerScore" | "timeframe">): {
+export const SCANNER_SCORE_HELP =
+  "The assistant's live candidate-scanner score for this setup (0-100). It is an uncalibrated heuristic score, not a probability or a confidence. It is a different engine from the market-scanner read in the AI overlay panel.";
+
+export function setupScannerChipContext(
+  preview: Pick<SetupPreview, "scannerScore" | "timeframe"> &
+    Partial<Pick<SetupPreview, "scannerTimeframe" | "scannerTimeframeBasis" | "scannerFallbackLabel">>,
+): {
   timeframe: string | null;
+  fallback: boolean;
+  fallbackLabel: string | null;
   nullNote: string | null;
   help: string;
 } {
   const tf = preview.timeframe;
   const scored = ASSISTANT_SCANNER_TIMEFRAMES.includes(tf);
+  const has = preview.scannerScore != null;
+  const fallback = has && preview.scannerTimeframeBasis === "higher_timeframe_fallback";
+  const fallbackLabel = fallback
+    ? preview.scannerFallbackLabel ?? `${tf}: no signal — showing the ${preview.scannerTimeframe ?? "higher-timeframe"} reading (higher-timeframe fallback)`
+    : null;
   return {
-    timeframe: preview.scannerScore != null ? tf : null,
-    nullNote: preview.scannerScore == null && !scored ? `no scanner score for ${tf}` : null,
-    help:
-      "The assistant's live candidate-scanner score for this setup on the chart timeframe (it scores M15 and H1 only; higher is cleaner). It is a different engine from the market-scanner read in the AI overlay panel.",
+    timeframe: has ? (preview.scannerTimeframe ?? tf) : null,
+    fallback,
+    fallbackLabel,
+    nullNote: !has && !scored ? `no scanner score for ${tf}` : null,
+    help: fallbackLabel ? `${fallbackLabel}. ${SCANNER_SCORE_HELP}` : SCANNER_SCORE_HELP,
   };
 }

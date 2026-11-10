@@ -10,7 +10,7 @@
 //   - Per-symbol picture  →  getChartCandles() (chartDataService) → the unified
 //     marketDataRouter → truth engine → ChartFeedStatus. ONE resolver.
 //   - Opportunity scoring →  scanSymbolTimeframe() (the SINGLE scoring path),
-//     ranked by effectiveOpportunityScore().
+//     ranked by the three-tier measured ranking (rankScannerOpportunities).
 //
 // HONESTY INVARIANTS (advisory/read-only — never a 16-gate or live path):
 //   - The per-symbol picture is NEVER gated on scanner or provider availability.
@@ -35,11 +35,12 @@ import type { ChartTimeframe } from "./chart/timeframes.js";
 import { classifySymbol, type AssetClass } from "./marketDataRouter.js";
 import {
   scanSymbolTimeframe,
-  effectiveOpportunityScore,
+  rankScannerOpportunities,
   scannerStatus,
   type ScannerOpportunity,
 } from "../marketScanner.js";
 import { getMarketProvider, type NewsItem } from "../assistant/marketProvider.js";
+import { planScanPairs, SCANNER_TIMEFRAMES } from "../scannerCoverage/timeframeCoverage.js";
 import { sanitizeExternalText } from "../security/promptInjectionGuard.js";
 
 // ── Per-symbol snapshot ─────────────────────────────────────────────────────
@@ -169,7 +170,7 @@ export async function getSymbolSnapshot(
 // ── Core opportunity scan (single scoring path) ─────────────────────────────
 
 export interface CoreOpportunityScanResult {
-  /** Top-N live-only opportunities, ranked by effectiveOpportunityScore. */
+  /** Top-N live-only opportunities, ranked by rankScannerOpportunities (measured tiers first). */
   opportunities: ScannerOpportunity[];
   /** (symbol × timeframe) pairs attempted. */
   pairsAttempted: number;
@@ -184,7 +185,7 @@ export interface CoreOpportunityScanResult {
 
 /**
  * Scan a small core set through the SINGLE scoring path (scanSymbolTimeframe)
- * and rank by effectiveOpportunityScore.
+ * and rank by rankScannerOpportunities (measured tiers first).
  *
  * CRITICAL never-simulator invariant: ONLY rows whose dataStatus is "live" are
  * kept. scanSymbolTimeframe falls back to the simulator for non-synthetic
@@ -196,10 +197,9 @@ export async function scanCoreOpportunities(
   timeframes: readonly string[],
   limit = 10,
 ): Promise<CoreOpportunityScanResult> {
-  const pairs: Array<{ symbol: string; timeframe: string }> = [];
-  for (const s of symbols) {
-    for (const tf of timeframes) pairs.push({ symbol: s, timeframe: tf });
-  }
+  // Bounded per call (SCANNER_MAX_PAIRS_PER_CYCLE): over the cap the slowest
+  // timeframes are dropped first; pairsAttempted reports what actually ran.
+  const pairs = planScanPairs(symbols, timeframes).pairs.map((p) => ({ symbol: p.sym, timeframe: p.tf }));
   const rows = await mapWithConcurrency(pairs, OVERVIEW_CONCURRENCY, async (p) => {
     try {
       return await scanSymbolTimeframe(p.symbol, p.timeframe);
@@ -216,7 +216,11 @@ export async function scanCoreOpportunities(
     live.push(r);
     liveSymbols.add(r.symbol);
   }
-  live.sort((a, b) => effectiveOpportunityScore(b) - effectiveOpportunityScore(a));
+  // Three-tier measured ranking (calibrated → base rate → raw, labelled), not
+  // the raw score: the top-N slice below keeps the measured rows.
+  const ranked = rankScannerOpportunities(live);
+  live.length = 0;
+  live.push(...ranked);
 
   const status = scannerStatus();
   return {
@@ -240,8 +244,9 @@ export const CORE_OVERVIEW_SYMBOLS = [
   "BTCUSDT",
 ] as const;
 
-/** Timeframes the core opportunity scan covers (enrichment only). */
-const SETUP_TIMEFRAMES = ["M15", "H1"] as const;
+/** Timeframes the core opportunity scan covers (enrichment only): every
+ *  timeframe ARX charts, M1..D1 (was M15/H1). Bounded by planScanPairs. */
+const SETUP_TIMEFRAMES = SCANNER_TIMEFRAMES;
 
 /** Bounded fan-out for the snapshot/scan loops. */
 const OVERVIEW_CONCURRENCY = 6;

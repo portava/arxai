@@ -21,7 +21,8 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { type LiveCandidate } from "../assistant/liveScanner.js";
 import { type ScannerOpportunity, rankScannerOpportunities } from "../marketScanner.js";
-import { rankByCalibration, type CalibrationStamp } from "../calibration/cache.js";
+import { type CalibrationStamp } from "../calibration/cache.js";
+import { rankByMeasuredTier, type MeasuredRankBasis } from "../ranking/measuredRank.js";
 import { ARX_FOCUS_MARKETS, isApprovedArxMarket } from "@workspace/domain/market";
 import { scanCoreOpportunities } from "../data/marketOverview.js";
 import {
@@ -205,9 +206,13 @@ export interface Opportunity {
    *  call, or null when unmeasured. Always paired with `calibration` (N). */
   calibratedProbability?: number | null;
   calibration?: CalibrationStamp | null;
-  /** calibrated_probability when the position was earned by a measured
-   *  probability; unmeasured_raw_order when it fell back to the raw score. */
-  rankBasis?: "calibrated_probability" | "unmeasured_raw_order";
+  /** Three-tier measured ranking (lib/ranking/measuredRank):
+   *  calibrated_probability (measured, score-dependent, with N), then
+   *  measured_base_rate (measured, but the score did not beat the base rate),
+   *  then unmeasured_raw_order (no measured fit; ordered by the raw score). */
+  rankBasis?: MeasuredRankBasis;
+  /** Ready-to-render basis, e.g. "unmeasured, ranked by raw score". */
+  rankLabel?: string;
   multiTimeframe?: {
     bias: string;
     alignmentScore: number;
@@ -786,13 +791,14 @@ export async function evaluateOpportunitiesForUser(
   }
 
   // Ranking: data-insufficient ALWAYS sinks to the bottom (per spec #5 of test list).
-  // Then measured probability ranks above everything unmeasured; the raw
-  // opportunity score orders ties and the unmeasured tail.
+  // Then the three-tier measured ranking: calibrated probability (with N),
+  // then measured base rate, and only then the raw opportunity score,
+  // labelled "unmeasured, ranked by raw score".
   const usable = ops.filter((o) => o.label !== "Data insufficient");
   const insufficient = ops.filter((o) => o.label === "Data insufficient");
-  const ordered = rankByCalibration(
-    usable.map((o) => ({ o, rawScore: o.opportunityScore, reading: { probability: o.calibratedProbability ?? null } })),
-  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis }));
+  const ordered = rankByMeasuredTier(
+    usable.map((o) => ({ o, rawScore: o.opportunityScore, calibration: o.calibration ?? null, probability: o.calibratedProbability ?? null })),
+  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis, rankLabel: r.rankLabel }));
   ops.length = 0;
   ops.push(...ordered, ...insufficient);
   const ranked = ops.slice(0, limit);

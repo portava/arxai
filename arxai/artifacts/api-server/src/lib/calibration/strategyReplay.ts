@@ -1,4 +1,4 @@
-// Strategy replay: graded samples for the strategy engine's confidence scores.
+// Strategy replay: graded samples for the strategy engine's (uncalibrated) scores.
 //
 // Each strategy is run on a rolling window of candles; every actionable signal
 // is graded first-touch (target before stop) on the bars AFTER the signal bar
@@ -78,7 +78,7 @@ export function replayStrategies(
         strategyKey: strategyCalibrationKey(s.name),
         barIndex: i,
         direction: sig.direction,
-        score: sig.confidence,
+        score: sig.score,
         outcome,
         rr: Math.abs(sig.takeProfit - sig.entryPrice) / Math.max(1e-12, Math.abs(sig.entryPrice - sig.stopLoss)),
       });

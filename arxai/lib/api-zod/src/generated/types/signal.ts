@@ -11,6 +11,12 @@ export interface Signal {
   id: number;
   symbol: string;
   direction: SignalDirection;
+  /** Uncalibrated heuristic strategy score, 0-100. NOT a probability or a confidence. Read from the stored signals.confidence column. */
+  score: number;
+  /**
+   * Deprecated alias of score (same number). Kept because stored signals rows carry this column name and external clients read it.
+   * @deprecated
+   */
   confidence: number;
   entryPrice: number;
   stopLoss: number;

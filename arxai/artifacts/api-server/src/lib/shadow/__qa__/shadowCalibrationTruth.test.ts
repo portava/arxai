@@ -16,7 +16,7 @@ let px = 1.1;
 
 const realEngine = await import("../../strategyEngine.js");
 mock.module("../../strategyEngine.js", { namedExports: { ...realEngine, runStrategyScan: () => ({
-  direction: "BUY", confidence, entryPrice: 1.1, stopLoss: 1.09, takeProfit: 1.12,
+  direction: "BUY", score: confidence, entryPrice: 1.1, stopLoss: 1.09, takeProfit: 1.12,
   strategy: "Trend Continuation", reason: "r", riskWarning: "",
 }) } });
 const realOms = await import("../../oms.js");

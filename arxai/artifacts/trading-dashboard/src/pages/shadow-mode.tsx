@@ -10,7 +10,7 @@ import { formatInstrumentPrice, magnitudeDecimals } from "@/lib/instrumentPriceF
 import { rowTimeLabel } from "@/lib/rowTimeLabel";
 
 type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number; untracked?: number; priceSource?: string };
-type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number | null; tp: number | null; confidence: number; status: string; pnlR?: number; outcomeAt?: string; untrackedReason?: string; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
+type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number | null; tp: number | null; confidence: number; score?: number; status: string; pnlR?: number; outcomeAt?: string; untrackedReason?: string; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
 const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-emerald-500/20 text-emerald-400", SHADOW_LOSS: "bg-rose-500/20 text-rose-400", SHADOW_BREAKEVEN: "bg-slate-500/20 text-slate-300", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-amber-500/20 text-amber-400", SHADOW_WAIT: "bg-slate-500/20 text-slate-300", SHADOW_EXPIRED: "bg-slate-500/20 text-slate-300" };
 
@@ -110,7 +110,7 @@ export default function ShadowMode() {
                 <Badge variant="outline">{d.symbol}</Badge>
                 <Badge variant="outline">{d.strategy}</Badge>
                 <Badge variant="outline">{d.action}</Badge>
-                <span className="text-muted-foreground">conf {d.confidence}</span>
+                <span className="text-muted-foreground" title="Uncalibrated heuristic strategy score (0-100), not a probability">score {d.score ?? d.confidence}</span>
                 <span className="text-muted-foreground">mc {d.marketCondition}</span>
                 {d.pnlR != null && <span className="text-muted-foreground">R={d.pnlR.toFixed(2)}</span>}
                 <span className="ml-auto text-muted-foreground">{rowTimeLabel(d.ts)}</span>

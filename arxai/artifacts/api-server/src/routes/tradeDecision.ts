@@ -301,12 +301,12 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
     const marketType = getMarketTypeForSymbol(symbol);
     chosenStrategySignal = runStrategyScan(symbol, candles, 65, marketType, { timeframe: input.candles ? "" : "M5" });
     if (chosenStrategySignal) {
-      const conf = chosenStrategySignal.confidence ?? 0;
+      const conf = chosenStrategySignal.score ?? 0;
       signalsUsed.push({
         source: "strategyEngine",
         status: conf >= 70 ? "PASS" : conf >= 50 ? "WARN" : "FAIL",
         score: Math.min(40, conf * 0.4),
-        detail: `${chosenStrategySignal.strategy} → ${chosenStrategySignal.direction} @ conf ${conf}`,
+        detail: `${chosenStrategySignal.strategy} → ${chosenStrategySignal.direction} @ score ${conf} (uncalibrated)`,
       });
     } else {
       signalsUsed.push({ source: "strategyEngine", status: "INFO", score: 0, detail: "No strategy fired (HOLD)" });
@@ -461,7 +461,7 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
     .where(eq(signalsTable.symbol, symbol)).orderBy(desc(signalsTable.id)).limit(1);
   const latestSig = latestSignals[0] ?? null;
   if (latestSig) {
-    signalsUsed.push({ source: "signalsTable", status: "INFO", score: 0, detail: `Last signal=${latestSig.direction} conf=${latestSig.confidence}` });
+    signalsUsed.push({ source: "signalsTable", status: "INFO", score: 0, detail: `Last signal=${latestSig.direction} score=${latestSig.confidence} (uncalibrated)` });
   }
 
   // 9b) Build CC — Learning feedback memory (READ-ONLY, ADVISORY).

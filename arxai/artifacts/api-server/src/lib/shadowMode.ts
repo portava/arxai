@@ -49,7 +49,12 @@ export interface ShadowDecision {
    * WAIT with no setup) — never an invented fallback level.
    */
   sl: number | null; tp: number | null;
-  confidence: number; opportunity: number; sniper: number; grade: number;
+  /** @deprecated alias of `score`, kept for persisted shadow decisions. */
+  confidence: number;
+  /** Uncalibrated heuristic strategy score 0-100 (SignalOutput.score). */
+  score?: number;
+  scoreBasis?: import("./strategyEngine.js").ScoreBasis;
+  opportunity: number; sniper: number; grade: number;
   riskGovernor: { approved: boolean; level: string; hardBlocks: string[]; warnings: string[] };
   reason: string; reasonToAvoid: string;
   status: ShadowStatus; expiresAt: string; pnlR?: number; outcomeAt?: string;
@@ -123,7 +128,7 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
     : (() => {
         const verdict = previewSimulatorEntry({
           symbol, side: action, lots: 0.01,
-          stopLoss: sl, takeProfit: tp, aiConfidence: scan.confidence, origin: "automation",
+          stopLoss: sl, takeProfit: tp, aiConfidence: scan.score, origin: "automation",
         });
         return {
           approved: verdict.decision === "ALLOW",
@@ -169,8 +174,11 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
   const d: ShadowDecision = {
     id: newId(), ts: new Date().toISOString(), symbol, tf, strategy: scan.strategy,
     marketCondition: classifyMarket(symbol), action, entry, sl, tp,
-    confidence: scan.confidence, opportunity: scan.confidence,
-    sniper: Math.max(0, scan.confidence - 5), grade: Math.round(scan.confidence / 10),
+    // `confidence` is the stored shadow-decision field name (shadow journal
+    // rows + /shadow API); it holds the strategy's uncalibrated `score`.
+    confidence: scan.score, score: scan.score, scoreBasis: scan.scoreBasis,
+    opportunity: scan.score,
+    sniper: Math.max(0, scan.score - 5), grade: Math.round(scan.score / 10),
     riskGovernor: { approved: rg.approved, level: rg.riskLevel, hardBlocks: rg.hardBlocks, warnings: rg.warnings },
     reason: scan.reason, reasonToAvoid: rg.hardBlocks.join("; ") || scan.riskWarning || "",
     status, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),

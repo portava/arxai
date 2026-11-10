@@ -114,12 +114,20 @@ export interface SetupSignalStripValues {
  */
 export interface ScannerChipContext {
   timeframe: string | null;
+  /** True when `timeframe` is a higher timeframe standing in for the chart's. */
+  fallback?: boolean;
+  fallbackLabel?: string | null;
   nullNote: string | null;
   help: string;
 }
 
 const DEFAULT_SCANNER_HELP =
-  "How strongly the market scanner rates this setup right now — a higher score means a cleaner, higher-conviction pattern.";
+  "The market scanner's heuristic score for this setup (0-100). It is uncalibrated: a rule-of-thumb rating, not a probability or a confidence.";
+
+function scannerChipLabel(ctx: ScannerChipContext | undefined): string {
+  if (!ctx?.timeframe) return "Scanner";
+  return ctx.fallback ? `Scanner (${ctx.timeframe} fallback)` : `Scanner (${ctx.timeframe})`;
+}
 
 export function SetupSignalStrip({
   signals,
@@ -140,7 +148,7 @@ export function SetupSignalStrip({
   const chips = (
     <>
       <SignalChip
-        label={scannerContext?.timeframe ? `Scanner (${scannerContext.timeframe})` : "Scanner"}
+        label={scannerChipLabel(scannerContext)}
         value={formatSignalScore(signals.scannerScore)}
         tone="neutral"
         testid={`${testIdPrefix}-scanner`}
