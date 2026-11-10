@@ -34,7 +34,9 @@ const units: TypecheckUnit[] = [
     name: "@workspace/scripts",
     command: "pnpm",
     args: ["--filter", "@workspace/scripts", "run", "typecheck"],
-    maxOldSpaceMb: 2560,
+    // 2560MB ran out of heap deterministically on GitHub runners once the
+    // scripts project grew (slice6 tip b1c98b04, 2026-11-09).
+    maxOldSpaceMb: 4096,
   },
   {
     name: "@workspace/trading-dashboard",
