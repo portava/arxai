@@ -28,6 +28,8 @@ import type { Candle } from "../strategyEngine.js";
 
 export const PINNED_REAL_HISTORY: Readonly<Record<string, string>> = Object.freeze({
   "real-history-v1": "fa83f149997cb8f96f7adfba349a60d409f689712311d32728755549dbc6d232",
+  // Real Deriv intraday M1/M5/M15/H1 (PR #137, scripts/fixtures/real-history-intraday-v1).
+  "real-history-intraday-v1": "a5f9b3cc7147bdae0e95eb7052397b2e478e018634c01bb13580a35fca9725dc",
 });
 
 export interface RealHistoryInstrumentSpec {
