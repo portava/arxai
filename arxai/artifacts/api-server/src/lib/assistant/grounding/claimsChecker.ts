@@ -12,7 +12,11 @@
 //                             with the tool field of that name
 //   STALE_AS_LIVE             a price from stale data presented as live/current
 //   UNCALIBRATED_PROBABILITY  a score or unsupported figure presented as a
-//                             probability/chance, or a 0-100 score as a percent
+//                             probability/chance, a 0-100 score as a percent,
+//                             or a measured base rate presented as an edge.
+//                             Calibrated = a measured calibration stamp
+//                             (status "measured", numeric probability) or a
+//                             legacy `calibrated: true` field (evidence.ts)
 //   EXECUTION_UNCONFIRMED     "filled/executed/placed" claimed with no executed
 //                             result in the evidence
 //
@@ -218,8 +222,13 @@ function matchesValue(c: NumClaim, e: EvidenceNumber): boolean {
 
 const SCORE_TOKENS = new Set(["score", "quality", "confidence", "strength", "grade", "conviction", "rank", "rating", "cohesion"]);
 const PERCENT_TOKENS = new Set(["pct", "percent", "percentage", "rate", "ratio", "utilization", "probability", "share", "pct100"]);
-const PROBABILITY_WORDS = /\b(?:probabilit(?:y|ies)|chance|chances|odds|likel(?:y|ihood)|confidence|confident|certain(?:ty)?|sure)\b/i;
+const PROBABILITY_WORDS = /\b(?:probabilit(?:y|ies)|prob\b|chance|chances|odds|likel(?:y|ihood)|confidence|confident|certain(?:ty)?|sure)\b/i;
 const PROBABILITY_DISCLAIMED = /\b(?:not (?:a )?(?:calibrated )?probabilit(?:y|ies)|isn't a probability|not calibrated|uncalibrated|no calibrated)\b/i;
+// A measured BASE RATE (calibration stamp with no out-of-sample edge) may be
+// quoted only as a base rate / historical hit rate, never as this setup's edge.
+const BASE_RATE_FRAMED = /\b(?:base[- ]rate|historical(?:ly)?|overall|on average|across (?:all|every)|of (?:all|these|those|past|similar) (?:calls|signals|setups|trades)|hit rate|win rate|unconditional)\b/i;
+const EDGE_CLAIMED = /\b(?:edge|beats?|beating|outperform(?:s|ing)?|better than (?:the )?(?:base|average|random)|above (?:the )?base|this (?:setup|signal|call|trade) (?:has|is|wins|works))\b/i;
+const EDGE_DENIED = /\b(?:no|not|without|isn't|zero|never)\s+(?:an?\s+|any\s+|the\s+)?(?:\w+\s+)?edge\b/i;
 const LIVE_WORDS = /\b(?:live(?!\s+(?:account|trading|mode|trades?|book|positions?|execution|orders?|bridge|venue|money|capital|lane|switch))|real[- ]?time|right now|currently|current price|current quote|at the moment|as of now|trading at|trades at|is at|latest tick|spot)\b/i;
 const STALE_DISCLOSED = /\b(?:stale|delayed|not live|isn't live|not a live|not current|not a current|last (?:recorded|known|close|closing)|as of|old|outdated|unconfirmed|out of date|frozen|closed market|market is closed)\b/i;
 const EXECUTION_AFFIRM = /\b(?:executed|filled|got filled|went through|placed|I(?:'ve| have)? (?:opened|bought|sold|entered|closed))\b/i;
@@ -327,10 +336,25 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     });
 
     // Probability: a percent (or a 0..1 figure) stated as a chance/probability.
+    const calibratedMatches = matches.filter((e) => e.calibrated === true);
     if (probabilityContext && (percent || (value > 0 && value < 1))) {
-      const calibrated = matches.some((e) => e.calibrated === true);
-      if (!calibrated) {
+      if (calibratedMatches.length === 0) {
         findings.push({ kind: "UNCALIBRATED_PROBABILITY", claim, detail: `"${claim.text}" is presented as a probability/chance but no tool output marks it as a calibrated probability` });
+        continue;
+      }
+    }
+    // A measured base rate (no out-of-sample edge) is quotable only AS a base
+    // rate: framed as one, and never as this setup's edge.
+    if ((percent || (value > 0 && value < 1)) && calibratedMatches.length > 0 && !calibratedMatches.some((e) => e.calibrationKind === "measured")) {
+      const asProbability = probabilityContext && !BASE_RATE_FRAMED.test(raw);
+      // An edge claim is fine only when the SAME stamp measured an edge.
+      const edgeProven = calibratedMatches.some((b) => {
+        const stampPath = b.path.replace(/\.[^.]+$/, "");
+        return idx.numbers.some((e) => e.calibrationKind === "measured" && e.path.startsWith(`${stampPath}.`));
+      });
+      const edgeClaimed = EDGE_CLAIMED.test(raw) && !EDGE_DENIED.test(raw);
+      if (asProbability || (edgeClaimed && !edgeProven)) {
+        findings.push({ kind: "UNCALIBRATED_PROBABILITY", claim, detail: `"${claim.text}" is a measured base rate (${calibratedMatches[0].path}, no edge over the base rate detected) presented as this setup's probability/edge` });
         continue;
       }
     }

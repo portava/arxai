@@ -26,7 +26,19 @@ export interface EvidenceNumber {
   staleAsOf: string | null;
   /** Nearest ancestor that says whether its numbers are calibrated probabilities. */
   calibrated: boolean | null;
+  /**
+   * What KIND of calibrated number this is, when calibrated is true:
+   *   "measured"  a measured probability that beat the base rate out of sample
+   *               (or a legacy `calibrated: true` field);
+   *   "base_rate" a measured base rate (the unconditional hit rate). It may be
+   *               quoted as a base rate, never as this setup's edge.
+   */
+  calibrationKind: CalibrationKind | null;
+  /** Graded outcomes (N) behind a calibration-stamp number, when known. */
+  calibrationN: number | null;
 }
+
+export type CalibrationKind = "measured" | "base_rate";
 
 export interface EvidenceTime {
   iso: string;
@@ -94,7 +106,43 @@ interface Frame {
   stale: boolean | null;
   staleAsOf: string | null;
   calibrated: boolean | null;
+  calibrationKind: CalibrationKind | null;
+  calibrationN: number | null;
 }
+
+const ROOT_FRAME: Frame = { stale: null, staleAsOf: null, calibrated: null, calibrationKind: null, calibrationN: null };
+
+// ── calibration stamps ──────────────────────────────────────────────────────
+// The calibration engine (lib/calibration/cache.ts CalibrationStamp) does not
+// write `calibrated: true`; it writes { probability, status, n, model,
+// baseRate, edgeDetected, label, ... }. A stamp is recognised by its shape.
+// Inside a stamp ONLY the probability / label / baseRate leaves are calibrated
+// numbers; n, fitVersion etc. are counts, never probabilities. An unmeasured
+// stamp marks everything under it uncalibrated.
+
+interface StampInfo {
+  measured: boolean;
+  /** Kind of the stamp's `probability` (and `label`) value. */
+  kind: CalibrationKind;
+  n: number;
+}
+
+export function calibrationStampInfo(obj: Record<string, unknown>): StampInfo | null {
+  if (obj.status !== "measured" && obj.status !== "unmeasured") return null;
+  if (!("probability" in obj) || typeof obj.n !== "number" || typeof obj.edgeDetected !== "boolean") return null;
+  const measured = obj.status === "measured" && typeof obj.probability === "number" && Number.isFinite(obj.probability);
+  const edge = obj.edgeDetected === true && obj.model !== "base_rate";
+  return { measured, kind: edge ? "measured" : "base_rate", n: obj.n };
+}
+
+function stampChildFrame(stamp: StampInfo, key: string, f: Frame): Frame {
+  if (stamp.measured && (key === "probability" || key === "label")) return { ...f, calibrated: true, calibrationKind: stamp.kind, calibrationN: stamp.n };
+  if (stamp.measured && key === "baseRate") return { ...f, calibrated: true, calibrationKind: "base_rate", calibrationN: stamp.n };
+  return { ...f, calibrated: false, calibrationKind: null, calibrationN: null };
+}
+
+/** Payloads pair `calibratedProbability` with a sibling `calibration` stamp. */
+const STAMP_SIBLING_KEYS = /^(calibratedProbability|calibratedProb|winProbability)$/;
 
 function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
   let stale = parent.stale;
@@ -114,8 +162,14 @@ function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
     staleAsOf = own ? asOf ?? null : null;
   }
   let calibrated = parent.calibrated;
-  if (typeof obj.calibrated === "boolean") calibrated = obj.calibrated;
-  return { stale, staleAsOf, calibrated };
+  let calibrationKind = parent.calibrationKind;
+  let calibrationN = parent.calibrationN;
+  if (typeof obj.calibrated === "boolean") {
+    calibrated = obj.calibrated;
+    calibrationKind = obj.calibrated ? "measured" : null;
+    calibrationN = null;
+  }
+  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN };
 }
 
 function addTimes(s: string, tool: string, out: EvidenceTime[]): void {
@@ -133,6 +187,8 @@ function addTimes(s: string, tool: string, out: EvidenceTime[]): void {
 }
 
 function executionOf(obj: Record<string, unknown>, tool: string, path: string): ExecutionEvidence | null {
+  // A calibration stamp's status ("measured") is not an order status.
+  if (calibrationStampInfo(obj)) return null;
   const status = typeof obj.status === "string" ? obj.status : null;
   const s = status?.toLowerCase() ?? "";
   const hasFill = obj.fillPrice != null && (obj.executedAt != null || obj.filledAt != null);
@@ -183,14 +239,23 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
     const f = frameFor(obj, frame);
     const exec = executionOf(obj, tool, path);
     if (exec) idx.executions.push(exec);
-    for (const [k, child] of Object.entries(obj)) walk(child, k, path ? `${path}.${k}` : k, tool, f, depth + 1);
+    const stamp = calibrationStampInfo(obj);
+    const sibling = !stamp && obj.calibration && typeof obj.calibration === "object" ? calibrationStampInfo(obj.calibration as Record<string, unknown>) : null;
+    for (const [k, child] of Object.entries(obj)) {
+      const cf = stamp
+        ? stampChildFrame(stamp, k, f)
+        : sibling && STAMP_SIBLING_KEYS.test(k)
+          ? stampChildFrame(sibling, "probability", f)
+          : f;
+      walk(child, k, path ? `${path}.${k}` : k, tool, cf, depth + 1);
+    }
   };
 
-  for (const o of outputs) walk(o.result, o.name, o.name, o.name, { stale: null, staleAsOf: null, calibrated: null }, 0);
+  for (const o of outputs) walk(o.result, o.name, o.name, o.name, ROOT_FRAME, 0);
 
   if (userText) {
     for (const n of numbersInText(userText)) {
-      idx.numbers.push({ value: n, key: "user", keyTokens: [], path: "user", tool: "user", source: "user", fromText: true, stale: null, staleAsOf: null, calibrated: null });
+      idx.numbers.push({ value: n, key: "user", keyTokens: [], path: "user", tool: "user", source: "user", fromText: true, ...ROOT_FRAME });
     }
     addTimes(userText, "user", idx.times);
     idx.strings.push(userText.toLowerCase());
