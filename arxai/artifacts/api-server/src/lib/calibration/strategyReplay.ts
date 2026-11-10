@@ -78,7 +78,7 @@ export function replayStrategies(
         strategyKey: strategyCalibrationKey(s.name),
         barIndex: i,
         direction: sig.direction,
-        score: sig.confidence,
+        score: sig.score,
         outcome,
         rr: Math.abs(sig.takeProfit - sig.entryPrice) / Math.max(1e-12, Math.abs(sig.entryPrice - sig.stopLoss)),
       });

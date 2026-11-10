@@ -25,7 +25,7 @@ const STATUS_BADGE_LABELS: Record<string, string> = {
   WAIT_FOR_CONFIRMATION: "Wait for confirmation",
   REJECTED_BY_RISK: "Risk too high",
   CHOPPY_MARKET: "Choppy market",
-  LOW_CONFIDENCE: "Low confidence",
+  LOW_CONFIDENCE: "Low score",
   SPREAD_TOO_HIGH: "Spread too wide",
   PENDING_MT5_CONNECTION: "Waiting for connection",
 };

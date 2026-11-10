@@ -139,6 +139,12 @@ export interface SetupPreview {
   allocationKnown: boolean;
 
   scannerScore: number | null;
+  /** Timeframe scannerScore was computed on (the chart's, or a higher one on fallback). */
+  scannerTimeframe: string | null;
+  /** exact | higher_timeframe_fallback; null when there is no score. */
+  scannerTimeframeBasis: "exact" | "higher_timeframe_fallback" | null;
+  /** Shown whenever scannerTimeframeBasis is a fallback. */
+  scannerFallbackLabel: string | null;
   flameStage: string | null;
   runOnQuality: string | null;
   riskScore: number | null;
@@ -170,6 +176,9 @@ export interface BuildSetupPreviewInput {
   /** Available allocation, or null when unknown (→ no account-currency math). */
   availableAllocation?: number | null;
   scannerScore?: number | null;
+  scannerTimeframe?: string | null;
+  scannerTimeframeBasis?: "exact" | "higher_timeframe_fallback" | null;
+  scannerFallbackLabel?: string | null;
   flameStage?: string | null;
   runOnQuality?: string | null;
   riskScore?: number | null;
@@ -284,6 +293,9 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
     bridgeStatus: input.bridge ?? null,
     allocationKnown,
     scannerScore: input.scannerScore ?? null,
+    scannerTimeframe: input.scannerScore != null ? (input.scannerTimeframe ?? input.timeframe) : null,
+    scannerTimeframeBasis: input.scannerScore != null ? (input.scannerTimeframeBasis ?? "exact") : null,
+    scannerFallbackLabel: input.scannerScore != null ? (input.scannerFallbackLabel ?? null) : null,
     flameStage: input.flameStage ?? null,
     runOnQuality: input.runOnQuality ?? null,
     riskScore: input.riskScore ?? null,

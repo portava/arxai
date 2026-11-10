@@ -24,17 +24,23 @@ import type { GovernanceVerdict } from "./setupPreview.js";
 import type { LiveScannerResult, LiveCandidate } from "./liveScanner.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
 import type { StructureBias, StructureConfidence } from "./chartStructure.js";
+import { resolveTimeframeReading } from "../scannerCoverage/timeframeCoverage.js";
 
 export type RunOnQualityBand = "strong" | "moderate" | "weak";
 
 export interface SetupSignals {
   scannerScore: number | null;
   /**
-   * The timeframe the scanner score was actually computed on. Only ever equal
-   * to the chart timeframe (a different-timeframe candidate is never used), or
-   * null when the scanner has no score for the chart's timeframe.
+   * The timeframe the scanner score was actually computed on: the chart
+   * timeframe, or (fallback) the nearest HIGHER timeframe with a directional
+   * reading when the chart timeframe has none. null when no score at all.
    */
   scannerTimeframe?: string | null;
+  /** "exact" = scored on the chart timeframe; "higher_timeframe_fallback" =
+   *  scannerTimeframe is a higher timeframe, labelled by scannerFallbackLabel. */
+  scannerTimeframeBasis?: ScannerTimeframeBasis | null;
+  /** Plain label, e.g. "M5: no signal (insufficient data) — showing the H1 reading (higher-timeframe fallback)". */
+  scannerFallbackLabel?: string | null;
   riskScore: number | null;
   flameStage: string | null;
   runOnQuality: RunOnQualityBand | null;
@@ -65,13 +71,16 @@ export function mapGovernanceVerdict(outcome: GovernanceOutcome): GovernanceVerd
   }
 }
 
+export type ScannerTimeframeBasis = "exact" | "higher_timeframe_fallback";
+
 // ── Scanner-candidate selection ─────────────────────────────────────────────
-// Only the candidate scored on the chart's OWN timeframe counts. The live
-// scanner scores just M15/H1 (liveScanner LIVE_TIMEFRAMES); on any other chart timeframe
-// there is no scanner score, and a different-timeframe candidate is never
-// substituted (it would show an M15/H1 score as if it described the chart, and
-// feed it to the agent-team verdict as such). Returns null when the scanner is
-// absent / disconnected or has no candidate for this symbol + timeframe.
+// The live scanner scores every chart timeframe M1..D1 (liveScanner
+// LIVE_TIMEFRAMES). selectScannerCandidate returns only the candidate scored
+// on the chart's OWN timeframe. When that timeframe has no directional reading
+// (too few candles, or a WAIT/REJECT read), resolveScannerReading falls back
+// to the nearest HIGHER timeframe with one, and says so (basis + label). A
+// fallback score is shown, labelled, but never fed to the agent-team verdict
+// as if it described the chart timeframe (see assembleSetupSignals).
 export function selectScannerCandidate(
   scannerRes: LiveScannerResult | null,
   symbol: string,
@@ -92,6 +101,44 @@ export function deriveScannerSignals(
   const match = selectScannerCandidate(scannerRes, symbol, timeframe);
   if (!match) return { scannerScore: null, riskScore: null, scannerTimeframe: null };
   return { scannerScore: match.score, riskScore: match.riskScore, scannerTimeframe: match.timeframe };
+}
+
+export interface ScannerReading {
+  scannerScore: number | null;
+  riskScore: number | null;
+  scannerTimeframe: string | null;
+  scannerTimeframeBasis: ScannerTimeframeBasis | null;
+  scannerFallbackLabel: string | null;
+}
+
+/**
+ * The scanner reading for a chart: own timeframe when it has a directional
+ * read (or any read when no higher timeframe has a directional one), else the
+ * nearest higher timeframe's, labelled as a fallback. Never a lower timeframe.
+ */
+export function resolveScannerReading(
+  scannerRes: LiveScannerResult | null,
+  symbol: string,
+  timeframe: string,
+): ScannerReading {
+  const none: ScannerReading = { scannerScore: null, riskScore: null, scannerTimeframe: null, scannerTimeframeBasis: null, scannerFallbackLabel: null };
+  if (!scannerRes || !scannerRes.connected) return none;
+  const rows = scannerRes.candidates.filter((c) => c.symbol === symbol);
+  const own = rows.find((c) => c.timeframe === timeframe) ?? null;
+  const r = resolveTimeframeReading(symbol, timeframe, rows);
+  if (r.fallback && r.row) {
+    return {
+      scannerScore: r.row.score,
+      riskScore: r.row.riskScore,
+      scannerTimeframe: r.row.timeframe,
+      scannerTimeframeBasis: "higher_timeframe_fallback",
+      scannerFallbackLabel: r.label,
+    };
+  }
+  if (own) {
+    return { scannerScore: own.score, riskScore: own.riskScore, scannerTimeframe: own.timeframe, scannerTimeframeBasis: "exact", scannerFallbackLabel: null };
+  }
+  return none;
 }
 
 // ── Run-on quality banding ──────────────────────────────────────────────────
@@ -180,11 +227,11 @@ export async function assembleSetupSignals(
     deps.evaluateScalpForSymbol().catch(() => null),
   ]);
 
-  const { scannerScore, riskScore, scannerTimeframe } = deriveScannerSignals(
-    scannerRes,
-    symbol,
-    timeframe,
-  );
+  const reading = resolveScannerReading(scannerRes, symbol, timeframe);
+  const { scannerScore, riskScore, scannerTimeframe, scannerTimeframeBasis, scannerFallbackLabel } = reading;
+  // Governance only ever sees the chart timeframe's own numbers: a
+  // higher-timeframe fallback is display context, not this chart's score.
+  const exact = scannerTimeframeBasis === "exact";
   const { flameStage, runOnQuality } = deriveFlameSignals(scalpRes);
 
   let governanceOutcome: GovernanceVerdict | null = null;
@@ -192,8 +239,8 @@ export async function assembleSetupSignals(
   try {
     const side = deriveGovernanceSide(input.requestedSide, input.bias);
     const { confNum, riskNum } = deriveGovernanceScores(
-      scannerScore,
-      riskScore,
+      exact ? scannerScore : null,
+      exact ? riskScore : null,
       input.confidence,
     );
     const gov = await deps.runGovernance({ side, confNum, riskNum });
@@ -208,6 +255,8 @@ export async function assembleSetupSignals(
   return {
     scannerScore,
     scannerTimeframe,
+    scannerTimeframeBasis,
+    scannerFallbackLabel,
     riskScore,
     flameStage,
     runOnQuality,

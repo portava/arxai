@@ -9460,10 +9460,49 @@ export const SignalDirection = {
   WAIT: "WAIT",
 } as const;
 
+export type ScoreBasisKind =
+  (typeof ScoreBasisKind)[keyof typeof ScoreBasisKind];
+
+export const ScoreBasisKind = {
+  heuristic_rule: "heuristic_rule",
+} as const;
+
+export type ScoreBasisInputs = { [key: string]: number };
+
+export type ScoreBasisTermsItem = {
+  label: string;
+  expr: string;
+  value: number;
+};
+
+/**
+ * How a strategy score was produced. score = min(cap, base + sum(terms.value)) (plain sum when cap is null), and each term's expr evaluates to its value over inputs, so the number can be recomputed from the payload.
+ */
+export interface ScoreBasis {
+  kind: ScoreBasisKind;
+  calibrated: false;
+  /** Stable rule id, e.g. "trend_continuation.buy". */
+  rule: string;
+  /** Whole score as one expression, e.g. "min(95, 70 + floor((rsi - 50) * 1.5))". */
+  formula: string;
+  inputs: ScoreBasisInputs;
+  base: number;
+  terms: ScoreBasisTermsItem[];
+  /** @nullable */
+  cap: number | null;
+  note: string;
+}
+
 export interface Signal {
   id: number;
   symbol: string;
   direction: SignalDirection;
+  /** Uncalibrated heuristic strategy score, 0-100. NOT a probability or a confidence. Read from the stored signals.confidence column. */
+  score: number;
+  /**
+   * Deprecated alias of score (same number). Kept because stored signals rows carry this column name and external clients read it.
+   * @deprecated
+   */
   confidence: number;
   entryPrice: number;
   stopLoss: number;
@@ -12159,7 +12198,17 @@ export interface WatchlistItemDetail {
   favorite: number;
   /** @nullable */
   signal?: string | null;
-  /** @nullable */
+  /**
+   * Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.
+   * @nullable
+   */
+  score?: number | null;
+  scoreBasis?: ScoreBasis | null;
+  /**
+   * Deprecated alias of score (same number), kept for existing API clients.
+   * @deprecated
+   * @nullable
+   */
   confidence?: number | null;
   /** @nullable */
   trend?: string | null;

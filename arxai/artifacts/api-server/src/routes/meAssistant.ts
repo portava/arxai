@@ -855,6 +855,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
 
   const {
     scannerScore,
+    scannerTimeframe,
+    scannerTimeframeBasis,
+    scannerFallbackLabel,
     riskScore,
     flameStage,
     runOnQuality,
@@ -876,6 +879,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
     bridge,
     availableAllocation,
     scannerScore,
+    scannerTimeframe,
+    scannerTimeframeBasis,
+    scannerFallbackLabel,
     riskScore,
     flameStage,
     runOnQuality,

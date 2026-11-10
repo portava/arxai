@@ -3,7 +3,7 @@ import { db, watchlistsTable, watchlistItemsTable } from "@workspace/db";
 import { CreateWatchlistBody, AddWatchlistItemBody } from "@workspace/api-zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { resolveArxMarket, isApprovedArxMarket, arxFocusApprovedEnvelope } from "@workspace/domain/market";
-import { MIN_STRATEGY_SCAN_CANDLES, runStrategyScan } from "../lib/strategyEngine.js";
+import { MIN_STRATEGY_SCAN_CANDLES, runStrategyScan, type ScoreBasis } from "../lib/strategyEngine.js";
 import { barOpenUtcMs, classifyCandleFreshness, feedTimestampsUnconfirmed, newestBarLeadMs } from "../lib/data/freshness.js";
 import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
 import type { CalibrationStamp } from "../lib/calibration/cache.js";
@@ -22,8 +22,9 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
   const calendar = await resolveNewsRiskEvents();
   return Promise.all(items.map(async (it) => {
     let signal: string | null = null;
-    let confidence: number | null = null;
-    // Calibration engine reading for `confidence`: measured probability + N,
+    let score: number | null = null;
+    let scoreBasis: ScoreBasis | null = null;
+    // Calibration engine reading for `score`: measured probability + N,
     // or null / "unmeasured". null when no strategy call was made.
     let calibration: CalibrationStamp | null = null;
     let trend: string | null = null;
@@ -67,7 +68,8 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
         } else {
           const sig = runStrategyScan(it.symbol, candles, 60, undefined, { timeframe: "M1" });
           signal = sig.direction;
-          confidence = sig.confidence;
+          score = sig.score;
+          scoreBasis = sig.scoreBasis ?? null;
           calibration = sig.calibration ?? null;
           trend = sig.direction === "BUY" ? "up" : sig.direction === "SELL" ? "down" : "neutral";
           signalStatus = fresh.freshness === "delayed" ? "DELAYED" : "OK";
@@ -87,7 +89,13 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
       marketType: it.marketType,
       favorite: it.favorite,
       signal,
-      confidence,
+      // Uncalibrated heuristic strategy score 0-100 (SignalOutput.score), with
+      // the rule + inputs that produced it.
+      score,
+      scoreBasis,
+      /** @deprecated Same number as `score`; kept for external API clients
+       *  of WatchlistItemDetail that still read `confidence`. */
+      confidence: score,
       calibratedProbability: calibration?.probability ?? null,
       calibration,
       trend,

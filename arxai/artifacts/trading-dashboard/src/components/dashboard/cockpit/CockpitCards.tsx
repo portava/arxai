@@ -577,15 +577,13 @@ export function EleanorMarketViewCard() {
         ? { label: "Neutral", tone: "info" as const }
         : { label: "Waiting", tone: "muted" as const };
 
-  const confidenceRaw = signal?.confidence ?? null;
-  // Confidence may arrive as a 0–1 fraction (signals/chart-overlay source) or
-  // a 0–100 percentage (brain pages). Normalize both to a percent so the
-  // Cockpit never shows 0.72 as "1%".
-  const confidence = confidenceRaw == null
+  // The signal's number is the strategy engine's uncalibrated heuristic score
+  // (0-100), not a probability or a confidence: shown as "Score N/100".
+  // `score` is the API field; `confidence` its deprecated alias.
+  const scoreRaw = signal?.score ?? signal?.confidence ?? null;
+  const score = scoreRaw == null || !Number.isFinite(Number(scoreRaw))
     ? null
-    : Number(confidenceRaw) <= 1
-      ? Math.round(Number(confidenceRaw) * 100)
-      : Math.round(Number(confidenceRaw));
+    : Math.round(Number(scoreRaw));
   const risk = (catalog?.riskLevel ?? "").toString();
   const reason = signal?.reason ?? null;
 
@@ -628,10 +626,10 @@ export function EleanorMarketViewCard() {
                 {bias.label}
               </div>
             </div>
-            {confidence != null && (
-              <div className="text-right">
-                <div className="text-[11px] uppercase tracking-wide text-txt-muted">Confidence</div>
-                <div className="text-lg font-bold text-primary">{confidence}%</div>
+            {score != null && (
+              <div className="text-right" title="Uncalibrated heuristic score (0-100). Not a probability or a confidence.">
+                <div className="text-[11px] uppercase tracking-wide text-txt-muted">Score</div>
+                <div className="text-lg font-bold text-primary" data-testid="cockpit-signal-score">{score}/100</div>
               </div>
             )}
           </div>

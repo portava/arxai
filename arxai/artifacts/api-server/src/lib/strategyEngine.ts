@@ -2,10 +2,10 @@
 
 import {
   calibrate,
-  rankByCalibration,
   strategyCalibrationKey,
   type CalibrationStamp,
 } from "./calibration/cache.js";
+import { rankByMeasuredTier, type MeasuredRankBasis } from "./ranking/measuredRank.js";
 
 export interface Candle {
   time: string;
@@ -20,7 +20,16 @@ export interface SignalOutput {
   symbol: string;
   marketType?: "forex" | "indices" | "stocks" | "synthetic";
   direction: "BUY" | "SELL" | "WAIT";
-  confidence: number;
+  /** Hand-written heuristic SCORE, 0-100. NOT a probability and NOT a
+   *  confidence: it is uncalibrated rule arithmetic over indicator values,
+   *  and `scoreBasis` shows the exact rule and inputs that produced it. The
+   *  measured probability, when one exists, is `calibratedProbability`.
+   *  (Renamed from `confidence`; stored rows that still carry a `confidence`
+   *  column are mapped at their own seam, see the PR notes.) */
+  score: number;
+  /** The rule, inputs and arithmetic behind `score`, so the number is
+   *  explainable and recomputable. Set on every payload the engine builds. */
+  scoreBasis?: ScoreBasis;
   entryPrice: number;
   stopLoss: number;
   takeProfit: number;
@@ -40,18 +49,95 @@ export interface SignalOutput {
    *  EVERY real payload — WAIT included. */
   advisory?: typeof STRATEGY_ADVISORY_LABEL;
   /** Calibration engine: the MEASURED probability that this strategy's call
-   *  works at this raw `confidence`, fitted on graded outcomes for this
+   *  works at this raw `score`, fitted on graded outcomes for this
    *  strategy × symbol × timeframe (see lib/calibration). null when fewer than
-   *  the minimum graded outcomes exist. `confidence` above stays the raw,
-   *  uncalibrated heuristic for stored-row compatibility. */
+   *  the minimum graded outcomes exist. `score` above stays the raw,
+   *  uncalibrated heuristic. */
   calibratedProbability?: number | null;
   /** Full calibration reading: status, N, scope, fit version. Always set on
    *  payloads leaving the exported seams. */
   calibration?: CalibrationStamp;
+  /** How runStrategyScan picked this strategy over the others (lib/ranking):
+   *  calibrated_probability | measured_base_rate | unmeasured_raw_order. */
+  rankBasis?: MeasuredRankBasis;
+  /** Plain label for rankBasis, e.g. "unmeasured, ranked by raw score". */
+  rankLabel?: string;
 }
 
 /** The single honesty label stamped on every strategy-engine payload. */
 export const STRATEGY_ADVISORY_LABEL = "ADVISORY_UNCALIBRATED" as const;
+
+// ─── Score basis (inspectable heuristic arithmetic) ──────────────────────────
+
+/** One additive term of a heuristic score. `expr` is the exact arithmetic over
+ *  `ScoreBasis.inputs` that produced `value` (floor/min are Math.floor/min). */
+export interface ScoreTerm {
+  label: string;
+  expr: string;
+  value: number;
+}
+
+/**
+ * How a strategy score was produced. Every score is
+ * `min(cap, base + sum(terms.value))` (no cap → plain sum), and every term's
+ * `expr` evaluates to its `value` over `inputs`, so a reader (or a test) can
+ * recompute the number from the payload alone.
+ */
+export interface ScoreBasis {
+  kind: "heuristic_rule";
+  /** Always false: this is hand-tuned arithmetic, not a fitted probability. */
+  calibrated: false;
+  /** Stable rule id, e.g. "trend_continuation.buy" or "trend_continuation.wait". */
+  rule: string;
+  /** The whole score as one expression, e.g. "min(95, 70 + floor((rsi - 50) * 1.5))". */
+  formula: string;
+  /** Unrounded indicator values the formula reads. */
+  inputs: Record<string, number>;
+  base: number;
+  terms: ScoreTerm[];
+  cap: number | null;
+  note: string;
+}
+
+export const SCORE_BASIS_NOTE =
+  "Uncalibrated heuristic score (0-100) from a hand-written rule. It is not a probability or a confidence; the measured probability, when one exists, is the calibration reading.";
+const CONSTANT_SCORE_NOTE =
+  "Fixed score assigned when the rule found no setup. It carries no information about outcome odds.";
+
+function ruleScore(
+  rule: string,
+  base: number,
+  cap: number | null,
+  inputs: Record<string, number>,
+  terms: ScoreTerm[],
+): { score: number; scoreBasis: ScoreBasis } {
+  const raw = base + terms.reduce((a, t) => a + t.value, 0);
+  const score = cap == null ? raw : Math.min(cap, raw);
+  const sum = [String(base), ...terms.map((t) => t.expr)].join(" + ");
+  return {
+    score,
+    scoreBasis: {
+      kind: "heuristic_rule", calibrated: false, rule,
+      formula: cap == null ? sum : `min(${cap}, ${sum})`,
+      inputs, base, terms, cap, note: SCORE_BASIS_NOTE,
+    },
+  };
+}
+
+function constantScore(rule: string, value: number): { score: number; scoreBasis: ScoreBasis } {
+  return {
+    score: value,
+    scoreBasis: {
+      kind: "heuristic_rule", calibrated: false, rule, formula: String(value),
+      inputs: {}, base: value, terms: [], cap: null, note: CONSTANT_SCORE_NOTE,
+    },
+  };
+}
+
+/** Rule-id prefix for a strategy display name ("Break of Structure" → "break_of_structure"). */
+function ruleId(strategy: string, branch: string): string {
+  return `${strategy.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}.${branch}`;
+}
 
 // Stamp the honesty label at the exported seam so no strategy payload —
 // actionable or WAIT, whichever return path built it — can serialize without
@@ -65,7 +151,7 @@ function labeledAdvisory(s: SignalOutput, timeframe = ""): SignalOutput {
 function calibrationFields(s: SignalOutput, timeframe: string): Pick<SignalOutput, "calibratedProbability" | "calibration"> {
   const directional = s.direction === "BUY" || s.direction === "SELL";
   const strategy = directional ? strategyCalibrationKey(s.strategy) : "strategy:none";
-  const calibration = calibrate(strategy, s.symbol, timeframe, s.confidence);
+  const calibration = calibrate(strategy, s.symbol, timeframe, s.score);
   if (!directional) {
     return {
       calibratedProbability: null,
@@ -188,7 +274,7 @@ export function trendContinuationStrategy(candles: Candle[], symbol: string): Si
 
 function trendContinuationCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 210) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "Trend Continuation", riskWarning: "Need 210+ candles" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Trend Continuation", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "Trend Continuation", riskWarning: "Need 210+ candles" };
   }
   const closes = candles.map((c) => c.close);
   const ema20 = computeEMA(closes, 20);
@@ -207,16 +293,16 @@ function trendContinuationCore(candles: Candle[], symbol: string): SignalOutput 
     // requires price > e200 — the `: 0` arm was unreachable, so it was a
     // constant +10 dressed as a factor. Folded into the base (60 → 70);
     // outputs are identical for every reachable input.
-    const confidence = Math.min(95, 70 + Math.floor((rsi - 50) * 1.5));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: price - atr * 1.5, takeProfit: price + atr * 2.5, reason: `Price above EMA50/200. EMA20 > EMA50. RSI at ${rsi.toFixed(1)}. Trend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi > 65 ? "RSI approaching overbought zone" : "" };
+    const scored = ruleScore(ruleId("Trend Continuation", "buy"), 70, 95, { rsi }, [{ label: "RSI above 50, x1.5", expr: "floor((rsi - 50) * 1.5)", value: Math.floor((rsi - 50) * 1.5) }]);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: price - atr * 1.5, takeProfit: price + atr * 2.5, reason: `Price above EMA50/200. EMA20 > EMA50. RSI at ${rsi.toFixed(1)}. Trend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi > 65 ? "RSI approaching overbought zone" : "" };
   }
   if (price < e50 && price < e200 && e20 < e50 && rsi >= 30 && rsi <= 50) {
     // Same honesty fix as the BUY branch: `price < e200` is guaranteed here,
     // so the former conditional +10 was a constant. Folded (60 → 70).
-    const confidence = Math.min(95, 70 + Math.floor((50 - rsi) * 1.5));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: price + atr * 1.5, takeProfit: price - atr * 2.5, reason: `Price below EMA50/200. EMA20 < EMA50. RSI at ${rsi.toFixed(1)}. Downtrend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi < 35 ? "RSI approaching oversold zone" : "" };
+    const scored = ruleScore(ruleId("Trend Continuation", "sell"), 70, 95, { rsi }, [{ label: "RSI below 50, x1.5", expr: "floor((50 - rsi) * 1.5)", value: Math.floor((50 - rsi) * 1.5) }]);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: price + atr * 1.5, takeProfit: price - atr * 2.5, reason: `Price below EMA50/200. EMA20 < EMA50. RSI at ${rsi.toFixed(1)}. Downtrend momentum confirmed.`, strategy: "Trend Continuation", riskWarning: rsi < 35 ? "RSI approaching oversold zone" : "" };
   }
-  return { symbol, direction: "WAIT", confidence: 30, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No clear trend alignment across EMAs", strategy: "Trend Continuation", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Trend Continuation", "no_setup"), 30), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No clear trend alignment across EMAs", strategy: "Trend Continuation", riskWarning: "" };
 }
 
 // ─── Strategy 2: Break of Structure ──────────────────────────────────────────
@@ -236,7 +322,7 @@ export function breakOfStructureStrategy(candles: Candle[], symbol: string): Sig
 // current geometry for a vetted 1.5R setup.
 function breakOfStructureCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Break of Structure", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Break of Structure", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Break of Structure", riskWarning: "" };
   }
   const recent = candles.slice(-20);
   const price = recent[recent.length - 1].close;
@@ -255,15 +341,15 @@ function breakOfStructureCore(candles: Candle[], symbol: string): SignalOutput {
     // can print a structure break (a fully flat window can never satisfy
     // prevCandle.high > swingHigh). Folded into the base (65 → 70); outputs
     // are identical for every reachable input.
-    const confidence = Math.min(88, 70 + (rsi > 50 ? 10 : 0));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: swingLow, takeProfit: price + (price - swingLow) * 1.5, reason: `Bullish Break of Structure confirmed. Price broke ${swingHigh.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "False breakout possible in choppy conditions" };
+    const scored = ruleScore(ruleId("Break of Structure", "buy"), 70, 88, { rsi }, [{ label: "RSI above 50 bonus", expr: "(rsi > 50 ? 10 : 0)", value: rsi > 50 ? 10 : 0 }]);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: swingLow, takeProfit: price + (price - swingLow) * 1.5, reason: `Bullish Break of Structure confirmed. Price broke ${swingHigh.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "False breakout possible in choppy conditions" };
   }
   if (prevCandle.low < swingLow && lastCandle.close > lastCandle.open && rsi > 35) {
     // Same honesty fix as the BUY branch: the phantom ATR term folded (65 → 70).
-    const confidence = Math.min(88, 70 + (rsi < 50 ? 10 : 0));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: swingHigh, takeProfit: price - (swingHigh - price) * 1.5, reason: `Bearish Break of Structure confirmed. Price broke ${swingLow.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "Monitor for continuation before entry" };
+    const scored = ruleScore(ruleId("Break of Structure", "sell"), 70, 88, { rsi }, [{ label: "RSI below 50 bonus", expr: "(rsi < 50 ? 10 : 0)", value: rsi < 50 ? 10 : 0 }]);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: swingHigh, takeProfit: price - (swingHigh - price) * 1.5, reason: `Bearish Break of Structure confirmed. Price broke ${swingLow.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "Monitor for continuation before entry" };
   }
-  return { symbol, direction: "WAIT", confidence: 25, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No structure break detected", strategy: "Break of Structure", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Break of Structure", "no_setup"), 25), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No structure break detected", strategy: "Break of Structure", riskWarning: "" };
 }
 
 // ─── Strategy 3: Liquidity Sweep Reversal ────────────────────────────────────
@@ -274,7 +360,7 @@ export function liquiditySweepStrategy(candles: Candle[], symbol: string): Signa
 
 function liquiditySweepCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 15) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Liquidity Sweep Reversal", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Liquidity Sweep Reversal", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Liquidity Sweep Reversal", riskWarning: "" };
   }
   const recent = candles.slice(-15);
   const price = recent[recent.length - 1].close;
@@ -288,15 +374,22 @@ function liquiditySweepCore(candles: Candle[], symbol: string): SignalOutput {
   const body = Math.abs(last.close - last.open);
 
   if (last.high > prevHigh && last.close < prevHigh && wickUp > body && rsi > 65) {
-    const confidence = Math.min(90, 70 + Math.floor((rsi - 65) * 2));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: last.high + atr * 0.5, takeProfit: price - atr * 2, reason: `Liquidity sweep above ${prevHigh.toFixed(4)}. Wick rejection ${wickUp.toFixed(4)} > body ${body.toFixed(4)}. RSI exhaustion at ${rsi.toFixed(1)}.`, strategy: "Liquidity Sweep Reversal", riskWarning: "High risk reversal — use tight stop" };
+    const scored = ruleScore(ruleId("Liquidity Sweep Reversal", "sell"), 70, 90, { rsi }, [{ label: "RSI above 65, x2", expr: "floor((rsi - 65) * 2)", value: Math.floor((rsi - 65) * 2) }]);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: last.high + atr * 0.5, takeProfit: price - atr * 2, reason: `Liquidity sweep above ${prevHigh.toFixed(4)}. Wick rejection ${wickUp.toFixed(4)} > body ${body.toFixed(4)}. RSI exhaustion at ${rsi.toFixed(1)}.`, strategy: "Liquidity Sweep Reversal", riskWarning: "High risk reversal — use tight stop" };
   }
   const wickDown = Math.min(last.open, last.close) - last.low;
   if (last.low < prevLow && last.close > prevLow && wickDown > body && rsi < 35) {
-    const confidence = Math.min(90, 70 + Math.floor((35 - rsi) * 2));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: last.low - atr * 0.5, takeProfit: price + atr * 2, reason: `Liquidity sweep below ${prevLow.toFixed(4)}. Wick rejection ${wickDown.toFixed(4)} > body ${body.toFixed(4)}. RSI exhaustion at ${rsi.toFixed(1)}.`, strategy: "Liquidity Sweep Reversal", riskWarning: "Reversal trade — confirm with higher timeframe" };
+    const scored = ruleScore(ruleId("Liquidity Sweep Reversal", "buy"), 70, 90, { rsi }, [{ label: "RSI below 35, x2", expr: "floor((35 - rsi) * 2)", value: Math.floor((35 - rsi) * 2) }]);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: last.low - atr * 0.5, takeProfit: price + atr * 2, reason: `Liquidity sweep below ${prevLow.toFixed(4)}. Wick rejection ${wickDown.toFixed(4)} > body ${body.toFixed(4)}. RSI exhaustion at ${rsi.toFixed(1)}.`, strategy: "Liquidity Sweep Reversal", riskWarning: "Reversal trade — confirm with higher timeframe" };
   }
-  return { symbol, direction: "WAIT", confidence: 20, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No liquidity sweep detected", strategy: "Liquidity Sweep Reversal", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Liquidity Sweep Reversal", "no_setup"), 20), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No liquidity sweep detected", strategy: "Liquidity Sweep Reversal", riskWarning: "" };
+}
+
+function volatilityScore(branch: "buy" | "sell", bodyRatio: number, atr: number, avgATR: number) {
+  return ruleScore(ruleId("Volatility Expansion", branch), 60, 85, { bodyRatio, atr, avgATR }, [
+    { label: "candle body ratio, x20", expr: "floor(bodyRatio * 20)", value: Math.floor(bodyRatio * 20) },
+    { label: "ATR above 2x its average bonus", expr: "(atr > avgATR * 2 ? 5 : 0)", value: atr > avgATR * 2 ? 5 : 0 },
+  ]);
 }
 
 // ─── Strategy 4: Volatility Expansion ────────────────────────────────────────
@@ -307,7 +400,7 @@ export function volatilityExpansionStrategy(candles: Candle[], symbol: string): 
 
 function volatilityExpansionCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Volatility Expansion", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Volatility Expansion", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Volatility Expansion", riskWarning: "" };
   }
   const recent = candles.slice(-20);
   const price = recent[recent.length - 1].close;
@@ -326,14 +419,14 @@ function volatilityExpansionCore(candles: Candle[], symbol: string): SignalOutpu
   const trend = ema10[ema10.length - 1];
 
   if (isExpanding && last.close > last.open && price > trend) {
-    const confidence = Math.min(85, 60 + Math.floor(bodyRatio * 20) + (atr > avgATR * 2 ? 5 : 0));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: price - atr * 1.2, takeProfit: price + atr * 2, reason: `Bullish volatility expansion. ATR ${atr.toFixed(4)} vs avg ${avgATR.toFixed(4)}. Body ratio ${(bodyRatio * 100).toFixed(0)}%.`, strategy: "Volatility Expansion", riskWarning: "High volatility — wider spreads likely" };
+    const scored = volatilityScore("buy", bodyRatio, atr, avgATR);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: price - atr * 1.2, takeProfit: price + atr * 2, reason: `Bullish volatility expansion. ATR ${atr.toFixed(4)} vs avg ${avgATR.toFixed(4)}. Body ratio ${(bodyRatio * 100).toFixed(0)}%.`, strategy: "Volatility Expansion", riskWarning: "High volatility — wider spreads likely" };
   }
   if (isExpanding && last.close < last.open && price < trend) {
-    const confidence = Math.min(85, 60 + Math.floor(bodyRatio * 20) + (atr > avgATR * 2 ? 5 : 0));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: price + atr * 1.2, takeProfit: price - atr * 2, reason: `Bearish volatility expansion. ATR ${atr.toFixed(4)} vs avg ${avgATR.toFixed(4)}. Body ratio ${(bodyRatio * 100).toFixed(0)}%.`, strategy: "Volatility Expansion", riskWarning: "High volatility — wider spreads likely" };
+    const scored = volatilityScore("sell", bodyRatio, atr, avgATR);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: price + atr * 1.2, takeProfit: price - atr * 2, reason: `Bearish volatility expansion. ATR ${atr.toFixed(4)} vs avg ${avgATR.toFixed(4)}. Body ratio ${(bodyRatio * 100).toFixed(0)}%.`, strategy: "Volatility Expansion", riskWarning: "High volatility — wider spreads likely" };
   }
-  return { symbol, direction: "WAIT", confidence: 15, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No significant volatility expansion detected", strategy: "Volatility Expansion", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Volatility Expansion", "no_setup"), 15), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No significant volatility expansion detected", strategy: "Volatility Expansion", riskWarning: "" };
 }
 
 // ─── Strategy 5: Pullback Continuation ───────────────────────────────────────
@@ -344,7 +437,7 @@ export function pullbackContinuationStrategy(candles: Candle[], symbol: string):
 
 function pullbackContinuationCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 60) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Pullback Continuation", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Pullback Continuation", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Pullback Continuation", riskWarning: "" };
   }
   const closes = candles.map((c) => c.close);
   const price = closes[closes.length - 1];
@@ -362,15 +455,15 @@ function pullbackContinuationCore(candles: Candle[], symbol: string): SignalOutp
 
   // Bullish pullback: uptrend, price pulled back to EMA20 zone, RSI cooling, wick rejection from below
   if (e20 > e50 && Math.abs(price - e20) < pullbackZone && rsi >= 40 && rsi <= 58 && wickDown > body * 0.5) {
-    const confidence = Math.min(82, 62 + Math.floor((58 - rsi) * 1.2));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: last.low - atr * 0.5, takeProfit: price + atr * 2.2, reason: `Pullback to EMA20 zone in uptrend. RSI cooling at ${rsi.toFixed(1)}. Wick rejection ${wickDown.toFixed(4)} detected.`, strategy: "Pullback Continuation", riskWarning: "Ensure higher timeframe trend is intact" };
+    const scored = ruleScore(ruleId("Pullback Continuation", "buy"), 62, 82, { rsi }, [{ label: "RSI below 58, x1.2", expr: "floor((58 - rsi) * 1.2)", value: Math.floor((58 - rsi) * 1.2) }]);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: last.low - atr * 0.5, takeProfit: price + atr * 2.2, reason: `Pullback to EMA20 zone in uptrend. RSI cooling at ${rsi.toFixed(1)}. Wick rejection ${wickDown.toFixed(4)} detected.`, strategy: "Pullback Continuation", riskWarning: "Ensure higher timeframe trend is intact" };
   }
   // Bearish pullback: downtrend, price bounced to EMA20 zone, RSI rising, wick rejection from above
   if (e20 < e50 && Math.abs(price - e20) < pullbackZone && rsi >= 42 && rsi <= 60 && wickUp > body * 0.5) {
-    const confidence = Math.min(82, 62 + Math.floor((rsi - 42) * 1.2));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: last.high + atr * 0.5, takeProfit: price - atr * 2.2, reason: `Bounce to EMA20 zone in downtrend. RSI elevated at ${rsi.toFixed(1)}. Wick rejection ${wickUp.toFixed(4)} detected.`, strategy: "Pullback Continuation", riskWarning: "Ensure higher timeframe downtrend is intact" };
+    const scored = ruleScore(ruleId("Pullback Continuation", "sell"), 62, 82, { rsi }, [{ label: "RSI above 42, x1.2", expr: "floor((rsi - 42) * 1.2)", value: Math.floor((rsi - 42) * 1.2) }]);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: last.high + atr * 0.5, takeProfit: price - atr * 2.2, reason: `Bounce to EMA20 zone in downtrend. RSI elevated at ${rsi.toFixed(1)}. Wick rejection ${wickUp.toFixed(4)} detected.`, strategy: "Pullback Continuation", riskWarning: "Ensure higher timeframe downtrend is intact" };
   }
-  return { symbol, direction: "WAIT", confidence: 20, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No valid pullback setup detected", strategy: "Pullback Continuation", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Pullback Continuation", "no_setup"), 20), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No valid pullback setup detected", strategy: "Pullback Continuation", riskWarning: "" };
 }
 
 // ─── Strategy 6: Mean Reversion ───────────────────────────────────────────────
@@ -381,7 +474,7 @@ export function meanReversionStrategy(candles: Candle[], symbol: string): Signal
 
 function meanReversionCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Mean Reversion", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Mean Reversion", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Mean Reversion", riskWarning: "" };
   }
   const recent = candles.slice(-20);
   const closes = recent.map((c) => c.close);
@@ -398,16 +491,22 @@ function meanReversionCore(candles: Candle[], symbol: string): SignalOutput {
   const isRange = highRange < atr * 1.2 && atr < avgRange * 1.3;
 
   if (isRange && rsi < 28 && wickDown > body) {
-    const confidence = Math.min(80, 60 + Math.floor((30 - rsi) * 2));
+    const scored = ruleScore(ruleId("Mean Reversion", "buy"), 60, 80, { rsi }, [{ label: "RSI below 30, x2", expr: "floor((30 - rsi) * 2)", value: Math.floor((30 - rsi) * 2) }]);
     const mid = (Math.max(...closes) + Math.min(...closes)) / 2;
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: last.low - atr * 0.3, takeProfit: mid, reason: `Range market. RSI oversold at ${rsi.toFixed(1)}. Wick rejection from range low. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: last.low - atr * 0.3, takeProfit: mid, reason: `Range market. RSI oversold at ${rsi.toFixed(1)}. Wick rejection from range low. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
   }
   if (isRange && rsi > 72 && wickUp > body) {
-    const confidence = Math.min(80, 60 + Math.floor((rsi - 70) * 2));
+    const scored = ruleScore(ruleId("Mean Reversion", "sell"), 60, 80, { rsi }, [{ label: "RSI above 70, x2", expr: "floor((rsi - 70) * 2)", value: Math.floor((rsi - 70) * 2) }]);
     const mid = (Math.max(...closes) + Math.min(...closes)) / 2;
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: last.high + atr * 0.3, takeProfit: mid, reason: `Range market. RSI overbought at ${rsi.toFixed(1)}. Wick rejection from range high. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: last.high + atr * 0.3, takeProfit: mid, reason: `Range market. RSI overbought at ${rsi.toFixed(1)}. Wick rejection from range high. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
   }
-  return { symbol, direction: "WAIT", confidence: 10, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No range extreme detected for mean reversion", strategy: "Mean Reversion", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Mean Reversion", "no_setup"), 10), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No range extreme detected for mean reversion", strategy: "Mean Reversion", riskWarning: "" };
+}
+
+function sessionBreakoutScore(branch: "buy" | "sell", atr: number, avgATR: number) {
+  return ruleScore(ruleId("Session Breakout", branch), 65, 85, { atr, avgATR }, [
+    { label: "ATR expansion over its average, x30", expr: "floor((atr / avgATR - 1) * 30)", value: Math.floor((atr / avgATR - 1) * 30) },
+  ]);
 }
 
 // ─── Strategy 7: Session Breakout ─────────────────────────────────────────────
@@ -418,16 +517,16 @@ export function sessionBreakoutStrategy(candles: Candle[], symbol: string): Sign
 
 function sessionBreakoutCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Session Breakout", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Session Breakout", riskWarning: "" };
   }
   const session = detectSession();
   // Only active during London and NY opens
   if (session !== "London" && session !== "London/NY Overlap") {
-    return { symbol, direction: "WAIT", confidence: 0, entryPrice: candles[candles.length - 1].close, stopLoss: 0, takeProfit: 0, reason: `Session Breakout inactive during ${session} session`, strategy: "Session Breakout", riskWarning: "" };
+    return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "inactive_session"), 0), entryPrice: candles[candles.length - 1].close, stopLoss: 0, takeProfit: 0, reason: `Session Breakout inactive during ${session} session`, strategy: "Session Breakout", riskWarning: "" };
   }
   const recent = candles.slice(-20);
   const asiaRange = candles.slice(-30, -10);
-  if (asiaRange.length < 5) return { symbol, direction: "WAIT", confidence: 0, entryPrice: recent[recent.length - 1].close, stopLoss: 0, takeProfit: 0, reason: "Insufficient data for session range", strategy: "Session Breakout", riskWarning: "" };
+  if (asiaRange.length < 5) return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "insufficient_data"), 0), entryPrice: recent[recent.length - 1].close, stopLoss: 0, takeProfit: 0, reason: "Insufficient data for session range", strategy: "Session Breakout", riskWarning: "" };
   const asiaHigh = Math.max(...asiaRange.map((c) => c.high));
   const asiaLow = Math.min(...asiaRange.map((c) => c.low));
   const price = recent[recent.length - 1].close;
@@ -436,19 +535,19 @@ function sessionBreakoutCore(candles: Candle[], symbol: string): SignalOutput {
   const isExpanding = atr > avgATR * 1.3;
 
   if (price > asiaHigh && isExpanding) {
-    const confidence = Math.min(85, 65 + Math.floor((atr / avgATR - 1) * 30));
-    return { symbol, direction: "BUY", confidence, entryPrice: price, stopLoss: asiaHigh - atr * 0.5, takeProfit: price + atr * 2.5, reason: `${session} session breakout above Asia range high ${asiaHigh.toFixed(4)}. ATR expanding.`, strategy: "Session Breakout", riskWarning: "News events may cause false breakout" };
+    const scored = sessionBreakoutScore("buy", atr, avgATR);
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: asiaHigh - atr * 0.5, takeProfit: price + atr * 2.5, reason: `${session} session breakout above Asia range high ${asiaHigh.toFixed(4)}. ATR expanding.`, strategy: "Session Breakout", riskWarning: "News events may cause false breakout" };
   }
   if (price < asiaLow && isExpanding) {
-    const confidence = Math.min(85, 65 + Math.floor((atr / avgATR - 1) * 30));
-    return { symbol, direction: "SELL", confidence, entryPrice: price, stopLoss: asiaLow + atr * 0.5, takeProfit: price - atr * 2.5, reason: `${session} session breakout below Asia range low ${asiaLow.toFixed(4)}. ATR expanding.`, strategy: "Session Breakout", riskWarning: "News events may cause false breakout" };
+    const scored = sessionBreakoutScore("sell", atr, avgATR);
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: asiaLow + atr * 0.5, takeProfit: price - atr * 2.5, reason: `${session} session breakout below Asia range low ${asiaLow.toFixed(4)}. ATR expanding.`, strategy: "Session Breakout", riskWarning: "News events may cause false breakout" };
   }
-  return { symbol, direction: "WAIT", confidence: 15, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: `${session} session — price inside Asia range, awaiting breakout`, strategy: "Session Breakout", riskWarning: "" };
+  return { symbol, direction: "WAIT", ...constantScore(ruleId("Session Breakout", "no_setup"), 15), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: `${session} session — price inside Asia range, awaiting breakout`, strategy: "Session Breakout", riskWarning: "" };
 }
 
 // ─── Filter 1: No Trade Filter ────────────────────────────────────────────────
 
-export function noTradeFilter(signal: SignalOutput, candles: Candle[], minConfidence: number): SignalOutput {
+export function noTradeFilter(signal: SignalOutput, candles: Candle[], minScore: number): SignalOutput {
   if (candles.length < 10) return { ...signal, direction: "WAIT", reason: "Insufficient data for filter" };
   const recent = candles.slice(-10);
   const atr = computeATR(recent, 10);
@@ -458,7 +557,7 @@ export function noTradeFilter(signal: SignalOutput, candles: Candle[], minConfid
   const highRange = Math.max(...closes) - Math.min(...closes);
   const isSideways = highRange < atr * 0.8;
   if (isSideways) return { ...signal, direction: "WAIT", reason: "Market in sideways chop — no trade" };
-  if (signal.confidence < minConfidence) return { ...signal, direction: "WAIT", reason: `Confidence ${signal.confidence} below minimum ${minConfidence}` };
+  if (signal.score < minScore) return { ...signal, direction: "WAIT", reason: `Score ${signal.score} below minimum ${minScore} (uncalibrated heuristic score)` };
   if (atr > avgRange * 3) return { ...signal, direction: "WAIT", reason: "ATR too extreme — abnormal volatility" };
   if ((signal.direction === "BUY" && rsi > 80) || (signal.direction === "SELL" && rsi < 20)) {
     return { ...signal, direction: "WAIT", reason: "RSI in extreme zone — trade blocked by filter" };
@@ -495,22 +594,23 @@ export const MIN_STRATEGY_SCAN_CANDLES = 5;
 export function runStrategyScan(
   symbol: string,
   candles: Candle[],
-  minConfidence = 65,
+  minScore = 65,
   marketType: "forex" | "indices" | "stocks" | "synthetic" = "synthetic",
   opts: { timeframe?: string } = {},
 ): SignalOutput {
-  return labeledAdvisory(runStrategyScanCore(symbol, candles, minConfidence, marketType), opts.timeframe ?? "");
+  return labeledAdvisory(runStrategyScanCore(symbol, candles, minScore, marketType, opts.timeframe ?? ""), opts.timeframe ?? "");
 }
 
 function runStrategyScanCore(
   symbol: string,
   candles: Candle[],
-  minConfidence: number,
+  minScore: number,
   marketType: "forex" | "indices" | "stocks" | "synthetic",
+  timeframe: string,
 ): SignalOutput {
   if (candles.length < MIN_STRATEGY_SCAN_CANDLES) {
     const price = candles[candles.length - 1]?.close ?? 0;
-    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "None", riskWarning: "", advisory: STRATEGY_ADVISORY_LABEL };
+    return { symbol, marketType, direction: "WAIT", ...constantScore(ruleId("None", "insufficient_data"), 0), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "None", riskWarning: "", advisory: STRATEGY_ADVISORY_LABEL };
   }
 
   const session = detectSession();
@@ -527,22 +627,26 @@ function runStrategyScanCore(
     sessionBreakoutStrategy(candles, symbol),
   ];
 
-  // Pick the best call by MEASURED probability (a measured strategy always
-  // outranks an unmeasured one); raw confidence orders ties and the
-  // unmeasured tail. See lib/calibration.
-  const actionable = rankByCalibration(
+  // Pick the best call by the three-tier measured ranking (lib/ranking):
+  // calibrated probability (with N) first, then a measured base rate, and
+  // only then the raw heuristic score, labelled "unmeasured, ranked by raw
+  // score". Each strategy is calibrated on the scan's own timeframe.
+  const actionable = rankByMeasuredTier(
     strategies
       .filter((s) => s.direction !== "WAIT")
-      .map((s) => ({ ...s, rawScore: s.confidence, reading: s.calibration ?? calibrate(strategyCalibrationKey(s.strategy), symbol, "", s.confidence) })),
-  ).map(({ rawScore: _r, reading: _x, rank: _k, rankBasis: _b, ...s }) => s as SignalOutput);
+      .map((s) => {
+        const calibration = calibrate(strategyCalibrationKey(s.strategy), symbol, timeframe, s.score);
+        return { ...s, calibration, calibratedProbability: calibration.probability, rawScore: s.score };
+      }),
+  ).map(({ rawScore: _r, rank: _k, rankValue: _v, rankN: _n, ...s }) => s as SignalOutput);
   const price = candles[candles.length - 1].close;
 
   if (actionable.length === 0) {
-    return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No actionable signal from any strategy", strategy: "No Trade Filter", riskWarning: "", session, marketCondition, technicalBias, advisory: STRATEGY_ADVISORY_LABEL };
+    return { symbol, marketType, direction: "WAIT", ...constantScore(ruleId("No Trade Filter", "no_setup"), 0), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No actionable signal from any strategy", strategy: "No Trade Filter", riskWarning: "", session, marketCondition, technicalBias, advisory: STRATEGY_ADVISORY_LABEL };
   }
 
   let best = actionable[0];
-  best = noTradeFilter(best, candles, minConfidence);
+  best = noTradeFilter(best, candles, minScore);
   best = newsAvoidanceFilter(best, marketType);
 
   // R7 step 7 — the advisory honesty label is re-stamped here so the scan

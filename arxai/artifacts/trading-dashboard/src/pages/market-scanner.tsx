@@ -49,13 +49,25 @@ import { useScannerOpportunityClock } from "@/components/scanner/useScannerOppor
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
 import { scannerFinalReadReasons, scannerResultActionChip, scannerResultCardClaims, scannerSetupReasonWithheld } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
+import {
+  TimeframeCoverageStrip,
+  coverageFor,
+  rankBasisText,
+  type RankBasis,
+  type TimeframeCoverageEntry,
+} from "@/components/scanner/TimeframeCoverageStrip";
 
 type Opp = {
   symbol: string; timeframe: string;
   bias: string; recommendedAction: string;
+  /** Raw technical score 0-100 (field name kept from the API row). An
+   *  uncalibrated heuristic: shown as "Score", never as confidence. */
   setupType: string; confidenceScore: number; riskScore: number;
-  /** Calibration engine reading for confidenceScore (probability + N, or unmeasured). */
+  /** Calibration engine reading for that score (probability + N, or unmeasured). */
   calibration?: CalibrationReading | null;
+  /** Three-tier measured ranking basis + its label. */
+  rankBasis?: RankBasis;
+  rankLabel?: string;
   entrySniperScore: number; riskRewardRatio: number;
   reasonForTrade: string; reasonToAvoid: string;
   rulesPassed: string[]; rulesFailed: string[];
@@ -79,7 +91,12 @@ type Opp = {
 const MANUAL_SCAN_COOLDOWN_MS = 7_000;
 
 type UniverseId = "all" | "forex" | "metals" | "indices" | "crypto" | "synthetic" | "full";
-type ScanEnvelope = { opportunities?: Opp[]; generatedAt?: string; universe?: UniverseId; universeSymbols?: string[] };
+type ScanEnvelope = {
+  opportunities?: Opp[]; generatedAt?: string; universe?: UniverseId; universeSymbols?: string[];
+  /** Per (symbol, timeframe): own reading or a labelled higher-timeframe fallback. */
+  timeframeCoverage?: TimeframeCoverageEntry[];
+  skippedPairs?: number;
+};
 type UniverseInfo = { id: UniverseId; label: string; symbols: string[]; available: boolean; note: string | null };
 
 /** The public opportunity-map route accepts six groups; full uses all. */
@@ -112,7 +129,8 @@ const BADGE_LABELS: Record<string, string> = {
   // The scanner sets this when the last bar's range is > 1.8x the window
   // average — a volatility spike (often an expansion bar), not a range/chop.
   CHOPPY_MARKET: "Volatility spike",
-  LOW_CONFIDENCE: "Low confidence",
+  // Raw technical score under 60: a heuristic score, not a confidence.
+  LOW_CONFIDENCE: "Low score",
   SPREAD_TOO_HIGH: "Spread too wide",
   PENDING_MT5_CONNECTION: "Waiting for connection",
   // Score under the scanner's minimum while no risk rule failed — not "Risk too high".
@@ -725,6 +743,8 @@ export default function MarketScanner() {
           )}
         </CardContent></Card>
       ) : (
+        <>
+        <TimeframeCoverageStrip coverage={snapshotInfo?.timeframeCoverage} skippedPairs={snapshotInfo?.skippedPairs ?? 0} />
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {opps.map((o, i) => err || !canUseScannerOpportunity(o, snapshotClock) ? (
             <Card key={`${o.symbol}-${o.timeframe}-${i}`} data-testid={`scanner-result-unavailable-${o.symbol}`}>
@@ -800,8 +820,8 @@ export default function MarketScanner() {
                           <div className="text-muted-foreground">Win prob</div>
                           <CalibratedProbability calibration={o.calibration} testId={`scanner-calibrated-${o.symbol}-${o.timeframe}`} className="text-[11px] font-semibold" />
                         </div>
-                        <div className="border rounded p-1">
-                          <div className="text-muted-foreground">Conf</div>
+                        <div className="border rounded p-1" title="Uncalibrated heuristic score (0-100). Not a probability or a confidence; the measured probability is Win prob.">
+                          <div className="text-muted-foreground">Score</div>
                           <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
                             {adjusted}
                             {mult < 1 && (
@@ -814,10 +834,22 @@ export default function MarketScanner() {
                       </div>
                       {mult < 1 && (
                         <div className="text-[10px] text-muted-foreground italic" data-testid={`scanner-conf-note-${o.symbol}`}>
-                          Confidence adjusted for cohesion
+                          Score adjusted for cohesion
                         </div>
                       )}
                     </>
+                  );
+                })()}
+                <div className="text-[10px] text-muted-foreground" data-testid={`scanner-rank-basis-${o.symbol}-${o.timeframe}`} data-rank-basis={o.rankBasis ?? "unmeasured_raw_order"}>
+                  {rankBasisText(o.rankBasis, o.rankLabel)}
+                </div>
+                {(() => {
+                  const cov = coverageFor(snapshotInfo?.timeframeCoverage, o.symbol, o.timeframe);
+                  if (!cov || !cov.fallback) return null;
+                  return (
+                    <div className="text-[10px] text-amber-400" data-testid={`scanner-tf-fallback-${o.symbol}-${o.timeframe}`}>
+                      {cov.label}
+                    </div>
                   );
                 })()}
                 <div className="text-xs flex items-center justify-between gap-2">
@@ -918,6 +950,7 @@ export default function MarketScanner() {
             );
           })())}
         </div>
+        </>
       )}
     </div>
   );

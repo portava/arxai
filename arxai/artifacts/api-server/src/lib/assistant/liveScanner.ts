@@ -11,8 +11,13 @@ import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import type { Candle as RouterCandle } from "../data/types.js";
 import { knownPipDistance } from "../data/chart/symbolProfile.js";
 import { quoteObservationFreshness } from "../data/quoteObservationFreshness.js";
+import { SCANNER_TIMEFRAMES } from "../scannerCoverage/timeframeCoverage.js";
 
-const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
+/** Every timeframe ARX charts, M1..D1 (was M15/H1 only, so an M5 chart's
+ *  draw-setup never had a scanner reading). */
+export const LIVE_TIMEFRAMES = SCANNER_TIMEFRAMES;
+/** Bound on (symbol × timeframe) reads per call. One draw-setup is 1 × 7. */
+export const LIVE_SCANNER_MAX_PAIRS = 42;
 const MIN_CANDLES = 10;
 
 /**
@@ -273,7 +278,11 @@ export interface LiveScannerResult {
   reasonDetail: string;
 }
 
-export async function scoreLiveCandidates(symbols: readonly string[], limit = 10): Promise<LiveScannerResult> {
+export async function scoreLiveCandidates(
+  symbols: readonly string[],
+  limit = 10,
+  opts: { timeframes?: readonly string[] } = {},
+): Promise<LiveScannerResult> {
   const p = getMarketProvider();
   // The scan is gated on the ASSISTANT market-data adapter, but candles come
   // from the unified router (mt5_broker-first). The gate still fails closed
@@ -319,8 +328,20 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
   let attempted = 0;
   let withData = 0;
 
-  for (const sym of symbols) {
-    for (const tf of LIVE_TIMEFRAMES) {
+  const tfs = (opts.timeframes ?? LIVE_TIMEFRAMES).filter((tf) => (LIVE_TIMEFRAMES as readonly string[]).includes(tf));
+  // Load bound: at most LIVE_SCANNER_MAX_PAIRS candle reads per call. Symbols
+  // past the cap are not scanned and the warning says so.
+  const maxSymbols = Math.max(1, Math.floor(LIVE_SCANNER_MAX_PAIRS / Math.max(1, tfs.length)));
+  const scanSymbols = symbols.slice(0, maxSymbols);
+  if (symbols.length > scanSymbols.length) {
+    warnings.push(`Scan capped at ${scanSymbols.length} symbol(s) × ${tfs.length} timeframe(s); ${symbols.length - scanSymbols.length} symbol(s) not scanned this call.`);
+  }
+
+  for (const sym of scanSymbols) {
+    // One quote per symbol (the quote is timeframe-independent), so widening
+    // to every timeframe does not multiply quote reads.
+    let quoteRead: Promise<Awaited<ReturnType<typeof routeQuote>> | null> | null = null;
+    for (const tf of tfs) {
       attempted++;
       try {
         // C1 — candles come from the UNIFIED router (mt5_broker-first), the
@@ -338,7 +359,8 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
         withData++;
         const dataSource = routed.provenance?.providerId ?? routed.primaryProvider ?? null;
         if (dataSource) servedBy.add(dataSource);
-        const rq = await routeQuote(sym).catch(() => null);
+        quoteRead ??= routeQuote(sym).catch(() => null);
+        const rq = await quoteRead;
         const q = rq?.ok && rq.quote
           ? { price: rq.quote.last ?? null, bid: rq.quote.bid ?? null, ask: rq.quote.ask ?? null }
           : null;

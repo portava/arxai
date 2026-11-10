@@ -1,6 +1,7 @@
 // CS2 regression: the setup-preview "Scanner" chip names the timeframe its
-// score was computed on, and on a timeframe the assistant scanner does not
-// score (it scores M15/H1 only) it says so instead of "not consulted".
+// score was computed on. The assistant scanner now scores every chart timeframe
+// M1..D1; a reading borrowed from a higher timeframe is labelled as a fallback,
+// and only a timeframe outside M1..D1 says "no scanner score for X".
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import { ChartSetupPreviewPanel } from "./ChartSetupPreviewPanel";
@@ -40,14 +41,33 @@ describe("setup-preview scanner chip timeframe", () => {
     expect(within(chip).getByText("72")).toBeTruthy();
   });
 
-  it("says there is no scanner score for an unscored timeframe", () => {
-    renderPanel(makePreview({ timeframe: "M5", scannerScore: null }));
-    const chip = screen.getByTestId("chart-setup-signal-scanner-not-consulted");
-    expect(chip.textContent).toContain("no scanner score for M5");
+  it("an M5 draw-setup is scored on M5 (no longer an unscored timeframe)", () => {
+    renderPanel(makePreview({ timeframe: "M5", scannerScore: 61, scannerTimeframe: "M5", scannerTimeframeBasis: "exact" }));
+    const chip = screen.getByTestId("chart-setup-signal-scanner");
+    expect(chip.textContent).toContain("Scanner (M5)");
+    expect(chip.textContent).not.toContain("fallback");
+  });
+
+  it("a higher-timeframe fallback is labelled, never shown as the chart's own", () => {
+    const label = "M5: no signal (insufficient data) — showing the H1 reading (higher-timeframe fallback)";
+    renderPanel(makePreview({ timeframe: "M5", scannerScore: 80, scannerTimeframe: "H1", scannerTimeframeBasis: "higher_timeframe_fallback", scannerFallbackLabel: label }));
+    const chip = screen.getByTestId("chart-setup-signal-scanner");
+    expect(chip.textContent).toContain("Scanner (H1 fallback)");
+    expect(chip.textContent).not.toContain("Scanner (M5)");
+    const ctx = setupScannerChipContext({ timeframe: "M5", scannerScore: 80, scannerTimeframe: "H1", scannerTimeframeBasis: "higher_timeframe_fallback", scannerFallbackLabel: label });
+    expect(ctx.fallback).toBe(true);
+    expect(ctx.help).toContain(label);
+  });
+
+  it("M5 with no reading at all is 'not consulted', not 'unscored'", () => {
+    expect(setupScannerChipContext({ timeframe: "M5", scannerScore: null }).nullNote).toBeNull();
+    expect(setupScannerChipContext({ timeframe: "W1", scannerScore: null }).nullNote).toBe("no scanner score for W1");
   });
 
   it("help text names the engine so it is not confused with the overlay-panel scanner", () => {
     expect(setupScannerChipContext({ timeframe: "M15", scannerScore: 60 }).help).toMatch(/different engine/);
+    expect(setupScannerChipContext({ timeframe: "M15", scannerScore: 60 }).help).toMatch(/uncalibrated/i);
+    expect(setupScannerChipContext({ timeframe: "M15", scannerScore: 60 }).help).not.toMatch(/\bis (a )?(probability|confidence)\b/i);
     expect(setupScannerChipContext({ timeframe: "M15", scannerScore: null }).nullNote).toBeNull();
   });
 });

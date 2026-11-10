@@ -4046,7 +4046,16 @@ export const GetSignalsResponseItem = zod.object({
   id: zod.number(),
   symbol: zod.string(),
   direction: zod.enum(["BUY", "SELL", "WAIT"]),
-  confidence: zod.number(),
+  score: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score, 0-100. NOT a probability or a confidence. Read from the stored signals.confidence column.",
+    ),
+  confidence: zod
+    .number()
+    .describe(
+      "Deprecated alias of score (same number). Kept because stored signals rows carry this column name and external clients read it.",
+    ),
   entryPrice: zod.number(),
   stopLoss: zod.number(),
   takeProfit: zod.number(),
@@ -4064,7 +4073,16 @@ export const RunScanResponseItem = zod.object({
   id: zod.number(),
   symbol: zod.string(),
   direction: zod.enum(["BUY", "SELL", "WAIT"]),
-  confidence: zod.number(),
+  score: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score, 0-100. NOT a probability or a confidence. Read from the stored signals.confidence column.",
+    ),
+  confidence: zod
+    .number()
+    .describe(
+      "Deprecated alias of score (same number). Kept because stored signals rows carry this column name and external clients read it.",
+    ),
   entryPrice: zod.number(),
   stopLoss: zod.number(),
   takeProfit: zod.number(),
@@ -4082,7 +4100,16 @@ export const GetLatestSignalsResponseItem = zod.object({
   id: zod.number(),
   symbol: zod.string(),
   direction: zod.enum(["BUY", "SELL", "WAIT"]),
-  confidence: zod.number(),
+  score: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score, 0-100. NOT a probability or a confidence. Read from the stored signals.confidence column.",
+    ),
+  confidence: zod
+    .number()
+    .describe(
+      "Deprecated alias of score (same number). Kept because stored signals rows carry this column name and external clients read it.",
+    ),
   entryPrice: zod.number(),
   stopLoss: zod.number(),
   takeProfit: zod.number(),

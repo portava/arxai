@@ -5,6 +5,9 @@
 // plainly and never shown as a signal (the client may only downgrade).
 export interface WatchlistSignalFields {
   signal?: string | null;
+  /** Uncalibrated heuristic strategy score 0-100 (server `score`). */
+  score?: number | null;
+  /** @deprecated server alias of `score`; read only when `score` is absent. */
   confidence?: number | null;
   signalStatus?: string | null;
   signalAsOf?: string | null;
@@ -23,11 +26,13 @@ export function watchlistSignalBadge(it: WatchlistSignalFields): WatchlistSignal
   const asOf = utc(it.signalAsOf);
   const status = it.signalStatus ?? null;
   if ((status === "OK" || status === "DELAYED") && it.signal) {
-    const conf = it.confidence != null ? ` ${it.confidence}%` : "";
+    // The number is a raw heuristic score, never a percentage or a probability.
+    const raw = it.score ?? it.confidence ?? null;
+    const score = raw != null ? ` · score ${raw}` : "";
     return {
       kind: "signal", direction: it.signal,
-      text: `${it.signal}${conf}${status === "DELAYED" ? " (delayed)" : ""}`,
-      title: `Strategy scan of 1m bars${asOf ? ` up to ${asOf}` : ""}${status === "DELAYED" ? " — feed is delayed" : ""}`,
+      text: `${it.signal}${score}${status === "DELAYED" ? " (delayed)" : ""}`,
+      title: `Strategy scan of 1m bars${asOf ? ` up to ${asOf}` : ""}${status === "DELAYED" ? " — feed is delayed" : ""}${raw != null ? ". The score is an uncalibrated 0-100 heuristic, not a probability." : ""}`,
     };
   }
   if (status === "STALE_DATA") {

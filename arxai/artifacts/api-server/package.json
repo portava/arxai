@@ -220,6 +220,7 @@
     "test:dead-heat-surfaces-removed": "node --import tsx --test --test-force-exit src/routes/__qa__/deadHeatSurfacesRemoved.test.ts",
     "test:post-trade-debrief-source": "node --import tsx --test --test-force-exit src/lib/__qa__/postTradeDebriefSource.test.ts",
     "test:calibration": "node --import tsx --test --test-force-exit ../../lib/domain/src/calibration/__qa__/calibrationEngine.test.ts src/lib/calibration/__qa__/payloadCalibration.test.ts src/lib/calibration/__qa__/gbmNoEdge.test.ts src/lib/calibration/__qa__/scannerVsRandom.test.ts",
+    "test:scanner-signals-aplus": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerSignalsAplus.test.ts",
     "test:calibration-store-db": "node --import tsx --test --test-force-exit src/lib/calibration/__qa__/calibrationStore.db.test.ts",
     "test:honest-confidence": "node --import tsx --test --test-force-exit src/lib/__qa__/honestConfidence.test.ts",
     "test:source-unification": "node --import tsx --test --test-force-exit src/lib/__qa__/sourceUnification.test.ts",
