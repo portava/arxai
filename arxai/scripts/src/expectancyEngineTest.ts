@@ -407,8 +407,8 @@ export async function run(): Promise<CiTestResultLike> {
     assert(bosOut.direction === "BUY", `crafted structure break fires BUY (got ${bosOut.direction}: ${bosOut.reason})`);
     assert(bosOut.advisory === STRATEGY_ADVISORY_LABEL, "actionable BOS payload carries the advisory label");
     assert(
-      bosOut.confidence === 70 || bosOut.confidence === 80,
-      `folded constants preserved reachable outputs — confidence in {70, 80} (got ${bosOut.confidence})`,
+      bosOut.score === 70 || bosOut.score === 80,
+      `folded constants preserved reachable outputs — score in {70, 80} (got ${bosOut.score})`,
     );
     assert(bosOut.stopLoss === swingLow, "BOS stop geometry unchanged (opposite 17-bar extreme; the honesty note is comment-only)");
 

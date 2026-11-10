@@ -22,7 +22,10 @@ type AnalyzeResult = {
     heartbeatAgeSeconds: number | null; freshnessThresholdSeconds: number; isFresh: boolean;
     currency: string | null;
   };
-  signal: { direction: string; confidence: number; entryPrice: number; stopLoss: number; takeProfit: number; reason: string; strategy: string };
+  signal: { direction: string; score: number; entryPrice: number; stopLoss: number; takeProfit: number; reason: string; strategy: string };
+  /** Uncalibrated heuristic strategy score (0-100). */
+  score?: number;
+  /** @deprecated alias of score (paper_ideas.confidence_score). */
   confidenceScore: number;
   riskScore: number;
   riskPercent: number;
@@ -190,7 +193,7 @@ export function ARXIntelligencePanel() {
               <StatusPill tone={analysis.signal.direction === "BUY" ? "ok" : analysis.signal.direction === "SELL" ? "danger" : "warn"}>
                 {analysis.signal.direction} {analysis.symbol}
               </StatusPill>
-              <StatusPill tone="info">Confidence {analysis.confidenceScore}/100</StatusPill>
+              <StatusPill tone="info">Score {analysis.score ?? analysis.confidenceScore}/100 (uncalibrated)</StatusPill>
               <StatusPill tone={analysis.riskScore >= 50 ? "danger" : analysis.riskScore >= 25 ? "warn" : "ok"}>
                 Risk {analysis.riskScore}/100
               </StatusPill>
@@ -265,7 +268,7 @@ export function ARXIntelligencePanel() {
                       <span className="font-mono text-xs font-semibold">{idea.symbol}</span>
                     </div>
                     <div className="text-[11px] text-muted-foreground font-mono flex-1">
-                      conf {idea.confidenceScore} · risk {idea.riskScore} · lot {idea.suggestedLot} · {idea.riskPercent}%
+                      score {idea.confidenceScore} · risk {idea.riskScore} · lot {idea.suggestedLot} · {idea.riskPercent}%
                     </div>
                     <div className="flex gap-1">
                       {idea.status === "WATCHLIST" && (

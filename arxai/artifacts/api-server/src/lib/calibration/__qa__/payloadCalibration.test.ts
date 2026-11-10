@@ -136,7 +136,7 @@ describe("scanner rows", () => {
     const radar = src("lib/opportunityRadar/radar.ts");
     assert.match(radar, /RADAR_TIMEFRAMES = \["M1", "M5", "M15", "M30", "H1", "H4", "D1"\] as const/);
     assert.match(radar, /rankScannerOpportunities\(rows\)\[0\]/);
-    assert.match(radar, /rankByCalibration\(/);
+    assert.match(radar, /rankByMeasuredTier\(/);
   });
 });
 

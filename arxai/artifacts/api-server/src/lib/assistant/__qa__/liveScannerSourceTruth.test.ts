@@ -111,7 +111,7 @@ test("no quote: entry is labelled a candle close, never a live quote", async () 
   for (const c of r.candidates) {
     assert.equal(c.entryBasis, "last_candle_close");
     assert.equal(c.quoteSource, null);
-    assert.match(String(c.entryNote), /No quote — entry is the last (M15|H1) candle close/);
+    assert.match(String(c.entryNote), /No quote — entry is the last (M1|M5|M15|M30|H1|H4|D1) candle close/);
   }
 });
 

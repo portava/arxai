@@ -177,7 +177,7 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
     const sig = runSingleStrategy(strategyId, args.symbol, window as Candle[], minConfidence);
     return {
       direction: sig.direction, entryPrice: sig.entryPrice, stopLoss: sig.stopLoss,
-      takeProfit: sig.takeProfit, confidence: sig.confidence, strategy: sig.strategy,
+      takeProfit: sig.takeProfit, confidence: sig.score, strategy: sig.strategy,
     };
   };
 

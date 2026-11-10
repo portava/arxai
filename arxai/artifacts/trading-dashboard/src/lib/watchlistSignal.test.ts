@@ -3,8 +3,11 @@ import { watchlistSignalBadge } from "./watchlistSignal";
 
 describe("watchlist signal badge", () => {
   it("shows a current scan with its bar time", () => {
-    const b = watchlistSignalBadge({ signal: "BUY", confidence: 72, signalStatus: "OK", signalAsOf: "2026-10-27T14:05:00.000Z" });
-    expect(b).toEqual({ kind: "signal", direction: "BUY", text: "BUY 72%", title: "Strategy scan of 1m bars up to 2026-10-27 14:05 UTC" });
+    const b = watchlistSignalBadge({ signal: "BUY", score: 72, signalStatus: "OK", signalAsOf: "2026-10-27T14:05:00.000Z" });
+    expect(b).toEqual({ kind: "signal", direction: "BUY", text: "BUY · score 72", title: "Strategy scan of 1m bars up to 2026-10-27 14:05 UTC. The score is an uncalibrated 0-100 heuristic, not a probability." });
+    expect(b?.text).not.toContain("%");
+    // A server still sending only the deprecated alias reads the same number.
+    expect(watchlistSignalBadge({ signal: "BUY", confidence: 72, signalStatus: "OK" })?.text).toBe("BUY · score 72");
   });
   it("no data is 'No data', never 'WAIT 0%'", () => {
     expect(watchlistSignalBadge({ signal: null, confidence: null, signalStatus: "NO_DATA" })?.text).toBe("No data");

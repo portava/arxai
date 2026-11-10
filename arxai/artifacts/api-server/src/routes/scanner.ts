@@ -13,7 +13,7 @@ import {
   decorateOpportunitiesWithHistory, decorateOpportunitiesWithNewsRisk,
   decorateOpportunitiesWithFinalRead, decorateOpportunitiesWithTimingContext,
   decorateOpportunitiesWithFvgRead,
-  effectiveOpportunityScore,
+  rankScannerOpportunities,
   DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES, UNIVERSES, UNIVERSE_IDS, type UniverseId,
 } from "../lib/marketScanner.js";
 import {
@@ -80,9 +80,11 @@ router.get("/market-scanner/opportunities", withScannerReadAdmission(async (req,
   const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
   const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
   const withFvg = await decorateOpportunitiesWithFvgRead(withTiming);
-  // Re-sort after timing boost so displayed order reflects heat-adjusted scores.
-  withFvg.sort((a, b) => effectiveOpportunityScore(b) - effectiveOpportunityScore(a));
-  const decorated = decorateOpportunitiesWithFinalRead(withFvg);
+  // Re-rank after the timing boost with the SAME three-tier measured ranking
+  // the scan used (calibrated probability → measured base rate → raw score,
+  // labelled unmeasured). The heat-adjusted score only orders rows inside the
+  // unmeasured tier and breaks ties; it never outranks a measured row.
+  const decorated = decorateOpportunitiesWithFinalRead(rankScannerOpportunities(withFvg));
   // Non-admin/owner viewers never see simulator-derived indicator values:
   // simulator rows are masked to an honest "Waiting for verified feed" state.
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
@@ -91,6 +93,10 @@ router.get("/market-scanner/opportunities", withScannerReadAdmission(async (req,
     universe: snapshot?.universe ?? status.universe,
     universeSymbols: snapshot?.symbols ?? status.universeSymbols,
     timeframes: snapshot?.timeframes ?? status.timeframes,
+    // Per (symbol, timeframe): own reading, or the nearest higher timeframe's
+    // reading flagged fallback:true with a label. Never a silent stand-in.
+    timeframeCoverage: snapshot?.timeframeCoverage ?? [],
+    skippedPairs: snapshot?.skippedPairs ?? 0,
     generatedAt: snapshot?.generatedAt ?? null,
     durationMs: snapshot?.durationMs ?? null,
     defaults: { symbols: DEFAULT_SYMBOLS, timeframes: DEFAULT_TIMEFRAMES },
@@ -173,9 +179,11 @@ router.post("/market-scanner/scan", requireUser, withScannerReadAdmission(async 
   const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
   const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
   const withFvg = await decorateOpportunitiesWithFvgRead(withTiming);
-  // Re-sort after timing boost so displayed order reflects heat-adjusted scores.
-  withFvg.sort((a, b) => effectiveOpportunityScore(b) - effectiveOpportunityScore(a));
-  const decorated = decorateOpportunitiesWithFinalRead(withFvg);
+  // Re-rank after the timing boost with the SAME three-tier measured ranking
+  // the scan used (calibrated probability → measured base rate → raw score,
+  // labelled unmeasured). The heat-adjusted score only orders rows inside the
+  // unmeasured tier and breaks ties; it never outranks a measured row.
+  const decorated = decorateOpportunitiesWithFinalRead(rankScannerOpportunities(withFvg));
   // Non-admin/owner viewers never see simulator-derived indicator values.
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
   return res.json({
@@ -184,6 +192,8 @@ router.post("/market-scanner/scan", requireUser, withScannerReadAdmission(async 
     universe: snapshot.universe,
     universeSymbols: snapshot.symbols,
     timeframes: snapshot.timeframes,
+    timeframeCoverage: snapshot.timeframeCoverage,
+    skippedPairs: snapshot.skippedPairs,
     generatedAt: snapshot.generatedAt,
     durationMs: snapshot.durationMs,
     // Envelope tag — per-opportunity dataSource on each row is authoritative.

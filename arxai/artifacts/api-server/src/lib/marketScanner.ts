@@ -42,10 +42,16 @@ import { routeCandles, routeQuote, quotePinForSeries } from "./data/marketDataRo
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
   calibrate,
-  rankByCalibration,
   SCANNER_CALIBRATION_KEY,
   type CalibrationStamp,
 } from "./calibration/cache.js";
+import { rankByMeasuredTier, type MeasuredRankBasis } from "./ranking/measuredRank.js";
+import {
+  SCANNER_TIMEFRAMES,
+  buildTimeframeCoverage,
+  planScanPairs,
+  type TimeframeCoverage,
+} from "./scannerCoverage/timeframeCoverage.js";
 import {
   buildFeatureSnapshot,
   latestCloseIso,
@@ -86,7 +92,10 @@ function focusScannerSymbols(cats: readonly ArxMarketCategory[]): string[] {
 export const DEFAULT_SYMBOLS: readonly string[] = getTierOneMarkets()
   .filter((mk) => mk.enabledForScanner)
   .map((mk) => mk.canonicalSymbol);
-export const DEFAULT_TIMEFRAMES = ["M1", "M5", "M15", "H1", "H4"] as const;
+/** Every timeframe ARX charts M1..D1 (was M1/M5/M15/H1/H4). Work per cycle
+ *  is bounded by SCANNER_MAX_PAIRS_PER_CYCLE (planScanPairs), and a timeframe
+ *  with no reading shows the nearest higher one, labelled (timeframeCoverage). */
+export const DEFAULT_TIMEFRAMES = SCANNER_TIMEFRAMES;
 
 const FOREX_CATEGORIES = ["forex_major", "forex_minor"] as const;
 const ALL_CATEGORIES = [
@@ -289,8 +298,12 @@ export interface ScannerOpportunity {
    *  scanSymbolTimeframe emits sets it. */
   calibratedProbability?: number | null;
   calibration?: CalibrationStamp;
-  /** Position basis after calibrated ranking (scanOnceSnapshot). */
-  rankBasis?: "calibrated_probability" | "unmeasured_raw_order";
+  /** Position basis after the three-tier measured ranking (scanOnceSnapshot,
+   *  lib/ranking/measuredRank): calibrated probability, then measured base
+   *  rate, then the raw score (unmeasured). */
+  rankBasis?: MeasuredRankBasis;
+  /** Ready-to-render rank basis, e.g. "unmeasured, ranked by raw score". */
+  rankLabel?: string;
   riskScore: number;
   entrySniperScore: number;
   riskRewardRatio: number;
@@ -533,11 +546,18 @@ export function scannerCalibrationFields(
   return { calibratedProbability: calibration.probability, calibration };
 }
 
-/** Order scanner rows by calibrated probability; see rankByCalibration. */
+/** Order scanner rows by the three-tier measured ranking (lib/ranking):
+ *  calibrated probability with N, then measured base rate, then the raw
+ *  (effective) opportunity score labelled "unmeasured, ranked by raw score". */
 export function rankScannerOpportunities(rows: readonly ScannerOpportunity[]): ScannerOpportunity[] {
-  return rankByCalibration(
-    rows.map((o) => ({ o, rawScore: effectiveOpportunityScore(o), reading: { probability: o.calibratedProbability ?? null } })),
-  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis }));
+  return rankByMeasuredTier(
+    rows.map((o) => ({
+      o,
+      rawScore: effectiveOpportunityScore(o),
+      calibration: o.calibration ?? null,
+      probability: o.calibratedProbability ?? null,
+    })),
+  ).map((r) => ({ ...r.o, rankBasis: r.rankBasis, rankLabel: r.rankLabel }));
 }
 
 export function advisoryDirectionFor(a: MarketAnalysis): AdvisoryDirection {
@@ -1921,6 +1941,11 @@ export interface ScannerSnapshot {
   symbols: string[];
   timeframes: ChartTimeframe[];
   opportunities: ScannerOpportunity[];
+  /** One entry per requested (symbol, timeframe): own reading, or the nearest
+   *  higher timeframe's reading flagged `fallback: true` with a label. */
+  timeframeCoverage: TimeframeCoverage[];
+  /** Pairs left out of this cycle by SCANNER_MAX_PAIRS_PER_CYCLE (0 normally). */
+  skippedPairs: number;
   generatedAt: string;
   durationMs: number;
 }
@@ -1957,7 +1982,10 @@ export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnap
     // scan light + predictable instead of crawling one-at-a-time or, if ever
     // switched to an unbounded Promise.all, hammering the providers. Result order
     // is preserved by the limiter (and re-sorted below regardless).
-    const pairs = syms.flatMap((sym) => tfs.map((tf) => ({ sym, tf })));
+    // Work per cycle is capped at SCANNER_MAX_PAIRS_PER_CYCLE: over the cap
+    // the slowest timeframes are dropped first and reported as skipped in
+    // timeframeCoverage (never silently).
+    const { pairs, skipped } = planScanPairs(syms, tfs);
     const scanned = await mapWithConcurrency(
       pairs,
       ENRICHMENT_CONCURRENCY,
@@ -1973,6 +2001,8 @@ export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnap
     const ranked = rankScannerOpportunities(out);
     return {
       universe, symbols: syms, timeframes: tfs, opportunities: ranked,
+      timeframeCoverage: buildTimeframeCoverage(syms, tfs, out, skipped),
+      skippedPairs: skipped.length,
       generatedAt,
       durationMs: Math.round(performance.now() - started),
     };

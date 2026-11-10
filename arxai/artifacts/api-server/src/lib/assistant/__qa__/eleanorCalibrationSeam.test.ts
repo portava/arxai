@@ -38,7 +38,7 @@ const measuredBaseRate: CalibrationStamp = toCalibrationStamp({
 
 const row = (over: Record<string, unknown>) => ({
   name: "getMarketScannerOpportunities",
-  result: { opportunities: [{ symbol: "GBPUSD", timeframe: "H1", recommendedAction: "BUY", confidenceScore: 72, riskScore: 35, ...over }], count: 1 },
+  result: { opportunities: [{ symbol: "GBPUSD", timeframe: "H1", recommendedAction: "BUY", score: 72, riskScore: 35, ...over }], count: 1 },
 });
 const kinds = (text: string, outputs: Array<{ name: string; result: unknown }>) => checkClaims(text, outputs).findings.map((f) => f.kind);
 
@@ -81,7 +81,7 @@ test("an unmeasured stamp never makes a number quotable as a probability", () =>
   const unmeasured = calibrate(SCANNER_CALIBRATION_KEY, "GBPUSD", "H1", 62);
   assert.equal(unmeasured.status, "unmeasured");
   assert.equal(unmeasured.probability, null);
-  const out = [row({ confidenceScore: 62, calibratedProbability: null, calibration: unmeasured })];
+  const out = [row({ score: 62, calibratedProbability: null, calibration: unmeasured })];
   assert.deepEqual(kinds("GBPUSD has a 62% chance of working.", out), ["UNCALIBRATED_PROBABILITY"]);
   assert.deepEqual(kinds("Win prob 62%.", out), ["UNCALIBRATED_PROBABILITY"]);
   // Saying it is unmeasured, with N, is fine.
@@ -105,7 +105,7 @@ test("a measured base rate is quotable as a base rate, never as an edge", () => 
 
 test("stamp counts are never probabilities, and a stamp is not an order", () => {
   const stamp = { ...measuredEdge, n: 50 };
-  const out = [row({ confidenceScore: 10, calibration: stamp, calibratedProbability: 0.62 })];
+  const out = [row({ score: 10, calibration: stamp, calibratedProbability: 0.62 })];
   assert.deepEqual(kinds("GBPUSD has a 50% chance.", out), ["UNCALIBRATED_PROBABILITY"], "n=50 is a count");
   const idx = buildEvidenceIndex(out);
   assert.equal(idx.executions.length, 0, "status \"measured\" is not an order status");
@@ -114,7 +114,7 @@ test("stamp counts are never probabilities, and a stamp is not an order", () => 
   assert.equal(prob?.calibrationKind, "measured");
   assert.equal(prob?.calibrationN, 50);
   assert.equal(idx.numbers.find((n) => n.path.endsWith("calibration.n"))?.calibrated, false);
-  assert.equal(idx.numbers.find((n) => n.path.endsWith("confidenceScore"))?.calibrated, null);
+  assert.equal(idx.numbers.find((n) => n.path.endsWith(".score"))?.calibrated, null);
 });
 
 test("stamp detection keys off the stamp shape, not a payload field name", () => {

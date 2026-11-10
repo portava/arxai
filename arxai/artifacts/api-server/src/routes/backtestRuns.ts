@@ -250,7 +250,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
         entryPrice: sig.entryPrice,
         stopLoss: sig.stopLoss,
         takeProfit: sig.takeProfit,
-        confidence: sig.confidence,
+        confidence: sig.score,
         strategy: sig.strategy,
       };
     };

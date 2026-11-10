@@ -77,11 +77,12 @@ export function realDataUnavailableResult(args: {
     decision: "REAL_DATA_UNAVAILABLE",
     mt5,
     signal: {
-      symbol, marketType, direction: "WAIT", confidence: 0,
+      symbol, marketType, direction: "WAIT", score: 0,
       entryPrice: 0, stopLoss: 0, takeProfit: 0,
       reason: "No real market data — analysis withheld.",
       strategy: "REAL_DATA_UNAVAILABLE", riskWarning: "REAL DATA UNAVAILABLE",
     },
+    score: 0,
     confidenceScore: 0,
     riskScore: 100,
     riskPercent,
@@ -102,7 +103,12 @@ export interface PaperIntelligenceResult {
   decision: IntelligenceDecision;
   mt5: MT5SnapshotView;
   signal: SignalOutput;
-  confidenceScore: number;       // 0..100
+  /** Uncalibrated heuristic strategy score, 0..100 (signal.score). Not a
+   *  probability; signal.calibration carries the measured reading. */
+  score: number;
+  /** @deprecated Same number as `score`. Kept because paper_ideas stores it
+   *  as confidence_score and createPaperIdea accepts it under this name. */
+  confidenceScore: number;
   riskScore: number;             // 0..100 (higher = riskier)
   riskPercent: number;           // % of account suggested at risk
   suggestedLot: number;          // for paper sizing only
@@ -143,16 +149,16 @@ export async function loadPaperIntelligenceSnapshot(userId: number): Promise<MT5
 // Risk score blends signal weakness, account health, and existing exposure.
 // 0 = clean setup; 100 = do not trade.
 function computeRiskScore(args: {
-  confidence: number;
+  score: number;
   openPositions: number;
   freeMarginRatio: number; // 0..1 of equity
   riskPercent: number;
 }): number {
-  const lowConfidencePenalty = Math.max(0, 70 - args.confidence) * 0.6;     // up to ~42
+  const lowScorePenalty = Math.max(0, 70 - args.score) * 0.6;     // up to ~42
   const overExposurePenalty  = Math.min(30, args.openPositions * 6);        // 6 per open trade, cap 30
   const thinFreeMarginPenalty = (1 - Math.min(1, args.freeMarginRatio)) * 20; // up to 20
   const aggressiveRiskPenalty = Math.max(0, args.riskPercent - 1) * 8;      // 8 per % over 1
-  const raw = lowConfidencePenalty + overExposurePenalty + thinFreeMarginPenalty + aggressiveRiskPenalty;
+  const raw = lowScorePenalty + overExposurePenalty + thinFreeMarginPenalty + aggressiveRiskPenalty;
   return Math.round(Math.max(0, Math.min(100, raw)) * 10) / 10;
 }
 
@@ -178,12 +184,13 @@ export async function analyzeSymbolForPaper(
       decision: "MT5_DATA_STALE",
       mt5,
       signal: {
-        symbol, marketType, direction: "WAIT", confidence: 0,
+        symbol, marketType, direction: "WAIT", score: 0,
         entryPrice: 0, stopLoss: 0, takeProfit: 0,
         reason: "MT5 data stale — analysis withheld.",
         strategy: "MT5_DATA_STALE", riskWarning: "MT5 DATA STALE",
       },
-      confidenceScore: 0,
+      score: 0,
+    confidenceScore: 0,
       riskScore: 100,
       riskPercent,
       suggestedLot: 0,
@@ -238,7 +245,7 @@ export async function analyzeSymbolForPaper(
   const equity = mt5.equity ?? accountBalance;
   const freeMarginRatio = equity > 0 ? Math.max(0, Math.min(1, (mt5.freeMargin ?? equity) / equity)) : 0;
   const riskScore = computeRiskScore({
-    confidence: signal.confidence,
+    score: signal.score,
     openPositions: mt5.openPositionsCount,
     freeMarginRatio,
     riskPercent,
@@ -246,9 +253,9 @@ export async function analyzeSymbolForPaper(
 
   // ── Decision routing (paper-only).
   let decision: IntelligenceDecision;
-  if (signal.direction === "WAIT" || signal.confidence < 50) {
+  if (signal.direction === "WAIT" || signal.score < 50) {
     decision = "WAIT";
-  } else if (signal.confidence >= minConfidence && riskScore < 50) {
+  } else if (signal.score >= minConfidence && riskScore < 50) {
     decision = "PAPER_TRADEABLE";
   } else {
     decision = "WATCHLIST_CANDIDATE";
@@ -258,8 +265,8 @@ export async function analyzeSymbolForPaper(
     `Candles: ${candles.length} real closed bars via ${candleSource}.`,
     `Strategy: ${signal.strategy}.`,
     `Signal: ${signal.direction} ${symbol} @ ${signal.entryPrice.toFixed(5)} (SL ${signal.stopLoss.toFixed(5)}, TP ${signal.takeProfit.toFixed(5)}).`,
-    `Confidence ${signal.confidence}/100. ${signal.reason}`,
-    `Risk score ${riskScore}/100 — confidence ${signal.confidence}, open positions ${mt5.openPositionsCount}, free-margin ratio ${(freeMarginRatio * 100).toFixed(0)}%, risk ${riskPercent}%.`,
+    `Score ${signal.score}/100 (uncalibrated heuristic; rule ${signal.scoreBasis?.formula ?? "n/a"}). ${signal.reason}`,
+    `Risk score ${riskScore}/100 — score ${signal.score}, open positions ${mt5.openPositionsCount}, free-margin ratio ${(freeMarginRatio * 100).toFixed(0)}%, risk ${riskPercent}%.`,
     `Suggested paper lot ${sizing.finalLot} (risking $${sizing.riskAmount.toFixed(2)} on a $${accountBalance.toFixed(2)} balance).`,
     `Operational mode: ${safety?.operationalMode ?? "unknown"} — execution layer remains READ_ONLY (paper-only).`,
   ];
@@ -274,7 +281,9 @@ export async function analyzeSymbolForPaper(
     decision,
     mt5,
     signal,
-    confidenceScore: signal.confidence,
+    score: signal.score,
+    /** @deprecated alias of `score` (paper_ideas.confidence_score column + createPaperIdea input). */
+    confidenceScore: signal.score,
     riskScore,
     riskPercent,
     suggestedLot: sizing.finalLot,
