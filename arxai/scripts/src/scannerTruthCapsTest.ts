@@ -30,7 +30,7 @@ function baseOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity {
     bias: "BULLISH" as ScannerOpportunity["bias"],
     recommendedAction: "BUY" as ScannerOpportunity["recommendedAction"],
     setupType: "TREND_CONTINUATION",
-    confidenceScore: 88, riskScore: 20, entrySniperScore: 80,
+    score: 88, confidenceScore: 88, riskScore: 20, entrySniperScore: 80,
     riskRewardRatio: 2.5,
     reasonForTrade: "clean trend", reasonToAvoid: "",
     rulesPassed: ["trend"], rulesFailed: [],

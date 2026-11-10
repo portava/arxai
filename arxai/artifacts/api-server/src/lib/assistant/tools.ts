@@ -1962,10 +1962,11 @@ export async function getMarketScannerOpportunities(args: { limit?: number } = {
         bias: o.bias,
         recommendedAction: o.recommendedAction,
         setupType: o.setupType,
-        // Raw heuristic technical score 0-100 (the scanner row's
-        // confidenceScore). Uncalibrated: never describe it as a probability
-        // or a confidence. Only the `calibration` stamp may be quoted as one.
-        score: o.confidenceScore,
+        // Raw heuristic technical score 0-100 (the scanner row's `score`;
+        // `confidenceScore` is its deprecated alias). Uncalibrated: never
+        // describe it as a probability or a confidence. Only the
+        // `calibration` stamp may be quoted as one.
+        score: o.score ?? o.confidenceScore,
         scoreNote: "Uncalibrated heuristic score (0-100), not a probability or confidence.",
         // Calibration engine: the MEASURED probability (or null) with its N,
         // scope and fit version. The grounding verifier recognises this

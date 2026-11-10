@@ -85,6 +85,7 @@ function scannerOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity 
   return {
     symbol: "EURUSD", timeframe: "M5",
     bias: "bullish", recommendedAction: "BUY", setupType: "Continuation",
+    score: 88,
     confidenceScore: 88, riskScore: 20, entrySniperScore: 80, riskRewardRatio: 2,
     reasonForTrade: "Support hold", reasonToAvoid: "",
     rulesPassed: [], rulesFailed: [],

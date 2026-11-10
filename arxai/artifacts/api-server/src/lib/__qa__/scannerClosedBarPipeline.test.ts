@@ -33,7 +33,9 @@ test("forming-price shocks never change scanner scores, regime or feature snapsh
   const forming = await scanSymbolTimeframe("EURUSD", "M5");
   assert.ok(closed && forming);
   assert.equal(forming.dataStatus, "live");
-  for (const key of ["bias", "opportunity", "confidenceScore", "entrySniperScore", "entry", "stopLoss", "takeProfit", "regime", "featureSnapshot"] as const) assert.deepEqual(forming[key], closed[key], key);
+  // `score` is the field consumers read; `confidenceScore` is its deprecated alias.
+  assert.equal(closed.score, closed.confidenceScore); assert.equal(forming.score, forming.confidenceScore);
+  for (const key of ["bias", "opportunity", "score", "confidenceScore", "entrySniperScore", "entry", "stopLoss", "takeProfit", "regime", "featureSnapshot"] as const) assert.deepEqual(forming[key], closed[key], key);
 });
 
 test("a forming bar cannot satisfy the closed-bar floor", async () => {
@@ -54,7 +56,7 @@ test("canonical aliases route one identity and unsupported timeframes never read
 test("wrong-symbol bars and unknown providers cannot create usable scanner rows", async () => {
   candleSymbol = "GBPUSD";
   const wrong = await scanSymbolTimeframe("EURUSD", "M5");
-  assert.equal(wrong?.tradeable, false); assert.equal(wrong?.confidenceScore, 0);
+  assert.equal(wrong?.tradeable, false); assert.equal(wrong?.confidenceScore, 0); assert.equal(wrong?.score, 0);
   candleSymbol = "EURUSD"; provider = "mock";
   assert.equal((await scanSymbolTimeframe("EURUSD", "M5"))?.dataStatus, "no_data");
 });
