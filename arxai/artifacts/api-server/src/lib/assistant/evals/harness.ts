@@ -145,10 +145,10 @@ export async function runEvalFixture(fixture: EvalFixture, opts: RunOptions = {}
   return { fixture, loop, visible, events, rawFindings: rawFindings as FindingKind[], failures, pass: failures.length === 0 };
 }
 
-function stripVerifierMarks(s: string): string {
+export function stripVerifierMarks(s: string): string {
   return s.replace(/\[Removed by the ARX verifier:[^\]]*\]/g, "").replace(/\[Withheld:[^\]]*\]/g, "").replace(/\n\n_ARX verifier:[^\n]*_$/, "");
 }
-function isMarked(visible: string, claimText: string): boolean {
+export function isMarked(visible: string, claimText: string): boolean {
   return visible.includes(`${claimText}${UNVERIFIED_MARK}`);
 }
 

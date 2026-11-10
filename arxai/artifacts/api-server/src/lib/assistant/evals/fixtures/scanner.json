@@ -146,7 +146,7 @@
         "UNCALIBRATED_PROBABILITY"
       ],
       "visibleIncludes": [
-        "[Removed by the ARX verifier: a score was presented as a probability"
+        "[Removed by the ARX verifier: a figure was presented as a probability"
       ]
     }
   },
@@ -222,7 +222,7 @@
         "UNCALIBRATED_PROBABILITY"
       ],
       "visibleIncludes": [
-        "[Removed by the ARX verifier: a score was presented as a probability"
+        "[Removed by the ARX verifier: a figure was presented as a probability"
       ]
     }
   },
@@ -408,6 +408,429 @@
     },
     "expect": {
       "findings": []
+    }
+  },
+  {
+    "id": "scanner-calibrated-measured",
+    "category": "scanner",
+    "description": "Measured calibrated probability quoted with its N survives",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD H1 is a BUY with a confidence score of 72/100. Win prob 62% (N=143), measured on this exact market and timeframe."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": 0.62,
+            "calibration": {
+              "probability": 0.62,
+              "status": "measured",
+              "n": 143,
+              "scope": "exact",
+              "model": "isotonic",
+              "fitKey": "scanner|GBPUSD|H1",
+              "fitVersion": 3,
+              "baseRate": 0.5,
+              "edgeDetected": true,
+              "label": "62% (N=143)",
+              "reason": null
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleIncludes": [
+        "Win prob 62% (N=143)"
+      ],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "scanner-calibrated-score-as-chance",
+    "category": "scanner",
+    "description": "Raw score turned into a chance next to a measured stamp",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD has a 72% chance of hitting TP."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": 0.62,
+            "calibration": {
+              "probability": 0.62,
+              "status": "measured",
+              "n": 143,
+              "scope": "exact",
+              "model": "isotonic",
+              "fitKey": "scanner|GBPUSD|H1",
+              "fitVersion": 3,
+              "baseRate": 0.5,
+              "edgeDetected": true,
+              "label": "62% (N=143)",
+              "reason": null
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a figure was presented as a probability"
+      ],
+      "visibleExcludes": [
+        "72% chance"
+      ]
+    }
+  },
+  {
+    "id": "scanner-calibrated-unmeasured",
+    "category": "scanner",
+    "description": "Unmeasured stamp: the probability must be called unmeasured",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD scores 72/100 on the scanner. Its win probability is unmeasured (N=12), so that score is not a chance."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": null,
+            "calibration": {
+              "probability": null,
+              "status": "unmeasured",
+              "n": 12,
+              "scope": "none",
+              "model": "none",
+              "fitKey": null,
+              "fitVersion": null,
+              "baseRate": null,
+              "edgeDetected": false,
+              "label": "unmeasured (N=12)",
+              "reason": "Fewer graded outcomes than the minimum."
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "scanner-calibrated-unmeasured-invented",
+    "category": "scanner",
+    "description": "Unmeasured stamp but a probability is stated anyway",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD has a 72% probability of working."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": null,
+            "calibration": {
+              "probability": null,
+              "status": "unmeasured",
+              "n": 12,
+              "scope": "none",
+              "model": "none",
+              "fitKey": null,
+              "fitVersion": null,
+              "baseRate": null,
+              "edgeDetected": false,
+              "label": "unmeasured (N=12)",
+              "reason": "Fewer graded outcomes than the minimum."
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleExcludes": [
+        "72% probability"
+      ]
+    }
+  },
+  {
+    "id": "scanner-base-rate-quoted",
+    "category": "scanner",
+    "description": "Measured base rate quoted as a base rate",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "GBPUSD scores 72/100. Historically 55% of these scanner calls worked (N=143); no edge over that base rate has been measured."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": 0.55,
+            "calibration": {
+              "probability": 0.55,
+              "status": "measured",
+              "n": 143,
+              "scope": "pooled_all",
+              "model": "base_rate",
+              "fitKey": "scanner|GBPUSD|H1",
+              "fitVersion": 2,
+              "baseRate": 0.55,
+              "edgeDetected": false,
+              "label": "55% (N=143)",
+              "reason": "No out-of-sample edge over the base rate."
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "scanner-base-rate-as-edge",
+    "category": "scanner",
+    "description": "Measured base rate presented as this setup's chance",
+    "user": "What are the odds on GBPUSD?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketScannerOpportunities",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "This GBPUSD setup has a 55% chance of working."
+      }
+    ],
+    "toolResults": {
+      "getMarketScannerOpportunities": {
+        "opportunities": [
+          {
+            "symbol": "GBPUSD",
+            "timeframe": "H1",
+            "bias": "BULLISH",
+            "recommendedAction": "BUY",
+            "setupType": "pullback",
+            "confidenceScore": 72,
+            "calibratedProbability": 0.55,
+            "calibration": {
+              "probability": 0.55,
+              "status": "measured",
+              "n": 143,
+              "scope": "pooled_all",
+              "model": "base_rate",
+              "fitKey": "scanner|GBPUSD|H1",
+              "fitVersion": 2,
+              "baseRate": 0.55,
+              "edgeDetected": false,
+              "label": "55% (N=143)",
+              "reason": "No out-of-sample edge over the base rate."
+            },
+            "riskScore": 35,
+            "riskRewardRatio": 2.1,
+            "statusBadge": "WATCH",
+            "opportunityLabel": "B",
+            "decisionStatus": "WATCH",
+            "entry": 1.2741,
+            "stopLoss": 1.2712,
+            "takeProfit": 1.2802,
+            "dataSource": "MT5_BRIDGE",
+            "generatedAt": "2026-11-09T14:30:00.000Z"
+          }
+        ],
+        "count": 1,
+        "scannerRunning": true,
+        "lastScanAt": "2026-11-09T14:30:00.000Z",
+        "liveDataConnected": true,
+        "paperOnly": true
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNCALIBRATED_PROBABILITY"
+      ],
+      "visibleExcludes": [
+        "55% chance"
+      ]
     }
   }
 ]
