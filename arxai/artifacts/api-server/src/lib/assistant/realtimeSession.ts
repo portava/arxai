@@ -22,6 +22,8 @@ import {
 } from "./derivedEnvelope.js";
 import { getMarketStatus } from "./marketProvider.js";
 import { logger } from "../logger.js";
+import { REALTIME_OUTPUT_MODALITIES, REALTIME_SPEECH_PATH } from "./voice/realtimeSpeechPolicy.js";
+export { REALTIME_OUTPUT_MODALITIES, REALTIME_SPEECH_PATH };
 
 const REALTIME_MODEL = "gpt-realtime";
 const SESSION_MAX_DURATION_SECONDS = 10 * 60; // 10 minutes hard cap
@@ -69,6 +71,8 @@ export interface RealtimeSessionResult {
   model?: string;
   expiresInSeconds?: number;
   toolCount?: number;
+  /** How a realtime answer becomes audio: always text → claim gate → TTS. */
+  speechPath?: typeof REALTIME_SPEECH_PATH;
   reason?: string;
   rateRemaining?: number;
   safety: AssistantEnvelopeFields;
@@ -133,9 +137,12 @@ export async function mintRealtimeSession(userId: number): Promise<RealtimeSessi
           instructions: sessionInstructions,
           tools: realtimeTools,
           tool_choice: "auto",
-          audio: {
-            output: { voice: "alloy" },
-          },
+          // Claim gate for speech (owner ruling 2026-11-09): the model's audio
+          // would stream browser<->OpenAI and could never be checked before it
+          // plays. So realtime answers in TEXT only; the browser sends that
+          // text to /me/assistant/voice/speech-gate (same claims checker as
+          // typed chat) and reads the gated result through the TTS route.
+          output_modalities: [...REALTIME_OUTPUT_MODALITIES],
         },
       }),
       signal: AbortSignal.timeout(15_000),
@@ -188,6 +195,7 @@ export async function mintRealtimeSession(userId: number): Promise<RealtimeSessi
     model: json.session?.model ?? json.model ?? REALTIME_MODEL,
     expiresInSeconds: SESSION_MAX_DURATION_SECONDS,
     toolCount: realtimeTools.length,
+    speechPath: REALTIME_SPEECH_PATH,
     rateRemaining: rate.remaining,
     safety,
   };

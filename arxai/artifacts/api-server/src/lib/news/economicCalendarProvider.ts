@@ -150,6 +150,20 @@ export interface EnrichedCalendarEvent {
   previous: string | null;
   actual: string | null;
   riskNote: string | null;
+  // ── Provenance (every shown event carries all of these) ──────────────────
+  /** Provider id that served the event (e.g. "fred", "trading_economics"). */
+  provider: string;
+  /** When ARX fetched this event from the provider (ISO). */
+  fetchedAt: string;
+  /** Freshness of that fetch at serve time. */
+  freshness: CalendarFreshness;
+  /** True when the fetch is STALE/UNAVAILABLE: show the label, never as live. */
+  stale: boolean;
+  /** "exact" clock time or "date" only (never shown as a clock time). */
+  timePrecision: "exact" | "date";
+  timeSource: "provider" | "official_release_schedule" | "date_only";
+  /** What the impact bucket rests on — a category, never a forecast number. */
+  impactBasis: "provider_importance" | "arx_release_classifier";
 }
 
 /** Optional filters applied to the enriched event list. All optional. */
@@ -221,6 +235,21 @@ function toEnriched(e: CalendarEvent): EnrichedCalendarEvent {
     previous: e.previous,
     actual: e.actual,
     riskNote: e.riskNote,
+    ...calendarEventProvenance(e),
+  };
+}
+
+/** Provenance fields every served calendar event carries. */
+export function calendarEventProvenance(e: CalendarEvent): Pick<EnrichedCalendarEvent, "provider" | "fetchedAt" | "freshness" | "stale" | "timePrecision" | "timeSource" | "impactBasis"> {
+  const timePrecision = e.timePrecision ?? "exact";
+  return {
+    provider: e.provider,
+    fetchedAt: e.lastUpdatedAt,
+    freshness: e.freshness,
+    stale: e.freshness === "STALE" || e.freshness === "UNAVAILABLE",
+    timePrecision,
+    timeSource: e.timeSource ?? (timePrecision === "date" ? "date_only" : "provider"),
+    impactBasis: e.impactBasis ?? (e.provider === "fred" ? "arx_release_classifier" : "provider_importance"),
   };
 }
 

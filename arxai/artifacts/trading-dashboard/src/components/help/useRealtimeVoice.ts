@@ -55,9 +55,54 @@ export function isRealtimeSafetyEnvelopeAcceptable(
   return REALTIME_VALID_SAFETY_MODES.has(safety.safetyMode);
 }
 
+// ── Claim gate for realtime speech (owner ruling 2026-11-09) ────────────────
+// The server mints realtime sessions with output_modalities ["text"], so the
+// model never streams audio straight to the speaker. Each final answer goes to
+// the server claim gate; the bubble shows the verified `display` text and only
+// the gated `speech` is read aloud (through the TTS route, which gates again).
+// Partial deltas are never shown: an unchecked figure is never on screen.
+
+export const REALTIME_GATE_FAILED_DISPLAY =
+  "[Withheld: the ARX verifier could not check this spoken answer, so it is not shown or read aloud.]";
+
+/** The final assistant text of a realtime event, or null for any other event. */
+export function realtimeAssistantFinalText(ev: { type?: string; text?: string; transcript?: string }): string | null {
+  const t = ev.type ?? "";
+  if ((t === "response.output_text.done" || t === "response.text.done") && typeof ev.text === "string") return ev.text;
+  // Legacy/audio sessions: the audio transcript is still gated, never shown raw.
+  if ((t === "response.output_audio_transcript.done" || t === "response.audio_transcript.done") && typeof ev.transcript === "string") return ev.transcript;
+  return null;
+}
+
+export interface GatedRealtimeAnswer { display: string; speech: string; ok: boolean }
+
+/** Send one final realtime answer through the server claim gate. Fails closed. */
+export async function gateRealtimeAnswer(
+  text: string,
+  userText: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<GatedRealtimeAnswer> {
+  try {
+    const r = await fetchFn(`${BASE}/api/me/assistant/voice/speech-gate`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text.slice(0, 8000), userText: userText.slice(0, 4000) }),
+    });
+    if (!r.ok) return { display: REALTIME_GATE_FAILED_DISPLAY, speech: "", ok: false };
+    const j = (await r.json()) as { display?: unknown; speech?: unknown };
+    if (typeof j.display !== "string" || typeof j.speech !== "string") return { display: REALTIME_GATE_FAILED_DISPLAY, speech: "", ok: false };
+    return { display: j.display, speech: j.speech, ok: true };
+  } catch {
+    return { display: REALTIME_GATE_FAILED_DISPLAY, speech: "", ok: false };
+  }
+}
+
 export interface UseRealtimeVoiceOptions {
   onUserTranscript?: (text: string, isFinal: boolean) => void;
   onAssistantTranscript?: (text: string, isFinal: boolean) => void;
+  /** Read the gated speech aloud (the panel routes it through the TTS hook). */
+  onSpeak?: (speech: string) => void;
   onMode?: (mode: RealtimeMode, reason?: string) => void;
   onError?: (message: string) => void;
 }
@@ -84,6 +129,9 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
   const startGeneration=useRef(0);
   const userTranscriptBufRef = useRef("");
   const assistantTranscriptBufRef = useRef("");
+  // The user's last final utterance: the only evidence a tool-less voice
+  // answer can echo (same rule as typed chat).
+  const lastUserTranscriptRef = useRef("");
 
   const optsRef = useRef(opts);
   useEffect(() => { optsRef.current = opts; }, [opts]);
@@ -133,24 +181,35 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
     sendDc({ type: "response.cancel" });
   }, [sendDc]);
 
-  const handleEvent = useCallback((ev: { type?: string; transcript?: string; delta?: string; name?: string; call_id?: string; item?: { call_id?: string; name?: string } }) => {
+  const handleEvent = useCallback((ev: { type?: string; text?: string; transcript?: string; delta?: string; name?: string; call_id?: string; item?: { call_id?: string; name?: string } }) => {
     const t = ev.type ?? "";
+    const finalText = realtimeAssistantFinalText(ev);
+    if (finalText !== null) {
+      assistantTranscriptBufRef.current = "";
+      const heard = lastUserTranscriptRef.current;
+      void gateRealtimeAnswer(finalText, heard).then((g) => {
+        if (stoppedRef.current) return;
+        optsRef.current.onAssistantTranscript?.(g.display, true);
+        if (g.ok && g.speech.trim()) optsRef.current.onSpeak?.(g.speech);
+      });
+      return;
+    }
     // User speech transcripts
     if (t === "conversation.item.input_audio_transcription.delta" && typeof ev.delta === "string") {
       userTranscriptBufRef.current += ev.delta;
       optsRef.current.onUserTranscript?.(userTranscriptBufRef.current, false);
     } else if (t === "conversation.item.input_audio_transcription.completed" && typeof ev.transcript === "string") {
       optsRef.current.onUserTranscript?.(ev.transcript, true);
+      lastUserTranscriptRef.current = ev.transcript;
       userTranscriptBufRef.current = "";
     }
     // Assistant speech transcripts
-    else if (t === "response.audio_transcript.delta" && typeof ev.delta === "string") {
+    // Assistant deltas are buffered, never shown: the bubble only ever shows
+    // the gated final text (a placeholder signals the answer is coming).
+    else if ((t === "response.output_text.delta" || t === "response.text.delta" || t === "response.output_audio_transcript.delta" || t === "response.audio_transcript.delta") && typeof ev.delta === "string") {
+      if (!assistantTranscriptBufRef.current) optsRef.current.onAssistantTranscript?.("", false);
       assistantTranscriptBufRef.current += ev.delta;
-      optsRef.current.onAssistantTranscript?.(assistantTranscriptBufRef.current, false);
       setState((s) => (s === "muted" ? s : "speaking"));
-    } else if (t === "response.audio_transcript.done" && typeof ev.transcript === "string") {
-      optsRef.current.onAssistantTranscript?.(ev.transcript, true);
-      assistantTranscriptBufRef.current = "";
     }
     // Speech start/end → listening/speaking indicator
     else if (t === "input_audio_buffer.speech_started") {

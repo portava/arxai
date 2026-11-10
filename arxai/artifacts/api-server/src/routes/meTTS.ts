@@ -13,12 +13,20 @@
 //   - requireUser on all routes
 //   - Text sanitized server-side before TTS (strips markdown, secrets)
 //   - Max 2000 chars per request to control cost
+//   - Claim gate for speech: every sentence must either carry no unchecked
+//     claim or appear in text the ARX verifier already released to this user
+//     (speech ledger / persisted assistant messages). Anything else is not
+//     synthesized; one spoken notice takes its place (lib/assistant/voice).
 //   - Never logs the text content (privacy)
 
 import { Router } from "express";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { logger } from "../lib/logger.js";
+import { db, arxAssistantMessagesTable } from "@workspace/db";
+import { and, desc, eq } from "drizzle-orm";
+import { gateSpeech, gateVoiceTurn } from "../lib/assistant/voice/speechGate.js";
+import { recordVerifiedSpeechSource, trustedSpeechFor } from "../lib/assistant/voice/speechLedger.js";
 
 const log = logger.child({ component: "ttsRoute" });
 const router = Router();
@@ -69,6 +77,45 @@ function sanitizeForTTS(input: string): string {
   return s;
 }
 
+// Verified text this user may hear read aloud: the in-memory speech ledger plus
+// the latest persisted assistant messages (stored in verified form), so a
+// restart does not strip checked figures from a verified answer.
+async function trustedSpeechSources(userId: number): Promise<string[]> {
+  const trusted = trustedSpeechFor(userId);
+  try {
+    const rows = await db.select({ content: arxAssistantMessagesTable.content })
+      .from(arxAssistantMessagesTable)
+      .where(and(eq(arxAssistantMessagesTable.userId, userId), eq(arxAssistantMessagesTable.role, "assistant")))
+      .orderBy(desc(arxAssistantMessagesTable.createdAt))
+      .limit(10);
+    for (const r of rows) if (typeof r.content === "string" && r.content) trusted.push(r.content);
+  } catch { /* the ledger alone still gates correctly (fail-safe: fewer figures spoken) */ }
+  return trusted;
+}
+
+// ── POST /api/me/assistant/voice/speech-gate ─────────────────────────────────
+// The realtime path answers in text only. The browser sends each final answer
+// here; it comes back as `display` (text-verifier form, for the bubble) and
+// `speech` (what may be read aloud). The speech is recorded in the ledger so
+// the TTS route speaks it unchanged.
+const SpeechGateBody = z.object({
+  text: z.string().min(1).max(8000),
+  userText: z.string().max(4000).optional().default(""),
+});
+router.post("/me/assistant/voice/speech-gate", requireUser, (req, res) => {
+  const parsed = SpeechGateBody.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ ok: false, error: "BAD_BODY" });
+  const gated = gateVoiceTurn(parsed.data.text, parsed.data.userText);
+  if (gated.speech) recordVerifiedSpeechSource(req.authUser!.id, gated.speech);
+  return res.json({
+    ok: true,
+    display: gated.display,
+    speech: gated.speech,
+    withheld: gated.withheld,
+    clean: gated.audioMayPlay,
+  });
+});
+
 // ── GET /api/me/assistant/tts/voices ─────────────────────────────────────────
 router.get("/me/assistant/tts/voices", requireUser, (_req, res) => {
   const hasOpenAI     = !!(process.env["AI_INTEGRATIONS_OPENAI_API_KEY"]);
@@ -99,8 +146,17 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
   }
 
   const { voice, provider } = parsed.data;
-  const text = sanitizeForTTS(parsed.data.text);
+  const sanitized = sanitizeForTTS(parsed.data.text);
 
+  if (!sanitized) {
+    return res.status(400).json({ ok: false, error: "EMPTY_TEXT" });
+  }
+
+  const userId = req.authUser!.id;
+  const gated = gateSpeech({ text: sanitized, trusted: await trustedSpeechSources(userId) });
+  const text = gated.speech;
+  res.setHeader("X-ARX-Speech-Gate", gated.clean ? "clean" : "withheld");
+  res.setHeader("X-ARX-Speech-Withheld", String(gated.withheld));
   if (!text) {
     return res.status(400).json({ ok: false, error: "EMPTY_TEXT" });
   }

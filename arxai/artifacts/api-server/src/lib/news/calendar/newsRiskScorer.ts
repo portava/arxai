@@ -90,6 +90,9 @@ export function scoreNewsRisk(symbol: string, events: EconomicEvent[]): NewsRisk
   let nearest: EconomicEvent | null = null;
   let nearestMinutes = Infinity;
   for (const e of relevant) {
+    // A date-only event has no release time: its midnight sentinel is not a
+    // time to count down to, so it never drives a minutes-to-event verdict.
+    if (e.timePrecision === "date") continue;
     const diff = (new Date(e.eventTime).getTime() - now) / 60000;
     if (diff > -15 && Math.abs(diff) < Math.abs(nearestMinutes)) {
       nearest = e;
