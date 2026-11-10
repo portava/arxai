@@ -39,12 +39,20 @@ export function measureAgentTrust(agentKey: string, record: CalibrationSample[])
 }
 
 /** Same measurement from an already-fitted (e.g. persisted) record. A missing
- *  fit means no scored record: zero influence. */
-export function agentTrustFromFit(agentKey: string, fit: CalibrationFit | null | undefined): MeasuredAgentTrust {
+ *  fit means no scored record: zero influence. `noReplayReason`, when given,
+ *  says why the agent has no replayed record either (its read is not a
+ *  deterministic function of market data); it is reported in the basis. */
+export function agentTrustFromFit(
+  agentKey: string,
+  fit: CalibrationFit | null | undefined,
+  noReplayReason?: string | null,
+): MeasuredAgentTrust {
   const f = fit ?? fitCalibration([]);
   let influence = 0;
   let basis: string;
-  if (f.status !== "measured") {
+  if (f.status !== "measured" && !fit && noReplayReason) {
+    basis = `no_replayable_record:${noReplayReason}`;
+  } else if (f.status !== "measured") {
     basis = `no_scored_record:n=${f.n}`;
   } else if (!f.cv) {
     basis = `record_too_small_for_skill_test:n=${f.n}<${CALIBRATION_EDGE_MIN_SAMPLE}`;

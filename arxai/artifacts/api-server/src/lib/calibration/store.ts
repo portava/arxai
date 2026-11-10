@@ -8,6 +8,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, calibrationFitsTable } from "@workspace/db";
 import type { CalibrationFit } from "@workspace/domain/calibration";
 import { replaceCalibrationCache } from "./cache.js";
+import type { FitProvenance } from "./provenance.js";
 
 export interface FitToPersist {
   fitKey: string;
@@ -16,6 +17,7 @@ export interface FitToPersist {
   symbol: string;
   timeframe: string;
   fit: CalibrationFit;
+  provenance: FitProvenance | null;
   dataFrom: Date | null;
   dataTo: Date | null;
 }
@@ -28,6 +30,7 @@ export async function persistFit(f: FitToPersist): Promise<{ version: number; wr
       wins: calibrationFitsTable.wins,
       dataTo: calibrationFitsTable.dataTo,
       source: calibrationFitsTable.source,
+      provenance: calibrationFitsTable.provenance,
     })
     .from(calibrationFitsTable)
     .where(eq(calibrationFitsTable.fitKey, f.fitKey))
@@ -39,6 +42,7 @@ export async function persistFit(f: FitToPersist): Promise<{ version: number; wr
     prev.n === f.fit.n &&
     prev.wins === f.fit.wins &&
     prev.source === f.source &&
+    ((prev.provenance as { digest?: string } | null)?.digest ?? null) === (f.provenance?.digest ?? null) &&
     (prev.dataTo?.getTime() ?? null) === (f.dataTo?.getTime() ?? null);
   if (prev && sameData) return { version: prev.version, written: false };
   const version = (prev?.version ?? 0) + 1;
@@ -62,6 +66,7 @@ export async function persistFit(f: FitToPersist): Promise<{ version: number; wr
       brierRaw: f.fit.brierRaw,
       edgeDetected: f.fit.edgeDetected,
       fit: f.fit as unknown as Record<string, unknown>,
+      provenance: f.provenance as unknown as Record<string, unknown> | null,
       dataFrom: f.dataFrom,
       dataTo: f.dataTo,
     })
@@ -78,6 +83,7 @@ export interface CurrentFitRow {
   symbol: string;
   timeframe: string;
   fit: CalibrationFit;
+  provenance: FitProvenance | null;
   fittedAt: Date;
 }
 
@@ -85,7 +91,7 @@ export interface CurrentFitRow {
 export async function loadCurrentFits(): Promise<CurrentFitRow[]> {
   const rows = await db.execute(sql`
     SELECT DISTINCT ON (fit_key)
-      fit_key, version, source, strategy, symbol, timeframe, fit, fitted_at
+      fit_key, version, source, strategy, symbol, timeframe, fit, provenance, fitted_at
     FROM calibration_fits
     ORDER BY fit_key, version DESC
   `);
@@ -98,6 +104,7 @@ export async function loadCurrentFits(): Promise<CurrentFitRow[]> {
     symbol: String(r["symbol"]),
     timeframe: String(r["timeframe"]),
     fit: r["fit"] as CalibrationFit,
+    provenance: (r["provenance"] as FitProvenance | null) ?? null,
     fittedAt: new Date(String(r["fitted_at"])),
   }));
 }
@@ -106,7 +113,7 @@ export async function loadCurrentFits(): Promise<CurrentFitRow[]> {
 export async function reloadCalibrationCache(): Promise<number> {
   const rows = await loadCurrentFits();
   replaceCalibrationCache(
-    rows.map((r) => [r.fitKey, { fit: r.fit, version: r.version, source: r.source, fittedAt: r.fittedAt.toISOString() }]),
+    rows.map((r) => [r.fitKey, { fit: r.fit, version: r.version, source: r.source, fittedAt: r.fittedAt.toISOString(), provenance: r.provenance }]),
   );
   return rows.length;
 }
@@ -122,6 +129,8 @@ export async function fitHistory(fitKey: string, limit = 20) {
       brierBaseline: calibrationFitsTable.brierBaseline,
       edgeDetected: calibrationFitsTable.edgeDetected,
       model: calibrationFitsTable.model,
+      source: calibrationFitsTable.source,
+      provenance: calibrationFitsTable.provenance,
       fittedAt: calibrationFitsTable.fittedAt,
     })
     .from(calibrationFitsTable)

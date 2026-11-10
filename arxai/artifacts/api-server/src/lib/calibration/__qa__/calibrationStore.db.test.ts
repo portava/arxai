@@ -12,10 +12,14 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, like, sql } from "drizzle-orm";
 import { db, pool, eleanorSignalOutcomesTable, calibrationFitsTable } from "@workspace/db";
 import { fitKey, seededRandom } from "@workspace/domain/calibration";
-import { runCalibrationRefit } from "../refitWorker.js";
+import { runCalibrationBootstrap, runCalibrationRefit } from "../refitWorker.js";
+import { POOLED } from "@workspace/domain/calibration";
+import { strategyCalibrationKey } from "../cache.js";
+import { PINNED_REAL_HISTORY } from "../historicalFixtures.js";
+import type { FitProvenance } from "../provenance.js";
 import { fitHistory } from "../store.js";
 import { calibrate, clearCalibrationCache, ELEANOR_CALIBRATION_KEY, SCANNER_CALIBRATION_KEY } from "../cache.js";
 
@@ -41,13 +45,22 @@ async function insertOutcomes(n: number, seed: number, startMs: number) {
   await db.insert(eleanorSignalOutcomesTable).values(rows);
 }
 
+// Fits the historical bootstrap writes during this test (public replay keys)
+// are removed afterwards: only rows newer than the test's start id.
+let startId = 0;
+
 async function cleanup() {
   await db.delete(eleanorSignalOutcomesTable).where(eq(eleanorSignalOutcomesTable.symbol, SYMBOL));
   await db.delete(calibrationFitsTable).where(eq(calibrationFitsTable.symbol, SYMBOL));
+  if (startId > 0) {
+    await db.delete(calibrationFitsTable).where(and(gt(calibrationFitsTable.id, startId), like(calibrationFitsTable.source, "%historical_replay%")));
+  }
 }
 
 describe("calibration store + refit worker (Postgres)", () => {
   before(async () => {
+    const r = await db.select({ m: sql<number>`coalesce(max(${calibrationFitsTable.id}), 0)::int` }).from(calibrationFitsTable);
+    startId = Number(r[0]?.m ?? 0) || 0;
     await cleanup();
     await insertOutcomes(150, 1, Date.UTC(2026, 9, 1));
   });
@@ -91,5 +104,32 @@ describe("calibration store + refit worker (Postgres)", () => {
     const rows = await db.select().from(calibrationFitsTable).where(inArray(calibrationFitsTable.fitKey, [key]));
     assert.equal(rows.length, 2);
     assert.equal(calibrate(ELEANOR_CALIBRATION_KEY, SYMBOL, "M15", 80).fitVersion, 2);
+  });
+
+  it("bootstraps from the committed real history with provenance, idempotently", async () => {
+    const first = await runCalibrationBootstrap();
+    assert.ok(first.historical?.fixtures.some((f) => f.fixtureId === "real-history-v1" && f.pinned), JSON.stringify(first.historical));
+    const key = fitKey(strategyCalibrationKey("Trend Continuation"), POOLED, POOLED);
+    const rows = await db.select().from(calibrationFitsTable).where(eq(calibrationFitsTable.fitKey, key));
+    const latest = rows.sort((a, b) => b.version - a.version)[0];
+    assert.ok(latest, "pooled trend-continuation fit persisted");
+    assert.equal(latest.status, "measured");
+    assert.ok(latest.n >= 30, `N=${latest.n}`);
+    assert.match(latest.source, /historical_replay/);
+    const prov = latest.provenance as unknown as FitProvenance;
+    assert.ok(prov?.digest);
+    assert.ok(prov.components.some((c) => c.fixtureId === "real-history-v1" && c.datasetHash === PINNED_REAL_HISTORY["real-history-v1"] && c.sha256));
+    const st = calibrate(strategyCalibrationKey("Trend Continuation"), "EURUSD", "D1", 80);
+    assert.equal(st.status, "measured");
+    assert.match(st.source, /historical_replay/);
+    assert.ok(st.provenance.fixtures.some((f) => f.fixtureId === "real-history-v1"));
+    // Agents: a replayed record exists for STRUCT.
+    const agentRows = await db.select().from(calibrationFitsTable).where(eq(calibrationFitsTable.fitKey, fitKey("agent:STRUCT", POOLED, POOLED)));
+    assert.ok(agentRows.length >= 1 && agentRows.every((r) => r.n >= 30));
+    // Unchanged evidence: a second run appends nothing for any historical key.
+    const before = (await db.select({ id: calibrationFitsTable.id }).from(calibrationFitsTable)).length;
+    await runCalibrationBootstrap();
+    const afterCount = (await db.select({ id: calibrationFitsTable.id }).from(calibrationFitsTable)).length;
+    assert.equal(afterCount, before, "second bootstrap must write no new version");
   });
 });

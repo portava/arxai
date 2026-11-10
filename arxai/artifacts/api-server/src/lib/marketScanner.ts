@@ -540,7 +540,7 @@ export function rankScannerOpportunities(rows: readonly ScannerOpportunity[]): S
   ).map((r) => ({ ...r.o, rankBasis: r.rankBasis }));
 }
 
-function advisoryDirectionFor(a: MarketAnalysis): AdvisoryDirection {
+export function advisoryDirectionFor(a: MarketAnalysis): AdvisoryDirection {
   const act = String(a.recommendedAction ?? "").toUpperCase();
   if (act.includes("BUY") || act.includes("LONG")) return "BUY";
   if (act.includes("SELL") || act.includes("SHORT")) return "SELL";

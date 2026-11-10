@@ -11,6 +11,13 @@
 //   strategy_replay    strategy signals replayed on STORED broker candles and
 //                      graded first-touch on the bars after the signal
 //   agent_predictions  an agent's own graded predictions (agent trust)
+//   historical_replay  strategy / agent rules replayed on a committed,
+//                      sha256-pinned real-history fixture (scripts/fixtures)
+// A fit built from several sources has them joined with "+".
+//
+// `provenance` lists every evidence component behind N (fixture id + dataset
+// hash + file sha256 for historical replay), the precedence rule applied
+// (live only once live N >= 30, else live + replay) and a digest of it.
 //
 // OBSERVATION ONLY. Nothing here touches an order path.
 
@@ -38,6 +45,8 @@ export const calibrationFitsTable = pgTable("calibration_fits", {
   edgeDetected:   boolean("edge_detected").notNull().default(false),
   /** The full pure-engine CalibrationFit (blocks, cv, reliability). */
   fit:            jsonb("fit").$type<Record<string, unknown>>().notNull(),
+  /** Evidence components behind N + the live/replay precedence applied. */
+  provenance:     jsonb("provenance").$type<Record<string, unknown>>(),
   dataFrom:       timestamp("data_from", { withTimezone: true }),
   dataTo:         timestamp("data_to", { withTimezone: true }),
   fittedAt:       timestamp("fitted_at", { withTimezone: true }).notNull().defaultNow(),
