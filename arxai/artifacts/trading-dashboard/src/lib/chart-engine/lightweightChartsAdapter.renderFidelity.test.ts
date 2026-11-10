@@ -150,11 +150,45 @@ describe("measureRenderFidelity — Heikin Ashi against its deterministic transf
     expect(a.measureRenderFidelity()!.mismatchedBars).toBe(0);
   });
 
+  it("an HA draw reports its transform check: source + drawn bars for the server to re-derive", () => {
+    const a = adapter(); a.setCandles(bars); a.setChartStyle("heikinAshi");
+    const f = a.measureRenderFidelity()!;
+    const want = heikinAshi(bars);
+    expect(f.transform).toBe("heikinAshi");
+    expect(f.transformVerified).toBe(true);
+    expect(f.transformCheck).toEqual({
+      seed: null,
+      samples: bars.map((b, i) => ({ time: b.time, source: [b.open, b.high, b.low, b.close],
+        drawn: [want[i]!.open, want[i]!.high, want[i]!.low, want[i]!.close] })),
+    });
+  });
+
+  it("a long HA series samples only the newest bars and seeds them with the HA bar before", () => {
+    const long = Array.from({ length: 100 }, (_, i) => bar(300 * (i + 1), 1.1 + (i % 7) * 0.001));
+    const a = adapter(); a.setCandles(long); a.setChartStyle("heikinAshi");
+    const check = a.measureRenderFidelity()!.transformCheck!;
+    const want = heikinAshi(long);
+    expect(check.samples).toHaveLength(64);
+    expect(check.samples[0]!.time).toBe(long[36]!.time);
+    expect(check.seed).toEqual({ open: want[35]!.open, close: want[35]!.close });
+  });
+
+  it("other styles carry no transform evidence", () => {
+    const a = adapter(); a.setCandles(bars);
+    const f = a.measureRenderFidelity()!;
+    expect(f.transform).toBeUndefined();
+    expect(f.transformCheck).toBeUndefined();
+  });
+
   it("an HA series that holds anything but the transform is a mismatch", () => {
     const want = heikinAshi(bars);
     engine.corrupt = (p) => (p.time === 600 ? { ...p, open: want[1]!.open + 0.00001 } : p);
     const a = adapter(); a.setCandles(bars); a.setChartStyle("heikinAshi");
-    expect(a.measureRenderFidelity()!.mismatchedBars).toBe(1);
+    const f = a.measureRenderFidelity()!;
+    expect(f.mismatchedBars).toBe(1);
+    expect(f.transformVerified).toBe(false);
+    // The corrupted value is what the server receives as drawn.
+    expect(f.transformCheck!.samples[1]!.drawn[0]).toBe(want[1]!.open + 0.00001);
   });
 });
 

@@ -16,6 +16,7 @@
     "test:live-preflight-readiness-observation": "tsx ./src/livePreflightReadinessObservationTest.ts",
     "test:deriv-contracts": "tsx ./src/derivContractsTest.ts",
     "test:auth-session-browser": "tsx ./src/qaAuthSessionBrowser.ts",
+    "test:chart-render-browser": "tsx ./src/qaChartRenderBrowser.ts",
     "test:compact-workspace-geometry": "node --test ./scanner-qa/compact-workspace-geometry.test.mjs",
     "test:shell-header-browser": "node --test ./shell-qa/header.test.mjs",
     "test:expectancy-engine": "tsx ./src/expectancyEngineTest.ts",

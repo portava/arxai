@@ -97,6 +97,11 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // Real-browser standard-user session journey: seeds and removes only a
   // throwaway USER, starts the API + Vite in-process, and never enables brokers.
   { pkg: "@workspace/scripts", script: "test:auth-session-browser" },
+  // Real-browser chart render accuracy: the dashboard chart engine on real
+  // lightweight-charts in Chromium draws a deterministic feed (OHLC, bars,
+  // close, hollow, Heikin Ashi + drawings); the real api-server must judge the
+  // posted evidence measured 100, and a corrupted bar / HA bar / drawing FAIL.
+  { pkg: "@workspace/scripts", script: "test:chart-render-browser" },
   { pkg: "@workspace/scripts", script: "test:candle-depth-diagnostics", inProcess: true },
   // Promoted from MANUAL_ONLY (Task — manual→auto safety-lane widening). Each was
   // verified to pass self-contained with only DATABASE_URL set: pure / pure-DB

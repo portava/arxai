@@ -9,6 +9,7 @@ import {
   recordIssuedProjection, projectionRoles,
 } from "../renderEvidence.js";
 import { withSubMetric } from "../chartTruthScore.js";
+import { heikinAshiRun } from "../heikinAshiTransform.js";
 import { buildChartHandshake } from "../chartHandshake.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
 
@@ -73,11 +74,68 @@ test("a drawing read back away from its stored anchors fails the read", () => {
   assert.match(v.detail, /fib-1/);
 });
 
-test("Heikin Ashi is measured against its own transform: exact → 100, mismatch → 0", () => {
-  assert.equal(scoreOf(exact({ displayMode: "heikinAshi" })), 100);
-  const v = judgeRenderEvidence(USER, state, NOW);
+// ── Heikin Ashi: the server re-derives the transform itself ────────────────
+const NEWEST_SEC = Date.parse(NEWEST_OPEN) / 1000;
+const SRC: [number, number, number, number][] = Array.from({ length: 12 }, (_, i) => {
+  const o = 1.1 + i * 0.0003, c = o + (i % 3 === 0 ? -0.0002 : 0.0004);
+  return [o, Math.max(o, c) + 0.0005, Math.min(o, c) - 0.0004, c];
+});
+const haState = {
+  ...state,
+  latestClosedCandle: { openTime: NEWEST_OPEN, open: SRC[11]![0], high: SRC[11]![1], low: SRC[11]![2], close: SRC[11]![3] },
+} as unknown as ChartIntelligenceState;
+const haDrawn = (seed: { open: number; close: number } | null) => heikinAshiRun(SRC.map(([open, high, low, close]) => ({ open, high, low, close })), seed)
+  .map(b => [b.open, b.high, b.low, b.close] as [number, number, number, number]);
+const haReport = (over: Partial<RenderEvidenceReport> = {}, drawn = haDrawn(null), seed: { open: number; close: number } | null = null) => exact({
+  displayMode: "heikinAshi", transform: "heikinAshi", transformVerified: true,
+  transformCheck: { seed, samples: SRC.map((source, i) => ({ time: NEWEST_SEC - (11 - i) * 300, source, drawn: drawn[i]! })) },
+  ...over,
+});
+const haJudge = (report: RenderEvidenceReport) => { recordRenderEvidence(USER, report, null, NOW); return judgeRenderEvidence(USER, haState, NOW); };
+
+test("Heikin Ashi: an exact draw the server re-derives itself measures 100 and is labelled not tradable", () => {
+  const v = haJudge(haReport());
+  assert.equal(v.status === "measured" && v.score, 100, v.detail);
   assert.match(v.detail, /Heikin Ashi transform of the source/);
-  assert.equal(scoreOf(exact({ displayMode: "heikinAshi", mismatchedBars: 1 })), 0);
+  assert.match(v.detail, /server re-derived the newest 12 Heikin Ashi bar/);
+  assert.match(v.detail, /not tradable prices/);
+  // A window that starts mid-series carries the HA seed before it.
+  const seed = { open: 1.0995, close: 1.1001 };
+  assert.equal((v => v.status === "measured" && v.score)(haJudge(haReport({}, haDrawn(seed), seed))), 100);
+});
+
+test("Heikin Ashi: the verdict Eleanor's read carries never quotes an HA value as a price", () => {
+  const v = haJudge(haReport());
+  const haValues = haDrawn(null).flat().map(x => x.toFixed(5));
+  for (const value of haValues) assert.ok(!v.detail.includes(value), `verdict quotes HA value ${value}`);
+});
+
+test("Heikin Ashi: one drawn bar off the server's transform is a measured FAIL even if the chart says verified", () => {
+  const drawn = haDrawn(null);
+  drawn[5] = [drawn[5]![0], drawn[5]![1], drawn[5]![2], drawn[5]![3] + 0.00001];
+  const v = haJudge(haReport({}, drawn));
+  assert.equal(v.status === "measured" && v.score, 0);
+  assert.match(v.detail, /1 drawn Heikin Ashi bar\(s\) differ from the server's own transform/);
+});
+
+test("Heikin Ashi: the chart's own failed transform check or bar mismatch fails", () => {
+  assert.equal((v => v.status === "measured" && v.score)(haJudge(haReport({ transformVerified: false }))), 0);
+  assert.equal((v => v.status === "measured" && v.score)(haJudge(haReport({ mismatchedBars: 1 }))), 0);
+});
+
+test("Heikin Ashi: no transform check → unavailable (never a pass); with a known mismatch → FAIL", () => {
+  assert.equal(haJudge(exact({ displayMode: "heikinAshi" })).status, "unavailable");
+  assert.match(haJudge(exact({ displayMode: "heikinAshi" })).detail, /did not report its transform check/);
+  assert.equal((v => v.status === "measured" && v.score)(haJudge(exact({ displayMode: "heikinAshi", mismatchedBars: 1 }))), 0);
+});
+
+test("Heikin Ashi: samples that do not carry the served closed candle are unbound", () => {
+  const moved = haReport();
+  moved.transformCheck!.samples[11]!.source = [SRC[11]![0], SRC[11]![1], SRC[11]![2], SRC[11]![3] + 0.0001];
+  assert.equal(haJudge(moved).status, "unbound");
+  const unordered = haReport();
+  unordered.transformCheck!.samples.reverse();
+  assert.notEqual((v => v.status === "measured" && v.score)(haJudge(unordered)), 100);
 });
 
 test("a projection drawn exactly at the levels the server issued passes", () => {

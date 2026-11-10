@@ -527,7 +527,7 @@ describe("deferred comparison engine init", () => {
     engine.getDisplayCandle = vi.fn(() => ({ time: bar.time, open: 1.1005, high: 1.104, low: 1.099, close: 1.10125 }));
     act(() => handler(bar));
     expect(engine.getDisplayCandle).toHaveBeenCalledWith(bar.time);
-    expect(legend.textContent).toMatch(/O 1\.10000 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10200 {2}· {2}HA O 1\.10050 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10125$/);
+    expect(legend.textContent).toMatch(/O 1\.10000 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10200 {2}· {2}HA \(averaged, not tradable\) O 1\.10050 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10125$/);
     engine.getDisplayCandle = vi.fn(() => null);
     act(() => handler(bar));
     expect(legend.textContent).not.toContain("HA");

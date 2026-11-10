@@ -32,4 +32,15 @@ describe("reportRenderEvidence", () => {
     reportRenderEvidence(adapterWith(null), { symbol: "EURUSD", timeframe: "M5", source: "mt5_broker" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("reads back the server's verdict after the post lands", async () => {
+    const verdict = { status: "measured", score: 100, detail: "Renderer measured" };
+    const fetchMock = vi.fn((url: string) => Promise.resolve(new Response(
+      url.startsWith("/api/me/chart/render-evidence?") ? JSON.stringify({ ok: true, verdict, report: { receivedAt: 5, barsCompared: 3, displayMode: "ohlc" } }) : "{}",
+    )));
+    vi.stubGlobal("fetch", fetchMock);
+    const got = await new Promise(resolve => reportRenderEvidence(adapterWith(fidelity), { symbol: "EURUSD", timeframe: "M5", source: "mt5_broker" }, 1_000, resolve));
+    expect(fetchMock.mock.calls[1]![0]).toBe("/api/me/chart/render-evidence?symbol=EURUSD&timeframe=M5");
+    expect(got).toEqual({ ...verdict, report: { receivedAt: 5, barsCompared: 3, displayMode: "ohlc" } });
+  });
 });

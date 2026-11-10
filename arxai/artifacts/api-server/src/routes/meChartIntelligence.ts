@@ -8,7 +8,9 @@ import { GetMeChartIntelligenceQueryParams } from "@workspace/api-zod";
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { enrichStateWithUserBrokerQuote } from "../lib/data/chart/userBrokerAlignment.js";
-import { applyRenderEvidence, recordRenderEvidence } from "../lib/data/chart/renderEvidence.js";
+import {
+  applyRenderEvidence, recordRenderEvidence, judgeRenderEvidence, latestRenderEvidence, HA_SAMPLE_LIMIT,
+} from "../lib/data/chart/renderEvidence.js";
 import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { currentFeedScopeBridge } from "../lib/data/feedScope.js";
 import { z } from "zod/v4";
@@ -89,6 +91,17 @@ const RenderEvidenceBody = z.object({
     price: z.number().finite(),
     axisRoundTripOk: z.boolean().nullable(),
   }).strict()).max(40),
+  // Heikin Ashi only (renderEvidence.ts "Heikin Ashi"): the server re-derives these.
+  transform: z.literal("heikinAshi").nullable().optional(),
+  transformVerified: z.boolean().nullable().optional(),
+  transformCheck: z.object({
+    seed: z.object({ open: z.number().finite(), close: z.number().finite() }).strict().nullable(),
+    samples: z.array(z.object({
+      time: z.number().int().positive(),
+      source: z.tuple([z.number().finite(), z.number().finite(), z.number().finite(), z.number().finite()]),
+      drawn: z.tuple([z.number().finite(), z.number().finite(), z.number().finite(), z.number().finite()]),
+    }).strict()).min(1).max(HA_SAMPLE_LIMIT),
+  }).strict().nullable().optional(),
 }).strict();
 
 router.post("/me/chart/render-evidence", requireUser, async (req, res): Promise<void> => {
@@ -102,6 +115,39 @@ router.post("/me/chart/render-evidence", requireUser, async (req, res): Promise<
   // Bind to the series this reader is served (their feed-scope bridge).
   recordRenderEvidence(userId, { ...parsed.data, timeframe }, await currentFeedScopeBridge());
   res.json({ ok: true });
+});
+
+// The latest render verdict for the reader's own chart, judged against the
+// series served now (the chart's "Render verified" chip). Read-only.
+const RenderVerdictQuery = z.object({
+  symbol: z.string().trim().min(1).max(32),
+  timeframe: z.string().min(1).max(8),
+});
+
+router.get("/me/chart/render-evidence", requireUser, async (req, res): Promise<void> => {
+  const parsed = RenderVerdictQuery.safeParse(req.query);
+  const timeframe = parsed.success ? normalizeChartTimeframe(parsed.data.timeframe) : null;
+  const userId = req.authUser?.id;
+  if (!parsed.success || !timeframe || userId == null) {
+    res.status(400).json({ ok: false, error: "INVALID_RENDER_VERDICT_REQUEST" });
+    return;
+  }
+  // Resolve the reader's feed scope first: the judge reads it synchronously.
+  await currentFeedScopeBridge();
+  const latest = latestRenderEvidence(userId, parsed.data.symbol, timeframe);
+  if (!latest) {
+    res.json({ ok: true, verdict: { status: "absent", detail: "The chart has not reported a measured draw yet." }, report: null, ...SAFETY_ENVELOPE });
+    return;
+  }
+  let verdict;
+  try {
+    const state = await buildChartIntelligenceState(parsed.data.symbol, timeframe, 300);
+    verdict = judgeRenderEvidence(userId, state);
+  } catch (err) {
+    req.log.warn({ err }, "render verdict: served series unavailable");
+    verdict = { status: "unbound" as const, detail: "The served series is unavailable, so the draw cannot be bound to it." };
+  }
+  res.json({ ok: true, verdict, report: latest, ...SAFETY_ENVELOPE });
 });
 
 export default router;

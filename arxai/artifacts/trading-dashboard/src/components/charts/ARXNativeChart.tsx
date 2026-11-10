@@ -1,5 +1,6 @@
 import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
-import { reportRenderEvidence, RENDER_EVIDENCE_FIRST_MEASURE_MS, RENDER_EVIDENCE_REFRESH_MS } from "@/lib/chart-engine/renderEvidenceReporter";
+import { reportRenderEvidence, RENDER_EVIDENCE_FIRST_MEASURE_MS, RENDER_EVIDENCE_REFRESH_MS, type RenderVerdict } from "@/lib/chart-engine/renderEvidenceReporter";
+import { RenderVerdictChip } from "./RenderVerdictChip";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
@@ -350,6 +351,7 @@ export function ARXNativeChart({
   const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
   const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
   const [preferencesSaved, setPreferencesSaved] = useState(true);
+  const [renderVerdict, setRenderVerdict] = useState<RenderVerdict | null>(null);
   const scaleMode = preferences.scale;
 
   useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
@@ -374,7 +376,7 @@ export function ARXNativeChart({
     // caller shows the same text.
     const ha = bar ? adapterRef.current?.getDisplayCandle?.(bar.time) ?? null : null;
     legendRef.current.textContent = bar
-      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${px(bar.open)}  H ${px(bar.high)}  L ${px(bar.low)}  C ${px(bar.close)}${ha ? `  ·  HA O ${px(ha.open)}  H ${px(ha.high)}  L ${px(ha.low)}  C ${px(ha.close)}` : ""}`
+      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${px(bar.open)}  H ${px(bar.high)}  L ${px(bar.low)}  C ${px(bar.close)}${ha ? `  ·  HA (averaged, not tradable) O ${px(ha.open)}  H ${px(ha.high)}  L ${px(ha.low)}  C ${px(ha.close)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -1016,18 +1018,26 @@ export function ARXNativeChart({
   // keep that evidence fresh while the chart is open (renderEvidenceReporter.ts).
   // Nothing is scheduled until an engine holds bars (the deferred init owns the
   // first frame), and one timeout chain at a time re-measures while it is open.
+  // Runtime self-check: every redraw (new bars, a context reset, a style or
+  // precision change) re-measures and re-posts, and the refresh keeps it fresh
+  // (drawing edits are picked up on that refresh). The chip shows the server's
+  // verdict on the latest post.
   useEffect(() => {
     if (!adapterRef.current || mergedEngineCandles.length === 0) return;
     const target = { symbol: resolvedSymbol, timeframe, source: historySource };
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let live = true;
+    const onVerdict = (v: RenderVerdict) => { if (live) setRenderVerdict(v); };
     const measure = () => {
-      reportRenderEvidence(adapterRef.current, target);
+      reportRenderEvidence(adapterRef.current, target, Date.now(), onVerdict);
       timer = setTimeout(measure, RENDER_EVIDENCE_REFRESH_MS);
     };
     // Let the engine lay out the new series before reading coordinates back.
     timer = setTimeout(measure, RENDER_EVIDENCE_FIRST_MEASURE_MS);
-    return () => { if (timer != null) clearTimeout(timer); };
-  }, [mergedEngineCandles, historySource, resolvedSymbol, timeframe, chartEpoch, pricePrecision]);
+    return () => { live = false; if (timer != null) clearTimeout(timer); };
+  }, [mergedEngineCandles, historySource, resolvedSymbol, timeframe, chartEpoch, pricePrecision, preferences.style]);
+  // A verdict belongs to one chart; drop it when the chart changes.
+  useEffect(() => { setRenderVerdict(null); }, [resolvedSymbol, timeframe, historySource]);
   useLayoutEffect(() => {
     if (!onScannerSurfaceChange) return;
     const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
@@ -1639,6 +1649,7 @@ export function ARXNativeChart({
       <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: scheduledClosure, quoteFrozen: marketFrozen != null && !scheduledClosure })} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
+      {hasCandles && <div className="px-3 pt-1"><RenderVerdictChip verdict={renderVerdict} /></div>}
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
