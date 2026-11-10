@@ -42,6 +42,7 @@
     "./handshake": "./src/handshake/index.ts",
     "./execution-preview": "./src/execution-preview/index.ts",
     "./eleanor-quality": "./src/eleanor-quality/index.ts",
+    "./calibration": "./src/calibration/index.ts",
     "./conditional-execution": "./src/conditional-execution/index.ts",
     "./shadow-lab": "./src/shadow-lab/index.ts",
     "./agent-promotion": "./src/agent-promotion/index.ts",

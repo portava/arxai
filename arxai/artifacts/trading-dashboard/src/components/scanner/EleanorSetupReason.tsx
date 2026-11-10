@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CalibrationReading } from "@/components/calibration/CalibratedProbability";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
@@ -13,6 +14,9 @@ export type SignalContext = {
   recommendedAction: string;
   bias: string;
   confidenceScore?: number;
+  /** Calibration engine reading for confidenceScore: measured probability
+   *  with its N, or unmeasured with its N. */
+  calibration?: CalibrationReading | null;
   riskScore?: number;
   entrySniperScore?: number;
   reasonForTrade?: string;

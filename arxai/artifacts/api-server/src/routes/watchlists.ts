@@ -6,6 +6,7 @@ import { resolveArxMarket, isApprovedArxMarket, arxFocusApprovedEnvelope } from 
 import { MIN_STRATEGY_SCAN_CANDLES, runStrategyScan } from "../lib/strategyEngine.js";
 import { barOpenUtcMs, classifyCandleFreshness, feedTimestampsUnconfirmed, newestBarLeadMs } from "../lib/data/freshness.js";
 import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
+import type { CalibrationStamp } from "../lib/calibration/cache.js";
 import { servedSeriesBrokerClockOffsetMs, servedSeriesBrokerStamped } from "../lib/data/providers/mt5Provider.js";
 import { newsRiskFrom, resolveNewsRiskEvents } from "../lib/news/calendar/newsRiskResolver.js";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -22,6 +23,9 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
   return Promise.all(items.map(async (it) => {
     let signal: string | null = null;
     let confidence: number | null = null;
+    // Calibration engine reading for `confidence`: measured probability + N,
+    // or null / "unmeasured". null when no strategy call was made.
+    let calibration: CalibrationStamp | null = null;
     let trend: string | null = null;
     // Why there is (or is not) a signal, and the open time of the newest 1m
     // bar it was computed from. A signal is shown only for a scan of current
@@ -61,9 +65,10 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
         if (brokerClockUnmeasured || !fresh || fresh.stale || unconfirmed) {
           signalStatus = "STALE_DATA";
         } else {
-          const sig = runStrategyScan(it.symbol, candles, 60);
+          const sig = runStrategyScan(it.symbol, candles, 60, undefined, { timeframe: "M1" });
           signal = sig.direction;
           confidence = sig.confidence;
+          calibration = sig.calibration ?? null;
           trend = sig.direction === "BUY" ? "up" : sig.direction === "SELL" ? "down" : "neutral";
           signalStatus = fresh.freshness === "delayed" ? "DELAYED" : "OK";
         }
@@ -83,6 +88,8 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
       favorite: it.favorite,
       signal,
       confidence,
+      calibratedProbability: calibration?.probability ?? null,
+      calibration,
       trend,
       signalStatus,
       signalAsOf,

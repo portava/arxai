@@ -9,6 +9,7 @@ import { bindFeedScope } from "./lib/data/feedScopeMiddleware";
 import { applyEffectiveViewMode } from "./lib/auth/effectiveViewMode";
 import { startMonitor } from "./lib/intelligence/monitorWorker";
 import { startEleanorOutcomeWorker } from "./lib/eleanorQuality/outcomeWorker";
+import { startCalibrationRefitWorker } from "./lib/calibration/refitWorker.js";
 import { startDemoCommandExpirySweep } from "./lib/mt5/demoCommandQueue";
 import { startEleanorWatchSweeper } from "./lib/assistant/eleanorWatchSweeper";
 import { perfTimer } from "./middlewares/perfTimer";
@@ -206,6 +207,9 @@ if (!isPreviewSafeStart()) startMonitor();
 // only: resolves recorded signal outcomes from real evidence + appends
 // self-reviews; never touches any execution path).
 if (!isPreviewSafeStart()) startEleanorOutcomeWorker();
+// Calibration refit: turns resolved outcomes into versioned fits that every
+// confidence-shaped payload reads (probability with N, or "unmeasured").
+if (!isPreviewSafeStart()) startCalibrationRefitWorker();
 
 // Demo command expiry: SENT_TO_MT5_DEMO rows with no EA result after the
 // command TTL + grace go to FAILED (EXPIRED_DEMO_NO_EA_RESULT) so they stop

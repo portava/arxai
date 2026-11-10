@@ -2,6 +2,23 @@
 // SAFETY: pure functions over user data. No I/O, no broker calls, no LLM API.
 // Output is structured grades + insights + coaching plan.
 
+import type { CalibrationStamp } from "./calibration/cache.js";
+
+/** The fixed calibration reading of a post-trade review (see type docs). */
+export const AI_REVIEW_CALIBRATION: CalibrationStamp = Object.freeze({
+  probability: null,
+  status: "unmeasured",
+  n: 0,
+  scope: "none",
+  model: "none",
+  fitKey: null,
+  fitVersion: null,
+  baseRate: null,
+  edgeDetected: false,
+  label: "unmeasured (N=0)",
+  reason: "A post-trade review makes no forecast, so there is no outcome to calibrate it against.",
+}) as CalibrationStamp;
+
 import type { PaperTrade } from "@workspace/db";
 
 export type Grade = "A" | "B" | "C" | "D" | "F";
@@ -44,6 +61,13 @@ export type TradeReviewOutput = {
    * realized outcomes, so this is `false` — a literal, not a computed value.
    */
   calibrated: false;
+  /**
+   * Calibration engine reading. A post-trade review makes no forecast about a
+   * future outcome, so there is nothing to calibrate it against: always null
+   * with status "unmeasured" and N=0, said in the payload rather than implied.
+   */
+  calibratedProbability: null;
+  calibration: CalibrationStamp;
   strengths: string[]; weaknesses: string[]; mistakeTags: string[];
   riskNotes: string; entryNotes: string; exitNotes: string; disciplineNotes: string;
   improvementPlan: string[]; nextTradeFocus: string;
@@ -128,6 +152,8 @@ export function reviewTrade(inp: TradeReviewInput): TradeReviewOutput {
     aiConfidence,
     inputDataPoints: dataPoints,
     calibrated: false,
+    calibratedProbability: null,
+    calibration: AI_REVIEW_CALIBRATION,
     strengths, weaknesses,
     mistakeTags: Array.from(mistakeTags),
     riskNotes: `Score ${risk}/100. ${rr != null ? `RR ${rr}.` : "No RR computable."} ${t.stopLoss == null ? "No stop loss." : ""}`.trim(),

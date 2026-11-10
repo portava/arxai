@@ -1,5 +1,12 @@
 // Modular Strategy Engine for ARX AI — Analyze. Risk. eXecute.
 
+import {
+  calibrate,
+  rankByCalibration,
+  strategyCalibrationKey,
+  type CalibrationStamp,
+} from "./calibration/cache.js";
+
 export interface Candle {
   time: string;
   open: number;
@@ -32,6 +39,15 @@ export interface SignalOutput {
    *  compiling); the exported strategy wrappers + runStrategyScan set it on
    *  EVERY real payload — WAIT included. */
   advisory?: typeof STRATEGY_ADVISORY_LABEL;
+  /** Calibration engine: the MEASURED probability that this strategy's call
+   *  works at this raw `confidence`, fitted on graded outcomes for this
+   *  strategy × symbol × timeframe (see lib/calibration). null when fewer than
+   *  the minimum graded outcomes exist. `confidence` above stays the raw,
+   *  uncalibrated heuristic for stored-row compatibility. */
+  calibratedProbability?: number | null;
+  /** Full calibration reading: status, N, scope, fit version. Always set on
+   *  payloads leaving the exported seams. */
+  calibration?: CalibrationStamp;
 }
 
 /** The single honesty label stamped on every strategy-engine payload. */
@@ -40,8 +56,23 @@ export const STRATEGY_ADVISORY_LABEL = "ADVISORY_UNCALIBRATED" as const;
 // Stamp the honesty label at the exported seam so no strategy payload —
 // actionable or WAIT, whichever return path built it — can serialize without
 // it. Pure and additive; nothing else in the payload is touched.
-function labeledAdvisory(s: SignalOutput): SignalOutput {
-  return { ...s, advisory: STRATEGY_ADVISORY_LABEL };
+function labeledAdvisory(s: SignalOutput, timeframe = ""): SignalOutput {
+  return { ...s, advisory: STRATEGY_ADVISORY_LABEL, ...calibrationFields(s, timeframe) };
+}
+
+/** Calibrated reading for a strategy payload. WAIT / no-strategy payloads make
+ *  no directional call, so there is nothing to calibrate: null + unmeasured. */
+function calibrationFields(s: SignalOutput, timeframe: string): Pick<SignalOutput, "calibratedProbability" | "calibration"> {
+  const directional = s.direction === "BUY" || s.direction === "SELL";
+  const strategy = directional ? strategyCalibrationKey(s.strategy) : "strategy:none";
+  const calibration = calibrate(strategy, s.symbol, timeframe, s.confidence);
+  if (!directional) {
+    return {
+      calibratedProbability: null,
+      calibration: { ...calibration, probability: null, status: "unmeasured", n: 0, label: "unmeasured (N=0)", reason: "No directional call to calibrate." },
+    };
+  }
+  return { calibratedProbability: calibration.probability, calibration };
 }
 
 // ─── Indicator helpers ────────────────────────────────────────────────────────
@@ -465,7 +496,17 @@ export function runStrategyScan(
   symbol: string,
   candles: Candle[],
   minConfidence = 65,
-  marketType: "forex" | "indices" | "stocks" | "synthetic" = "synthetic"
+  marketType: "forex" | "indices" | "stocks" | "synthetic" = "synthetic",
+  opts: { timeframe?: string } = {},
+): SignalOutput {
+  return labeledAdvisory(runStrategyScanCore(symbol, candles, minConfidence, marketType), opts.timeframe ?? "");
+}
+
+function runStrategyScanCore(
+  symbol: string,
+  candles: Candle[],
+  minConfidence: number,
+  marketType: "forex" | "indices" | "stocks" | "synthetic",
 ): SignalOutput {
   if (candles.length < MIN_STRATEGY_SCAN_CANDLES) {
     const price = candles[candles.length - 1]?.close ?? 0;
@@ -486,7 +527,14 @@ export function runStrategyScan(
     sessionBreakoutStrategy(candles, symbol),
   ];
 
-  const actionable = strategies.filter((s) => s.direction !== "WAIT").sort((a, b) => b.confidence - a.confidence);
+  // Pick the best call by MEASURED probability (a measured strategy always
+  // outranks an unmeasured one); raw confidence orders ties and the
+  // unmeasured tail. See lib/calibration.
+  const actionable = rankByCalibration(
+    strategies
+      .filter((s) => s.direction !== "WAIT")
+      .map((s) => ({ ...s, rawScore: s.confidence, reading: s.calibration ?? calibrate(strategyCalibrationKey(s.strategy), symbol, "", s.confidence) })),
+  ).map(({ rawScore: _r, reading: _x, rank: _k, rankBasis: _b, ...s }) => s as SignalOutput);
   const price = candles[candles.length - 1].close;
 
   if (actionable.length === 0) {

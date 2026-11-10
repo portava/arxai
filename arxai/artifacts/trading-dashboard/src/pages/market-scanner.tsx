@@ -13,6 +13,8 @@ import { EleanorSetupReason } from "@/components/scanner/EleanorSetupReason";
 import { ScannerTimingBadges, type ScannerTimingContext } from "@/components/scanner/ScannerTimingBadges";
 import { isGoldMode } from "@workspace/domain/market";
 import { ScannerTradeModal } from "@/components/scanner/ScannerTradeModal";
+import { CalibratedProbability, type CalibrationReading } from "@/components/calibration/CalibratedProbability";
+import { CalibrationReliabilityCard } from "@/components/calibration/CalibrationReliabilityCard";
 import { RecentScannerTrades } from "@/components/scanner/RecentScannerTrades";
 import { MasterLiveAccessBanner } from "@/components/live/MasterLiveAccessGuard";
 import { SelectedMarketPanel } from "@/components/scanner/SelectedMarketPanel";
@@ -52,6 +54,8 @@ type Opp = {
   symbol: string; timeframe: string;
   bias: string; recommendedAction: string;
   setupType: string; confidenceScore: number; riskScore: number;
+  /** Calibration engine reading for confidenceScore (probability + N, or unmeasured). */
+  calibration?: CalibrationReading | null;
   entrySniperScore: number; riskRewardRatio: number;
   reasonForTrade: string; reasonToAvoid: string;
   rulesPassed: string[]; rulesFailed: string[];
@@ -791,7 +795,11 @@ export default function MarketScanner() {
                   const adjusted = mult < 1 ? Math.round(o.confidenceScore * mult) : o.confidenceScore;
                   return (
                     <>
-                      <div className="grid grid-cols-3 gap-1 text-center">
+                      <div className="grid grid-cols-4 gap-1 text-center">
+                        <div className="border rounded p-1" title="Measured win probability with the number of graded outcomes behind it">
+                          <div className="text-muted-foreground">Win prob</div>
+                          <CalibratedProbability calibration={o.calibration} testId={`scanner-calibrated-${o.symbol}-${o.timeframe}`} className="text-[11px] font-semibold" />
+                        </div>
                         <div className="border rounded p-1">
                           <div className="text-muted-foreground">Conf</div>
                           <div className="font-mono font-semibold" data-testid={`scanner-conf-${o.symbol}`}>
@@ -1034,6 +1042,17 @@ export default function MarketScanner() {
       >
         <RecentScannerTrades />
       </CollapsibleSection>
+      <CollapsibleSection
+        title="Probability accuracy"
+        description="Reliability diagram and Brier score for the probabilities this scanner shows."
+        storageKey="scanner.calibration"
+        testId="scanner-calibration"
+        defaultOpen
+      >
+        <SectionErrorBoundary section="Probability accuracy">
+          <CalibrationReliabilityCard />
+        </SectionErrorBoundary>
+      </CollapsibleSection>
     </div>
   );
 
@@ -1100,6 +1119,7 @@ export default function MarketScanner() {
             symbol: tradeTarget.opp.symbol, timeframe: tradeTarget.opp.timeframe,
             recommendedAction: tradeTarget.opp.recommendedAction, bias: tradeTarget.opp.bias,
             confidenceScore: tradeTarget.opp.confidenceScore, riskScore: tradeTarget.opp.riskScore,
+            calibration: tradeTarget.opp.calibration ?? null,
             entrySniperScore: tradeTarget.opp.entrySniperScore,
             reasonForTrade: tradeTarget.opp.reasonForTrade, reasonToAvoid: tradeTarget.opp.reasonToAvoid,
             setupType: tradeTarget.opp.setupType,

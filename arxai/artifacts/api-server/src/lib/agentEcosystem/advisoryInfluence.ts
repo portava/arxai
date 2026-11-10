@@ -25,6 +25,13 @@ import {
   type AgentAlignment,
   type AgentStance,
 } from "@workspace/domain/agent-system";
+import {
+  agentTrustFromFit,
+  fitKey,
+  POOLED,
+  type MeasuredAgentTrust,
+} from "@workspace/domain/calibration";
+import { agentCalibrationKey, calibrationLookup } from "../calibration/cache.js";
 
 // ── Registry snapshot cache ────────────────────────────────────────────────
 
@@ -46,12 +53,11 @@ export async function getAgentRegistrySnapshot(): Promise<AdvisoryAgentSnapshot[
       })
       .from(agentsTable)
       .where(isNull(agentsTable.archivedAt));
-    const snap: AdvisoryAgentSnapshot[] = rows.map((r) => ({
+    const snap: AdvisoryAgentSnapshot[] = rows.map((r) => measuredSnapshot({
       agentKey: r.agentKey,
       name: r.name,
       department: r.department,
-      trustScore: r.trustScore ?? 50,
-      authorityWeight: r.authorityWeight ?? 0,
+      registryAuthorityWeight: r.authorityWeight ?? 0,
       currentStatus: r.currentStatus ?? "SHADOW",
     }));
     snapshotCache = { at: now, snap };
@@ -60,6 +66,34 @@ export async function getAgentRegistrySnapshot(): Promise<AdvisoryAgentSnapshot[
     // Fail-open: never break a surface because the registry is unavailable.
     return snapshotCache?.snap ?? [];
   }
+}
+
+/**
+ * Trust comes ONLY from the agent's own scored outcome record (calibration
+ * engine, key `agent:<agentKey>`). The registry's trustScore was never
+ * validated against outcomes and is ignored here. Influence is the measured
+ * out-of-sample skill; the registry's authorityWeight can only LOWER it
+ * (governance may mute an agent, it cannot grant unearned influence).
+ * No record, or a record with no out-of-sample skill → zero influence.
+ */
+export function measuredSnapshot(r: {
+  agentKey: string;
+  name: string;
+  department: string;
+  registryAuthorityWeight: number;
+  currentStatus: string;
+}): AdvisoryAgentSnapshot & { measuredTrust: MeasuredAgentTrust } {
+  const cached = calibrationLookup.get(fitKey(agentCalibrationKey(r.agentKey), POOLED, POOLED));
+  const measured = agentTrustFromFit(r.agentKey, cached?.fit);
+  return {
+    agentKey: r.agentKey,
+    name: r.name,
+    department: r.department,
+    trustScore: measured.trustScore,
+    authorityWeight: Math.min(Math.max(0, r.registryAuthorityWeight), measured.influence),
+    currentStatus: r.currentStatus,
+    measuredTrust: measured,
+  };
 }
 
 export function invalidateAgentRegistrySnapshot(): void {
