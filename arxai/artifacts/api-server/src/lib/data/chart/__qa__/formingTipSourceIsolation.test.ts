@@ -26,7 +26,7 @@ const { startDerivFormingBridge, __stopDerivFormingBridgeForTests } = await impo
 beforeEach(() => { __resetFormingBarStore(); __stopDerivFormingBridgeForTests(); });
 
 const sources = ["mt5_broker", "deriv", "deriv_public"] as const;
-for (const history of sources) {
+for (const history of sources.filter(s => s !== "mt5_broker")) {
   test(`HTTP ${history} candles only receive their own tip`, async () => {
     historySource = history;
     const oldNow = Date.now;
@@ -47,10 +47,6 @@ for (const history of sources) {
       assert.equal(accepted.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
       assert.equal(accepted.candles.at(-1)?.volumeEvidence?.quantity, null);
       assert.equal(accepted.candles.at(-1)?.priceBasisEvidence?.kind, "unavailable");
-      if(history === "mt5_broker") {
-        assert.equal(refused.candles.at(-1)?.priceBasisEvidence?.kind, "producer_declared");
-        assert.equal(accepted.candles.at(-1)?.priceBasis, "UNKNOWN");
-      }
       const analysis = await getChartCandles("V75", "M5", 60);
       assert.equal(analysis.candles.some((bar) => bar.isForming), false);
     } finally { Date.now = oldNow; }
@@ -76,7 +72,7 @@ function openStream(source?: unknown) {
   return { req, frames, status };
 }
 
-for (const source of sources) {
+for (const source of sources.filter(s => s !== "mt5_broker")) {
   test(`SSE ${source} rejects both other providers, including alias bus events`, () => {
     const stream = openStream(source);
     try {
@@ -118,17 +114,31 @@ test("injected public bridge keeps public and legacy Deriv ticks separate", () =
 
 
 test("same-bar forming update clears the provider count instead of reusing stale evidence", async () => {
-  historySource = "mt5_broker";
+  historySource = "deriv";
   const oldNow = Date.now, last = bars.at(-1)!, priorTime = last.time;
   Date.now = () => now;
   last.time = new Date(currentOpen).toISOString();
   try {
-    foldFormingTick("R_75", 1200, now, now, "mt5_broker");
+    foldFormingTick("R_75", 1200, now, now, "deriv");
     const current = await getChartCandles("V75", "M5", 60, true);
     assert.equal(current.candles.at(-1)?.isForming, true);
     assert.equal(current.candles.at(-1)?.volumeEvidence?.kind, "unavailable");
     assert.equal(current.candles.at(-1)?.volumeEvidence?.quantity, null);
     assert.equal(current.candles.at(-1)?.priceBasisEvidence?.kind, "unavailable");
-    assert.equal(current.candles.at(-1)?.priceBasis, "UNKNOWN");
+
   } finally { Date.now = oldNow; last.time = priorTime; }
+});
+
+ test("MT5 HTTP and SSE refuse unbound composer values", async () => {
+  historySource = "mt5_broker";
+  const oldNow = Date.now;
+  Date.now = () => now;
+  const stream = openStream("mt5_broker");
+  try {
+    foldFormingTick("R_75", 9999, now, now, "mt5_broker");
+    const display = await getChartCandles("V75", "M5", 60, true);
+    assert.equal(display.candles.some(b => b.isForming), false);
+    assert.equal(display.candles.at(-1)?.close, bars.at(-1)?.close);
+    assert.deepEqual(stream.frames.map(f => f.type), ["native_snapshot_mode"]);
+  } finally { stream.req.emit("close"); Date.now = oldNow; }
 });

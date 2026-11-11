@@ -547,6 +547,7 @@ export async function ingestBrokerCandles(
     // bar must never masquerade as a final bar downstream.
     if (bar.isClosedBar) {
       mirrorClosed.push({
+        brokerSymbol: payload.brokerSymbol?.trim() || null,
         time: bar.openTime.toISOString(),
         open: bar.open,
         high: bar.high,

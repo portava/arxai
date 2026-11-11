@@ -255,3 +255,26 @@ test("readCalendarProvider: events are real-or-empty — never fabricated while 
   const times = read.events.map((e) => Date.parse(e.timeUtc));
   assert.deepEqual(times, times.slice().sort((a, b) => a - b), "events stay time-ordered");
 });
+
+// Live-audit regression: company press releases must not acquire macro risk
+// from substrings in routine language or names.
+for (const headline of [
+  "Forward-looking statements accompany new sensor product announcement",
+  "Boeing wins an award for new onboard software",
+  "Shopping platform announces commission and permission updates",
+]) test(`whole-term severity rejects incidental substrings: ${headline}`, () => {
+  const items = [{ headline, publishedAt: isoMinsAgo(10) }];
+  assert.equal(deriveNewsRiskScore(items, NOW).highImpactCount, 0);
+  assert.equal(selectTopNewsHeadlines(items, NOW)[0]!.severity, "low");
+});
+for (const headline of ["War escalates", "New sanctions announced", "Fed: rate-cut decision", "BoE announces interest-rate decision", "Geopolitical crisis deepens", "Banks collapsed overnight"]) {
+  test(`whole-term severity preserves genuine terms: ${headline}`, () => {
+    assert.equal(deriveNewsRiskScore([{ headline, publishedAt: isoMinsAgo(10) }], NOW).highImpactCount, 1);
+  });
+}
+test("routine forward-looking summary does not inflate a calm headline", () => {
+  const items = [{ headline: "Precision sensors launched", summary: "Contains forward-looking statements and awards.", publishedAt: isoMinsAgo(10) }];
+  assert.equal(deriveNewsRiskScore(items, NOW).highImpactCount, 0);
+  assert.equal(selectTopNewsHeadlines(items, NOW)[0]!.severity, "low");
+  assert.match(deriveNewsRisk({ ...baseNews, riskScore: .8 }).summary, /estimate/);
+});

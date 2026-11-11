@@ -167,6 +167,10 @@ app.use("/api/mt5/sync-account", requireBridgeTokenHeader, bridgeJsonSmall);
 // capture as the other bridge endpoints. The global default below is unchanged.
 const bridgeJsonCandleIngest = express.json({ limit: CANDLE_INGEST_BODY_LIMIT_BYTES, verify: captureBodySize });
 app.use("/api/mt5/candles/ingest", requireBridgeTokenHeader, bridgeJsonCandleIngest);
+// Read-only multi-day MT5 calendar snapshots; bounded separately from global JSON.
+app.use("/api/mt5/calendar/ingest", requireBridgeTokenHeader, express.json({ limit: "2mb" }));
+// At most50 compact native pairs. Reject missing tokens before bounded parsing.
+app.use("/api/bridge/v2/native-seams", requireBridgeTokenHeader, express.json({ limit: "100kb", verify: captureBodySize }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

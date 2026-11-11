@@ -478,6 +478,11 @@ export function ARXNativeChart({
       && candle.timeframe === timeframe && candle.source === response.feedStatus?.source)
     ? response : undefined, [response, resolvedSymbol, timeframe, supportedTimeframe]);
   const candles = data?.candles ?? [];
+  const nativeFormingSnapshot = candles.filter(c => c.isForming).at(-1) as
+    (typeof candles[number] & { observedAt?: string; formingOrigin?: string }) | undefined;
+  const nativeSnapshotObservedAt = nativeFormingSnapshot?.formingOrigin === "native_mt5_snapshot"
+    && typeof nativeFormingSnapshot.observedAt === "string" && Number.isFinite(Date.parse(nativeFormingSnapshot.observedAt))
+    ? new Date(nativeFormingSnapshot.observedAt).toISOString() : null;
   const hasCandles = candles.length > 0;
   // The latest refetch failed while React Query keeps the previous response on
   // screen. Those bars are a frozen cache, so every live / AI / clean claim
@@ -616,6 +621,7 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
+  const releaseScannerSurface = useRef<(() => void) | null>(null);
   const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
@@ -758,6 +764,10 @@ export function ARXNativeChart({
     return () => {
       cancelDeferred?.();
       if (requestPrimaryEngine.current === build) requestPrimaryEngine.current = null;
+      // External overlays must release their series before the engine removes
+      // its canvas. React runs this layout cleanup before the later surface
+      // effect cleanup; a late removePriceLine otherwise schedules a dead paint.
+      releaseScannerSurface.current?.();
       adapter?.destroy();
       adapterRef.current = null;
       activeChartContext.current = null;
@@ -1016,7 +1026,15 @@ export function ARXNativeChart({
     if (!onScannerSurfaceChange) return;
     const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
     onScannerSurfaceChange(surface ? { ...surface, symbol: resolvedSymbol, timeframe, context: chartContext, style: preferences.style } : null);
-    return () => onScannerSurfaceChange(null);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (releaseScannerSurface.current === release) releaseScannerSurface.current = null;
+      onScannerSurfaceChange(null);
+    };
+    releaseScannerSurface.current = release;
+    return release;
   }, [onScannerSurfaceChange, hasCandles, resolvedSymbol, timeframe, chartContext, preferences.style, chartEpoch]);
 
   // A forming tip that reached a deferred comparison before its engine existed
@@ -1767,6 +1785,9 @@ export function ARXNativeChart({
           Every active restriction stays outside the disclosure. Full original
           explanations and the feed strip remain mounted in normal flow, separate from the canvas/position coordinate origin. */}
       <section aria-label="Chart evidence" className="border-b border-zinc-800/60">
+        {nativeSnapshotObservedAt && <p className="px-3 pt-1 text-xs text-zinc-400" data-testid="native-forming-snapshot-time" title={nativeSnapshotObservedAt}>
+          Current candle snapshot observed {nativeSnapshotObservedAt.slice(11, 19)} UTC; quote updates separately.
+        </p>}
         {(isSafeMode || stripIntegrityFailed || (!utcClockQualified && hasCandles) ||
           (hasCandles && !ohlcAvailable && !isSafeMode) || showPoorBanner || showNotAiConfirmed) && (
           <div className="flex flex-wrap gap-x-2 gap-y-1 px-3 pt-1 text-xs leading-4" data-testid="chart-evidence-restrictions">

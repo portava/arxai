@@ -1,13 +1,4 @@
-// THEME C3.2 — the forming tip must be appended for any live provider.
-//
-// C3.1 gave the composer a real non-broker tick source. This locks the second
-// half: chartDataService only appended the tip when `source === "mt5_broker"`,
-// so even with Deriv ticks folding, a Deriv-fed chart still received no tip and
-// still froze between closed candles.
-//
-// Both MT5 and Deriv remain supported. The newer source-isolation suite locks
-// the additional invariant: the real tick must match the winning history
-// provider. A symbol with no matching-provider ticks gets no tip.
+// MT5 display requires an exact writer-bound native snapshot; Deriv retains its tick composer.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -33,10 +24,8 @@ function formingTipBlock(src: string): string {
 }
 
 describe("C3.2 — the append gate supports both live providers", () => {
-  it("does not require source === 'mt5_broker' to append a tip", () => {
+  it("separates native MT5 snapshots from the non-MT5 composer", () => {
     const block = formingTipBlock(serviceSource());
-    // Inspect actual append guards, not metadata expressions inside candle
-    // objects (a provider-specific UNKNOWN label must not disable Deriv tips).
     const ast = ts.createSourceFile("forming-tip.ts", block, ts.ScriptTarget.Latest, true);
     const conditions: string[] = [];
     const visit = (node: ts.Node): void => {
@@ -44,11 +33,10 @@ describe("C3.2 — the append gate supports both live providers", () => {
       ts.forEachChild(node, visit);
     };
     visit(ast);
-    assert.ok(conditions.length > 0, "the append conditions must be inspected");
-    assert.ok(
-      !conditions.some(condition => /source\s*===\s*["']mt5_broker["']/.test(condition)),
-      "a broker-only append gate freezes every Deriv-fed chart between closed candles",
-    );
+    assert.ok(conditions.some(c => c.includes('source === "mt5_broker"') && c.includes('!historicalOnly') && c.includes('!providerDelayed')));
+    assert.ok(conditions.some(c => c.includes('source !== "mt5_broker"') && c.includes('isFormingTickSource(source)')));
+    assert.ok(block.includes('readNativeSeamForSeries('));
+    assert.ok(block.includes('formingOrigin: "native_mt5_snapshot"'));
   });
 
   it("still gates on an opt-in request and a real newest bar", () => {
@@ -57,11 +45,11 @@ describe("C3.2 — the append gate supports both live providers", () => {
     assert.ok(/lastCandle/.test(block), "a tip needs a newest closed bar to sit against");
   });
 
-  it("still sources the tip from the composer, never synthesizing one", () => {
+  it("retains genuine folded ticks for the Deriv path", () => {
     const block = formingTipBlock(serviceSource());
     assert.ok(
       /getFormingBar\(/.test(block),
-      "the tip must come from real folded ticks — the composer is the only source",
+      "the Deriv tip must come from real folded ticks",
     );
     assert.ok(
       /getFormingTickAgeMs\(/.test(block),

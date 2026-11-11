@@ -278,6 +278,12 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     }
   }
 
+  // A directional bias supported only by voters below their evidence floor
+  // remains a lean. It cannot justify entry levels or an entry suggestion.
+  const voters = bias === "BULLISH" ? bullish : bias === "BEARISH" ? bearish : [];
+  const biasQualifier: TruthBiasQualifier | null =
+    voters.length > 0 && voters.every((c) => c.belowEvidenceFloor === true) ? "LEAN" : null;
+
   // ── Stale-level guard → withhold actionable geometry ──────────────────────
   const staleness = evaluateLevelStaleness({
     price: input.price,
@@ -286,7 +292,7 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
   });
 
   const geometryUsable = usableGeometry(input.levels, bias, input.price);
-  const levels: ComposedLevels = staleness.stale || !geometryUsable
+  const levels: ComposedLevels = biasQualifier === "LEAN" || staleness.stale || !geometryUsable
     ? {
         entryFrom: null,
         entryTo: null,
@@ -294,7 +300,9 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
         invalidation: null,
         takeProfit: [],
         withheld: true,
-        withheldReason: staleness.reason ?? "A complete, consistent entry, stop, and target are not available yet.",
+        withheldReason: biasQualifier === "LEAN"
+          ? "The directional read is below its minimum evidence floor; entry levels are withheld."
+          : staleness.reason ?? "A complete, consistent entry, stop, and target are not available yet.",
       }
     : {
         entryFrom: input.levels.entryFrom,
@@ -371,13 +379,6 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
       ? `The last session leaned ${bias === "BULLISH" ? "bullish" : "bearish"}; the market is closed now.`
       : "The market is closed — this is the last session's data.";
   }
-
-  // ── Lean qualifier (label-only; the vote is unchanged) ─────────────────────
-  // A directional bias whose every voter failed its own minimum-evidence rule
-  // is a lean, not an edge. One voter without a floor failure clears it.
-  const voters = bias === "BULLISH" ? bullish : bias === "BEARISH" ? bearish : [];
-  const biasQualifier: TruthBiasQualifier | null =
-    voters.length > 0 && voters.every((c) => c.belowEvidenceFloor === true) ? "LEAN" : null;
 
   return {
     stage,

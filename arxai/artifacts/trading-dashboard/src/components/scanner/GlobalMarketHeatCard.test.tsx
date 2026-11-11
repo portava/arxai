@@ -552,3 +552,16 @@ describe("provider row chips (price)", () => {
     expect(screen.getByTestId("heat-provider-chip-price").className).toContain("text-success");
   });
 });
+
+
+it("compact global heat qualifies a partial calm reading and exposes its actual coverage", () => {
+  const data=buildData();
+  data.global.sourceStatus="partial";data.global.intensity="calm";
+  data.global.priceSource={...data.global.priceSource,connected:false,status:"unavailable"};
+  data.global.newsSource={...data.global.newsSource,connected:true,status:"live"};
+  data.global.calendarSource={...data.global.calendarSource,connected:false,status:"missing"};
+  mockUseGetMarketHeat.mockReturnValue({data,isLoading:false,isFetching:false,isError:false,refetch:vi.fn()});
+  render(<GlobalMarketHeatCard compactWorkspace/>);
+  expect(screen.getByTestId("market-heat-compact").querySelector(".arx-heat-global")?.textContent).toContain("Calm (partial)");
+  expect(screen.getByTestId("compact-heat-coverage").textContent).toMatch(/headlines only/i);
+});

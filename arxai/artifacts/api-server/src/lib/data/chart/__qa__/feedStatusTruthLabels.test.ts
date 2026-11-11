@@ -155,13 +155,23 @@ test("Durable mirror: stored broker candles are not a live bridge feed", async (
   assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
   assert.doesNotMatch(out.feedStatus.message, /\byour\b/i);
   assert.match(out.feedStatus.message, /stored/i);
+  assert.equal(out.aiUsable, false);
+  assert.equal(out.feedStatus.aiUsable, false);
+  assert.equal(out.marketEvidence, null);
+  assert.match(out.truthResult!.sourceDocumentation.dataMode, /^HISTORICAL/);
+  assert.doesNotMatch(out.chartTruthScore.subMetrics.find(m => m.key === "source_authenticity")!.detail, /Live source/);
 });
 
 test("Durable mirror: the forming-tip display path does not make it live either", async () => {
   const currentOpen = Math.floor(WEEKDAY_NOW / M5) * M5;
   durableMirrorMt5(WEEKDAY_NOW, M5, currentOpen - M5);
+  foldFormingTick("EURUSD", 1.1, WEEKDAY_NOW - 1_000, WEEKDAY_NOW - 1_000, "mt5_broker");
+  foldFormingTick("EURUSD", 1.1002, WEEKDAY_NOW, WEEKDAY_NOW, "mt5_broker");
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60, true));
   assert.equal(out.feedStatus.isLive, false);
+  assert.equal(out.aiUsable, false);
+  assert.equal(out.marketEvidence, null);
+  assert.ok(out.candles.every(c => !c.isForming));
   assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
 });
 

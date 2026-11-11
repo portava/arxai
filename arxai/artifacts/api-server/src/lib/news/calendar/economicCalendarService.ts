@@ -1,9 +1,14 @@
+import { verifyCalendarValues } from "./calendarValueVerification.js";
+import { getMt5CalendarResult, mt5CalendarConfigured } from "./mt5CalendarProvider.js";
+import { FOREX_FACTORY_PROVIDER, FOREX_FACTORY_COVERAGE, isForexFactorySelected, fetchForexFactoryCalendar, forexFactoryRefreshNote, forexFactoryObservedAt, __resetForexFactoryForTests } from "./forexFactoryProvider.js";
 // Central economic-calendar service — the SINGLE source of truth every consumer
 // surface (Market Impact Radar, Global Market Heat, Eleanor, the Economic Calendar
 // page DB-sync, /news/calendar) derives from.
 //
 // HONESTY (inviolable):
-//   - No provider key            ⇒ status "missing"  ("Economic calendar provider missing")
+//   - Explicit paid-provider selection without its key ⇒ status "missing".
+//   - Unset selection ⇒ the public Forex Factory current-week schedule.
+//   - Its bounded cached observations keep their original timestamp and DELAYED label.
 //   - Provider configured, fetch fails ⇒ status "error" ("Economic calendar provider error")
 //   - Provider reachable, zero events  ⇒ status "empty" ("No relevant economic events")
 //   - Provider reachable, >0 events    ⇒ status "ok"
@@ -45,6 +50,7 @@ interface CacheEntry {
   fetchedAtMs: number;
   /** Horizon this entry was fetched for — cache is only reused for the SAME window. */
   daysAhead: number;
+  provider: string;
 }
 
 let _cache: CacheEntry | null = null;
@@ -63,6 +69,7 @@ export function __setEconomicCalendarFetcherForTests(fn: CalendarHttpFetcher | n
 
 /** TEST-ONLY: clear the in-memory cache + last-* telemetry. */
 export function __resetEconomicCalendarStateForTests(): void {
+  __resetForexFactoryForTests();
   _cache = null;
   _lastFetchAt = null;
   _lastSuccessAt = null;
@@ -72,8 +79,10 @@ export function __resetEconomicCalendarStateForTests(): void {
 
 function defaultFetcher(): CalendarHttpFetcher {
   return async (url: string) => {
-    const r = await fetch(url, { headers: { accept: "application/json" } });
-    return { ok: r.ok, status: r.status, text: () => r.text() };
+    const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+    const retry = r.headers.get("retry-after");
+    const retryAfterMs = retry ? (/^\d+$/.test(retry) ? Number(retry)*1000 : Math.max(0,Date.parse(retry)-Date.now())) : 0;
+    return { ok: r.ok, status: r.status, retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : 0, text: () => r.text() };
   };
 }
 
@@ -84,6 +93,10 @@ function freshnessForAge(ageMs: number): CalendarEvent["freshness"] {
 }
 
 function messageFor(status: EconomicCalendarStatus, provider: string): string {
+  if ((status === "ok" || status === "empty") && provider === FOREX_FACTORY_PROVIDER) {
+    const error=forexFactoryRefreshNote();
+    return FOREX_FACTORY_COVERAGE + (error ? ` Latest refresh failed (${error}); showing the cached schedule from ${new Date(forexFactoryObservedAt()!).toISOString()}.` : "");
+  }
   switch (status) {
     case "missing":
       return "Economic calendar provider missing — no provider is configured.";
@@ -151,6 +164,11 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
       redact: (err) => redactFredError(err, fredCfg),
     };
   }
+  if (isForexFactorySelected()) return {
+    name: FOREX_FACTORY_PROVIDER, apiKeyPresent: false,
+    fetch: (o) => fetchForexFactoryCalendar({ ...o, persistCache: _fetcher === null }),
+    redact: (err) => err instanceof Error ? err.message.slice(0, 280) : "Calendar export unavailable.",
+  };
   return null;
 }
 
@@ -161,6 +179,7 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
  */
 function selectedProviderLabel(): string {
   if (isFredSelected()) return FRED_PROVIDER;
+  if (isForexFactorySelected()) return FOREX_FACTORY_PROVIDER;
   return TRADING_ECONOMICS_PROVIDER;
 }
 
@@ -173,7 +192,7 @@ function selectedProviderApiKeyPresent(): boolean {
 export interface EconomicCalendarOptions {
   daysAhead?: number;
   nowMs?: number;
-  /** Bypass the in-memory cache (force a fresh fetch). */
+  /** Bypass the service cache; upstream retry/backoff limits still apply. */
   forceRefresh?: boolean;
 }
 
@@ -181,7 +200,7 @@ export interface EconomicCalendarOptions {
  * Fetch the full normalized calendar with honest status. Never throws — all
  * failures degrade to status "error" with a redacted message.
  */
-export async function getEconomicCalendarResult(
+async function getFallbackEconomicCalendarResult(
   opts: EconomicCalendarOptions = {},
 ): Promise<EconomicCalendarResult> {
   const nowMs = opts.nowMs ?? Date.now();
@@ -223,6 +242,7 @@ export async function getEconomicCalendarResult(
     !opts.forceRefresh &&
     _cache &&
     _cache.daysAhead === daysAhead &&
+    _cache.provider === provider &&
     nowMs - _cache.fetchedAtMs <= CACHE_TTL_MS
   ) {
     const ageMs = nowMs - _cache.fetchedAtMs;
@@ -254,9 +274,10 @@ export async function getEconomicCalendarResult(
   _lastFetchAt = nowMs;
   try {
     const events = await active.fetch({ daysAhead, nowMs, fetcher });
-    _cache = { events, fetchedAtMs: nowMs, daysAhead };
-    _lastSuccessAt = nowMs;
-    _lastError = null;
+    const observedAt = provider === FOREX_FACTORY_PROVIDER ? (forexFactoryObservedAt() ?? nowMs) : nowMs;
+    _cache = { events, fetchedAtMs: observedAt, daysAhead, provider };
+    _lastSuccessAt = observedAt;
+    _lastError = provider === FOREX_FACTORY_PROVIDER ? forexFactoryRefreshNote() : null;
     const status: EconomicCalendarStatus = events.length > 0 ? "ok" : "empty";
     _lastStatus = status;
     return {
@@ -271,8 +292,8 @@ export async function getEconomicCalendarResult(
         apiKeyPresent,
         status,
         events,
-        freshness: "LIVE",
-        cacheAgeMs: 0,
+        freshness: provider === FOREX_FACTORY_PROVIDER && nowMs-observedAt > 2*60000 ? "DELAYED" : freshnessForAge(nowMs - observedAt),
+        cacheAgeMs: nowMs - observedAt,
       }),
       message: messageFor(status, provider),
     };
@@ -286,7 +307,7 @@ export async function getEconomicCalendarResult(
     );
     // Stale cache is returned ONLY for diagnostics, labelled STALE + disconnected.
     const staleEvents =
-      _cache != null ? _cache.events.map((e) => ({ ...e, freshness: "STALE" as const })) : [];
+      _cache != null && _cache.provider === provider ? _cache.events.map((e) => ({ ...e, freshness: "STALE" as const })) : [];
     return {
       status: "error",
       connected: false,
@@ -307,15 +328,26 @@ export async function getEconomicCalendarResult(
   }
 }
 
+export async function getEconomicCalendarResult(opts: EconomicCalendarOptions = {}): Promise<EconomicCalendarResult> {
+  const selected = (process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim().toLowerCase();
+  if (selected === "mt5_calendar" || (!selected && mt5CalendarConfigured())) {
+    const mt5 = verifyCalendarValues(getMt5CalendarResult(opts));
+    if (selected === "mt5_calendar" || mt5.connected) return mt5;
+    const fallback = await getFallbackEconomicCalendarResult(opts);
+    return {...fallback,message:`${fallback.message} MT5 calendar unavailable: ${mt5.message}`};
+  }
+  return getFallbackEconomicCalendarResult(opts);
+}
+
 /** Operator diagnostics snapshot (never exposes the key). */
 export async function getEconomicCalendarDiagnostics(): Promise<EconomicCalendarDiagnostics> {
   const result = await getEconomicCalendarResult();
   return result.diagnostics;
 }
 
-/** Whether a real calendar provider is configured with a key (presence only). */
+/** Whether a real provider is available by configuration (public feeds need no key). */
 export function isEconomicCalendarConfigured(): boolean {
-  return resolveActiveCalendarProvider() !== null;
+  return mt5CalendarConfigured() || resolveActiveCalendarProvider() !== null;
 }
 
 /**
@@ -323,8 +355,10 @@ export function isEconomicCalendarConfigured(): boolean {
  * selected. Trading Economics is checked first (back-compat), then FRED.
  */
 export function selectedEconomicCalendarProvider(): string | null {
+  if ((process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim().toLowerCase() === "mt5_calendar" || (!(process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim() && mt5CalendarConfigured())) return "mt5_calendar";
   if (isTradingEconomicsSelected()) return TRADING_ECONOMICS_PROVIDER;
   if (isFredSelected()) return FRED_PROVIDER;
+  if (isForexFactorySelected()) return FOREX_FACTORY_PROVIDER;
   return null;
 }
 

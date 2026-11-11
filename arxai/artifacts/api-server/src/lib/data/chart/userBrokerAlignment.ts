@@ -27,18 +27,6 @@ import {
 } from "./brokerQuoteBinding.js";
 import { readMt5Quote } from "../providers/mt5Provider.js";
 
-/**
- * Derive an appropriate chart-price basis from the asset class.
- * For provider-sourced candles (TwelveData, Polygon) forex/metals/indices/crypto
- * use mid-market rates. Synthetics are derived prices. Others default to LAST.
- * Phase 4 can refine this per-provider when richer source metadata is available.
- */
-export function deriveChartPriceBasis(assetClass: string): string {
-  if (assetClass === "synthetic") return "SYNTHETIC";
-  if (assetClass === "forex" || assetClass === "metals") return "MID";
-  return "LAST";
-}
-
 export async function enrichStateWithUserBrokerQuote(
   state: ChartIntelligenceState,
   args: { userId: number; symbol: string; timeframe: ChartTimeframe; limit: number },
@@ -75,9 +63,11 @@ export async function enrichStateWithUserBrokerQuote(
   });
   if (!quote) return state;
   return enrichStateWithBrokerAlignment(ctx.state, ctx.truthResult, ctx.feedStatus, {
-    chartPrice: state.latestClosedCandle?.close ?? null,
-    chartPriceBasis: deriveChartPriceBasis(state.assetClass),
-    assetClass: state.assetClass,
+    chartPrice: ctx.state.latestClosedCandle?.close ?? null,
+    // Preserve the served series' observed basis. Asset class cannot establish
+    // whether an original candle is BID, MID or LAST.
+    chartPriceBasis: ctx.truthResult?.priceBasis ?? "UNKNOWN",
+    assetClass: ctx.state.assetClass,
     brokerBid: quote.bid,
     brokerAsk: quote.ask,
     spreadPoints: quote.spreadPoints,

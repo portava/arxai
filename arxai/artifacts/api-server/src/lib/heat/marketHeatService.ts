@@ -86,7 +86,30 @@ function calendarSignalOf(read: CalendarProviderRead): CalendarSignal {
     highImpactActive: read.highImpactActive,
     updatedAt: read.connected ? read.updatedAt : null,
     source: read.provider,
+    freshness: read.freshness,
+    note: read.source.note,
   };
+}
+
+/** Pair returns measure base relative to quote; they are not absolute currency returns. */
+export function currencyPriceSignal(symbol: string, currency: string, price: PriceSignal): PriceSignal {
+  const normalized = symbol.toUpperCase();
+  const fiat = /^(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD)(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD)$/;
+  if (!fiat.test(normalized)) return { ...price, available: false, momentum: 0 };
+  if (normalized.slice(0, 3) === currency) return price;
+  if (normalized.slice(3) === currency) return { ...price, momentum: -price.momentum };
+  return { ...price, available: false, momentum: 0 };
+}
+
+const countryCurrency: Record<string,string> = {US:"USD",Eurozone:"EUR",Germany:"EUR",Japan:"JPY",UK:"GBP",Switzerland:"CHF",Canada:"CAD",Australia:"AUD","New Zealand":"NZD",China:"CNY"};
+export function countryPriceSignal(symbol:string,country:string,price:PriceSignal):PriceSignal {
+  const ccy=countryCurrency[country];
+  return ccy && /^(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD){2}$/.test(symbol.toUpperCase()) ? currencyPriceSignal(symbol,ccy,price) : price;
+}
+export function scopedCalendarSignal(read:CalendarProviderRead, currency:string|undefined, nowMs:number):CalendarSignal {
+  if(!currency)return calendarSignalOf(read);
+  const events=read.events.filter(e=>e.currency===currency);
+  return calendarSignalOf({...read,eventCount:events.length,highImpactActive:events.some(e=>e.impact==='high' && Date.parse(e.timeUtc)>=nowMs && Date.parse(e.timeUtc)-nowMs<=3600_000)});
 }
 
 /** Average a set of price signals into one representative macro price signal. */
@@ -193,7 +216,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
   );
   const synthetics: MarketHeatVerdict[] = [];
   for (const m of synthMarkets) {
-    const price = await readPriceProvider(m.canonicalSymbol, timeframe, nowMs);
+    const price = await readPriceProvider(m.canonicalSymbol, timeframe, opts.nowMs);
     synthetics.push(
       computeHeatVerdict({
         id: `synthetic:${m.canonicalSymbol}`,
@@ -244,7 +267,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
     if (!macroActive) return UNAVAILABLE_PRICE;
     const cached = priceCache.get(symbol);
     if (cached) return cached;
-    const read = await readPriceProvider(symbol, timeframe, nowMs);
+    const read = await readPriceProvider(symbol, timeframe, opts.nowMs);
     priceConnected.set(symbol, read.source.connected);
     const sig: PriceSignal = {
       available: read.available,
@@ -271,9 +294,9 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
         key: country,
         displayName: countryDisplayName(country),
         affectedSymbols: syms,
-        price: aggregatePrice(priceSignals),
+        price: aggregatePrice(priceSignals.map((price,i)=>countryPriceSignal(syms[i]!,country,price))),
         news: newsSignal,
-        calendar: calendarSignal,
+        calendar: opts.includeCalendar ? scopedCalendarSignal(calendarRead,countryCurrency[country],nowMs) : calendarSignal,
       }),
     );
   }
@@ -298,9 +321,9 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
         key: ccy,
         displayName: currencyDisplayName(ccy),
         affectedSymbols: syms,
-        price: aggregatePrice(priceSignals),
+        price: aggregatePrice(priceSignals.map((price, i) => currencyPriceSignal(syms[i]!, ccy, price))),
         news: newsSignal,
-        calendar: calendarSignal,
+        calendar: opts.includeCalendar ? scopedCalendarSignal(calendarRead,ccy,nowMs) : calendarSignal,
       }),
     );
   }
@@ -340,7 +363,7 @@ export async function buildMarketHeat(opts: BuildOptions): Promise<MarketHeatBun
     topHeadlines: newsRead.topHeadlines,
     highImpactCount: newsRead.highImpactCount,
   });
-  const upcomingEvents = calendarSignal.connected ? calendarRead.events : [];
+  const upcomingEvents = calendarSignal.connected ? calendarRead.events.slice(0,12) : [];
 
   return {
     generatedAt: new Date(nowMs).toISOString(),
@@ -372,8 +395,10 @@ export interface SymbolHeatResult {
 export async function buildSymbolHeat(
   symbol: string,
   timeframe: string,
-  nowMs: number = Date.now(),
+  nowMs: number | undefined = undefined,
 ): Promise<SymbolHeatResult> {
+  const priceClock = nowMs;
+  nowMs ??= Date.now();
   const geo = getSymbolGeography(symbol);
   const newsRead = await readNewsProvider();
   const calendarRead = await readCalendarProvider(symbol, nowMs);
@@ -409,7 +434,7 @@ export async function buildSymbolHeat(
     };
   }
 
-  const price = await readPriceProvider(geo.symbol, timeframe, nowMs);
+  const price = await readPriceProvider(geo.symbol, timeframe, priceClock);
   providerStatus.price = price.source;
   const isSynthetic = geo.isSynthetic;
 
@@ -443,7 +468,7 @@ export async function buildSymbolHeat(
       affectedSymbols: [geo.symbol],
       price: { ...UNAVAILABLE_PRICE },
       news: newsSignal,
-      calendar: calendarSignal,
+      calendar: scopedCalendarSignal(calendarRead,countryCurrency[country],nowMs),
     }),
   );
   const currencies: MarketHeatVerdict[] = geo.currencies.map((ccy) =>
@@ -453,9 +478,13 @@ export async function buildSymbolHeat(
       key: ccy,
       displayName: currencyDisplayName(ccy),
       affectedSymbols: [geo.symbol],
-      price: { ...UNAVAILABLE_PRICE },
+      price: currencyPriceSignal(geo.symbol, ccy, {
+        available: price.available, momentum: price.momentum, volatility: price.volatility,
+        freshness: price.freshness, updatedAt: price.updatedAt, priceTimeBasis: price.priceTimeBasis,
+        source: price.source.name, candleCount: price.candleCount,
+      }),
       news: newsSignal,
-      calendar: calendarSignal,
+      calendar: scopedCalendarSignal(calendarRead,ccy,nowMs),
     }),
   );
 
@@ -504,11 +533,13 @@ export interface HeatDiagnostics {
 
 /** Per-provider diagnostics (API-key presence reported as a boolean only). */
 export async function buildHeatDiagnostics(
-  nowMs: number = Date.now(),
+  nowMs: number | undefined = undefined,
 ): Promise<HeatDiagnostics> {
+  const priceClock = nowMs;
+  nowMs ??= Date.now();
   const news = await readNewsProvider();
   const calendar = await readCalendarProvider("GLOBAL", nowMs);
-  const price = await readPriceProvider("EURUSD", "M15", nowMs);
+  const price = await readPriceProvider("EURUSD", "M15", priceClock);
 
   const countrySet = new Set<string>();
   const currencySet = new Set<string>();
@@ -534,7 +565,7 @@ export async function buildHeatDiagnostics(
         name: price.provider,
         configured: price.source.configured,
         connected: price.source.connected,
-        apiKeyPresent: price.source.configured,
+        apiKeyPresent: price.source.configured && !["deriv_public", "mt5_broker"].includes(price.provider),
         lastFetchAt: price.updatedAt,
         lastError: null,
         recordCount: price.candleCount,
@@ -557,11 +588,11 @@ export async function buildHeatDiagnostics(
         name: calendar.provider,
         configured: calendar.configured,
         connected: calendar.connected,
-        apiKeyPresent: calendar.configured,
-        lastFetchAt: null,
-        lastError: null,
+        apiKeyPresent: calendar.apiKeyPresent ?? false,
+        lastFetchAt: calendar.updatedAt,
+        lastError: calendar.lastError ?? null,
         recordCount: calendar.eventCount,
-        freshness: calendar.connected ? "LIVE" : "UNAVAILABLE",
+        freshness: calendar.freshness ?? (calendar.connected ? "LIVE" : "UNAVAILABLE"),
       },
     ],
     coverage: {

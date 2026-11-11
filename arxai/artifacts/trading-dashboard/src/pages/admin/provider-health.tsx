@@ -851,7 +851,7 @@ export default function ProviderHealthPage() {
               {/* Deriv */}
               <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-deriv">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold">Deriv synthetic feed</span>
+                  <span className="font-semibold">Deriv market feed</span>
                   <Badge className={snap.feeds.deriv.connected ? "bg-success/20 text-success" : "bg-secondary/20 text-txt-secondary"}>
                     {snap.feeds.deriv.healthSummary}
                   </Badge>

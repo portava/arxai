@@ -11,6 +11,7 @@ export interface TimingDataQuality {
   label: TimingDataQualityLabel;
   hasCandleData: boolean;
   hasQuoteData: boolean;
+  hasLivePriceData?: boolean;
   hasNewsData: boolean;
   hasBroadFlowData: boolean;
   note: string;

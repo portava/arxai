@@ -39,7 +39,8 @@ describe("providerInfo — provider label + trust tier mapping", () => {
   it("names public Deriv data explicitly without broker trust", () => {
     const info = providerInfo("deriv_public");
     expect(info.label).toBe("Deriv public data");
-    expect(info.tier).toBe("synthetic");
+    expect(info.tier).toBe("thirdParty");
+    expect(info.trustNote).not.toMatch(/algorithmic|synthetic instruments/i);
     expect(info.trustNote).toMatch(/not.*broker/i);
   });
 

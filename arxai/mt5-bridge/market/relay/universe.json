@@ -1,0 +1,304 @@
+[
+  {
+    "canonical": "V75",
+    "aliases": [
+      "V75",
+      "Volatility 75 Index",
+      "R_75"
+    ]
+  },
+  {
+    "canonical": "V75_1S",
+    "aliases": [
+      "V75_1S",
+      "Volatility 75 (1s) Index",
+      "1HZ75V"
+    ]
+  },
+  {
+    "canonical": "V100",
+    "aliases": [
+      "V100",
+      "Volatility 100 Index",
+      "R_100"
+    ]
+  },
+  {
+    "canonical": "V50",
+    "aliases": [
+      "V50",
+      "Volatility 50 Index",
+      "R_50"
+    ]
+  },
+  {
+    "canonical": "V50_1S",
+    "aliases": [
+      "V50_1S",
+      "Volatility 50 (1s) Index",
+      "1HZ50V"
+    ]
+  },
+  {
+    "canonical": "V25_1S",
+    "aliases": [
+      "V25_1S",
+      "Volatility 25 (1s) Index",
+      "1HZ25V"
+    ]
+  },
+  {
+    "canonical": "V10",
+    "aliases": [
+      "V10",
+      "Volatility 10 Index",
+      "R_10"
+    ]
+  },
+  {
+    "canonical": "BOOM1000",
+    "aliases": [
+      "BOOM1000",
+      "Boom 1000 Index"
+    ]
+  },
+  {
+    "canonical": "CRASH1000",
+    "aliases": [
+      "CRASH1000",
+      "Crash 1000 Index"
+    ]
+  },
+  {
+    "canonical": "BOOM500",
+    "aliases": [
+      "BOOM500",
+      "Boom 500 Index"
+    ]
+  },
+  {
+    "canonical": "CRASH500",
+    "aliases": [
+      "CRASH500",
+      "Crash 500 Index"
+    ]
+  },
+  {
+    "canonical": "JUMP10",
+    "aliases": [
+      "JUMP10",
+      "Jump 10 Index",
+      "JD10"
+    ]
+  },
+  {
+    "canonical": "JUMP25",
+    "aliases": [
+      "JUMP25",
+      "Jump 25 Index",
+      "JD25"
+    ]
+  },
+  {
+    "canonical": "JUMP50",
+    "aliases": [
+      "JUMP50",
+      "Jump 50 Index",
+      "JD50"
+    ]
+  },
+  {
+    "canonical": "JUMP75",
+    "aliases": [
+      "JUMP75",
+      "Jump 75 Index",
+      "JD75"
+    ]
+  },
+  {
+    "canonical": "JUMP100",
+    "aliases": [
+      "JUMP100",
+      "Jump 100 Index",
+      "JD100"
+    ]
+  },
+  {
+    "canonical": "BOOM300",
+    "aliases": [
+      "BOOM300",
+      "Boom 300 Index",
+      "BOOM300N"
+    ]
+  },
+  {
+    "canonical": "CRASH300",
+    "aliases": [
+      "CRASH300",
+      "Crash 300 Index",
+      "CRASH300N"
+    ]
+  },
+  {
+    "canonical": "EURUSD",
+    "aliases": [
+      "EURUSD"
+    ]
+  },
+  {
+    "canonical": "GBPUSD",
+    "aliases": [
+      "GBPUSD"
+    ]
+  },
+  {
+    "canonical": "USDJPY",
+    "aliases": [
+      "USDJPY"
+    ]
+  },
+  {
+    "canonical": "USDCHF",
+    "aliases": [
+      "USDCHF"
+    ]
+  },
+  {
+    "canonical": "USDCAD",
+    "aliases": [
+      "USDCAD"
+    ]
+  },
+  {
+    "canonical": "AUDUSD",
+    "aliases": [
+      "AUDUSD"
+    ]
+  },
+  {
+    "canonical": "NZDUSD",
+    "aliases": [
+      "NZDUSD"
+    ]
+  },
+  {
+    "canonical": "EURJPY",
+    "aliases": [
+      "EURJPY"
+    ]
+  },
+  {
+    "canonical": "EURGBP",
+    "aliases": [
+      "EURGBP"
+    ]
+  },
+  {
+    "canonical": "EURAUD",
+    "aliases": [
+      "EURAUD"
+    ]
+  },
+  {
+    "canonical": "EURCAD",
+    "aliases": [
+      "EURCAD"
+    ]
+  },
+  {
+    "canonical": "GBPJPY",
+    "aliases": [
+      "GBPJPY"
+    ]
+  },
+  {
+    "canonical": "GBPAUD",
+    "aliases": [
+      "GBPAUD"
+    ]
+  },
+  {
+    "canonical": "GBPCAD",
+    "aliases": [
+      "GBPCAD"
+    ]
+  },
+  {
+    "canonical": "AUDJPY",
+    "aliases": [
+      "AUDJPY"
+    ]
+  },
+  {
+    "canonical": "CADJPY",
+    "aliases": [
+      "CADJPY"
+    ]
+  },
+  {
+    "canonical": "CHFJPY",
+    "aliases": [
+      "CHFJPY"
+    ]
+  },
+  {
+    "canonical": "XAUUSD",
+    "aliases": [
+      "XAUUSD",
+      "Gold"
+    ]
+  },
+  {
+    "canonical": "XAGUSD",
+    "aliases": [
+      "XAGUSD",
+      "Silver"
+    ]
+  },
+  {
+    "canonical": "DXY",
+    "aliases": [
+      "DXY",
+      "DXYUSD"
+    ]
+  },
+  {
+    "canonical": "SPX500",
+    "aliases": [
+      "SPX500",
+      "US SP 500",
+      "US500"
+    ]
+  },
+  {
+    "canonical": "GER30",
+    "aliases": [
+      "GER30",
+      "Germany 40",
+      "GER40",
+      "DE40"
+    ]
+  },
+  {
+    "canonical": "US30",
+    "aliases": [
+      "US30",
+      "Wall Street 30",
+      "DJ30"
+    ]
+  },
+  {
+    "canonical": "BTCUSD",
+    "aliases": [
+      "BTCUSD",
+      "BTCUSDT"
+    ]
+  },
+  {
+    "canonical": "ETHUSD",
+    "aliases": [
+      "ETHUSD",
+      "ETHUSDT"
+    ]
+  }
+]

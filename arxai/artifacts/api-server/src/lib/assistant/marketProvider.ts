@@ -1,3 +1,5 @@
+import { approvedFxPair, stockStyleSymbol } from "./providerSymbolMapping.js";
+import { gdeltEnabled, getGdeltNews, resetGdeltNewsForTests } from "./gdeltNews.js";
 import { findMarketByStandardSymbol } from "@workspace/markets";
 import type { CandleVolumeEvidence } from "../data/candleVolumeEvidence.js";
 import { parsePolygonFxCustomBars, POLYGON_FX_INTERVALS } from "./polygonFxCandles.js";
@@ -56,6 +58,10 @@ export interface NewsItem {
   headline: string;
   url: string;
   publishedAt: string;
+  /** GDELT first-seen time is not a publisher timestamp. */
+  observedAt?: string;
+  timeBasis?: "provider_first_seen";
+  aggregator?: "gdelt";
   source: string;
   symbols?: string[];
   summary?: string;
@@ -187,17 +193,12 @@ const FINNHUB_RESOLUTION: Record<string, string> = {
 function finnhubMapSymbol(sym: string): { kind: "forex" | "crypto" | "stock"; symbol: string } | null {
   const s = (sym ?? "").toUpperCase().trim();
   if (!s) return null;
-  // Forex majors + gold (XAUUSD treated as forex on Finnhub via OANDA)
-  const forex: Record<string, string> = {
-    EURUSD: "OANDA:EUR_USD", GBPUSD: "OANDA:GBP_USD", USDJPY: "OANDA:USD_JPY",
-    XAUUSD: "OANDA:XAU_USD", AUDUSD: "OANDA:AUD_USD", USDCAD: "OANDA:USD_CAD",
-    USDCHF: "OANDA:USD_CHF", NZDUSD: "OANDA:NZD_USD",
-  };
-  if (forex[s]) return { kind: "forex", symbol: forex[s]! };
+  const fx = approvedFxPair(s, true);
+  if (fx) return { kind: "forex", symbol: `OANDA:${fx.base}_${fx.quote}` };
   // Crypto USDT pairs → Binance
   if (/^[A-Z]{3,6}USDT$/.test(s)) return { kind: "crypto", symbol: `BINANCE:${s}` };
   // Plain ticker → US stock
-  if (/^[A-Z.]{1,8}$/.test(s)) return { kind: "stock", symbol: s };
+  if (stockStyleSymbol(s)) return { kind: "stock", symbol: s };
   return null;
 }
 
@@ -213,14 +214,8 @@ const PROVIDER_KEY_ENV_VARS = [
 // (e.g. EURUSD → C:EURUSD). Free tier covers forex aggregates + conversion.
 function polygonForexPair(sym: string): { base: string; quote: string; ticker: string } | null {
   const s = (sym ?? "").toUpperCase().trim();
-  const map: Record<string, [string, string]> = {
-    EURUSD: ["EUR", "USD"], GBPUSD: ["GBP", "USD"], USDJPY: ["USD", "JPY"],
-    XAUUSD: ["XAU", "USD"], AUDUSD: ["AUD", "USD"], USDCAD: ["USD", "CAD"],
-    USDCHF: ["USD", "CHF"], NZDUSD: ["NZD", "USD"],
-  };
-  const p = map[s];
-  if (!p) return null;
-  return { base: p[0]!, quote: p[1]!, ticker: `C:${p[0]}${p[1]}` };
+  const pair = approvedFxPair(s, true);
+  return pair ? { ...pair, ticker: `C:${pair.base}${pair.quote}` } : null;
 }
 // Polygon aggregate timeframe mapper.
 const POLYGON_TF = POLYGON_FX_INTERVALS;
@@ -233,16 +228,12 @@ const TWELVEDATA_INTERVAL: Record<string, string> = {
 function twelveDataMapSymbol(sym: string): string | null {
   const s = (sym ?? "").toUpperCase().trim();
   if (!s) return null;
-  const forex: Record<string, string> = {
-    EURUSD: "EUR/USD", GBPUSD: "GBP/USD", USDJPY: "USD/JPY",
-    XAUUSD: "XAU/USD", AUDUSD: "AUD/USD", USDCAD: "USD/CAD",
-    USDCHF: "USD/CHF", NZDUSD: "NZD/USD",
-  };
-  if (forex[s]) return forex[s]!;
+  const pair = approvedFxPair(s, true);
+  if (pair) return `${pair.base}/${pair.quote}`;
   // Crypto USDT pair → TwelveData uses BASE/USD form
   const cryptoMatch = s.match(/^([A-Z]{3,6})USDT$/);
   if (cryptoMatch) return `${cryptoMatch[1]}/USD`;
-  if (/^[A-Z.]{1,8}$/.test(s)) return s; // stock
+  if (stockStyleSymbol(s)) return s; // stock
   return null;
 }
 
@@ -396,7 +387,7 @@ export function providerResultFetchedAt(result: unknown): string | null {
 function cacheSet<T>(map: Map<string, { at: number; value: T }>, key: string, value: T): void {
   const at = Date.now();
   map.set(key, { at, value });
-  if (value != null && typeof value === "object") cachedResultFetchedAt.set(value as object, at);
+  if (value != null && typeof value === "object" && !cachedResultFetchedAt.has(value as object)) cachedResultFetchedAt.set(value as object, at);
   if (map.size > 200) {
     // Drop oldest entries
     const entries = Array.from(map.entries()).sort((a, b) => a[1].at - b[1].at).slice(0, map.size - 100);
@@ -406,6 +397,12 @@ function cacheSet<T>(map: Map<string, { at: number; value: T }>, key: string, va
 
 // ── Symbol validation (alphanumeric + . / : - _, max 24) ─────────────────
 const SYMBOL_RE = /^[A-Za-z0-9._:\-/=]{1,24}$/;
+/** Broad news topics must not become a company-news ticker such as MARKETS. */
+export function newsTicker(query: string): string | null {
+  if (/^(markets?|general|global|economy|economic|forex|business|news)$/i.test(query.trim())) return null;
+  return validateSymbol(query);
+}
+
 export function validateSymbol(s: string): string | null {
   if (typeof s !== "string") return null;
   const t = s.trim().toUpperCase();
@@ -535,7 +532,8 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       const cached = cacheGet(quoteCache, `td:${symbol}`, QUOTE_TTL_MS);
       if (cached) return cached;
       markChecked();
-      const tdSym = twelveDataMapSymbol(symbol) ?? symbol;
+      const tdSym = twelveDataMapSymbol(symbol);
+      if (!tdSym) return emptyQuote(symbol, "twelve_data", "UNAVAILABLE");
       const url = `${base}/quote?symbol=${encodeURIComponent(tdSym)}&apikey=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url).catch(() => null)) as { status?: string; close?: string; open?: string; high?: string; low?: string; previous_close?: string; change?: string; percent_change?: string; timestamp?: number } | null;
       if (!j || j.status === "error" || j.close == null) {
@@ -662,7 +660,8 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         cacheSet(quoteCache, `polygon:${symbol}`, q);
         return q;
       }
-      // Stocks: snapshot endpoint (unchanged from prior adapter).
+      // Only stock-like instruments reach the stock snapshot endpoint.
+      if (!stockStyleSymbol(symbol)) return emptyQuote(symbol, "polygon", "UNAVAILABLE");
       const url = `${base}/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}?apiKey=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url)) as { ticker?: { lastTrade?: { p?: number; t?: number }; day?: { o?: number; h?: number; l?: number; c?: number }; prevDay?: { c?: number }; todaysChange?: number; todaysChangePerc?: number; updated?: number } } | null;
       const t = j?.ticker;
@@ -696,23 +695,24 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       const cached = cacheGet(newsCache, cacheKey, NEWS_TTL_MS);
       if (cached) return cached;
       markChecked();
-      const url = `${base}/v2/reference/news?limit=${Math.min(Math.max(limit, 1), 20)}${query ? `&ticker=${encodeURIComponent(validateSymbol(query) ?? "")}` : ""}&apiKey=${encodeURIComponent(apiKey)}`;
+      const url = `${base}/v2/reference/news?order=desc&sort=published_utc&limit=${Math.min(Math.max(limit, 1), 20)}${newsTicker(query) ? `&ticker=${encodeURIComponent(newsTicker(query)!)}` : ""}&apiKey=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url)) as { results?: Array<{ title?: string; article_url?: string; published_utc?: string; publisher?: { name?: string }; tickers?: string[]; description?: string }> } | null;
-      if (!j?.results) {
+      if (providerFailureCode(j) || !Array.isArray(j?.results)) {
+        markError("NEWS_PAYLOAD_UNAVAILABLE");
         // fall through to NewsAPI if available
         if (newsApiKey) {
           const fb = await newsApiFetch(newsApiKey, query, limit);
           cacheSet(newsCache, cacheKey, fb);
           return fb;
         }
-        const r = { connected: true, items: [], provider: "polygon" };
+        const r = { connected: false, items: [], provider: "polygon" };
         cacheSet(newsCache, cacheKey, r);
         return r;
       }
       const items: NewsItem[] = j.results.map((n) => ({
         headline: String(n.title ?? "").slice(0, 300),
         url: String(n.article_url ?? ""),
-        publishedAt: String(n.published_utc ?? new Date().toISOString()),
+        publishedAt: String(n.published_utc ?? ""),
         source: String(n.publisher?.name ?? "polygon"),
         symbols: Array.isArray(n.tickers) ? n.tickers.slice(0, 8) : undefined,
         summary: typeof n.description === "string" ? n.description.slice(0, 500) : undefined,
@@ -810,25 +810,26 @@ function finnhubProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       const cached = cacheGet(newsCache, cacheKey, NEWS_TTL_MS);
       if (cached) return cached;
       markChecked();
-      const symbol = validateSymbol(query);
+      const symbol = newsTicker(query);
       const url = symbol
         ? `${base}/company-news?symbol=${encodeURIComponent(symbol)}&from=${new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)}&to=${new Date().toISOString().slice(0, 10)}&token=${encodeURIComponent(apiKey)}`
         : `${base}/news?category=general&token=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url)) as Array<{ headline?: string; url?: string; datetime?: number; source?: string; related?: string; summary?: string }> | null;
       if (!Array.isArray(j)) {
+        markError("NEWS_PAYLOAD_UNAVAILABLE");
         if (newsApiKey) {
           const fb = await newsApiFetch(newsApiKey, query, limit);
           cacheSet(newsCache, cacheKey, fb);
           return fb;
         }
-        const r = { connected: true, items: [], provider: "finnhub" };
+        const r = { connected: false, items: [], provider: "finnhub" };
         cacheSet(newsCache, cacheKey, r);
         return r;
       }
       const items: NewsItem[] = j.slice(0, Math.min(limit, 20)).map((n) => ({
         headline: String(n.headline ?? "").slice(0, 300),
         url: String(n.url ?? ""),
-        publishedAt: n.datetime ? new Date(n.datetime * 1000).toISOString() : new Date().toISOString(),
+        publishedAt: n.datetime ? new Date(n.datetime * 1000).toISOString() : "",
         source: String(n.source ?? "finnhub"),
         symbols: n.related ? String(n.related).split(",").filter(Boolean).slice(0, 8) : undefined,
         summary: typeof n.summary === "string" ? n.summary.slice(0, 500) : undefined,
@@ -935,16 +936,17 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
       const cached = cacheGet(newsCache, cacheKey, NEWS_TTL_MS);
       if (cached) return cached;
       markChecked();
-      const symbol = validateSymbol(query);
+      const symbol = newsTicker(query);
       const url = `${base}?function=NEWS_SENTIMENT${symbol ? `&tickers=${encodeURIComponent(symbol)}` : ""}&limit=${Math.min(Math.max(limit, 1), 20)}&apikey=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url)) as { feed?: Array<{ title?: string; url?: string; time_published?: string; source?: string; ticker_sentiment?: Array<{ ticker?: string }>; summary?: string }> } | null;
-      if (!j?.feed) {
+      if (providerFailureCode(j) || !Array.isArray(j?.feed)) {
+        markError("NEWS_PAYLOAD_UNAVAILABLE");
         if (newsApiKey) {
           const fb = await newsApiFetch(newsApiKey, query, limit);
           cacheSet(newsCache, cacheKey, fb);
           return fb;
         }
-        const r = { connected: true, items: [], provider: "alpha_vantage" };
+        const r = { connected: false, items: [], provider: "alpha_vantage" };
         cacheSet(newsCache, cacheKey, r);
         return r;
       }
@@ -982,18 +984,26 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
 
 // ── NewsAPI helper (news only) ───────────────────────────────────────────
 async function newsApiFetch(apiKey: string, query: string, limit: number) {
+  const cacheKey = `newsapi:news:${query}:${limit}`;
+  const cached = cacheGet(newsCache, cacheKey, NEWS_TTL_MS);
+  if (cached) return cached;
   const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query || "markets")}&pageSize=${Math.min(Math.max(limit, 1), 20)}&sortBy=publishedAt&language=en&apiKey=${encodeURIComponent(apiKey)}`;
   const j = (await httpJson(url)) as { articles?: Array<{ title?: string; url?: string; publishedAt?: string; source?: { name?: string }; description?: string }> } | null;
-  if (!j?.articles) return { connected: true, items: [], provider: "newsapi" };
+  if (providerFailureCode(j) || !Array.isArray(j?.articles)) {
+    markError("NEWS_PAYLOAD_UNAVAILABLE");
+    return { connected: false, items: [], provider: "newsapi" };
+  }
   const items: NewsItem[] = j.articles.slice(0, limit).map((a) => ({
     headline: String(a.title ?? "").slice(0, 300),
     url: String(a.url ?? ""),
-    publishedAt: String(a.publishedAt ?? new Date().toISOString()),
+    publishedAt: String(a.publishedAt ?? ""),
     source: String(a.source?.name ?? "newsapi"),
     summary: typeof a.description === "string" ? a.description.slice(0, 500) : undefined,
   }));
   markSuccess();
-  return { connected: true, items, provider: "newsapi" };
+  const result = { connected: true, items, provider: "newsapi" };
+  cacheSet(newsCache, cacheKey, result);
+  return result;
 }
 
 // ── Selection (priority: Polygon > Finnhub > Alpha Vantage) ──────────────
@@ -1075,7 +1085,9 @@ function hybridTwelveDataFinnhub(twelveDataKey: string, finnhubKey: string, news
       economicCalendar: false,
       candles: true,
     },
-    getLiveQuote: fh.getLiveQuote.bind(fh),
+    // Retain Finnhub preference, but do not discard configured Twelve Data
+    // quotes on errors, missing FX coverage, or stale observations.
+    getLiveQuote: compositeProvider([withQuoteFreshness(fh), withQuoteFreshness(td)]).getLiveQuote,
     getMarketNews: fh.getMarketNews.bind(fh),
   };
 }
@@ -1136,17 +1148,19 @@ function compositeProvider(providers: MarketProvider[]): MarketProvider {
     },
     async getMarketNews(query, limit) {
       let last: { connected: boolean; items: NewsItem[]; provider: string } | null = null;
+      let emptySuccess: { connected: boolean; items: NewsItem[]; provider: string } | null = null;
       for (const p of providers) {
         if (!p.features.news) continue;
         try {
           const r = await p.getMarketNews(query, limit);
           if (r.connected && r.items.length > 0) return r;
+          if (r.connected) emptySuccess = r;
           last = r;
         } catch (e) {
           logger.warn({ provider: p.name, err: (e as Error).message }, "composite: news provider threw, falling through");
         }
       }
-      return last ?? { connected: false, items: [], provider: compositeName };
+      return emptySuccess ?? last ?? { connected: false, items: [], provider: compositeName };
     },
     // Metadata methods use the same fall-through pattern as quotes/candles:
     // try each provider in chain order, accept the first connected result,
@@ -1242,8 +1256,29 @@ export function getMarketProvider(): MarketProvider {
   }
 
   const base = chosen.features.candles ? withCandleResultFreshness(withCandleCache(chosen)) : chosen;
-  _provider = withTradingEconomicsCalendar(base);
+  _provider = withTradingEconomicsCalendar(withGdeltNews(base));
   return _provider;
+}
+
+// Opt-in public news lane; never replaces quote/candle routing or fabricates publication dates.
+function withGdeltNews(provider: MarketProvider): MarketProvider {
+  if (!gdeltEnabled()) return provider;
+  return {
+    ...provider,
+    name: provider.name === "none" ? "gdelt" : provider.name,
+    features: { ...provider.features, news: true },
+    notes: `${provider.notes ?? ""} GDELT public news enabled; publisher dates may be unknown.`,
+    async getMarketNews(query, limit = 12) {
+      const news = await getGdeltNews(query, limit);
+      if (news.connected) {
+        if (news.fetchedAt) cachedResultFetchedAt.set(news, Date.parse(news.fetchedAt));
+        return news;
+      }
+      const fallback = await provider.getMarketNews(query, limit);
+      if (fallback.connected) return fallback;
+      return news;
+    },
+  };
 }
 
 // When Trading Economics is configured as the economic-calendar provider, the
@@ -1275,6 +1310,7 @@ function withTradingEconomicsCalendar(provider: MarketProvider): MarketProvider 
 // For tests — reset memoized provider & caches
 export function _resetMarketProviderForTests() {
   resetMarketHttpObservations();
+  resetGdeltNewsForTests();
   _provider = null;
   _newsOnlyKey = null;
   quoteCache.clear();

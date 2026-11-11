@@ -173,10 +173,10 @@ type ProviderId = "mt5_broker" | "deriv" | "assistant_real";
 
 const CHAIN_BY_CLASS: Record<AssetClass, ProviderId[]> = {
   synthetic: ["mt5_broker", "deriv"],
-  forex:     ["mt5_broker", "assistant_real"],
-  metals:    ["mt5_broker", "assistant_real"],
-  indices:   ["mt5_broker", "assistant_real"],
-  crypto:    ["mt5_broker", "assistant_real"],
+  forex:     ["mt5_broker", "deriv", "assistant_real"],
+  metals:    ["mt5_broker", "deriv", "assistant_real"],
+  indices:   ["mt5_broker", "deriv", "assistant_real"],
+  crypto:    ["mt5_broker", "deriv", "assistant_real"],
   stocks:    ["mt5_broker", "assistant_real"],
   unknown:   ["mt5_broker", "assistant_real"],
 };
@@ -191,6 +191,7 @@ const CHAIN_BY_CLASS: Record<AssetClass, ProviderId[]> = {
 // null — never guessed.
 function makeProvenance(args: {
   providerId: string;
+  brokerSymbol?: string | null;
   subProviderId?: string | null;
   brokerCode: SeriesProvenance["brokerCode"];
   environment?: SeriesProvenance["environment"];
@@ -210,7 +211,7 @@ function makeProvenance(args: {
     brokerCode: args.brokerCode,
     bridgeConnectionId: args.bridgeConnectionId ?? null,
     userId: args.userId ?? null,
-    brokerSymbol: null,
+    brokerSymbol: args.brokerSymbol ?? null,
     environment: args.environment ?? "unknown",
     receivedAt: new Date().toISOString(),
     delayed: args.delayed,
@@ -309,6 +310,11 @@ async function tryMt5Candles(
         bridgeConnectionId: opts?.bridgeConnectionId ?? null,
       });
       if (read.candles.length > 0) {
+        const nativeSymbols = new Set(read.candles.flatMap(c => c.brokerSymbol ? [c.brokerSymbol] : []));
+        // An alias change within one bridge must not blend different native
+        // instruments under the same canonical chart key.
+        if (nativeSymbols.size > 1) return { provider: "mt5_broker", ok: false, reason: "MT5_NATIVE_SYMBOL_CONFLICT", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
+        const brokerSymbol = nativeSymbols.size === 1 && read.candles.every(c => c.brokerSymbol === [...nativeSymbols][0]) ? [...nativeSymbols][0]! : null;
         return {
           provider: "mt5_broker", ok: true, reason: null, candleCount: read.candles.length, ms: Date.now() - t0, candles: read.candles,
           // Live branch serves only what a connected EA pushed from the
@@ -320,6 +326,7 @@ async function tryMt5Candles(
             delayed: false,
             source: "DERIVED",
             sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}`,
+            brokerSymbol,
             bridgeConnectionId: read.bridgeConnectionId,
             userId: read.userId,
           }),
@@ -423,14 +430,15 @@ async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number
       tickTimeObserved: read.tickTimeObserved,
       // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
       // Bridge/owner are the authenticated writer's identity when the ingest
-      // path threaded it; an unattributed writer stays null. Broker-native
-      // symbol and environment are not observed on this path → null/unknown.
+      // path threaded it; an unattributed writer stays null. Native symbol is
+      // retained from this tick only; unobserved environment stays unknown.
       provenance: makeProvenance({
         providerId: "mt5_broker",
         brokerCode: "mt5",
         delayed: livePush ? false : null,
         source: livePush ? "LIVE_TICK" : "STALE",
         sourceId: `mt5_broker:${sourceSymbolKey(symbol)}`,
+        brokerSymbol: q.brokerSymbol ?? null,
         bridgeConnectionId: read.bridgeConnectionId,
         userId: read.userId,
       }),
@@ -459,7 +467,7 @@ async function tryDerivCandles(symbol: string, timeframe: string, limit: number)
     high: c.high,
     low: c.low,
     close: c.close,
-    volume: 0,
+    // Deriv publishes no candle volume; absence is not observed zero.
   }));
   return {
     provider: source, ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
@@ -856,7 +864,7 @@ export function getRouterDiagnostics(): RouterDiagnostics {
       },
       {
         id: "deriv",
-        name: "Deriv synthetic indices (WebSocket)",
+        name: "Deriv public market data (WebSocket)",
         configured: deriv.configured,
         connected: deriv.connected,
         detail: deriv.message,

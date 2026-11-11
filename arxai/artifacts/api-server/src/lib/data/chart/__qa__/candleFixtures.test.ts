@@ -516,8 +516,10 @@ test("[F31] priceBasisFromProvider('mt5_broker') = 'UNKNOWN' (producer declarati
   assert.equal(priceBasisFromProvider("mt5_broker"), "UNKNOWN");
 });
 
-test("[F32] priceBasisFromProvider('deriv') = 'SYNTHETIC'", () => {
-  assert.equal(priceBasisFromProvider("deriv"), "SYNTHETIC");
+test("[F32] Deriv price basis requires the instrument, never the provider alone", () => {
+  assert.equal(priceBasisFromProvider("deriv"), "UNKNOWN");
+  assert.equal(priceBasisFromProvider("deriv", "V75"), "SYNTHETIC");
+  assert.equal(priceBasisFromProvider("deriv_public", "EURUSD"), "UNKNOWN");
 });
 
 test("[F33] isValidOhlc rejects negative prices", () => {

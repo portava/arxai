@@ -23,7 +23,7 @@ const HANDSHAKE_CHECKS: ReadonlyArray<{ key: string; words: string }> = [
   { key: "timeframe_accuracy", words: "the timeframe and history check" },
   { key: "feed_freshness", words: "the feed freshness check" },
   { key: "historical_live_merge", words: "the history-to-live join check" },
-  { key: "symbol_mirror_accuracy", words: "the broker price comparison" },
+  { key: "symbol_mirror_accuracy", words: "the complete chart and broker comparison" },
 ];
 const HANDSHAKE_PASS = 75;
 const RENDER_FAIL_BELOW = 50;

@@ -18,7 +18,7 @@ import { computeTradeability } from "./tradeabilityEngine.js";
 import { computeTrapAndRoom } from "./trapRoomEngine.js";
 import { computeBroadFlow } from "./broadFlowEngine.js";
 import { computeNewsHeat } from "./newsHeatEngine.js";
-import { prepareMarketRead, matchedMarketQuote } from "../../lib/truth/marketReadEvidence.js";
+import { prepareMarketRead, matchedMarketQuote, matchedMarketQuoteBinding } from "../../lib/truth/marketReadEvidence.js";
 import { db } from "@workspace/db";
 import { heatSnapshots } from "@workspace/db/schema";
 
@@ -86,6 +86,9 @@ export async function computeTimingRead(
 
   const hasCandleData = candleData.length >= 10;
   const hasQuoteData = quoteData != null;
+  const quoteBinding = candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
+    ? matchedMarketQuoteBinding(candleResult.value, quoteResult.value, symbol, observedAt) : "NONE";
+  const hasLivePriceData = quoteBinding !== "NONE";
 
   // ─── 2. Session / Kill-Zone Engine ───────────────────────────────────────
   const session = computeSessionKillZone({ symbol, isSynthetic, assetClass, userTimezone });
@@ -182,7 +185,7 @@ export async function computeTimingRead(
       };
 
   // ─── 9. Data quality / honesty marker ────────────────────────────────────
-  const dataQuality = resolveDataQuality(hasCandleData, hasQuoteData, hasNewsData, hasBroadFlowData);
+  const dataQuality = resolveDataQuality(hasCandleData, hasQuoteData, hasNewsData, hasBroadFlowData, hasLivePriceData);
 
   // ─── 10. Assemble read ────────────────────────────────────────────────────
   const read: MarketTimingRead = {
@@ -325,11 +328,12 @@ function resolveDataQuality(
   hasQuoteData: boolean,
   hasNewsData: boolean,
   hasBroadFlowData: boolean,
+  hasLivePriceData: boolean,
 ): TimingDataQuality {
   let label: DataQualityLabel;
   if (!hasCandleData && !hasQuoteData) {
     label = "basic_timing_estimate";
-  } else if (hasCandleData && hasQuoteData) {
+  } else if (hasCandleData && hasQuoteData && hasNewsData && hasBroadFlowData) {
     label = "real";
   } else {
     label = "partial";
@@ -337,7 +341,7 @@ function resolveDataQuality(
 
   const parts: string[] = [];
   if (!hasCandleData) parts.push("candles unavailable (session-only estimate)");
-  if (!hasQuoteData) parts.push("live quote unavailable");
+  if (!hasQuoteData) parts.push(hasLivePriceData ? "live last price available; bid/ask spread not supplied by this feed" : "live quote unavailable");
   if (!hasNewsData) parts.push("economic calendar not connected");
   if (!hasBroadFlowData) parts.push("broad flow unavailable");
 
@@ -349,6 +353,7 @@ function resolveDataQuality(
     label,
     hasCandleData,
     hasQuoteData,
+    hasLivePriceData,
     hasNewsData,
     hasBroadFlowData,
     note,

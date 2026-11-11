@@ -83,7 +83,7 @@ function configureTradingEconomics(key = "te-key-route-test"): void {
 }
 
 function configureNoProvider(): void {
-  delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
+  process.env["ECONOMIC_CALENDAR_PROVIDER"] = "none";
   delete process.env["FRED_API_KEY"];
   delete process.env["TRADING_ECONOMICS_KEY"];
   delete process.env["TRADING_ECONOMICS_SECRET"];
@@ -311,4 +311,15 @@ test("newsCalendar.ts imports no execution gate / bridge / dispatch / kill switc
       `newsCalendar.ts must not import "${bad}" (economic calendar is read/risk-context only)`,
     );
   }
+});
+
+
+test("default public schedule flows through the same real calendar endpoint",async()=>{
+ delete process.env.ECONOMIC_CALENDAR_PROVIDER;
+ const today=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ __setEconomicCalendarFetcherForTests(async()=>({ok:true,status:200,text:async()=>JSON.stringify([{title:"Economic release",country:"USD",date:today+"T08:30:00-05:00",impact:"High",forecast:"1.0%",previous:"0.9%"}])}));
+ const {status,body}=await getEvents();
+ assert.equal(status,200);assert.equal(body.connected,true);assert.equal(body.provider,"forex_factory");
+ assert.equal(body.eventCount,1);assert.equal(body.events[0]!.actual,null);
+ assert.equal(body.events[0]!.forecast,"1.0%");assert.equal(body.events[0]!.source,"Forex Factory weekly schedule");
 });

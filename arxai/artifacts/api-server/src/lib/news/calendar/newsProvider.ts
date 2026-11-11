@@ -100,11 +100,13 @@ export const fredNewsProvider: NewsProvider = {
 // silently syncs fabricated rows.
 export function pickNewsProvider(): NewsProvider {
   switch (selectedEconomicCalendarProvider()) {
+    case "forex_factory":
+      return { ...tradingEconomicsNewsProvider, name: "forex_factory" };
     case "fred":
       return fredNewsProvider;
     case "trading_economics":
       return tradingEconomicsNewsProvider;
     default:
-      return mockNewsProvider;
+      return { name: "none", fetchEvents: async () => [] };
   }
 }

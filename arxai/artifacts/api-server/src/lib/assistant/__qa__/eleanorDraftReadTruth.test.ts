@@ -148,7 +148,7 @@ test("the gated trust line names a closed market or stored candles, never a dela
   assert.equal(stored, "H1 stored candles · not live · read gated");
   // Without a not-live reason the delayed grade is still a delayed feed.
   const delayed = buildGatedTrustLine("H1", { available: true, stale: false, aiUsable: false, basis: "INSUFFICIENT", quality: "delayed", notLiveReason: null });
-  assert.equal(delayed, "H1 candles syncing · feed delayed · read gated");
+  assert.equal(delayed, "H1 candle read withheld · feed delayed · read gated");
 });
 
 // ── Item: "Hold or close?" never assumes the position runs with the chart ───

@@ -18,4 +18,7 @@ export ARX_PREVIEW_SAFE_START=true
 export ARX_RESULT_SETTLEMENT_WORKER_ENABLED=false
 # Public prices only in development; account authorization and trading remain disabled.
 export ARX_DERIV_PUBLIC_DATA_ENABLED=true
+export ARX_GDELT_ENABLED=true
+export MT5_CALENDAR_CONNECTION_ID=15
+export MT5_CALENDAR_SERVER_TIMEZONE=UTC
 exec pnpm --filter @workspace/api-server run dev

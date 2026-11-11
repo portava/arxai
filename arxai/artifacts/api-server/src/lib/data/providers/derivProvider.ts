@@ -52,6 +52,46 @@ export const DERIV_SYNTHETIC_SYMBOLS: DerivSyntheticSymbol[] = [
   { symbol: "JUMP100",  derivId: "JD100",     displayName: "Jump 100 Index",            oneHertz: false },
 ];
 
+/** Public display-data mappings verified against active_symbols and ticks_history.
+ * Runtime discovery still gates every request. No inferred crosses or baskets:
+ * CADJPY/CHFJPY/DXY are absent. The approved ARX registry explicitly names
+ * GER30 as Germany 40 / DAX and GER40 as its alias (arxFocusMarkets.ts).
+ * These mappings confer no execution venue or account permission. */
+export const DERIV_PUBLIC_MARKET_SYMBOLS: DerivSyntheticSymbol[] = [
+  { symbol: "EURUSD", derivId: "frxEURUSD", displayName: "EUR/USD", oneHertz: false },
+  { symbol: "GBPUSD", derivId: "frxGBPUSD", displayName: "GBP/USD", oneHertz: false },
+  { symbol: "USDJPY", derivId: "frxUSDJPY", displayName: "USD/JPY", oneHertz: false },
+  { symbol: "USDCHF", derivId: "frxUSDCHF", displayName: "USD/CHF", oneHertz: false },
+  { symbol: "USDCAD", derivId: "frxUSDCAD", displayName: "USD/CAD", oneHertz: false },
+  { symbol: "AUDUSD", derivId: "frxAUDUSD", displayName: "AUD/USD", oneHertz: false },
+  { symbol: "NZDUSD", derivId: "frxNZDUSD", displayName: "NZD/USD", oneHertz: false },
+  { symbol: "EURJPY", derivId: "frxEURJPY", displayName: "EUR/JPY", oneHertz: false },
+  { symbol: "EURGBP", derivId: "frxEURGBP", displayName: "EUR/GBP", oneHertz: false },
+  { symbol: "EURAUD", derivId: "frxEURAUD", displayName: "EUR/AUD", oneHertz: false },
+  { symbol: "EURCAD", derivId: "frxEURCAD", displayName: "EUR/CAD", oneHertz: false },
+  { symbol: "GBPJPY", derivId: "frxGBPJPY", displayName: "GBP/JPY", oneHertz: false },
+  { symbol: "GBPAUD", derivId: "frxGBPAUD", displayName: "GBP/AUD", oneHertz: false },
+  { symbol: "GBPCAD", derivId: "frxGBPCAD", displayName: "GBP/CAD", oneHertz: false },
+  { symbol: "AUDJPY", derivId: "frxAUDJPY", displayName: "AUD/JPY", oneHertz: false },
+  { symbol: "XAUUSD", derivId: "frxXAUUSD", displayName: "Gold/USD", oneHertz: false },
+  { symbol: "XAGUSD", derivId: "frxXAGUSD", displayName: "Silver/USD", oneHertz: false },
+  { symbol: "BTCUSD", derivId: "cryBTCUSD", displayName: "BTC/USD", oneHertz: false },
+  { symbol: "ETHUSD", derivId: "cryETHUSD", displayName: "ETH/USD", oneHertz: false },
+  { symbol: "SPX500", derivId: "OTC_SPC", displayName: "US 500", oneHertz: false },
+  { symbol: "US30", derivId: "OTC_DJI", displayName: "Wall Street 30", oneHertz: false },
+  { symbol: "GER30", derivId: "OTC_GDAXI", displayName: "Germany 40", oneHertz: false },
+];
+export const DERIV_PUBLIC_FEED_SYMBOLS = [...DERIV_SYNTHETIC_SYMBOLS, ...DERIV_PUBLIC_MARKET_SYMBOLS];
+
+/** Feed-only resolver. Keep the synthetic classifier's narrower contract. */
+export function resolveDerivFeedSymbol(label: string): DerivSyntheticSymbol | null {
+  const synthetic = resolveDerivSymbol(label);
+  if (synthetic) return synthetic;
+  const requested = label.trim().toUpperCase();
+  const key = requested === "GER40" ? "GER30" : requested;
+  return DERIV_PUBLIC_MARKET_SYMBOLS.find(s => s.symbol === key || s.derivId.toUpperCase() === key) ?? null;
+}
+
 export interface DerivFeedStatus {
   configured: boolean;
   connected: boolean;
@@ -100,7 +140,7 @@ export interface DerivFeedStatus {
  *  Used by the scanner to decide LIVE_FEED vs HISTORY_READY_AWAITING_LIVE_TICK
  *  on a per-row basis (so one ticking symbol does NOT promote the rest). */
 export function hasRecentDerivTickFor(symbolOrLabel: string, maxAgeMs: number = 30_000): boolean {
-  const map = resolveDerivSymbol(symbolOrLabel);
+  const map = resolveDerivFeedSymbol(symbolOrLabel);
   if (!map) return false;
   const client = getDerivFeedClient();
   const tick = client.getCachedTickByDerivId(map.derivId);
@@ -193,7 +233,7 @@ export function getDerivFeedStatus(): DerivFeedStatus {
                                                                    "healthy";
 
   const message = !configured
-    ? "Deriv market data is off. Set ARX_DERIV_PUBLIC_DATA_ENABLED=true to enable public synthetic data; no account credentials are required."
+    ? "Deriv market data is off. Set ARX_DERIV_PUBLIC_DATA_ENABLED=true to enable public market data; no account credentials are required."
     : feedReadinessState === "LIVE_FEED"
       ? `Deriv market data connected (${mode} mode) — receiving live ticks; ${subs.length} subscriptions. Account trading is separate.`
       : feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"
@@ -201,7 +241,7 @@ export function getDerivFeedStatus(): DerivFeedStatus {
         : feedReadinessState === "CONNECTED_AWAITING_FEED"
           ? `Deriv feed connected (${mode} mode). Loading active symbols and tick subscriptions…`
           : feedReadinessState === "AUTH_FAILED"
-            ? `Deriv feed connected (${mode} mode) but authorize failed; public synthetic data still available.`
+            ? `Deriv feed connected (${mode} mode) but authorize failed; public market data still available.`
             : `Deriv feed configured (${mode} mode). Connecting…`;
 
   return {
@@ -278,7 +318,7 @@ export function getDerivSymbolFeedStatus(
   const authErr = client.getLastAuthorizeError();
   const activeSymbolsLoaded = client.isActiveSymbolsLoaded();
 
-  const map = resolveDerivSymbol(symbolOrLabel);
+  const map = resolveDerivFeedSymbol(symbolOrLabel);
   let lastTickAt: string | null = null;
   let lastTickAgeMs: number | null = null;
   let hasRecentTick = false;
@@ -334,7 +374,7 @@ export async function getDerivCandles(
   count: number,
   endEpochSeconds?: number,
 ): Promise<DerivCandlesResult> {
-  const map = resolveDerivSymbol(symbol);
+  const map = resolveDerivFeedSymbol(symbol);
   if (!map) {
     return { ok: false, reason: "SYMBOL_UNAVAILABLE_FROM_DERIV_FEED", source: null, candles: [], symbol, derivSymbol: null, granularitySeconds: null };
   }
@@ -344,12 +384,24 @@ export async function getDerivCandles(
   }
   const client = getDerivFeedClient();
   const source = client.getMode() === "public" ? "deriv_public" : "deriv";
+  if (source !== "deriv_public" && !isDerivSyntheticSymbol(symbol)) {
+    return { ok: false, reason: "DERIV_PUBLIC_DATA_REQUIRED", source, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
+  }
   if (!client.configured()) {
     return { ok: false, reason: "DERIV_NOT_CONFIGURED", source, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   }
   client.ensureConnection();
   try {
-    const candles = await client.getCandles(map.derivId, granularity, count, endEpochSeconds);
+    // A chart-only consumer must establish its own live tick subscription.
+    // Do not depend on a sibling scanner/quote request to warm this symbol.
+    // Historical cursor reads remain history-only, and a tick failure never
+    // discards real OHLC or fabricates a live verdict.
+    const [candles] = await Promise.all([
+      client.getCandles(map.derivId, granularity, count, endEpochSeconds),
+      source === "deriv_public" && endEpochSeconds === undefined
+        ? client.subscribeTicks(map.derivId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
     return { ok: candles.length > 0, reason: candles.length > 0 ? null : "NO_CANDLES_RETURNED", source, candles, symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   } catch (err) {
     return { ok: false, reason: (err as Error).message.replace(/app_id=[^&\s]+/gi, "app_id=<redacted>"), source, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
@@ -363,9 +415,10 @@ export interface DerivTickResult {
 }
 
 export async function getDerivTick(symbol: string): Promise<DerivTickResult> {
-  const map = resolveDerivSymbol(symbol);
+  const map = resolveDerivFeedSymbol(symbol);
   if (!map) return { ok: false, reason: "SYMBOL_UNAVAILABLE_FROM_DERIV_FEED", tick: null };
   const client = getDerivFeedClient();
+  if (client.getMode() !== "public" && !isDerivSyntheticSymbol(symbol)) return { ok: false, reason: "DERIV_PUBLIC_DATA_REQUIRED", tick: null };
   if (!client.configured()) return { ok: false, reason: "DERIV_NOT_CONFIGURED", tick: null };
   client.ensureConnection();
   try {

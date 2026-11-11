@@ -12,17 +12,22 @@ const inputs: SignalEngineInput = { symbol: "EURUSD", displayName: "EURUSD", tim
   currentPrice: 1.098, dataSource: "LIVE_FEED", scanner: { bias: "bullish", recommendedAction: "BUY", confidenceScore: 85, entrySniperScore: 85, riskRewardRatio: 2,
     setupType: "Trend", entry: 1.098, entryZone: { from: 1.0978, to: 1.0982 }, stopLoss: 1.097, takeProfit: 1.1, reasonForTrade: "", reasonToAvoid: "" },
   scalp: null, execution: null, newsRiskLevel: null, previous: null, now: NOW };
-const signal = () => ({ ...buildEleanorMarketEdge(inputs), marketEvidence: { ...fixture.evidence, userId: 1 } });
+// This fixture isolates calendar gating with an explicitly qualifying evidence
+// ledger. The raw producer fixture alone is below its evidence floor.
+const signal = (meetsMinimum = true) => {
+  const built = buildEleanorMarketEdge(inputs);
+  return { ...built, evidence: { ...built.evidence, meetsMinimum }, marketEvidence: { ...fixture.evidence, userId: 1 } };
+};
 
 type Radar = Awaited<ReturnType<TruthSnapshotDeps["buildNewsFn"]>>;
 function radar(connected: boolean, name: string, over: Partial<Radar["radar"]> = {}): Radar {
   return { radar: { symbol: "EURUSD", provider: { connected, name, note: "" }, events: [], topSeverity: null, highImpactWindowActive: false, summary: "", ...over },
     behavior: { mode: connected ? "NORMAL" : "NO_PROVIDER", note: "" } };
 }
-function snapshot(buildNewsFn: TruthSnapshotDeps["buildNewsFn"]) {
+function snapshot(buildNewsFn: TruthSnapshotDeps["buildNewsFn"], meetsMinimum = true) {
   return buildSymbolTruthSnapshot("EURUSD", "M15", 1, {
     getChartCandlesFn: async () => fixture.chart as never, buildNewsFn,
-    evaluateScalpFn: absent, computeTimingFn: absent, buildScannerFn: async () => signal(),
+    evaluateScalpFn: absent, computeTimingFn: absent, buildScannerFn: async () => signal(meetsMinimum),
   });
 }
 
@@ -111,4 +116,15 @@ test("control: EURUSD with the same failing calendar still says it could not be 
   assert.equal(s.news.synthetic, undefined);
   assert.equal(s.evidence.news.reason, "CALENDAR_UNCHECKED");
   assert.notEqual(s.verdict.bestAction, "BUY");
+});
+
+test("quiet connected calendar cannot promote a below-floor lean into an entry", async () => {
+  const s = await snapshot(async () => radar(true, "mt5"), false);
+  assert.equal(s.components.scanner.present, true);
+  assert.equal(s.verdict.biasQualifier, "LEAN");
+  assert.equal(s.verdict.bestAction, "WATCH_ONLY");
+  assert.equal(s.levels.withheld, true);
+  assert.equal(s.levels.entryFrom, null);
+  assert.equal(s.levels.stopLoss, null);
+  assert.deepEqual(s.levels.takeProfit, []);
 });

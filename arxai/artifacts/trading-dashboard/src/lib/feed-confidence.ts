@@ -237,9 +237,16 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
         "Candles from the MT5 broker data path, the primary broker-data source: either a bridge's live push or the server's stored copy of earlier pushes. Check feed status for whether they are live; actual execution prices can differ.",
     };
   }
-  if (source === "deriv" || source === "deriv_public") {
+  if (source === "deriv_public") {
     return {
-      label: source === "deriv_public" ? "Deriv public data" : "Deriv",
+      label: "Deriv public data",
+      tier: "thirdParty",
+      trustNote: "Deriv public quotes and candles for the selected instrument. Check this market's feed status for freshness; this source does not verify your broker's prices or order fills.",
+    };
+  }
+  if (source === "deriv") {
+    return {
+      label: "Deriv",
       tier: "synthetic",
       trustNote:
         "Deriv synthetic instruments (algorithmic volatility indices). Check feed status for freshness; this source does not verify your broker's prices or order fills.",

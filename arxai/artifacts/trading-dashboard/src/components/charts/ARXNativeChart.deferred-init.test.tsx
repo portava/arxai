@@ -36,6 +36,7 @@ function makeAdapter(): FakeAdapter {
     id,
     init: track("init"),
     destroy: track("destroy"),
+    getScannerOverlaySurface: vi.fn(() => ({ chart: {}, series: {}, container: document.createElement("div") })),
     setSymbol: track("setSymbol"),
     setTimeframe: track("setTimeframe"),
     setCrosshairHandler: track("setCrosshairHandler"),
@@ -1257,5 +1258,46 @@ describe("compact command-workspace chart", () => {
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
     }
+  });
+});
+
+
+it("releases scanner overlay handles before chart destruction, once per surface", () => {
+  candleResponse = liveResponse("EURUSD", "H1");
+  let owner: FakeAdapter | null = null;
+  let releases=0;
+  const bind=vi.fn((surface:unknown) => {
+    if(surface){ owner=created.at(-1)!; return; }
+    if(owner){
+      // Removing a price line after destroy schedules an uncaught disposed-canvas
+      // paint in the real library. The owning engine must still be alive here.
+      expect(owner.destroy).not.toHaveBeenCalled();
+      releases++;owner=null;
+    }
+  });
+  const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS} onScannerSurfaceChange={bind}/>);
+  expect(owner).not.toBeNull();
+  const releasedBeforeUnmount = releases;
+  view.unmount();
+  expect(releases).toBe(releasedBeforeUnmount + 1);
+  expect(created[0]!.destroy).toHaveBeenCalledTimes(1);
+  expect(owner).toBeNull();
+});
+
+ describe("native forming snapshot disclosure", () => {
+  it("renders the actual producer observation time separately from quote freshness", () => {
+    const response = liveResponse("EURUSD", "H1");
+    const observedAt = "2026-11-05T19:02:00.000Z";
+    candleResponse = { ...response, candles: [...response.candles, {
+      ...response.candles.at(-1), openTime: new Date(OPEN_MS + 3_600_000).toISOString(),
+      isComplete: false, isForming: true, formingOrigin: "native_mt5_snapshot", observedAt,
+    }] };
+    const app = () => <ARXNativeChart symbol="EURUSD" timeframe="H1" overlays={NO_OVERLAYS}/>;
+    const view = render(app());
+    expect(screen.getByTestId("native-forming-snapshot-time").textContent).toContain("19:02:00 UTC; quote updates separately.");
+    expect(screen.getByTestId("native-forming-snapshot-time").title).toBe(observedAt);
+    candleResponse = response;
+    view.rerender(app());
+    expect(screen.queryByTestId("native-forming-snapshot-time")).toBeNull();
   });
 });

@@ -35,6 +35,8 @@ const PUBLIC_EXACT = new Set<string>([
   // each handler (bridgeAuthPerUserOnly); the legacy server-wide env token is
   // rejected everywhere, so these stay fail-closed with no session present.
   "/mt5/heartbeat",
+  // Calendar telemetry uses the same per-user bridge token, never a browser cookie.
+  "/mt5/calendar/ingest",
   "/mt5/commands",
   "/mt5/command-result",
   "/mt5/sync-account",
@@ -102,6 +104,9 @@ const PUBLIC_EXACT = new Set<string>([
   // (per-user X-MT5-Bridge-Token only) inside the route handler. The global
   // gate must let the unauthenticated POST through so that token check can run.
   "/bridge/v2/ingest",
+  // Native candle-pair quality telemetry carries per-user bridge auth,
+  // not a browser session. Exact path only; route token validation remains.
+  "/bridge/v2/native-seams",
   // Task #397 — Bridge v2 EA pull surfaces (config manifest + whitelisted
   // command channel). Both carry NO session; they are gated by
   // `bridgeAuthPerUserOnly` (per-user X-MT5-Bridge-Token only) inside the route

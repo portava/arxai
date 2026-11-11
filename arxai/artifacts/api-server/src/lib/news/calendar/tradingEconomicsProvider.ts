@@ -18,6 +18,7 @@ export const TRADING_ECONOMICS_PROVIDER = "trading_economics";
 export type CalendarHttpFetcher = (url: string) => Promise<{
   ok: boolean;
   status: number;
+  retryAfterMs?: number;
   text(): Promise<string>;
 }>;
 

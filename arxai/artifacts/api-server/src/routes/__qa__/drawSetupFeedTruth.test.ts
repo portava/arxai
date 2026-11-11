@@ -149,14 +149,14 @@ test("a delayed (not stale) feed is called delayed in both the line and the refu
     state: { stale: false, aiUsable: false, truthState: { source: "mt5_broker", quality: "delayed" }, chartTruthScore: seamUnmeasuredScore },
   };
   const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed delayed · read gated");
+  assert.equal(p.dataFreshness.trustLine, "M15 candle read withheld · feed delayed · read gated");
   assert.match(p.refusalReason, /delayed, not live/);
 });
 
 test("a chart that could not be loaded says so", async () => {
   ctx = null;
   const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed unavailable · read gated");
+  assert.equal(p.dataFreshness.trustLine, "M15 candles unavailable · feed unavailable · read gated");
   assert.match(p.refusalReason, /could not be loaded/);
 });
 
@@ -179,7 +179,7 @@ test("a partial (gapped) feed is named as an incomplete candle sequence, not a d
   assert.equal(p.verdict, "refused");
   assert.doesNotMatch(p.refusalReason, /delayed/i, p.refusalReason);
   assert.match(p.refusalReason, /candle sequence is incomplete \(2 missing bars, 1 out-of-order bar\)/);
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · candle sequence incomplete · read gated");
+  assert.equal(p.dataFreshness.trustLine, "M15 candle read withheld · candle sequence incomplete · read gated");
 });
 
 test("an invalid feed names the failed integrity check, not a delayed feed", async () => {
@@ -188,7 +188,7 @@ test("an invalid feed names the failed integrity check, not a delayed feed", asy
   let p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
   assert.doesNotMatch(p.refusalReason, /delayed/i, p.refusalReason);
   assert.match(p.refusalReason, /candles failed their integrity checks \(3 bars with invalid OHLC\)/);
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · candles failed integrity checks · read gated");
+  assert.equal(p.dataFreshness.trustLine, "M15 candle read withheld · candles failed integrity checks · read gated");
   // Simulated data and unconfirmed timestamps are also "invalid", named for what they are.
   ctx = unusableFeedCtx({ quality: "invalid", invalidOhlcCount: 0, warning: "Chart data is unavailable — feed is syncing. Please wait." },
     { mockDataDetected: true });
@@ -205,7 +205,7 @@ test("a feed with no grade is 'not confirmed', never assumed delayed", async () 
   const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
   assert.doesNotMatch(p.refusalReason, /delayed/i, p.refusalReason);
   assert.match(p.refusalReason, /has not passed its checks/);
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed not confirmed · read gated");
+  assert.equal(p.dataFreshness.trustLine, "M15 candle read withheld · feed not confirmed · read gated");
 });
 
 // A series in its scheduled weekend close, or the stored MT5 mirror with no

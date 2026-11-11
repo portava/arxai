@@ -5,7 +5,7 @@ import {
   prepareScannerCandles, scannerSourceIdentity, scannerQuoteFor, classifyScannerQuoteBinding,
   type ScannerQuoteBinding,
 } from "../scannerInputIntegrity.js";
-import { normalizeChartTimeframe, timeframeMs } from "../data/chart/timeframes.js";
+import { normalizeChartTimeframe, barCloseMs } from "../data/chart/timeframes.js";
 
 /** Calculation freshness is bounded separately from the age of an observed bar.
  * This matches the polling UI's 30-second advice horizon; it is not a quote TTL. */
@@ -20,7 +20,7 @@ export function prepareMarketRead(
   if (!prepared || !canonical || !tf || !result.primaryProvider || !result.provenance || result.provenance.delayed) return null;
   const last = prepared.openClosed.at(-1);
   if (!last) return null;
-  const closeMs = Date.parse(last.time) + timeframeMs(tf);
+  const closeMs = barCloseMs(Date.parse(last.time), tf);
   if (!Number.isFinite(closeMs) || closeMs > now) return null;
   const evidence: TruthReadEvidence = {
     symbol: canonical, timeframe: tf, source: result.primaryProvider,
@@ -45,7 +45,7 @@ export function evidenceMatches(
   if (userId != null && observed.userId !== userId) return false;
   const closeMs = Date.parse(observed.lastClosedCandleAt);
   const tf = normalizeChartTimeframe(observed.timeframe);
-  if (!tf || now - closeMs >= timeframeMs(tf)) return false;
+  if (!tf || now >= barCloseMs(closeMs, tf)) return false;
   return Number.isFinite(closeMs) && closeMs <= now &&
     observed.symbol === expected.symbol && observed.timeframe === expected.timeframe &&
     !!observed.source && observed.source === expected.source &&

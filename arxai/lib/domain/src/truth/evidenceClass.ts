@@ -135,6 +135,8 @@ export interface TruthEvidenceInput {
     state: TruthDataState;
     source: string | null;
     price: number | null;
+    /** Explicit null means the price observation time is unknown. */
+    priceObservedAt?: string | null;
     lastCandleAt: string | null;
     lastTickAt: string | null;
   };
@@ -233,13 +235,15 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
       ? claim("INVALID_TIMESTAMP", null)
       : feedClaim(data.state, data.source, candleAt);
 
-  // ── Price: newest close. Needs a value AND the bar it came from.
+  // ── Price: newest close. Its own observation clock may be unknown even
+  // when the preceding closed bar and the separate latest tick have clocks.
+  const priceAt = "priceObservedAt" in data ? data.priceObservedAt : candleAt;
   const priceUsable = data.price != null && Number.isFinite(data.price) && data.price > 0;
   const price = !priceUsable
     ? claim("NO_VALUE", null)
-    : lastCandle.reason === "NO_VALUE" || lastCandle.reason === "INVALID_TIMESTAMP"
+    : priceAt == null || !parsable(priceAt) || Date.parse(priceAt) > nowMs
       ? claim("NO_OBSERVATION_TIME", null)
-      : feedClaim(data.state, data.source, candleAt);
+      : feedClaim(data.state, data.source, priceAt);
 
   // ── Last tick: a real observation time; a future one is not an observation.
   const tickAt = data.lastTickAt;

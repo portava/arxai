@@ -114,7 +114,7 @@ describe("Chart Pulse readiness respects the chart-truth gate", () => {
     const readiness = screen.getByTestId("pulse-readiness");
     expect(readiness.textContent).not.toContain("Ready");
     expect(readiness.className).not.toMatch(/emerald/);
-    expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the broker price comparison was not measured");
+    expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the complete chart and broker comparison was not measured");
   });
 
   it("candles that are not real OHLC, or a feed that is not clean, are not verified", () => {

@@ -707,7 +707,7 @@ export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWork
   );
 
   if (compactWorkspace) {
-    const globalTone = data ? tone(data.global.intensity) : INTENSITY_TONE.unavailable!;
+    const globalTone = data ? mapTone(data.global) : INTENSITY_TONE.unavailable!;
     const heatUnavailable = !data || isError || data.global.intensity === "unavailable";
     return <div className="arx-heat-compact" data-testid="market-heat-compact" aria-label="Market heat summary">
       {isLoading ? <p role="status">Market heat is loading…</p> : isError || !data ? (
@@ -719,6 +719,7 @@ export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWork
           <span className="text-slate-400">{heatUnavailable ? SOURCE_STATUS_LABEL[data.global.sourceStatus]?.text ?? "Unavailable" : DIRECTION_LABEL[data.global.direction] ?? data.global.direction}</span>
           <button type="button" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh market heat" title="Refresh market heat"><RefreshCw size={13} className={isFetching ? "animate-spin" : ""}/></button>
         </div>
+        {coverageLabel(data.global) && <p className="arx-heat-honesty" data-testid="compact-heat-coverage">{coverageLabel(data.global)}</p>}
         <div className="arx-heat-summary-line">
           <span className={data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.text : "text-slate-400"}>News headlines {data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.label ?? "Unavailable" : "unavailable"}</span>
           <span>{data.newsRisk.connected ? `${data.newsRisk.highImpactCount} high-impact headlines` : "headline provider not connected"}</span>
@@ -726,7 +727,7 @@ export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWork
         </div>
         {topHot.length > 0 ? <div className="arx-heat-hot-row" aria-label="Highest reported heat">
           {topHot.slice(0, 2).map(item => <button type="button" key={item.id} onClick={() => setSelectedKey(item.id)} title={`${item.displayName}: ${item.intensity}, ${item.direction}`}>
-            {item.displayName}<span>{tone(item.intensity).label}</span>
+            {item.displayName}<span>{mapTone(item).label}</span>
           </button>)}
         </div> : <p className="arx-heat-honesty">Macro heat unavailable; missing provider data is not an all-clear.</p>}
         <details className="arx-heat-details">

@@ -206,7 +206,7 @@ for (const source of [
       ),
     );
     if (source === "deriv_public")
-      assert.equal(truth.truthResult.priceBasis, "SYNTHETIC");
+      assert.equal(truth.truthResult.priceBasis, "UNKNOWN", "EURUSD must not acquire synthetic semantics from the provider");
   });
 test("metadata correction does not change OHLC or existing assessment", () => {
   const undeclared = runCandleTruth(rows, opts),

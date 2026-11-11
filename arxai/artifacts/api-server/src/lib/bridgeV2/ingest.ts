@@ -315,6 +315,8 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
   const p = (payload ?? {}) as Record<string, unknown>;
+  const brokerSymbol = typeof p.brokerSymbol === "string" && p.brokerSymbol.length > 0 && p.brokerSymbol.length <= 128
+    && p.brokerSymbol.trim() === p.brokerSymbol && !/[\x00-\x1f\x7f]/.test(p.brokerSymbol) ? p.brokerSymbol : null;
   try {
     if (messageType === "CANDLE") {
       // Both v2 and batch routes obtain this exact mt5_connection.id from
@@ -333,6 +335,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       // the stored history bucket on the same clock) and carries the bridge's
       // measured UTC offset so a reader can show it in UTC and age it honestly.
       const candle: Candle = {
+        brokerSymbol,
         time: new Date(openTimeEpochMs).toISOString(),
         timeBasisEvidence: brokerServerCandleTimeBasis(getMt5BridgeClockOffset(candleBridge)),
         open: Number(p.open),
@@ -380,7 +383,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
         ? input.eaCreatedAtEpochMs
         : null;
     if (eaCreatedAtEpochMs == null) return;
-    recordMt5Tick(symbol, { bid, ask, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
+    recordMt5Tick(symbol, { bid, ask, brokerSymbol, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an

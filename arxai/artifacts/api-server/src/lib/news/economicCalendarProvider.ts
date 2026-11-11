@@ -77,6 +77,8 @@ export interface EconomicCalendarSnapshot {
    * Optional so older stubs remain valid.
    */
   lastSuccessAt?: string | null;
+  freshness?: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
+  coverageNote?: string;
 }
 
 /**
@@ -93,7 +95,7 @@ export async function getEconomicCalendar(
   const result = await getEconomicCalendarResult({ nowMs });
   // Only trust events when the provider is genuinely connected (ok/empty).
   const symbolEvents = result.connected
-    ? filterEventsForSymbol(result.events, symbol)
+    ? (symbol.trim().toUpperCase() === "GLOBAL" ? result.events : filterEventsForSymbol(result.events, symbol))
     : [];
   // Derive the explicit provider-state discriminant from the honest service
   // result: unconfigured ⇒ not_configured, connected ⇒ connected, otherwise
@@ -108,6 +110,8 @@ export async function getEconomicCalendar(
     // Report "none" when unconfigured so downstream `configured` checks stay honest.
     provider: result.configured ? result.provider : "none",
     status: result.status,
+    freshness: result.diagnostics.freshness,
+    coverageNote: result.message,
     events: toRawCalendarEvents(symbolEvents),
     providerState,
     lastSuccessAt: result.connected ? (result.diagnostics.lastSuccessAt ?? null) : null,
@@ -149,6 +153,8 @@ export interface EnrichedCalendarEvent {
   forecast: string | null;
   previous: string | null;
   actual: string | null;
+  unit?: string | null;
+  revised?: string | null;
   riskNote: string | null;
 }
 
@@ -192,7 +198,7 @@ function freshnessToStatus(f: CalendarFreshness): "fresh" | "stale" | "unavailab
 
 function livenessFromDiagnostics(d: EconomicCalendarDiagnostics): CalendarLivenessSnapshot {
   return {
-    lastFetchAt: d.lastFetchAt,
+    lastFetchAt: d.lastSuccessAt ?? d.lastFetchAt,
     // The shared diagnostics carries a single `lastFetchAt` (attempt time) plus a
     // redacted `lastError`. When the last attempt failed, that attempt time IS
     // the error time; otherwise there is no error timestamp.
@@ -220,6 +226,8 @@ function toEnriched(e: CalendarEvent): EnrichedCalendarEvent {
     forecast: e.forecast,
     previous: e.previous,
     actual: e.actual,
+    unit: e.unit,
+    revised: e.revised,
     riskNote: e.riskNote,
   };
 }
@@ -247,6 +255,7 @@ export async function getEnrichedCalendarEvents(
   provider: string;
   events: EnrichedCalendarEvent[];
   liveness: CalendarLivenessSnapshot;
+  coverageNote?: string;
 }> {
   const daysAhead = Math.max(1, Math.ceil(windowMs / 86_400_000));
   const result = await getEconomicCalendarResult({ daysAhead, nowMs });
@@ -290,7 +299,7 @@ export async function getEnrichedCalendarEvents(
     out.push(toEnriched(e));
   }
 
-  return { connected: true, provider: result.provider, events: out, liveness };
+  return { connected: true, provider: result.provider, events: out, liveness, coverageNote: result.message };
 }
 
 /**

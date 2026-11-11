@@ -165,3 +165,31 @@ test("a negative 'offset' read from a stale first-sight tick never makes a stall
   const h = await getCandleHistory({ symbol: "EURUSD", timeframe: "1m", limit: 200 });
   assert.equal(h.status, "stale");
 });
+
+for (const offset of [1, 350, GMT2]) test(`monthly freshness uses broker calendar coordinates with positive offset ${offset}ms`, async () => {
+  const now = Date.UTC(2026, 10, 5, 18);
+  mock.timers.enable({ apis: ["Date"], now });
+  measureOffset(now, offset);
+  routedBars = Array.from({ length: 160 }, (_, i) => ({time: new Date(Date.UTC(2026, 9 - 159 + i, 1)).toISOString(), open: 1.1, high: 1.101, low: 1.099, close: 1.1, volume: 10}));
+  const r = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(r.feedStatus.trailingIntervals, 1);
+  assert.equal(r.feedStatus.quality, "clean");
+  assert.equal(r.feedStatus.isLive, true);
+  assert.equal(r.candles.at(-1)?.openTime, "2026-10-01T00:00:00.000Z");
+  assert.equal(r.candles.at(-1)?.closeTime, "2026-11-01T00:00:00.000Z");
+  routedBars = routedBars.slice(0, -1);
+  const stalled = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(stalled.feedStatus.trailingIntervals, 2);
+  assert.equal(stalled.aiUsable, false);
+  assert.equal(stalled.feedStatus.isLive, false);
+});
+
+test("negative inferred monthly offset cannot rejuvenate missing October history", async () => {
+  const now = Date.UTC(2026, 10, 5, 18);
+  mock.timers.enable({ apis: ["Date"], now });
+  measureOffset(now, -31 * 24 * HOUR);
+  routedBars = [{time:"2026-09-01T00:00:00.000Z",open:1.1,high:1.101,low:1.099,close:1.1,volume:10}];
+  const r = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(r.feedStatus.trailingIntervals, 2);
+  assert.equal(r.aiUsable, false);
+});

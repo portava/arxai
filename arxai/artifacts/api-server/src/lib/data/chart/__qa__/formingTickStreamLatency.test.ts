@@ -58,6 +58,7 @@ async function startServer(): Promise<{ port: number; close: () => Promise<void>
 function connectSse(
   port: number,
   onEvent: (e: SseEvent) => void,
+  source = "deriv",
 ): Promise<{ req: http.ClientRequest; ready: Promise<void> }> {
   return new Promise((resolve) => {
     let buffer = "";
@@ -65,7 +66,7 @@ function connectSse(
       {
         host: "127.0.0.1",
         port,
-        path: `/api/chart/tick-stream?symbol=${SYM}&timeframe=${TF}&source=mt5_broker`,
+        path: `/api/chart/tick-stream?symbol=${SYM}&timeframe=${TF}&source=${source}`,
       },
       (res) => {
         res.setEncoding("utf8");
@@ -113,7 +114,7 @@ test("[D1/D3] tick reaches SSE client in << 500ms and carries tickWallMs", async
 
   const now = Date.now();
   const t0 = performance.now();
-  foldFormingTick(SYM, 1.2345, now, now, "mt5_broker"); // ingest accept → synchronous bus emit
+  foldFormingTick(SYM, 1.2345, now, now, "deriv"); // ingest accept → synchronous bus emit
   await firstForming;
   const latencyMs = received[0]!.at - t0;
 
@@ -144,7 +145,7 @@ test("[D2] N back-to-back ticks produce N distinct frames (no coalescing)", asyn
   const now = Date.now();
   const sent = [1.0, 1.1, 1.2, 1.3, 1.4];
   for (let i = 0; i < sent.length; i++) {
-    foldFormingTick(SYM, sent[i]!, now + i, now + i, "mt5_broker");
+    foldFormingTick(SYM, sent[i]!, now + i, now + i, "deriv");
   }
 
   // Drain the socket briefly; with immediate push every fold flushed a frame.
@@ -156,4 +157,18 @@ test("[D2] N back-to-back ticks produce N distinct frames (no coalescing)", asyn
 
   req.destroy();
   await close();
+});
+
+// MT5 forms from native snapshots only; sampled ticks cannot overwrite their OHLC.
+test("MT5 SSE announces native-snapshot mode and emits no sampled forming candle", async () => {
+  __resetFormingBarStore(); const { port, close } = await startServer();
+  const events: SseEvent[] = []; let ready!: () => void;
+  const mode = new Promise<void>(r => { ready = r; });
+  const { req } = await connectSse(port, e => { events.push(e); if (e.type === "native_snapshot_mode") ready(); }, "mt5_broker");
+  try {
+    await mode;
+    const now = Date.now(); foldFormingTick(SYM, 999, now, now, "mt5_broker");
+    await new Promise(r => setTimeout(r, 60));
+    assert.equal(events.filter(e => e.type === "forming_bar").length, 0);
+  } finally { req.destroy(); await close(); }
 });

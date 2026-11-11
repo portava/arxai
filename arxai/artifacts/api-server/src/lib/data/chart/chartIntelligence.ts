@@ -14,6 +14,7 @@
 //  - Adds NO new data source; reads ONLY the truth layer.
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
+import { recordStateCandleWindow, copyStateCandleWindow } from "./stateCandleWindow.js";
 import { recordStateTruthResult } from "./stateTruthResult.js";
 import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import {
@@ -291,6 +292,7 @@ export function enrichStateWithBrokerAlignment(
   };
   const enriched: ChartIntelligenceState = { ...sentenceInput, marketSentences: buildMarketSentences(sentenceInput) };
   recordStateTruthResult(enriched, truthResult);
+  copyStateCandleWindow(state, enriched);
   return enriched;
 }
 
@@ -299,7 +301,7 @@ function mean(xs: number[]): number {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
-function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats {
+export function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats {
   const n = closed.length;
   if (n === 0) {
     return {
@@ -334,7 +336,8 @@ function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats {
 
   const atrWin = closed.slice(Math.max(0, n - (ATR_PERIOD + 1)));
   const trs: number[] = [];
-  for (let i = 0; i < atrWin.length; i++) {
+  // The preceding close supplies context; it is not a fifteenth ATR sample.
+  for (let i = atrWin.length > 1 ? 1 : 0; i < atrWin.length; i++) {
     const c = atrWin[i]!;
     if (i === 0) {
       trs.push(c.high - c.low);
@@ -497,7 +500,7 @@ export async function buildChartIntelligenceState(
   const lastCandle = candles[candles.length - 1] ?? null;
   const currentCandle =
     lastCandle != null && lastCandle.isComplete === false ? lastCandle : null;
-  const closed = candles.filter((c) => c.isComplete);
+  const closed = candles.filter((c) => c.isComplete === true && c.isForming !== true && c.isFinal !== false);
   const latestClosedCandle = closed[closed.length - 1] ?? null;
 
   const candleStats = computeStats(closed);
@@ -624,7 +627,7 @@ export async function buildChartIntelligenceState(
   // replaces the placeholder with real per-user broker tick data.
   const brokerAlignment = noBrokerAlignment(
     latestClosedCandle?.close ?? null,
-    "LAST",
+    truth.truthResult?.priceBasis ?? "UNKNOWN",
   );
   const chartTruthScore = computeChartTruthScore(truth.truthResult, truth.feedStatus, brokerAlignment);
 
@@ -701,6 +704,7 @@ export async function buildChartIntelligenceState(
     marketSentences,
   };
   recordStateTruthResult(state, truth.truthResult);
+  recordStateCandleWindow(state, candles, truth.marketEvidence);
 
   const writtenAt = Date.now();
   boundedCacheSet(cache, cacheKey, {

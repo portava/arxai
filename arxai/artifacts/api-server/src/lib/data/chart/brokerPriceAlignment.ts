@@ -150,6 +150,17 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
 
   const brokerMid = brokerBid! + (brokerAsk! - brokerBid!) / 2;
 
+  // Bid/ask observations can support BID or MID comparisons. A LAST candle
+  // needs an actual last-trade observation; UNKNOWN/SYNTHETIC is not a license
+  // to silently substitute the midpoint and award alignment credit.
+  if (chartPriceBasis !== "BID" && chartPriceBasis !== "MID") {
+    return { ...noBrokerAlignment(chartPrice, chartPriceBasis), brokerBid, brokerAsk, brokerMid, spreadPoints,
+      brokerDataAvailable: true, quoteBinding,
+      userMessage: "The chart's price basis has no matching broker reference — alignment not confirmed.",
+      adminDetail: `Basis ${chartPriceBasis} cannot be verified using bid/ask alone.`,
+    };
+  }
+
   // Compute deviation: chart price vs broker mid.
   // For BID-basis charts we compare against brokerBid; for others against brokerMid.
   const referencePrice =
@@ -208,6 +219,7 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
  *  an observed tick time inside the freshness budget. */
 export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | undefined): boolean {
   if (!alignment || alignment.brokerDataAvailable !== true || !isBoundBrokerQuote(alignment.quoteBinding) ||
+      !["BID", "MID"].includes(alignment.chartPriceBasis) ||
       !["tight", "normal", "wide", "failed"].includes(alignment.tolerance)) return false;
   const { chartPrice, brokerBid, brokerAsk, brokerMid, deviationPct } = alignment;
   return [chartPrice, brokerBid, brokerAsk, brokerMid].every(value => value != null && Number.isFinite(value) && value > 0) &&

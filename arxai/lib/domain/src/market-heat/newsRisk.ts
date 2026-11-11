@@ -88,8 +88,12 @@ const HIGH_IMPACT_TERMS = [
   "crash", "crisis", "war", "default", "collapse", "emergency", "recession",
   "sanction", "intervention", "shock", "plunge", "slump", "tumble", "panic",
   "rate hike", "rate cut", "rate decision", "interest rate", "inflation",
-  "fomc", "central bank", "fed ", "federal reserve", "ecb", "boj", "boe",
-  "nonfarm", "non-farm", "payrolls", "cpi", "geopolit", "downgrade",
+  "fomc", "central bank", "fed", "federal reserve", "ecb", "boj", "boe",
+  "nonfarm", "non-farm", "payrolls", "cpi", "geopolitical", "geopolitics", "downgrade",
+  "crashed", "crashes", "crashing", "wars", "defaults", "defaulted",
+  "collapses", "collapsed", "collapsing", "emergencies", "recessions",
+  "sanctions", "sanctioned", "interventions", "shocks", "shocked",
+  "plunges", "plunged", "slumps", "slumped", "tumbles", "tumbled", "downgrades", "downgraded",
 ];
 // Medium-impact severity vocabulary — notable but not necessarily acute.
 const MEDIUM_IMPACT_TERMS = [
@@ -101,10 +105,18 @@ const MEDIUM_IMPACT_TERMS = [
 const RECENT_MS = 2 * 60 * 60 * 1000; // 2h — full recency weight.
 const DECAY_MS = 24 * 60 * 60 * 1000; // 24h — floor recency weight.
 
+// Match complete terms, including phrases with spaces or hyphens. Substrings
+// such as "war" in "forward-looking" or "boe" in "Boeing" are not risk evidence.
+const termPattern = (terms: readonly string[]) => new RegExp(
+  "\\b(?:" + terms.map(term => term.replace(/[ -]+/g, "[\\s-]+")).join("|") + ")\\b", "i",
+);
+const HIGH_IMPACT_PATTERN = termPattern(HIGH_IMPACT_TERMS);
+const MEDIUM_IMPACT_PATTERN = termPattern(MEDIUM_IMPACT_TERMS);
+
 function severityWeightOf(text: string): { weight: number; high: boolean } {
   const t = text.toLowerCase();
-  if (HIGH_IMPACT_TERMS.some((w) => t.includes(w))) return { weight: 1, high: true };
-  if (MEDIUM_IMPACT_TERMS.some((w) => t.includes(w))) return { weight: 0.5, high: false };
+  if (HIGH_IMPACT_PATTERN.test(t)) return { weight: 1, high: true };
+  if (MEDIUM_IMPACT_PATTERN.test(t)) return { weight: 0.5, high: false };
   // A real headline still carries baseline "something is happening" risk.
   return { weight: 0.15, high: false };
 }
@@ -248,10 +260,10 @@ export function deriveNewsRisk(
     : "";
 
   const summaryByLevel: Record<MarketHeatNewsRiskLevel, string> = {
-    high: "High news risk — active high-impact headlines.",
-    elevated: "Elevated news risk — notable headline activity.",
-    moderate: "Moderate news risk — some headline activity.",
-    low: "Low news risk — quiet headline flow.",
+    high: "High headline-risk estimate — recent coverage matches high-impact terms.",
+    elevated: "Elevated headline-risk estimate — notable headline activity.",
+    moderate: "Moderate headline-risk estimate — some headline activity.",
+    low: "Low headline-risk estimate — quiet headline flow.",
     unavailable: "News risk unavailable.",
   };
 

@@ -1,14 +1,15 @@
+import { approvedFxPair } from "./providerSymbolMapping.js";
 import type { Candle, CandleResult, MarketQuote } from "./marketProvider.js";
 
 // Explicit fiat pairs only: never interpret an arbitrary six-letter stock as FX.
-const PAIRS = new Set(["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"]);
 export const FX_INTERVALS: Record<string, { name: string; ms: number }> = {
   M1: { name: "1min", ms: 60_000 }, M5: { name: "5min", ms: 300_000 },
   M15: { name: "15min", ms: 900_000 }, M30: { name: "30min", ms: 1_800_000 },
   H1: { name: "60min", ms: 3_600_000 },
 };
 export function alphaFxPair(symbol: string): { from: string; to: string } | null {
-  return PAIRS.has(symbol) ? { from: symbol.slice(0, 3), to: symbol.slice(3) } : null;
+  const pair = approvedFxPair(symbol);
+  return pair ? { from: pair.base, to: pair.quote } : null;
 }
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

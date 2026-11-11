@@ -564,6 +564,7 @@ export function updateQuoteFromMT5(
 
 /** One EA tick post as the bridge v2 ingest hands it over. */
 export interface Mt5TickInput {
+  brokerSymbol?: string | null;
   bid: number;
   ask: number;
   /** Payload `brokerTimeEpochMs` (MQL5 `MqlTick.time_msc`): the trade server's
@@ -605,7 +606,7 @@ export function recordMt5Tick(
   const partitions = quoteStore.get(key) ?? new Map<string, QuoteEntry>();
   const bKey = bridgeKeyOf(bridge);
   const existing = partitions.get(bKey);
-  const tickKey = `${tick.brokerTimeMs ?? "-"}|${tick.bid}|${tick.ask}`;
+  const tickKey = `${tick.brokerSymbol ?? "-"}|${tick.brokerTimeMs ?? "-"}|${tick.bid}|${tick.ask}`;
   const now = Date.now();
   let entry: QuoteEntry;
   if (existing?.tick && existing.tick.key === tickKey) {
@@ -620,7 +621,7 @@ export function recordMt5Tick(
       },
     };
   } else {
-    const priorPostEaMs = existing?.tick ? existing.tick.lastPostedEaMs : null;
+    const priorPostEaMs = existing?.tick && (existing.quote.brokerSymbol ?? null) === (tick.brokerSymbol ?? null) ? existing.tick.lastPostedEaMs : null;
     // The prior post bounds the tick's real time only when it is recent: the
     // partition entry is still within the store TTL (server clock) and the
     // prior post came at most QUOTE_FRESH_TTL_MS before this one (EA clock).
@@ -637,6 +638,7 @@ export function recordMt5Tick(
     entry = {
       quote: {
         symbol,
+        brokerSymbol: tick.brokerSymbol ?? null,
         bid: tick.bid,
         ask: tick.ask,
         spread: tick.ask - tick.bid,

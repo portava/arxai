@@ -168,8 +168,10 @@ export function computeEvidenceStack(
   let direction: ChartEvidenceDirection;
   if (forWeight === 0 && againstWeight === 0) direction = "neutral";
   else if (forWeight >= againstWeight * 1.2) direction = bias;
-  else if (againstWeight >= forWeight * 1.2)
-    direction = bias === "bullish" ? "bearish" : "bullish";
+  // Reasons against this candidate do not establish the opposite direction.
+  // In particular, balanced pressure or a weak level cannot turn bearish trend
+  // evidence into a bullish claim (or vice versa). A reversal needs its own
+  // supporting evidence; this stack only evaluated the original candidate.
   else direction = "neutral";
 
   return {
@@ -178,6 +180,6 @@ export function computeEvidenceStack(
     evidenceFor: evidenceFor.sort((a, b) => b.weight - a.weight),
     evidenceAgainst: evidenceAgainst.sort((a, b) => b.weight - a.weight),
     contradictions,
-    note: `${evidenceFor.length} for / ${evidenceAgainst.length} against, ${contradictions.length} contradiction(s).`,
+    note: `${evidenceFor.length} for / ${evidenceAgainst.length} against the ${bias} idea, ${contradictions.length} contradiction(s).${direction === "neutral" ? " Evidence does not confirm a direction." : ""}`,
   };
 }

@@ -6,6 +6,8 @@ import type { CandleVolumeEvidence } from "./candleVolumeEvidence.js";
 import type { ProvenanceSource } from "../provenance/index.js";
 
 export interface Candle {
+  /** Exact native symbol reported with this authenticated broker observation. */
+  brokerSymbol?: string | null;
   time: string;
   /** Optional original clock provenance; ISO syntax alone is never UTC authority. */
   timeBasisEvidence?: CandleTimeBasisEvidence;
@@ -87,6 +89,8 @@ export interface SeriesProvenance {
 }
 
 export interface MarketQuote {
+  /** Exact native symbol reported with this authenticated broker observation. */
+  brokerSymbol?: string | null;
   symbol: string;
   bid?: number;
   ask?: number;

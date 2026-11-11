@@ -96,3 +96,12 @@ describe("Economic Calendar coverage honesty", () => {
     await vi.waitFor(() => expect(screen.getByTestId("overall-risk").textContent).toBe("Low"));
   });
 });
+
+
+it("public weekly calendar discloses future-week and actual-release coverage limits",async()=>{
+ statusRoute={status:200,body:{...NOT_CONFIGURED,connected:true,configured:true,provider:"forex_factory",freshnessStatus:"fresh",events:[]}};
+ renderPage();
+ const note=await screen.findByTestId("calendar-weekly-coverage");
+ expect(note.textContent).toMatch(/Current source week only/);
+ expect(note.textContent).toMatch(/released actuals and revisions are not supplied/);
+});

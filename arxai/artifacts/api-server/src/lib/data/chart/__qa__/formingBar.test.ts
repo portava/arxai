@@ -459,3 +459,23 @@ test("[E6] __resetFormingBarStore clears the last-tick map", () => {
   __resetFormingBarStore();
   assert.equal(getFeedFreshness(FROZEN_SYM, now), null, "reset clears the last-tick map");
 });
+
+test("a fresh display tick cannot conceal delayed or stale closed history", () => {
+  for (const [gap, expected] of [[2, "delayed"], [3, "stale"], [10, "stale"]] as const) {
+    const base = {routerOk:true, hasSource:true, candleCount:200, trailingIntervals:gap};
+    const closed = buildFeedStatus(base);
+    const display = buildFeedStatus({...base, formingTipPresent:true, formingTickAgeMs:1});
+    assert.equal(display.quality, expected);
+    assert.equal(display.quality, closed.quality);
+    assert.equal(display.stale, closed.stale);
+    assert.equal(display.aiUsable, false);
+  }
+});
+test("a current closed interval and fresh tip remain usable", () => {
+  const result = buildFeedStatus({routerOk:true,hasSource:true,candleCount:200,trailingIntervals:1,formingTipPresent:true,formingTickAgeMs:1});
+  assert.equal(result.quality,"clean");assert.equal(result.aiUsable,true);
+});
+test("a silent tip worsens delayed history rather than reviving it", () => {
+  const result = buildFeedStatus({routerOk:true,hasSource:true,candleCount:200,trailingIntervals:2,formingTipPresent:true,formingTickAgeMs:60000});
+  assert.equal(result.quality,"stale");assert.equal(result.stale,true);assert.equal(result.aiUsable,false);
+});

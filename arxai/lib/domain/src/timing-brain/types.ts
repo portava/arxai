@@ -165,7 +165,10 @@ export type DataQualityLabel =
 export interface TimingDataQuality {
   label: DataQualityLabel;
   hasCandleData: boolean;
+  /** A bound bid/ask quote with an observed spread. */
   hasQuoteData: boolean;
+  /** A fresh same-feed price, including last-only feeds without bid/ask. */
+  hasLivePriceData?: boolean;
   hasNewsData: boolean;
   hasBroadFlowData: boolean;
   note: string; // Honest description of what data was used

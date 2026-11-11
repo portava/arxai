@@ -373,15 +373,15 @@ test("14. pickNewsProvider returns the FRED provider and syncs real events when 
 
 // ── 15. Legacy default: no provider selected ⇒ mock back-compat ───────────────
 
-test("15. pickNewsProvider falls back to mock ONLY when no provider is selected", async () => {
+test("15. pickNewsProvider defaults to the public weekly calendar when no provider is selected", async () => {
   delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
   delete process.env["FRED_API_KEY"];
   delete process.env["TRADING_ECONOMICS_KEY"];
   delete process.env["TRADING_ECONOMICS_SECRET"];
-  assert.equal(selectedEconomicCalendarProvider(), null);
-  assert.equal(isEconomicCalendarProviderSelected(), false);
+  assert.equal(selectedEconomicCalendarProvider(), "forex_factory");
+  assert.equal(isEconomicCalendarProviderSelected(), true);
   const provider = pickNewsProvider();
-  assert.equal(provider.name, "mock");
+  assert.equal(provider.name, "forex_factory");
 });
 
 // ── 16. FRED honesty: no clock time / forecast / actual is ever fabricated ────
