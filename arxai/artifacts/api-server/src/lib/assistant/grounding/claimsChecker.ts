@@ -116,7 +116,7 @@ const TOP_N_RE = /\b(?:top|best)\s+\d+\b/gi;
 // A phrasing the model suggests the user type ("send something like “action
 // #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
 // Segment-local so the streaming verifier and speech gate judge it the same.
-const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|try|type|reply with|ask(?: me)?)`;
+const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send|try|type|reply with|ask(?: me)?)`;
 const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
 // A bullet whose whole content is one quotation is a suggested phrasing.

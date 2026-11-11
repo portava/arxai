@@ -181,3 +181,8 @@ test("live run 3: 'nothing was filled', 'N of M slots' and a `code` example are 
   assert.deepEqual(kinds("If you share the idea — for example `buy EURUSD, entry 1.0820, stop 1.0790, TP 1.0880` — I can score it.", []), []);
   assert.deepEqual(kinds("Your entry is `1.0820`.", []), ["FABRICATION"], "a code-formatted fact without an example cue is still checked");
 });
+
+test("live run 4: a phrasing after 'send' is an example", () => {
+  assert.deepEqual(kinds("Next: send **“check action #123”** or **“show my recent fills”**, and I'll check the actual execution status.", []), []);
+  assert.deepEqual(kinds("I sent action #123 to the broker.", []), ["FABRICATION"], "an id stated as fact is still checked");
+});
