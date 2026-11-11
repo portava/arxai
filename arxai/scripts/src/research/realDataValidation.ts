@@ -122,6 +122,17 @@ export const INTRADAY_RUNNER_PARAMS: RunnerParams = {
   barsPerYear: {},
 };
 
+/**
+ * Deep real-markets lane (real-markets-v1: FX, gold, index CFDs on M15/H1).
+ * Same assumed half-spreads as the intraday lane for FX and gold; index CFDs
+ * 1bp (about 0.6 points on a ~6,000 S&P). Assumed, not measured: the gross
+ * diagnostic run shows whether any cost assumption is hiding an edge.
+ */
+export const MARKETS_RUNNER_PARAMS: RunnerParams = {
+  ...INTRADAY_RUNNER_PARAMS,
+  costPerTurnover: { fx: 0.00005, metal: 0.00005, index: 0.0001 },
+};
+
 /** The same parameters with every cost set to zero — a diagnostic, never the headline. */
 export function grossParams(p: RunnerParams): RunnerParams {
   return { ...p, costPerTurnover: Object.fromEntries(Object.keys(p.costPerTurnover).map((k) => [k, 0])) as RunnerParams["costPerTurnover"] };
