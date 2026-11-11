@@ -117,7 +117,7 @@ const TOP_N_RE = /\b(?:top|best)\s+\d+\b/gi;
 // #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
 // Segment-local so the streaming verifier and speech gate judge it the same.
 const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|try|type|reply with|ask(?: me)?)`;
-const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?[“"][^”"\n]{1,200}[”"]`, "gi");
+const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
 // A bullet whose whole content is one quotation is a suggested phrasing.
 const QUOTED_BULLET_RE = /^\s*(?:[-*•]|\d{1,2}[.)])\s+(?:\*\*)?[“"][^”"\n]{1,200}[”"](?:\*\*)?[.,;]?\s*$/;
@@ -172,10 +172,12 @@ function normalizeLabelWord(w: string): string[] {
   return [x.replace(/'s$/, "").replace(/'/g, "")];
 }
 
-function labelTokensBefore(segText: string, localStart: number): { tokens: Set<string>; derived: boolean } {
+function labelTokensBefore(segText: string, localStart: number): { tokens: Set<string>; derived: boolean; denominator?: boolean } {
   let pre = segText.slice(0, localStart);
   const cut = Math.max(pre.lastIndexOf(","), pre.lastIndexOf(";"), pre.lastIndexOf(":"), pre.lastIndexOf("("), pre.lastIndexOf("\n"), pre.lastIndexOf(" and "), pre.lastIndexOf(" with "), pre.lastIndexOf(" vs "));
   if (cut >= 0) pre = pre.slice(cut + 1);
+  // "2 of 5" / "2 out of 5": the second number is a capacity, not the first's field.
+  if (/\d\s+(?:out\s+)?of\s*$/i.test(pre)) return { tokens: new Set(), derived: true, denominator: true };
   // Stop at a previous number: its label is not ours.
   const lastNum = pre.search(/\d[^\d]*$/);
   if (lastNum >= 0) pre = pre.slice(lastNum + 1);
@@ -251,7 +253,7 @@ const LIVE_WORDS = /\b(?:live(?!\s+(?:account|trading|mode|trades?|book|position
 const STALE_DISCLOSED = /\b(?:stale|delayed|not live|isn't live|not a live|not current|not a current|last (?:recorded|known|close|closing)|as of|old|outdated|unconfirmed|out of date|frozen|closed market|market is closed)\b/i;
 const EXECUTION_AFFIRM = /\b(?:executed|filled|got filled|went through|placed|I(?:'ve| have)? (?:opened|bought|sold|entered|closed))\b/i;
 const EXECUTION_CONTEXT = /\b(?:order|trade|position|buy|sell|long|short|entry|ticket|lots?|I)\b/i;
-const EXECUTION_NEGATED = /\b(?:not|never|no|cannot|can't|won't|wouldn't|unable|without|until|unless|if|once|when|would|could|should|will|can|may|might|pending|awaiting|preview|draft|haven't|hasn't|wasn't|isn't|didn't|failed|rejected|cancel(?:led|ed)?|expired|yet|whether|need|needs|ready)\b|n't\b|'ll\b/i;
+const EXECUTION_NEGATED = /\b(?:nothing|none|neither|nor|not|never|no|cannot|can't|won't|wouldn't|unable|without|until|unless|if|once|when|would|could|should|will|can|may|might|pending|awaiting|preview|draft|haven't|hasn't|wasn't|isn't|didn't|failed|rejected|cancel(?:led|ed)?|expired|yet|whether|need|needs|ready)\b|n't\b|'ll\b/i;
 
 export function checkClaims(answer: string, outputs: ToolOutput[], userText = ""): CheckResult {
   return checkWithIndex(answer, buildEvidenceIndex(outputs, userText));
@@ -406,7 +408,7 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     // is the tp field, not the shorter "profit"; "filled size ... lots" is
     // filledLotSize, not fillPrice.
     let labelled: EvidenceNumber[] = [];
-    if (!nc.pips && nc.unitMs == null && tokens.size > 0) {
+    if (!nc.pips && nc.unitMs == null && !before.denominator && tokens.size > 0) {
       const strength = idx.numbers.map((e) => labelStrength(e, tokens));
       const best = Math.max(0, ...strength);
       if (best > 0) labelled = idx.numbers.filter((_, i) => strength[i] === best);

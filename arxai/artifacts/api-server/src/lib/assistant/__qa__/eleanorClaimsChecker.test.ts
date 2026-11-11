@@ -171,3 +171,13 @@ test("live run 2: a bullet dash is not a minus, and 'profit target' is the tp fi
   assert.deepEqual(kinds("- 3.65 is the profit target.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the target is still wrong");
   assert.deepEqual(kinds("Your P&L is -3.65.", liveTrade), [], "a real minus sign still parses");
 });
+
+test("live run 3: 'nothing was filled', 'N of M slots' and a `code` example are not false claims", () => {
+  const rejected = [{ name: "getActionExecutionResult", result: { ok: true, actionId: 5126, status: "rejected", fillPrice: null, rejectionReason: "Market closed for EURUSD." } }];
+  assert.deepEqual(kinds("Fill price, slippage, lot fill, and execution time are all unknown because nothing was filled.", rejected), []);
+  assert.deepEqual(kinds("Your buy was filled.", rejected), ["EXECUTION_UNCONFIRMED"], "a claimed fill on a rejection is still caught");
+  assert.deepEqual(kinds("You're using 2 of 5 open trade slots, so your open-trade usage is 40%.", liveRisk), []);
+  assert.deepEqual(kinds("You're using 2 of 9 open trade slots.", liveRisk), ["FABRICATION"], "an invented capacity is still caught");
+  assert.deepEqual(kinds("If you share the idea — for example `buy EURUSD, entry 1.0820, stop 1.0790, TP 1.0880` — I can score it.", []), []);
+  assert.deepEqual(kinds("Your entry is `1.0820`.", []), ["FABRICATION"], "a code-formatted fact without an example cue is still checked");
+});
