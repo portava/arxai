@@ -482,6 +482,9 @@ function pullbackContinuationCore(candles: Candle[], symbol: string): SignalOutp
 
 // ─── Strategy 6: Mean Reversion ───────────────────────────────────────────────
 
+/** Mean Reversion fires only with the close in this outer fraction of the prior range. */
+export const MR_BAND = 0.2;
+
 export function meanReversionStrategy(candles: Candle[], symbol: string): SignalOutput {
   return labeledAdvisory(meanReversionCore(candles, symbol));
 }
@@ -490,29 +493,44 @@ function meanReversionCore(candles: Candle[], symbol: string): SignalOutput {
   if (candles.length < 20) {
     return { symbol, direction: "WAIT", ...constantScore(ruleId("Mean Reversion", "insufficient_data"), 0), entryPrice: candles[candles.length - 1]?.close ?? 0, stopLoss: 0, takeProfit: 0, reason: "Insufficient data", strategy: "Mean Reversion", riskWarning: "" };
   }
+  // Redesigned 2026-11-11. The old rule required RSI(14) < 28 AND a 20-bar close
+  // range under 1.2 x ATR. An RSI that extreme needs a one-way move that makes
+  // the close range far wider than that, so the two conditions excluded each
+  // other and the rule fired 0 times on every real series. The rule now asks
+  // what a mean-reversion entry actually needs, with no contradiction:
+  //   - price is at an extreme OF ITS OWN RECENT RANGE: the close sits in the
+  //     bottom (top) 20% of the prior 19 bars' high-low range;
+  //   - momentum is exhausted: RSI(14) below 30 (above 70);
+  //   - the last bar rejected the extreme: its lower (upper) wick is longer
+  //     than its body.
+  // Target: the range midpoint. Stop: beyond the rejection wick.
+  // Same band/RSI geometry as the validation family MeanReversion:20/14/20.
+  // Firing is not an edge: on a year of real FX/gold/index bars this family
+  // has no edge net of costs (docs/SESSION_EDGE_RESULTS.md); calibration
+  // measures and shows its real hit rate.
   const recent = candles.slice(-20);
   const closes = recent.map((c) => c.close);
   const price = closes[closes.length - 1];
   const rsi = computeRSI(closes, 14);
   const atr = computeATR(recent, 14);
-  const avgRange = recent.reduce((a, c) => a + (c.high - c.low), 0) / recent.length;
-  const highRange = Math.max(...closes) - Math.min(...closes);
+  const prior = recent.slice(0, -1);
+  const hi = Math.max(...prior.map((c) => c.high));
+  const lo = Math.min(...prior.map((c) => c.low));
+  const span = hi - lo;
   const last = recent[recent.length - 1];
   const wickDown = Math.min(last.open, last.close) - last.low;
   const wickUp = last.high - Math.max(last.open, last.close);
   const body = Math.abs(last.close - last.open);
-  // Range condition: low directional movement
-  const isRange = highRange < atr * 1.2 && atr < avgRange * 1.3;
+  const pos = span > 0 ? (price - lo) / span : 0.5;
+  const mid = (hi + lo) / 2;
 
-  if (isRange && rsi < 28 && wickDown > body) {
+  if (span > 0 && pos < MR_BAND && rsi < 30 && wickDown > body) {
     const scored = ruleScore(ruleId("Mean Reversion", "buy"), 60, 80, { rsi }, [{ label: "RSI below 30, x2", expr: "floor((30 - rsi) * 2)", value: Math.floor((30 - rsi) * 2) }]);
-    const mid = (Math.max(...closes) + Math.min(...closes)) / 2;
-    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: last.low - atr * 0.3, takeProfit: mid, reason: `Range market. RSI oversold at ${rsi.toFixed(1)}. Wick rejection from range low. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
+    return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: last.low - atr * 0.3, takeProfit: mid, reason: `Close in the bottom ${Math.round(MR_BAND * 100)}% of the 19-bar range. RSI oversold at ${rsi.toFixed(1)}. Lower wick rejected the low. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Fading a move: a breakout through the range low stops this out" };
   }
-  if (isRange && rsi > 72 && wickUp > body) {
+  if (span > 0 && pos > 1 - MR_BAND && rsi > 70 && wickUp > body) {
     const scored = ruleScore(ruleId("Mean Reversion", "sell"), 60, 80, { rsi }, [{ label: "RSI above 70, x2", expr: "floor((rsi - 70) * 2)", value: Math.floor((rsi - 70) * 2) }]);
-    const mid = (Math.max(...closes) + Math.min(...closes)) / 2;
-    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: last.high + atr * 0.3, takeProfit: mid, reason: `Range market. RSI overbought at ${rsi.toFixed(1)}. Wick rejection from range high. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Range trades carry breakout risk" };
+    return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: last.high + atr * 0.3, takeProfit: mid, reason: `Close in the top ${Math.round(MR_BAND * 100)}% of the 19-bar range. RSI overbought at ${rsi.toFixed(1)}. Upper wick rejected the high. Target: range mid ${mid.toFixed(4)}.`, strategy: "Mean Reversion", riskWarning: "Fading a move: a breakout through the range high stops this out" };
   }
   return { symbol, direction: "WAIT", ...constantScore(ruleId("Mean Reversion", "no_setup"), 10), entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "No range extreme detected for mean reversion", strategy: "Mean Reversion", riskWarning: "" };
 }

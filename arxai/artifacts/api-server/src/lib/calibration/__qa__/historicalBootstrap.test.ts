@@ -134,15 +134,14 @@ describe("bootstrap on the committed real history", () => {
       assert.equal(sb?.status, "measured", `Session Breakout: ${JSON.stringify(sb)}`);
       assert.ok((sb?.n ?? 0) >= CALIBRATION_MIN_SAMPLE);
     }
-    // KNOWN DEFECT, pinned so it cannot be forgotten: Mean Reversion requires
-    // RSI(14) < 28 (or > 72) AND a 20-bar close range under 1.2 x ATR. An RSI
-    // that extreme needs a one-way move that makes the close range far wider
-    // than 1.2 x ATR, so the rule cannot fire: 0 calls on every committed
-    // real series. Redesigning the rule is an owner decision; when it is
-    // redesigned this assertion must be replaced by a measured one.
+    // Mean Reversion was a KNOWN DEFECT until 2026-11-11: it required RSI(14) < 28
+    // AND a 20-bar close range under 1.2 x ATR, which exclude each other, so it
+    // fired 0 times. Redesigned (close in the outer 20% of the prior range +
+    // RSI exhaustion + wick rejection), it must now be MEASURED on the
+    // committed real history like every other firing strategy.
     const mr = rows.find((x) => x.strategy === "Mean Reversion");
-    assert.equal(mr?.n, 0, "Mean Reversion fired: the known-defect pin is stale, measure it instead");
-    assert.match(mr?.note ?? "", /fired 0 time/);
+    assert.equal(mr?.status, "measured", `Mean Reversion: ${JSON.stringify(mr)}`);
+    assert.ok((mr?.n ?? 0) >= CALIBRATION_MIN_SAMPLE, `Mean Reversion: N=${mr?.n}`);
   });
 
   it("puts provenance on every stamp a payload reads", () => {

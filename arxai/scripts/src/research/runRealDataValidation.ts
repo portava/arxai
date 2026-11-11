@@ -10,6 +10,7 @@
 // INTRADAY (the feeds ARX actually trades):
 //   … -- --source intraday_fixture [--store]   # pinned Deriv M1/M5/M15/H1 fixture (CI uses this)
 //   … -- --source mt5_db [--store]             # stored MT5 broker_candles M1/M5/M15/H1, synthetics INCLUDED
+//   … -- --source markets_fixture              # pinned deep real-markets M15/H1 fixture (FX, gold, index CFDs)
 //   … -- --gross                               # zero-cost diagnostic (stored with its own params hash)
 //
 // --source db reads market_candles and broker_candles from DATABASE_URL. Deriv
@@ -28,8 +29,9 @@ import { stableStringify } from "@workspace/discovery";
 import type { Bar } from "@workspace/validation";
 import { loadVerifiedFixture } from "./realHistoryFixture.js";
 import { loadVerifiedIntradayFixture, TIMEFRAME_SECONDS, type IntradayTimeframe } from "./intradayHistoryFixture.js";
+import { loadVerifiedMarketsFixture, MARKETS_FIXTURE_DIR_NAME } from "./marketsHistoryFixture.js";
 import {
-  runRealDataValidation, INTRADAY_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams,
+  runRealDataValidation, INTRADAY_RUNNER_PARAMS, MARKETS_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams,
   type AssetClass, type PlantedEdgeSpec, type RealDataRunResult, type RunnerInstrument, type RunnerParams,
 } from "./realDataValidation.js";
 import { isEntrypoint } from "../ci/inProcessAppHarness.js";
@@ -78,6 +80,19 @@ export function intradayFixtureInstruments(): { datasetHash: string; instruments
       timeframe: i.spec.timeframe, barsPerYear: intradayBarsPerYear(i.spec.assetClass, i.spec.timeframe),
     })),
     excluded: manifest.excluded.map((e) => `${e.symbol}@${e.timeframe}: ${e.reason}`),
+  };
+}
+
+/** The deep real-markets set (scripts/fixtures/real-markets-v1): FX, gold, index CFDs; no synthetics. */
+export function marketsFixtureInstruments(): { datasetHash: string; instruments: RunnerInstrument[] } {
+  const { manifest, instruments } = loadVerifiedMarketsFixture(new URL("../../fixtures", import.meta.url).pathname);
+  return {
+    datasetHash: manifest.datasetHash,
+    instruments: instruments.map((i) => ({
+      symbol: `${i.spec.symbol}@${i.spec.timeframe}`, assetClass: i.spec.assetClass, ohlc: "ohlc",
+      source: `fixture:${MARKETS_FIXTURE_DIR_NAME}/${i.spec.file}`, dates: i.dates, bars: i.bars,
+      timeframe: i.spec.timeframe, barsPerYear: intradayBarsPerYear(i.spec.assetClass, i.spec.timeframe as IntradayTimeframe),
+    })),
   };
 }
 
@@ -263,6 +278,10 @@ async function main() {
     ({ datasetHash, instruments } = loaded);
     datasetSource = "fixture:real-history-intraday-v1";
     params = INTRADAY_RUNNER_PARAMS;
+  } else if (source === "markets_fixture") {
+    ({ datasetHash, instruments } = marketsFixtureInstruments());
+    datasetSource = `fixture:${MARKETS_FIXTURE_DIR_NAME}`;
+    params = MARKETS_RUNNER_PARAMS;
   } else if (source === "mt5_db") {
     const loaded = await mt5DbInstruments(await dbPool() as unknown as QueryPool,
       { minBars: Number(val("--min-bars") ?? 500), maxBars: Number(val("--max-bars") ?? 3000) });
