@@ -230,6 +230,8 @@
     "test:no-fabrication": "tsx ./src/ci/check-no-fabrication.test.ts",
     "test:market-model": "tsx ./src/marketModelTest.ts",
     "test:objective-sizing": "tsx ./src/objectiveSizingTest.ts",
+    "test:vol-forecast": "tsx ./src/volForecastTest.ts",
+    "test:vol-forecast-research": "tsx ./src/volForecastResearchTest.ts",
     "test:money-truth": "tsx ./src/moneyTruthTest.ts",
     "test:black-box-features": "tsx ./src/blackBoxFeaturesTest.ts",
     "test:event-log-db": "tsx ./src/eventLogDbTest.ts",
