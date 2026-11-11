@@ -19,6 +19,7 @@ import {
 } from "@/lib/eleanorReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventRiskLine } from "@/lib/eventRiskCopy";
+import { SYNTHETIC_DIRECTION_LABEL } from "@workspace/domain/truth";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
 import type {
   EleanorMarketReadExplanation,
@@ -432,6 +433,7 @@ export function EleanorMarketReadCard({
       ) : <>
         <p className="arx-eleanor-headline" data-testid="eleanor-market-read-headline" title={explanation.headline}>{explanation.headline}</p>
         {signal.late?.isLate && <p className="arx-eleanor-warning" data-testid="eleanor-market-read-late"><AlertTriangle size={12}/>{signal.late.reason ?? "Move may be late; chasing carries extra risk."}</p>}
+        {isSynthetic && <p className="arx-eleanor-warning" role="note" data-testid="eleanor-market-read-synthetic-direction"><AlertTriangle size={12}/>{SYNTHETIC_DIRECTION_LABEL}</p>}
         <div className="arx-eleanor-decision-grid">
           <div><small>Decision</small><b data-testid="eleanor-market-read-best-action">{downgraded ? "WAIT · not actionable on this feed" : explanation.bestAction}</b></div>
           <div><small>Bias</small><b data-testid="eleanor-market-read-bias">{downgraded ? "Unconfirmed" : humanize(BIAS_LABEL, signal.bias)}</b></div>
@@ -555,6 +557,12 @@ export function EleanorMarketReadCard({
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="eleanor-market-read-late">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{signal.late.reason ?? "This move may be late — chasing it carries extra risk."}</span>
+                  </div>
+                )}
+                {isSynthetic && (
+                  <div role="note" className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="eleanor-market-read-synthetic-direction">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{SYNTHETIC_DIRECTION_LABEL}</span>
                   </div>
                 )}
               </div>

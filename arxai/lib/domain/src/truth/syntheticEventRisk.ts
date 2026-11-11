@@ -7,3 +7,14 @@
 // same page printed calendar wording ("No event calendar is connected.").
 export const SYNTHETIC_EVENT_RISK_LABEL =
   "Synthetic market — not driven by scheduled economic events; the economic calendar is not consulted for this market.";
+
+// The ONE sentence every surface prints about DIRECTION on a synthetic market.
+// Deriv generates these prices with a random-number algorithm at a fixed
+// volatility, so the next move is not predictable from the chart, from any
+// indicator, or from an AI read. Measured, not assumed: the validation factory's
+// V75 killer test and the intraday real-data runner on Deriv's Volatility
+// indices certify no strategy edge (0 survivors). A read on one of these
+// markets may still describe what price DID; it must never be taken as an edge
+// on what it WILL do.
+export const SYNTHETIC_DIRECTION_LABEL =
+  "Synthetic market: prices come from a random-number generator, so the next move cannot be predicted from charts, indicators or this read. ARX's tests on this history find no edge. Treat any direction here as a description, not a forecast.";

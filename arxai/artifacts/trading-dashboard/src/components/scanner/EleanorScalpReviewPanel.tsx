@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SYNTHETIC_DIRECTION_LABEL } from "@workspace/domain/truth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -133,8 +134,8 @@ function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{p.displayName ?? p.symbol}</span>
         {p.isSynthetic && (
-          <Badge variant="outline" className="text-violet-300 border-violet-500/40">
-            Synthetic
+          <Badge variant="outline" className="text-violet-300 border-violet-500/40" title={SYNTHETIC_DIRECTION_LABEL}>
+            Synthetic · random by design
           </Badge>
         )}
         {p.cautious && (

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
+import { SYNTHETIC_DIRECTION_LABEL } from "@workspace/domain/truth";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type {
   MeMarketEdgeResp,
@@ -464,6 +465,22 @@ describe("EleanorMarketReadCard — 'still needs' includes the news gap, in the 
       { symbol: "V75", displayName: "V75", assetClass: "synthetic" },
     );
     expect(text).not.toContain("scheduled-news check");
+  });
+
+  it("synthetic index → the read says plainly that direction is not predictable there", () => {
+    renderWithNews(
+      { news: null, data: null, isLoading: false },
+      { symbol: "V75", displayName: "V75", assetClass: "synthetic" },
+    );
+    expect(screen.getByTestId("eleanor-market-read-synthetic-direction").textContent).toContain(SYNTHETIC_DIRECTION_LABEL);
+  });
+
+  it("a real market carries no synthetic-direction notice", () => {
+    renderWithNews(
+      { news: null, data: null, isLoading: false },
+      { symbol: "EURUSD", displayName: "EUR/USD", assetClass: "forex" },
+    );
+    expect(screen.queryByTestId("eleanor-market-read-synthetic-direction")).toBeNull();
   });
 });
 
