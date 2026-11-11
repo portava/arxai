@@ -29,8 +29,8 @@ export const TIMEFRAME_ORDER: readonly IntradayTimeframe[] = ["M1", "M5", "M15",
 export interface IntradayInstrumentSpec {
   /** Deriv symbol, e.g. R_75, 1HZ100V, frxEURUSD. */
   symbol: string;
-  /** "synthetic" = Deriv Volatility index (driftless by construction). */
-  assetClass: "synthetic" | "fx" | "metal";
+  /** "synthetic" = Deriv Volatility index (driftless by construction). "index" = Deriv OTC stock-index feed. */
+  assetClass: "synthetic" | "fx" | "metal" | "index";
   timeframe: IntradayTimeframe;
   ohlc: "ohlc";
   file: string;
@@ -56,7 +56,7 @@ export interface IntradayInstrumentSpec {
 export interface IntradayExclusion { symbol: string; timeframe: IntradayTimeframe; closedBarsAvailable: number; reason: string }
 
 export interface IntradayFixtureManifest {
-  version: typeof INTRADAY_MANIFEST_VERSION;
+  version: string;
   retrievedOn: string;
   /** Every series ends at the last bar that CLOSED at or before this instant. */
   windowEnd: string;
@@ -77,9 +77,9 @@ export function intradayDatasetHashOf(instruments: readonly IntradayInstrumentSp
   return sha256(stableStringify(instruments));
 }
 
-export function loadVerifiedIntradayFixture(dir: string, pinnedDatasetHash: string): { manifest: IntradayFixtureManifest; instruments: LoadedIntradayInstrument[] } {
+export function loadVerifiedIntradayFixture(dir: string, pinnedDatasetHash: string, expectedVersion: string = INTRADAY_MANIFEST_VERSION): { manifest: IntradayFixtureManifest; instruments: LoadedIntradayInstrument[] } {
   const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as IntradayFixtureManifest;
-  if (manifest.version !== INTRADAY_MANIFEST_VERSION) throw new FixtureIntegrityError(`unknown manifest version ${String(manifest.version)}`);
+  if (manifest.version !== expectedVersion) throw new FixtureIntegrityError(`unknown manifest version ${String(manifest.version)}`);
   if (manifest.syntheticData !== false) throw new FixtureIntegrityError("manifest does not attest syntheticData=false");
   const derived = intradayDatasetHashOf(manifest.instruments);
   if (derived !== manifest.datasetHash) throw new FixtureIntegrityError(`manifest datasetHash ${manifest.datasetHash} does not re-derive (${derived})`);

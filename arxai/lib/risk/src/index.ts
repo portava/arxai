@@ -39,3 +39,20 @@ export type {
   SizingDecision,
   SizingReason,
 } from "./sizing.js";
+
+export {
+  parkinsonVar,
+  hourOfWeek,
+  fitSeasonal,
+  fitVolModels,
+  forecastAt,
+  volFeatures,
+  realisedAhead,
+  qlike,
+  dieboldMariano,
+  normalSf,
+  bandCoverage,
+  ols,
+  VOL_MODEL_KEYS,
+} from "./volForecast.js";
+export type { VolBar, VolModelKey, VolForecastConfig, FittedVolModels, SeasonalProfile } from "./volForecast.js";
