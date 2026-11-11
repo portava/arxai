@@ -116,6 +116,12 @@ for (const f of runs) {
       },
       send: () => {},
       isAborted: () => false,
+      // A provider failure returns status "provider_error" and no exception, so
+      // keep the provider's own message: a failed run must say why it failed.
+      logError: (msg, err) => {
+        const e = err as { status?: number; message?: string } | null;
+        error = `${msg}${e?.status ? ` HTTP ${e.status}` : ""}: ${String(e?.message ?? err)}`.slice(0, 300);
+      },
     });
   } catch (e) {
     error = (e as Error).message.slice(0, 300);
