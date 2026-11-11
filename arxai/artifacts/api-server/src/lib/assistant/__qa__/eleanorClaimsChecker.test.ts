@@ -119,3 +119,70 @@ test("evidence index: numbers in text, array lengths, freshness frames, executio
   assert.deepEqual(idx.executions.find((e) => e.executed)?.ids.sort(), ["7", "99"]);
   assert.ok(idx.numbers.some((n) => n.source === "user" && n.value === 2));
 });
+
+// ── False alarms found on the first live-model run (gpt-5.4, run 42961788010) ──
+// Each answer below is the model's real text. All of it is correct, and the
+// checker used to flag it. The paired assertions prove real errors are still caught.
+const liveFill = [{ name: "getRecentExecutionResults", result: { ok: true, count: 1, results: [{ actionId: 5123, status: "executed", mt5PositionTicket: 70011224, fillPrice: 1.08531, slippage: 0.00011, filledLotSize: 0.1, executedAt: "2026-11-09T14:33:02.000Z" }] } }];
+const liveTrade = [{ name: "getMyLiveOpenTrades", result: { count: 1, trades: [{ ticket: 50012345, side: "SELL", volume: 0.01, openPrice: 412345.12, currentPrice: 411980.5, profit: 3.65, sl: 415000, tp: 405000 }] } }];
+const liveRisk = [{ name: "getRiskUtilization", result: { openTrades: 2, maxOpenTrades: 5, openTradesUtilization: 40 } }];
+
+test("live run: a filled size labelled with its unit is the lot-size field, not the fill price", () => {
+  assert.deepEqual(kinds("Your fill price was 1.08531 with slippage of 0.00011, and the filled size was 0.1 lots.", liveFill), []);
+  assert.deepEqual(kinds("The filled size was 0.2 lots.", liveFill), ["WRONG_NUMBER"], "a wrong size is still caught");
+});
+
+test("live run: 'take profit' is the tp field, never the shorter 'profit' field", () => {
+  assert.deepEqual(kinds("- Stop loss is 415000\n- Take profit is 405000", liveTrade), []);
+  assert.deepEqual(kinds("Take profit is 3.65.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the take profit is still wrong");
+  assert.deepEqual(kinds("Stop loss is 405000.", liveTrade), ["WRONG_NUMBER"], "the tp quoted as the stop is still wrong");
+});
+
+test("live run: 'N out of M' reads M as the capacity, not the count", () => {
+  assert.deepEqual(kinds("You're using 40% of your open-trade capacity right now: 2 open trades out of 5.", liveRisk), []);
+  assert.deepEqual(kinds("2 open trades out of 7.", liveRisk), ["FABRICATION"], "an invented capacity is still caught");
+  assert.deepEqual(kinds("You have 5 open trades.", liveRisk), ["WRONG_NUMBER"], "the capacity quoted as the count is still wrong");
+});
+
+test("live run: the 1 of a 2:1 ratio and an offered 'top 5' are not claims", () => {
+  const chart = [{ name: "readChartStructure", result: { entry: 41250.5, invalidation: 41020, takeProfit: 41710, riskReward: 2 } }];
+  assert.deepEqual(kinds("Entry at 41250.5, invalidation at 41020, and take profit at 41710, with 2:1 reward-to-risk.", chart), []);
+  assert.deepEqual(kinds("Next: I can rescan for the top 5 setups only.", chart), []);
+  assert.deepEqual(kinds("Entry is 41300.", chart), ["WRONG_NUMBER"], "a real price is still checked");
+});
+
+test("live run: phrasings suggested to the user are examples, not claims", () => {
+  for (const t of [
+    "If you have an action ID, send something like “did action #123 execute?” and I'll check the broker result.",
+    "Which action do you want me to check — give me the action number, like **#123**.",
+    "Next: reply with something like “action 42” or “check my recent fills.”",
+    "Next: send the action number like “check action 42” or say “show my live trades.”",
+    "Send the action ID, like “action #123”, and I'll check whether it executed.",
+    "- “check this trade ticket: buy stop EURUSD 0.01, entry 1.0850, SL 1.0820, TP 1.0910”",
+  ]) assert.deepEqual(kinds(t, []), [], t);
+  // A quoted figure stated as fact, with no example cue, is still a claim.
+  assert.deepEqual(kinds("Your stop is “1.0820”.", []), ["FABRICATION"]);
+  assert.deepEqual(kinds("Your order #123 executed at 1.0850.", []).sort(), ["EXECUTION_UNCONFIRMED", "FABRICATION", "FABRICATION"].sort());
+});
+
+test("live run 2: a bullet dash is not a minus, and 'profit target' is the tp field", () => {
+  const text = "It's currently up 3.65, opened at 412345.12, with price around 411980.5, stop at 415000 and target at 405000.\n\nWhat to watch:\n- Price staying below 412345.12 keeps the short under less pressure.\n- 415000 is the clear invalidation level from your stop.\n- 405000 is the profit target already set on the trade.";
+  assert.deepEqual(kinds(text, liveTrade), []);
+  assert.deepEqual(kinds("- 3.65 is the profit target.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the target is still wrong");
+  assert.deepEqual(kinds("Your P&L is -3.65.", liveTrade), [], "a real minus sign still parses");
+});
+
+test("live run 3: 'nothing was filled', 'N of M slots' and a `code` example are not false claims", () => {
+  const rejected = [{ name: "getActionExecutionResult", result: { ok: true, actionId: 5126, status: "rejected", fillPrice: null, rejectionReason: "Market closed for EURUSD." } }];
+  assert.deepEqual(kinds("Fill price, slippage, lot fill, and execution time are all unknown because nothing was filled.", rejected), []);
+  assert.deepEqual(kinds("Your buy was filled.", rejected), ["EXECUTION_UNCONFIRMED"], "a claimed fill on a rejection is still caught");
+  assert.deepEqual(kinds("You're using 2 of 5 open trade slots, so your open-trade usage is 40%.", liveRisk), []);
+  assert.deepEqual(kinds("You're using 2 of 9 open trade slots.", liveRisk), ["FABRICATION"], "an invented capacity is still caught");
+  assert.deepEqual(kinds("If you share the idea — for example `buy EURUSD, entry 1.0820, stop 1.0790, TP 1.0880` — I can score it.", []), []);
+  assert.deepEqual(kinds("Your entry is `1.0820`.", []), ["FABRICATION"], "a code-formatted fact without an example cue is still checked");
+});
+
+test("live run 4: a phrasing after 'send' is an example", () => {
+  assert.deepEqual(kinds("Next: send **“check action #123”** or **“show my recent fills”**, and I'll check the actual execution status.", []), []);
+  assert.deepEqual(kinds("I sent action #123 to the broker.", []), ["FABRICATION"], "an id stated as fact is still checked");
+});
