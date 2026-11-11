@@ -164,3 +164,10 @@ test("live run: phrasings suggested to the user are examples, not claims", () =>
   assert.deepEqual(kinds("Your stop is “1.0820”.", []), ["FABRICATION"]);
   assert.deepEqual(kinds("Your order #123 executed at 1.0850.", []).sort(), ["EXECUTION_UNCONFIRMED", "FABRICATION", "FABRICATION"].sort());
 });
+
+test("live run 2: a bullet dash is not a minus, and 'profit target' is the tp field", () => {
+  const text = "It's currently up 3.65, opened at 412345.12, with price around 411980.5, stop at 415000 and target at 405000.\n\nWhat to watch:\n- Price staying below 412345.12 keeps the short under less pressure.\n- 415000 is the clear invalidation level from your stop.\n- 405000 is the profit target already set on the trade.";
+  assert.deepEqual(kinds(text, liveTrade), []);
+  assert.deepEqual(kinds("- 3.65 is the profit target.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the target is still wrong");
+  assert.deepEqual(kinds("Your P&L is -3.65.", liveTrade), [], "a real minus sign still parses");
+});

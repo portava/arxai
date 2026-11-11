@@ -104,6 +104,8 @@ const INSTRUMENT_RE = /\b(?:volatility|vol|crash|boom|jump|step|range break|dex(
 const MIXED_TOKEN_RE = /\b(?=[\w]*[A-Za-z])(?=[\w]*\d)[\w]+\b/g;
 const UNIT_SUFFIX_OK = /^\d+(?:\.\d+)?(?:k|bn|pips?|ms)$/i;
 const LIST_MARKER_RE = /^(\s*)(\d+)([.)])(?=\s)/gm;
+// A bullet dash is not a minus sign ("- 405000 is the target").
+const BULLET_RE = /^(\s*)[-*•−](?=\s)/gm;
 const ORDINAL_WORD_RE = /\b(?:option|step|rule|tier|phase|part|section|item|slice|pr|issue|chapter|page)\s+#?\d+\b/gi;
 const DENOMINATOR_RE = /(\d)\s*\/\s*(10|100|5)\b/g;
 const RATIO_LEFT_RE = /\b1\s*:\s*(?=\d)/g;
@@ -158,7 +160,7 @@ const GENERIC_TOKENS = new Set([
 const SYNONYMS: Array<[RegExp, string[]]> = [
   [/^sl$/, ["stop", "loss"]], [/^tp$/, ["take", "profit"]], [/^stop$/, ["stop"]],
   [/^p&l$|^p\/l$|^pnl$|^profit\/loss$/, ["pnl"]], [/^lots?$/, ["lot"]], [/^pips?$/, ["pip"]],
-  [/^fill(?:ed)?$/, ["fill"]], [/^entry$|^entered$/, ["entry"]], [/^realised$/, ["realized"]], [/^unrealised$/, ["unrealized"]],
+  [/^fill(?:ed)?$/, ["fill"]], [/^target$/, ["take", "profit"]], [/^entry$|^entered$/, ["entry"]], [/^realised$/, ["realized"]], [/^unrealised$/, ["unrealized"]],
   [/^today'?s$/, ["todays"]], [/^positions?$/, ["positions"]], [/^trades?$/, ["trades"]], [/^tickets?$/, ["ticket"]],
 ];
 const DERIVED_WORDS = /\b(?:out of|distance|away|risk(?:ing)?|from|between|change|difference|move|moved|gap|above|below|up|down|range|average|avg|about|roughly|approximately|around|total of)\b/i;
@@ -277,6 +279,7 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   work = mask(work, INSTRUMENT_RE);
   work = mask(work, MIXED_TOKEN_RE, (m) => UNIT_SUFFIX_OK.test(m[0]));
   work = work.replace(LIST_MARKER_RE, (m, sp: string, d: string, p: string) => sp + " ".repeat(d.length) + p);
+  work = work.replace(BULLET_RE, (m, sp: string) => sp + " ");
   work = mask(work, ORDINAL_WORD_RE);
   work = work.replace(DENOMINATOR_RE, (m, d: string) => d + " ".repeat(m.length - 1));
   work = mask(work, RATIO_LEFT_RE);
@@ -284,7 +287,7 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   work = mask(work, TOP_N_RE);
   work = mask(work, EXAMPLE_QUOTED_RE);
   work = mask(work, EXAMPLE_ID_RE);
-  if (QUOTED_BULLET_RE.test(work)) work = " ".repeat(work.length);
+  if (QUOTED_BULLET_RE.test(raw)) work = " ".repeat(work.length);
 
   const pushClaim = (c: Omit<Claim, "start" | "end"> & { localStart: number; localEnd: number }): Claim => {
     const claim: Claim = { kind: c.kind, text: c.text, start: seg.start + c.localStart, end: seg.start + c.localEnd, value: c.value, grounded: c.grounded, groundedBy: c.groundedBy };
@@ -393,8 +396,10 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     // Labelled figure that disagrees with the field of that name.
     const before = labelTokensBefore(raw, localStart);
     // What follows labels it too ("3 open positions", "0.1 lots").
-    // A decimal takes only the word right after it as a label (its unit).
-    const after = !percent && scale === 1 ? labelTokensAfter(raw, localEnd, frac ? 1 : 3) : null;
+    // A decimal takes only the word right after it as a label (its unit),
+    // unless the sentence names it: "3.65 is the profit target".
+    const namesIt = /^\s+(?:is|was)\s/i.test(raw.slice(localEnd));
+    const after = !percent && scale === 1 ? labelTokensAfter(raw, localEnd, frac && !namesIt ? 1 : 4) : null;
     const labelSets = [before, ...(after ? [after] : [])].filter((l) => !l.derived && l.tokens.size > 0);
     const tokens = new Set(labelSets.flatMap((l) => [...l.tokens]));
     // The label points at the MOST specific fields it fully names: "take profit"
