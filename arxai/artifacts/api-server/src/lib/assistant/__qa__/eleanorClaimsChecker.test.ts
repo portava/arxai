@@ -119,3 +119,48 @@ test("evidence index: numbers in text, array lengths, freshness frames, executio
   assert.deepEqual(idx.executions.find((e) => e.executed)?.ids.sort(), ["7", "99"]);
   assert.ok(idx.numbers.some((n) => n.source === "user" && n.value === 2));
 });
+
+// ── False alarms found on the first live-model run (gpt-5.4, run 42961788010) ──
+// Each answer below is the model's real text. All of it is correct, and the
+// checker used to flag it. The paired assertions prove real errors are still caught.
+const liveFill = [{ name: "getRecentExecutionResults", result: { ok: true, count: 1, results: [{ actionId: 5123, status: "executed", mt5PositionTicket: 70011224, fillPrice: 1.08531, slippage: 0.00011, filledLotSize: 0.1, executedAt: "2026-11-09T14:33:02.000Z" }] } }];
+const liveTrade = [{ name: "getMyLiveOpenTrades", result: { count: 1, trades: [{ ticket: 50012345, side: "SELL", volume: 0.01, openPrice: 412345.12, currentPrice: 411980.5, profit: 3.65, sl: 415000, tp: 405000 }] } }];
+const liveRisk = [{ name: "getRiskUtilization", result: { openTrades: 2, maxOpenTrades: 5, openTradesUtilization: 40 } }];
+
+test("live run: a filled size labelled with its unit is the lot-size field, not the fill price", () => {
+  assert.deepEqual(kinds("Your fill price was 1.08531 with slippage of 0.00011, and the filled size was 0.1 lots.", liveFill), []);
+  assert.deepEqual(kinds("The filled size was 0.2 lots.", liveFill), ["WRONG_NUMBER"], "a wrong size is still caught");
+});
+
+test("live run: 'take profit' is the tp field, never the shorter 'profit' field", () => {
+  assert.deepEqual(kinds("- Stop loss is 415000\n- Take profit is 405000", liveTrade), []);
+  assert.deepEqual(kinds("Take profit is 3.65.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the take profit is still wrong");
+  assert.deepEqual(kinds("Stop loss is 405000.", liveTrade), ["WRONG_NUMBER"], "the tp quoted as the stop is still wrong");
+});
+
+test("live run: 'N out of M' reads M as the capacity, not the count", () => {
+  assert.deepEqual(kinds("You're using 40% of your open-trade capacity right now: 2 open trades out of 5.", liveRisk), []);
+  assert.deepEqual(kinds("2 open trades out of 7.", liveRisk), ["FABRICATION"], "an invented capacity is still caught");
+  assert.deepEqual(kinds("You have 5 open trades.", liveRisk), ["WRONG_NUMBER"], "the capacity quoted as the count is still wrong");
+});
+
+test("live run: the 1 of a 2:1 ratio and an offered 'top 5' are not claims", () => {
+  const chart = [{ name: "readChartStructure", result: { entry: 41250.5, invalidation: 41020, takeProfit: 41710, riskReward: 2 } }];
+  assert.deepEqual(kinds("Entry at 41250.5, invalidation at 41020, and take profit at 41710, with 2:1 reward-to-risk.", chart), []);
+  assert.deepEqual(kinds("Next: I can rescan for the top 5 setups only.", chart), []);
+  assert.deepEqual(kinds("Entry is 41300.", chart), ["WRONG_NUMBER"], "a real price is still checked");
+});
+
+test("live run: phrasings suggested to the user are examples, not claims", () => {
+  for (const t of [
+    "If you have an action ID, send something like “did action #123 execute?” and I'll check the broker result.",
+    "Which action do you want me to check — give me the action number, like **#123**.",
+    "Next: reply with something like “action 42” or “check my recent fills.”",
+    "Next: send the action number like “check action 42” or say “show my live trades.”",
+    "Send the action ID, like “action #123”, and I'll check whether it executed.",
+    "- “check this trade ticket: buy stop EURUSD 0.01, entry 1.0850, SL 1.0820, TP 1.0910”",
+  ]) assert.deepEqual(kinds(t, []), [], t);
+  // A quoted figure stated as fact, with no example cue, is still a claim.
+  assert.deepEqual(kinds("Your stop is “1.0820”.", []), ["FABRICATION"]);
+  assert.deepEqual(kinds("Your order #123 executed at 1.0850.", []).sort(), ["EXECUTION_UNCONFIRMED", "FABRICATION", "FABRICATION"].sort());
+});

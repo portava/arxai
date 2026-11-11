@@ -107,6 +107,18 @@ const LIST_MARKER_RE = /^(\s*)(\d+)([.)])(?=\s)/gm;
 const ORDINAL_WORD_RE = /\b(?:option|step|rule|tier|phase|part|section|item|slice|pr|issue|chapter|page)\s+#?\d+\b/gi;
 const DENOMINATOR_RE = /(\d)\s*\/\s*(10|100|5)\b/g;
 const RATIO_LEFT_RE = /\b1\s*:\s*(?=\d)/g;
+// The "1" of "2:1" / "3 : 1" (a reward-to-risk ratio), never a clock minute.
+const RATIO_RIGHT_RE = /(?<=\b\d+(?:\.\d+)?\s*:\s*)1(?![\d.:])/g;
+// A list size the model offers ("rescan for the top 5 setups"), not a fact.
+const TOP_N_RE = /\b(?:top|best)\s+\d+\b/gi;
+// A phrasing the model suggests the user type ("send something like “action
+// #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
+// Segment-local so the streaming verifier and speech gate judge it the same.
+const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|try|type|reply with|ask(?: me)?)`;
+const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?[“"][^”"\n]{1,200}[”"]`, "gi");
+const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
+// A bullet whose whole content is one quotation is a suggested phrasing.
+const QUOTED_BULLET_RE = /^\s*(?:[-*•]|\d{1,2}[.)])\s+(?:\*\*)?[“"][^”"\n]{1,200}[”"](?:\*\*)?[.,;]?\s*$/;
 
 function mask(s: string, re: RegExp, keep?: (m: RegExpExecArray) => boolean): string {
   return s.replace(re, (...args) => {
@@ -149,7 +161,7 @@ const SYNONYMS: Array<[RegExp, string[]]> = [
   [/^fill(?:ed)?$/, ["fill"]], [/^entry$|^entered$/, ["entry"]], [/^realised$/, ["realized"]], [/^unrealised$/, ["unrealized"]],
   [/^today'?s$/, ["todays"]], [/^positions?$/, ["positions"]], [/^trades?$/, ["trades"]], [/^tickets?$/, ["ticket"]],
 ];
-const DERIVED_WORDS = /\b(?:distance|away|risk(?:ing)?|from|between|change|difference|move|moved|gap|above|below|up|down|range|average|avg|about|roughly|approximately|around|total of)\b/i;
+const DERIVED_WORDS = /\b(?:out of|distance|away|risk(?:ing)?|from|between|change|difference|move|moved|gap|above|below|up|down|range|average|avg|about|roughly|approximately|around|total of)\b/i;
 
 function normalizeLabelWord(w: string): string[] {
   const x = w.toLowerCase().replace(/[^a-z&/']/g, "");
@@ -171,24 +183,28 @@ function labelTokensBefore(segText: string, localStart: number): { tokens: Set<s
   return { tokens, derived: DERIVED_WORDS.test(words.join(" ")) };
 }
 
-function labelTokensAfter(segText: string, localEnd: number): { tokens: Set<string>; derived: boolean } {
+function labelTokensAfter(segText: string, localEnd: number, maxWords = 3): { tokens: Set<string>; derived: boolean } {
   let post = segText.slice(localEnd);
-  const cut = post.search(/[,;:.()\n]|\d/);
+  const cut = post.search(/[,;:.()\n]|\d|\s(?:and|with|but|vs|while|or|then|so)\s/);
   if (cut >= 0) post = post.slice(0, cut);
-  const words = post.split(/\s+/).filter(Boolean).slice(0, 3);
+  const words = post.split(/\s+/).filter(Boolean).slice(0, maxWords);
   const tokens = new Set<string>();
   for (const w of words) for (const t of normalizeLabelWord(w)) tokens.add(t);
   return { tokens, derived: DERIVED_WORDS.test(words.join(" ")) };
 }
 
+/** A field's key tokens through the same synonyms as label words (tp → take profit). */
 function specificTokens(e: EvidenceNumber): string[] {
-  return e.keyTokens.filter((t) => !GENERIC_TOKENS.has(t)).map((t) => (t === "realised" ? "realized" : t));
+  const out = new Set<string>();
+  for (const k of e.keyTokens) for (const t of normalizeLabelWord(k)) if (!GENERIC_TOKENS.has(t)) out.add(t === "realised" ? "realized" : t);
+  return [...out];
 }
 
-function stronglyLabelled(e: EvidenceNumber, tokens: Set<string>): boolean {
-  if (e.source !== "tool" || e.fromText) return false;
+/** How many of the field's specific tokens the label names: all of them, or 0. */
+function labelStrength(e: EvidenceNumber, tokens: Set<string>): number {
+  if (e.source !== "tool" || e.fromText) return 0;
   const spec = specificTokens(e);
-  return spec.length > 0 && spec.every((t) => tokens.has(t));
+  return spec.length > 0 && spec.every((t) => tokens.has(t)) ? spec.length : 0;
 }
 
 // ── grounding ────────────────────────────────────────────────────────────────
@@ -264,6 +280,11 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   work = mask(work, ORDINAL_WORD_RE);
   work = work.replace(DENOMINATOR_RE, (m, d: string) => d + " ".repeat(m.length - 1));
   work = mask(work, RATIO_LEFT_RE);
+  work = mask(work, RATIO_RIGHT_RE);
+  work = mask(work, TOP_N_RE);
+  work = mask(work, EXAMPLE_QUOTED_RE);
+  work = mask(work, EXAMPLE_ID_RE);
+  if (QUOTED_BULLET_RE.test(work)) work = " ".repeat(work.length);
 
   const pushClaim = (c: Omit<Claim, "start" | "end"> & { localStart: number; localEnd: number }): Claim => {
     const claim: Claim = { kind: c.kind, text: c.text, start: seg.start + c.localStart, end: seg.start + c.localEnd, value: c.value, grounded: c.grounded, groundedBy: c.groundedBy };
@@ -371,11 +392,20 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
 
     // Labelled figure that disagrees with the field of that name.
     const before = labelTokensBefore(raw, localStart);
-    // A bare integer is usually labelled by what follows it ("3 open positions").
-    const after = !frac && !percent && scale === 1 ? labelTokensAfter(raw, localEnd) : null;
+    // What follows labels it too ("3 open positions", "0.1 lots").
+    // A decimal takes only the word right after it as a label (its unit).
+    const after = !percent && scale === 1 ? labelTokensAfter(raw, localEnd, frac ? 1 : 3) : null;
     const labelSets = [before, ...(after ? [after] : [])].filter((l) => !l.derived && l.tokens.size > 0);
-    const labelled = nc.pips || nc.unitMs != null ? [] : labelSets.map((l) => idx.numbers.filter((e) => stronglyLabelled(e, l.tokens))).find((xs) => xs.length > 0) ?? [];
     const tokens = new Set(labelSets.flatMap((l) => [...l.tokens]));
+    // The label points at the MOST specific fields it fully names: "take profit"
+    // is the tp field, not the shorter "profit"; "filled size ... lots" is
+    // filledLotSize, not fillPrice.
+    let labelled: EvidenceNumber[] = [];
+    if (!nc.pips && nc.unitMs == null && tokens.size > 0) {
+      const strength = idx.numbers.map((e) => labelStrength(e, tokens));
+      const best = Math.max(0, ...strength);
+      if (best > 0) labelled = idx.numbers.filter((_, i) => strength[i] === best);
+    }
     {
       if (labelled.length > 0 && !labelled.some((e) => matchesValue(nc, e))) {
         findings.push({
