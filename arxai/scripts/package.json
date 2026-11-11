@@ -233,6 +233,7 @@
     "test:vol-forecast": "tsx ./src/volForecastTest.ts",
     "test:vol-forecast-research": "tsx ./src/volForecastResearchTest.ts",
     "test:session-edge-research": "tsx ./src/sessionEdgeResearchTest.ts",
+    "test:risk-tools": "tsx ./src/riskToolsTest.ts",
     "test:money-truth": "tsx ./src/moneyTruthTest.ts",
     "test:black-box-features": "tsx ./src/blackBoxFeaturesTest.ts",
     "test:event-log-db": "tsx ./src/eventLogDbTest.ts",

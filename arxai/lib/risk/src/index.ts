@@ -56,3 +56,4 @@ export {
   VOL_MODEL_KEYS,
 } from "./volForecast.js";
 export type { VolBar, VolModelKey, VolForecastConfig, FittedVolModels, SeasonalProfile } from "./volForecast.js";
+export * from "./tradeGates.js";

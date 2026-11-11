@@ -349,7 +349,12 @@ function breakOfStructureCore(candles: Candle[], symbol: string): SignalOutput {
   const lastCandle = recent[recent.length - 1];
   const prevCandle = recent[recent.length - 2];
 
-  if (prevCandle.high > swingHigh && lastCandle.close < lastCandle.open && rsi < 65) {
+  // Geometry guard (2026-11-11): a reversal that has already closed through the
+  // opposite swing leaves the stop at or beyond the entry (a BUY whose stop is
+  // above its entry and whose target is below it). That is not a trade; on real
+  // H1 bars it was 98 of 5,457 calls. The setup is void once price is past the
+  // stop level.
+  if (prevCandle.high > swingHigh && lastCandle.close < lastCandle.open && rsi < 65 && price > swingLow) {
     // R7 step 7 honesty fix (intel-engine.md §1.1): `+ (atr > 0 ? 5 : 0)` was
     // a constant wearing a factor's clothes — ATR is > 0 for any window that
     // can print a structure break (a fully flat window can never satisfy
@@ -358,7 +363,7 @@ function breakOfStructureCore(candles: Candle[], symbol: string): SignalOutput {
     const scored = ruleScore(ruleId("Break of Structure", "buy"), 70, 88, { rsi }, [{ label: "RSI above 50 bonus", expr: "(rsi > 50 ? 10 : 0)", value: rsi > 50 ? 10 : 0 }]);
     return { symbol, direction: "BUY", ...scored, entryPrice: price, stopLoss: swingLow, takeProfit: price + (price - swingLow) * 1.5, reason: `Bullish Break of Structure confirmed. Price broke ${swingHigh.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "False breakout possible in choppy conditions" };
   }
-  if (prevCandle.low < swingLow && lastCandle.close > lastCandle.open && rsi > 35) {
+  if (prevCandle.low < swingLow && lastCandle.close > lastCandle.open && rsi > 35 && price < swingHigh) {
     // Same honesty fix as the BUY branch: the phantom ATR term folded (65 → 70).
     const scored = ruleScore(ruleId("Break of Structure", "sell"), 70, 88, { rsi }, [{ label: "RSI below 50 bonus", expr: "(rsi < 50 ? 10 : 0)", value: rsi < 50 ? 10 : 0 }]);
     return { symbol, direction: "SELL", ...scored, entryPrice: price, stopLoss: swingHigh, takeProfit: price - (swingHigh - price) * 1.5, reason: `Bearish Break of Structure confirmed. Price broke ${swingLow.toFixed(4)} and pulled back. RSI: ${rsi.toFixed(1)}.`, strategy: "Break of Structure", riskWarning: "Monitor for continuation before entry" };
