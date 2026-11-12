@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -12,6 +12,7 @@ function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'arx-build-identity-'));
   const git = (...args) => execFileSync('git', args, {cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   git('init'); git('config','user.name','ARX Test'); git('config','user.email','arx-test@example.invalid');
+  mkdirSync(join(dir,'src')); writeFileSync(join(dir,'src/index.ts'),'// entry'); writeFileSync(join(dir,'build.mjs'),'// build');
   writeFileSync(join(dir,'source.txt'),'original'); git('add','.'); git('-c','commit.gpgsign=false','commit','-m','fixture');
   return {dir,git};
 }
@@ -35,6 +36,16 @@ test('source archive does not invent a clean source revision',()=>{
   const dir=mkdtempSync(join(tmpdir(),'arx-source-archive-'));
   try {assert.deepEqual(captureBuildIdentity(dir),{revision:null,sourceState:'unknown'});}
   finally {rmSync(dir,{recursive:true,force:true});}
+});
+test('an ignored archive cannot borrow an enclosing unrelated repository revision',()=>{
+  const {dir,git}=fixture();
+  try {
+    writeFileSync(join(dir,'.gitignore'),'archive/\n'); git('add','.gitignore'); git('-c','commit.gpgsign=false','commit','-m','ignore archive');
+    const archive=join(dir,'archive'); mkdirSync(join(archive,'src'),{recursive:true});
+    writeFileSync(join(archive,'build.mjs'),'// copied build'); writeFileSync(join(archive,'src/index.ts'),'// copied source');
+    assert.equal(captureBuildIdentity(dir).sourceState,'clean');
+    assert.deepEqual(captureBuildIdentity(archive),{revision:null,sourceState:'unknown'});
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });
 test('real bundled identity survives source changes and cannot be replaced by runtime environment',async()=>{
   const {dir}=fixture();
