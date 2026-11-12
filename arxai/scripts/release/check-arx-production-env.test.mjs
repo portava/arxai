@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkProductionEnvironment } from './check-arx-production-env.mjs';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -75,4 +75,24 @@ test('launcher forces safe launch flags and removes inherited broker/bootstrap c
     const bad = spawnSync('bash', [join(scripts, 'run-arx-production.sh'), '--enable-live'], { env, encoding: 'utf8' });
     assert.equal(bad.status, 2); assert.match(bad.stderr, /Usage/); assert.equal(bad.stdout, '');
   } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+
+
+test('preview launcher never invents calendar authority and preserves explicit operator settings', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'arx-preview-launcher-'));
+  try {
+    mkdirSync(join(folder, 'scripts')); mkdirSync(join(folder, 'arxai')); mkdirSync(join(folder, 'bin'));
+    const launcher = join(folder, 'scripts/run-arx-api.sh');
+    writeFileSync(launcher, readFileSync(fileURLToPath(new URL('../../../scripts/run-arx-api.sh', import.meta.url))));
+    const fakePnpm = join(folder, 'bin/pnpm');
+    writeFileSync(fakePnpm, '#!/bin/sh\n' + 'printf "%s|%s|%s" "${MT5_CALENDAR_CONNECTION_ID-unconfigured}" "${MT5_CALENDAR_SERVER_TIMEZONE-unconfigured}" "$ARX_LIVE_BROKER_EXECUTION_ENABLED"\n');
+    chmodSync(fakePnpm, 0o755);
+    const env = {PATH:join(folder,'bin')+':'+process.env.PATH, ARX_LIVE_BROKER_EXECUTION_ENABLED:'true'};
+    const absent = spawnSync('bash',[launcher],{env,encoding:'utf8'});
+    assert.equal(absent.status,0,absent.stderr);
+    assert.equal(absent.stdout,'unconfigured|unconfigured|false');
+    const configured = spawnSync('bash',[launcher],{env:{...env,MT5_CALENDAR_CONNECTION_ID:'operator-selected',MT5_CALENDAR_SERVER_TIMEZONE:'Europe/Helsinki'},encoding:'utf8'});
+    assert.equal(configured.status,0,configured.stderr);
+    assert.equal(configured.stdout,'operator-selected|Europe/Helsinki|false');
+  } finally { rmSync(folder,{recursive:true,force:true}); }
 });
