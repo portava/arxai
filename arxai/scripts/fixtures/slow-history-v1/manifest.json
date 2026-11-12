@@ -1,0 +1,276 @@
+{
+  "version": "arx-slow-history-fixture-v1",
+  "retrievedOn": "2026-11-12",
+  "window": {
+    "start": "1971-01-01",
+    "end": "2026-10-31"
+  },
+  "datasetHash": "e255ddfbc69ccb8f6f9cf97d27737059b475588f25b5c3086b2dbd8d92294415",
+  "syntheticData": false,
+  "files": [
+    {
+      "file": "DEXUSEU.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXUSEU",
+      "sha256": "04d3c377464d00424f99f46dfbf42cd99cde6737bf6f69a381528128c6bf99a7",
+      "rows": 6979,
+      "first": "1999-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXUSEU",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXUSUK.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXUSUK",
+      "sha256": "a47671580f89d6abdee0ad1b3440e993892ab0d8b7e377c035270b59e56f59b5",
+      "rows": 14000,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXUSUK",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXJPUS.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXJPUS",
+      "sha256": "76e8ebf008c623bfa771dd00c057f65c4e18a4a1a22f7b0a73be744b7ff36457",
+      "rows": 13994,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXJPUS",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXUSAL.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXUSAL",
+      "sha256": "90d13106f68052523230ed95ab8a4236fdb5edf946d750cfc91abae6d9d3d8ab",
+      "rows": 13993,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXUSAL",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXCAUS.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXCAUS",
+      "sha256": "2b5c0fc0d083ba14a4595018966240c244ad497dfe12df96f7cc0ccd5121d76c",
+      "rows": 14006,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXCAUS",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXSZUS.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXSZUS",
+      "sha256": "f988a8eac1919f4ad5fffbbdadff6f98ddc8ccc941771b0c19665b4942d3263b",
+      "rows": 14000,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXSZUS",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXUSNZ.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXUSNZ",
+      "sha256": "c60607a049f682509a10abec96fe3b27cf7c263fe5a795c7b3e3ad168bf4e488",
+      "rows": 13984,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXUSNZ",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXNOUS.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXNOUS",
+      "sha256": "3a1118d9fa4653a0d3d8f43c35fcf37ea11d83e67e982f5072ec74911ed39e71",
+      "rows": 13999,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXNOUS",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "DEXSDUS.1d.csv",
+      "kind": "fx_daily",
+      "series": "DEXSDUS",
+      "sha256": "3ffc45a0c9f36145222a39091b024f4f8f7e6f6760694f23c7ddbf991e5fc934",
+      "rows": 13999,
+      "first": "1971-01-04",
+      "last": "2026-10-30",
+      "url": "https://fred.stlouisfed.org/series/DEXSDUS",
+      "license": "Federal Reserve Board H.10, public domain"
+    },
+    {
+      "file": "IR3TIB01USM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01USM156N",
+      "sha256": "5fd8b85ac64259fcb9e28a63e3d67955a449c363dc01f3b3bfa7173b3bd71414",
+      "rows": 668,
+      "first": "1971-01-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01USM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "TB3MS.1m.csv",
+      "kind": "rate_monthly",
+      "series": "TB3MS",
+      "sha256": "9de81d1459c70103bc896a07f241e048136988e77d08f44f36f393e1359d62eb",
+      "rows": 670,
+      "first": "1971-01-01",
+      "last": "2026-10-01",
+      "url": "https://fred.stlouisfed.org/series/TB3MS",
+      "license": "Federal Reserve Board H.15, public domain"
+    },
+    {
+      "file": "IR3TIB01EZM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01EZM156N",
+      "sha256": "1c63cd5fcd257cc3e4a2e7b01035b03408db348dfde44b0b06e9ccb1c6545db1",
+      "rows": 385,
+      "first": "1994-01-01",
+      "last": "2026-01-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01EZM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01DEM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01DEM156N",
+      "sha256": "510ff951e05efa65e4529f69709981173e4cb3c45eb7f38653bb1fbcfa0c628e",
+      "rows": 669,
+      "first": "1971-01-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01DEM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01GBM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01GBM156N",
+      "sha256": "49ded147d1462a1e13362c10a57ec951befa9608d572d58273f602c503330167",
+      "rows": 661,
+      "first": "1971-01-01",
+      "last": "2026-01-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01GBM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01JPM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01JPM156N",
+      "sha256": "273d0a07a35adbf4aac9ee31934801577d2ad463af97bc1e002063f42343d065",
+      "rows": 293,
+      "first": "2002-04-01",
+      "last": "2026-08-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01JPM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IRSTCI01JPM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IRSTCI01JPM156N",
+      "sha256": "11d55eb68ab98fa9a59880f5581336846b2371e6e9726f3a6ca1bf0281d66485",
+      "rows": 495,
+      "first": "1985-07-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IRSTCI01JPM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "INTDSRJPM193N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "INTDSRJPM193N",
+      "sha256": "874befac8072b5666b814c7fe8e2ec939e19f014d6e564bac069d86a51ea3539",
+      "rows": 556,
+      "first": "1971-01-01",
+      "last": "2017-04-01",
+      "url": "https://fred.stlouisfed.org/series/INTDSRJPM193N",
+      "license": "IMF International Financial Statistics via FRED"
+    },
+    {
+      "file": "IR3TIB01AUM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01AUM156N",
+      "sha256": "1c14fe857299ef41d56212595d76e73ca044e5461768ba849c3d68df062b55fd",
+      "rows": 668,
+      "first": "1971-01-01",
+      "last": "2026-08-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01AUM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01CAM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01CAM156N",
+      "sha256": "305c678275cd6ad55d7b4e1a248d2424e5fed576bb7b4939e9e66ca4ceb669d0",
+      "rows": 669,
+      "first": "1971-01-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01CAM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01CHM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01CHM156N",
+      "sha256": "13d0cbcf8d3535c001f1c8ed4adbc8ac26803b683910d9777513dc46a9a937e0",
+      "rows": 327,
+      "first": "1999-07-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01CHM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IRSTCI01CHM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IRSTCI01CHM156N",
+      "sha256": "fd232d5cbc58083614b4ca8546f9fbd53a2dfbcc2215a560b286c20a4474dd73",
+      "rows": 627,
+      "first": "1972-01-01",
+      "last": "2024-03-01",
+      "url": "https://fred.stlouisfed.org/series/IRSTCI01CHM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01NZM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01NZM156N",
+      "sha256": "a268c28bfdba54142441f90fe15e1259b9d81f29df7c5cb0ce828c732990a191",
+      "rows": 634,
+      "first": "1973-12-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01NZM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01NOM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01NOM156N",
+      "sha256": "85dc0c11b8162804757494dbc8d1339e9e88754ede7889edf88c21fac2bab1e9",
+      "rows": 573,
+      "first": "1979-01-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01NOM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    },
+    {
+      "file": "IR3TIB01SEM156N.1m.csv",
+      "kind": "rate_monthly",
+      "series": "IR3TIB01SEM156N",
+      "sha256": "c5bd1232aa65544837594232b81aeea02abb0bc8170f7eee720e313c97104e34",
+      "rows": 537,
+      "first": "1982-01-01",
+      "last": "2026-09-01",
+      "url": "https://fred.stlouisfed.org/series/IR3TIB01SEM156N",
+      "license": "OECD Main Economic Indicators, CC BY 4.0"
+    }
+  ]
+}
