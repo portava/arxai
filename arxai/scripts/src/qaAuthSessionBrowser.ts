@@ -204,14 +204,23 @@ async function main(): Promise<void> {
     browserContext = await browser.newContext();
     const page = await browserContext.newPage();
     const externalBrowserRequests: string[] = [];
+    const requestedModules = new Set<string>();
+    let blockedShellModule: string | null = null;
+    let blockedShellRequests = 0;
     page.on("request", (request) => {
       const requestUrl = new URL(request.url());
+      requestedModules.add(requestUrl.pathname);
       if (requestUrl.origin !== uiOrigin) externalBrowserRequests.push(requestUrl.origin);
     });
     await browserContext.route("**/*", async (route) => {
       const requestUrl = new URL(route.request().url());
       if (requestUrl.origin !== uiOrigin) {
         await route.abort();
+        return;
+      }
+      if (requestUrl.pathname === blockedShellModule) {
+        blockedShellRequests += 1;
+        await route.abort("failed");
         return;
       }
       const method = route.request().method();
@@ -258,6 +267,10 @@ async function main(): Promise<void> {
       { timeout: 15_000 },
     );
     await page.getByTestId("input-email").fill(emailA);
+    for (const module of ["/src/components/layout/AppLayout.tsx", "/src/components/onboarding/OnboardingProvider.tsx"]) {
+      assert(!requestedModules.has(module), `Anonymous login eagerly loaded private shell module ${module}.`);
+    }
+    console.log("PASS  anonymous login defers the authenticated shell and onboarding modules");
     await page.getByTestId("input-password").fill(passwordA);
     await page.getByTestId("button-submit-login").click();
     await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
@@ -287,7 +300,7 @@ async function main(): Promise<void> {
 
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
     try {
-      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+      await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
     } catch {
       const visibleText = await page.locator("body").innerText().catch(() => "");
       throw new Error(
@@ -308,6 +321,9 @@ async function main(): Promise<void> {
       "The private assistant settings query was not cached before revocation.",
     );
     console.log("PASS  standard USER can open the allowed /settings route directly");
+    for (const module of ["/src/components/layout/AppLayout.tsx", "/src/components/onboarding/OnboardingProvider.tsx"]) {
+      assert(requestedModules.has(module), `Authenticated Settings did not load private shell module ${module}.`);
+    }
 
     const revokedSessions = await pool.query(
       `DELETE FROM auth_user_sessions WHERE user_id = $1`,
@@ -328,7 +344,7 @@ async function main(): Promise<void> {
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 15_000 });
     await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
     assert(
-      !(await page.getByRole("heading", { name: "Settings", exact: true }).isVisible().catch(() => false)),
+      !(await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).isVisible().catch(() => false)),
       "Protected Settings content remained visible after the server revoked the session.",
     );
     me = await fetchMe();
@@ -353,7 +369,7 @@ async function main(): Promise<void> {
     await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
     await refreshedPrivateSettings;
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
     await page.waitForFunction(
       '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
       privateNameA,
@@ -395,7 +411,7 @@ async function main(): Promise<void> {
     console.log("PASS  User A sees only User A's saved watchlist in the page and API response");
 
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
     // Hold an already-fetched User A response at the browser boundary and
     // release it only after User B has signed in and loaded their own data.
     holdNextAssistantSettingsResponse = true;
@@ -429,7 +445,7 @@ async function main(): Promise<void> {
       `User B received the wrong private settings value; expected ${privateNameB}, got ${userBSettings.displayName ?? "none"}.`,
     );
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
     await page.waitForFunction(
       '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
       privateNameB,
@@ -492,6 +508,34 @@ async function main(): Promise<void> {
       "A fresh /api/watchlists response after the account switch did not contain only User B's saved list.",
     );
     console.log("PASS  User B sees only User B's saved watchlist in the page and fresh API responses");
+
+    // Force each authenticated shell download to fail in a fresh document.
+    // The real auth cookie stays valid; only the chosen module is withheld.
+    for (const module of ["/src/components/layout/AppLayout.tsx", "/src/components/onboarding/OnboardingProvider.tsx"]) {
+      blockedShellModule = module;
+      blockedShellRequests = 0;
+      await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
+      await page.getByTestId("authenticated-shell-error").waitFor({ timeout: 15_000 });
+      assert(blockedShellRequests > 0, `The failed-download control did not actually intercept ${module}.`);
+      assert(await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).count() === 0,
+        "Protected route content appeared beneath the failed shell.");
+      const authenticatedDuringFailure = await fetchMe();
+      assert(authenticatedDuringFailure.status === 200 && authenticatedDuringFailure.body?.user?.email === emailB,
+        "The recovery control must exercise an authenticated shell failure, not a logged-out session.");
+      blockedShellModule = null;
+      await Promise.all([
+        page.waitForEvent("domcontentloaded", { timeout: 30_000 }),
+        page.getByTestId("button-reload-workspace").click(),
+      ]);
+      await page.locator("#main-content").getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+      await page.waitForFunction(
+        '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
+        privateNameB, { timeout: 10_000 },
+      );
+      assert(await page.getByTestId("authenticated-shell-error").count() === 0,
+        "The shell did not recover after its module became available and the user reloaded.");
+      console.log(`PASS  failed ${module.split("/").pop()} download shows recovery UI and reload restores User B's workspace`);
+    }
 
     assert(externalBrowserRequests.length === 0, "The test attempted an external browser connection.");
   } finally {

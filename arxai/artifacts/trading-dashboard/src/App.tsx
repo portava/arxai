@@ -5,10 +5,12 @@ import { setRequestObserver } from "@workspace/api-client-react";
 import { observeOrvalRequest } from "@/lib/perf";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AppLayout } from "@/components/layout/AppLayout";
+// Anonymous sessions do not download the private shell or onboarding UI.
+const AppLayout = lazy(() => import("@/components/layout/AppLayout").then((m) => ({ default: m.AppLayout })));
+import { AuthenticatedShellBoundary } from "@/components/layout/AuthenticatedShellBoundary";
 import { RouteErrorBoundary } from "@/components/layout/RouteErrorBoundary";
 import { SymbolProvider } from "@/lib/symbol-context";
-import { OnboardingProvider } from "@/components/onboarding/OnboardingProvider";
+const OnboardingProvider = lazy(() => import("@/components/onboarding/OnboardingProvider").then((m) => ({ default: m.OnboardingProvider })));
 import { AssistantNameProvider } from "@/lib/assistant-name";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartReplayBoundary } from "@/components/chart-replay/ChartReplayBoundary";
@@ -471,13 +473,17 @@ function App() {
         <SymbolProvider>
           <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
             <AuthGate>
-              <ActivityPingMount />
-              <PerfObserverMount />
-              <AssistantNameProvider>
-                <OnboardingProvider>
-                  <ChartReplayBoundary><Router /></ChartReplayBoundary>
-                </OnboardingProvider>
-              </AssistantNameProvider>
+              <AuthenticatedShellBoundary>
+                <Suspense fallback={<PageFallback />}>
+                  <ActivityPingMount />
+                  <PerfObserverMount />
+                  <AssistantNameProvider>
+                    <OnboardingProvider>
+                      <ChartReplayBoundary><Router /></ChartReplayBoundary>
+                    </OnboardingProvider>
+                  </AssistantNameProvider>
+                </Suspense>
+              </AuthenticatedShellBoundary>
             </AuthGate>
           </WouterRouter>
           <Toaster />
