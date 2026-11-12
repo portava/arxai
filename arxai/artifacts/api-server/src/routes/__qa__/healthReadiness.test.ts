@@ -25,7 +25,7 @@ test("real health router separates liveness/readiness and keeps personal health 
     response = await fetch(`${base}/healthz`);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    const health = await response.json();
+    const health = await response.json() as { status: unknown; build: unknown };
     assert.equal(health.status, "ok");
     assert.deepEqual(health.build, { revision: null, sourceState: "unknown" });
     ready = true;
