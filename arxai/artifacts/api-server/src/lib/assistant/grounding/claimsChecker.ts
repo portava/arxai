@@ -487,10 +487,24 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   const reportedExecutionClauses = new Set<number>();
   for (const m of raw.matchAll(new RegExp(EXECUTION_AFFIRM.source, "gi"))) {
     const before = raw.slice(0, m.index);
-    const boundary = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(" but "));
-    const clauseStart = boundary < 0 ? 0 : boundary + 1;
+    const boundary = [...before.matchAll(/[,;]|\b(?:and|but|while|whereas)\b/gi)].at(-1);
+    const clauseStart = boundary ? boundary.index! + boundary[0].length : 0;
     const clause = raw.slice(clauseStart, m.index + m[0].length);
-    if (!EXECUTION_CONTEXT.test(clause) || EXECUTION_NEGATED.test(clause)) continue;
+    const prior = raw.slice(0, clauseStart);
+    // Coordinated predicates and pronouns retain their order subject, but a
+    // new predicate does not inherit unrelated negation ("not failed and was
+    // filled"). Restrict inheritance to references/auxiliaries, so an unrelated
+    // subject such as "a glass was filled" remains outside execution claims.
+    const inheritedContext = !EXECUTION_CONTEXT.test(clause) &&
+      /^\s*(?:(?:then|now|subsequently)\s+)?(?:it|they|this|that|was|were|is|are|has|have|had|got|filled|executed|placed|partially|fully|successfully|already|finally)\b/i.test(clause) &&
+      EXECUTION_CONTEXT.test(prior);
+    if ((!EXECUTION_CONTEXT.test(clause) && !inheritedContext) || EXECUTION_NEGATED.test(clause)) continue;
+    // A bare coordinated verb shares the preceding auxiliary: "will be
+    // executed and filled", "was not executed and filled". An explicit new
+    // auxiliary ("and was filled") makes a separate affirmative claim.
+    const priorClause = before.slice(0, boundary?.index ?? 0).split(/[,;]|\b(?:and|but|while|whereas)\b/i).at(-1) ?? "";
+    if (inheritedContext && /^\s*(?:(?:partially|fully|successfully|already|finally)\s+)*(?:filled|executed|placed)\b/i.test(clause) &&
+      EXECUTION_AFFIRM.test(priorClause) && EXECUTION_NEGATED.test(priorClause)) continue;
     const partialClaim = /partial(?:ly)?\s+$/i.test(before);
     // Suffix identities belong to this execution too ("filled for GBPUSD",
     // "filled, ticket 123"). Stop before the next independent proposition.
@@ -499,11 +513,25 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     const clauseEnd = nextClause < 0 ? raw.length : m.index + m[0].length + nextClause;
     const tickets = claims.filter(c => c.kind === "ticket" && c.start >= seg.start + clauseStart && c.end <= seg.start + clauseEnd).map(c => c.text);
     const symbols = namedSymbols(raw.slice(clauseStart, clauseEnd), idx);
+    if (inheritedContext) {
+      if (symbols.length === 0) {
+        const inheritedSymbol = namedSymbols(prior, idx).at(-1);
+        if (inheritedSymbol) symbols.push(inheritedSymbol);
+      }
+      if (tickets.length === 0) {
+        const inheritedTicket = claims.filter(c => c.kind === "ticket" && c.end <= seg.start + clauseStart).at(-1);
+        if (inheritedTicket) tickets.push(inheritedTicket.text);
+      }
+    }
     const proof = idx.executions.filter(e => (e.executed || (partialClaim && e.partial)) &&
       tickets.every(t => e.ids.includes(t)) && symbols.every(symbol => e.symbols.includes(symbol)));
     const claim = pushClaim({ kind: "execution", text: m[0], grounded: proof.length > 0, groundedBy: proof.map(p => p.path), localStart: m.index, localEnd: m.index + m[0].length });
-    if (proof.length === 0 && !reportedExecutionClauses.has(clauseStart)) {
-      reportedExecutionClauses.add(clauseStart);
+    // Check every affirmation, but one removal notice suffices for coordinated
+    // verbs in the same clause ("placed and filled").
+    const reportBoundary = [...before.matchAll(/[,;]|\bbut\b/gi)].at(-1);
+    const reportStart = reportBoundary ? reportBoundary.index! + reportBoundary[0].length : 0;
+    if (proof.length === 0 && !reportedExecutionClauses.has(reportStart)) {
+      reportedExecutionClauses.add(reportStart);
       const statuses = idx.executions.map(e => e.status).filter(Boolean);
       findings.push({ kind: "EXECUTION_UNCONFIRMED", claim, detail: `"${m[0]}" claimed but no tool output this turn shows an executed result${statuses.length ? ` (statuses seen: ${[...new Set(statuses)].join(", ")})` : ""}` });
     }

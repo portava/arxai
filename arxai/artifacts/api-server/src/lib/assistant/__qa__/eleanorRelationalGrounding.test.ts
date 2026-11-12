@@ -42,3 +42,44 @@ for (const text of [
 test("matching execution proof is still accepted", () => {
   assert.deepEqual(verifyAnswer("Your EURUSD order was filled, ticket 111111.", executions).findings, []);
 });
+
+const pending: ToolOutput[] = [{ name: "getExecution", result:
+  { symbol: "EURUSD", ticket: 111111, status: "pending" },
+}];
+const coordinatedClaims = [
+  "Your EURUSD order was submitted; it was filled.",
+  "The order has not failed and was filled.",
+  "The order has not failed AND was filled.",
+  "The order has not failed and filled.",
+  "Your EURUSD order was submitted, then it was filled.",
+  "Your EURUSD order was submitted; it has been filled.",
+];
+for (const text of coordinatedClaims) test(`local execution affirmation is checked: ${text}`, () => {
+  const checked = verifyAnswer(text, pending);
+  assert.ok(checked.findings.some(f => f.kind === "EXECUTION_UNCONFIRMED"));
+  assert.equal(gateSpeech({ text, outputs: pending }).clean, false);
+  for (let split = 1; split < text.length; split++) {
+    const gate = new ClaimGate(buildEvidenceIndex(pending));
+    assert.equal(gate.push(text.slice(0, split)) + gate.push(text.slice(split)) + gate.end() + gate.footer(), checked.text);
+  }
+  assert.deepEqual(verifyAnswer(text, executions).findings, [], "a matching confirmed execution remains usable");
+  assert.equal(gateSpeech({ text, outputs: executions }).clean, true);
+});
+for (const text of [
+  "Your EURUSD order was submitted; it was not filled.",
+  "The order has not failed and has not been filled.",
+  "Your order will be executed and filled after confirmation.",
+  "Your order will be executed and fully filled after confirmation.",
+  "Your order was not executed and filled.",
+  "Your order was submitted; a glass was filled with water.",
+]) test(`negation and unrelated predicates remain usable: ${text}`, () => {
+  assert.deepEqual(verifyAnswer(text, pending).findings, []);
+  assert.equal(gateSpeech({ text, outputs: pending }).clean, true);
+});
+for (const text of [
+  "Your GBPUSD order was submitted; it was filled.",
+  "Ticket 222222 was submitted and was filled.",
+]) test(`inherited execution subject preserves identity: ${text}`, () => {
+  assert.ok(verifyAnswer(text, executions).findings.some(f => f.kind === "EXECUTION_UNCONFIRMED"));
+  assert.equal(gateSpeech({ text, outputs: executions }).clean, false);
+});
