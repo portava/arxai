@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./structural": "./src/structural/index.ts",
     ".": "./src/index.ts",
     "./trade": "./src/trade/index.ts",
     "./trade-health": "./src/trade-health/index.ts",

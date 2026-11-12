@@ -64,6 +64,7 @@ vi.mock("lightweight-charts", () => {
 });
 
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+import { createChart } from "lightweight-charts";
 import type { ChartEngineCandle, ChartStructureMarker } from "./types";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
@@ -74,6 +75,22 @@ class FakeResizeObserver {
   disconnect(): void {}
 }
 vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+it("ghost candles occupy three separate series and clearing them preserves real bars", () => {
+  const adapter = new LightweightChartsAdapter();
+  adapter.init({ container: document.createElement("div"), height: 400 });
+  adapter.setCandles([bar(60), bar(120)]);
+  const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
+  const realSeries = chart.addSeries.mock.results[0].value;
+  const before = realSeries.setData.mock.calls.length;
+  adapter.setGhostPaths(["UP", "DOWN", "NEITHER"].map(id => ({ id, color: "#888", candles: [bar(180), bar(240)] })));
+  expect(chart.addSeries).toHaveBeenCalledTimes(4);
+  expect(realSeries.setData.mock.calls.length).toBe(before);
+  adapter.setGhostPaths([]);
+  expect(chart.removeSeries).toHaveBeenCalledTimes(3);
+  expect(chart.removeSeries.mock.calls.some((call: unknown[]) => call[0] === realSeries)).toBe(false);
+  adapter.destroy();
+});
 
 function bar(time: number): ChartEngineCandle {
   return { time, open: 1, high: 2, low: 0.5, close: 1.5 };

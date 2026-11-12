@@ -1,0 +1,93 @@
+# Structural integration verification
+
+Checkout baseline: `21ccdbb85dd768b01e89d0fa4a87b6ace8acb7f0` (PR #150).
+Node 24.16.0 / pnpm 10.26.1; local macOS. No production deployment or orders.
+
+| Check | Final result |
+|---|---|
+| Structural math/observer/service/feed unit suite | 22 passed; no skipped tests |
+| Actual localhost HTTP authentication and user-scoping integration | 1 passed |
+| Actual PostgreSQL persistence, idempotent concurrent append and isolation | 1 passed |
+| Chart panel, ghost adapter, trendline, tick-stream and stall regression suites | 36 passed in 5 files |
+| Existing Phase B safety cases | 20/20 passed |
+| Existing emergency kill pre-gate tests | 9 passed |
+| Existing Pattern Sync baseline | 15 passed |
+| Existing candle history service using isolated PostgreSQL | 33 assertions passed |
+| Existing trade-engine pipeline using isolated PostgreSQL | 6 passed |
+| Shared libraries, API, dashboard, scripts TypeScript checks | Passed |
+| API production bundle, including separate fit worker | Passed |
+| Compiled production worker fitting captured V75 history | Passed |
+| Dashboard production Vite build | Passed; existing large-chunk warning remains |
+| Actual ARXNativeChart browser preview | Rendered chart, saved forecast controls and separate ghost series; archived real-feed fixture, not authenticated production E2E |
+| Five-symbol real-feed replay | 375 held-out forecasts, 2,250 horizon evaluations; no prebreak candidate accepted |
+| Prospective service + worker + database cycle | One-minute outcome appended without changing issued snapshot; see evidence report |
+
+## Repeatable commands
+
+From `artifacts/api-server`:
+
+```sh
+node --import tsx --test --test-force-exit src/lib/structural/structural.test.ts
+ARX_STRUCTURAL_TEST_DATABASE_URL=postgresql://USER@127.0.0.1:PORT/arx_structural_pr150_test node --import tsx --test --test-force-exit src/lib/structural/persistence.test.ts src/lib/structural/http.test.ts
+node build.mjs
+```
+
+The DB suite requires an explicitly created disposable database with existing
+Drizzle schema. It refuses other hosts/names, cleans only its own receipt rows,
+and skips if no dedicated test URL is provided. The final reported run did not
+skip. Never point this command or the schema test setup at production.
+
+From `artifacts/trading-dashboard`:
+
+```sh
+node node_modules/vitest/vitest.mjs run src/components/charts/StructuralForecastPanel.test.tsx src/lib/chart-engine/lightweightChartsAdapter.markers.test.ts src/components/charts/ARXNativeChart.trendline-overlay.test.tsx src/components/charts/ARXNativeChart.tick-stream.test.tsx src/components/charts/ARXNativeChart.stall-badge.test.tsx
+PORT=5178 BASE_PATH=/ node node_modules/vite/bin/vite.js build
+```
+
+From repository root:
+
+```sh
+node node_modules/typescript/bin/tsc --build
+node node_modules/typescript/bin/tsc -p artifacts/api-server/tsconfig.json --noEmit
+node node_modules/typescript/bin/tsc -p artifacts/trading-dashboard/tsconfig.json --noEmit
+node node_modules/typescript/bin/tsc -p scripts/tsconfig.json --noEmit
+```
+
+From `scripts`: `node --import tsx src/qaLivePhaseB.ts`.
+Real-feed replay and bounded prospective commands are in the validation report.
+
+## Failures retained and resolved
+
+The first audit batch had 135 passes and 7 failures from the pipeline suite/hook
+because no test DB was available. The later isolated DB run passed all six
+pipeline tests; candle history also passed 33 assertions. A fresh PG17 instance
+could not allocate host shared memory, so a separate database was created in an
+already-running local disposable PG16 server. No production schema was touched.
+
+The first whole-history validator rejected genuine off-grid/gapped timestamps.
+Fitting now excludes damaged 180-bar training windows and counts them while
+current inference remains strict. Replay also exposed a floating-point residual
+that could create tiny negative late mass; capacity clamping fixed it. Final
+review enforced the two-close one-minute minimum. No gate threshold was tuned.
+
+A repeated DB isolation test initially assumed the other user had no forecasts;
+the preceding live test had deliberately created that user's own records. The
+test now verifies the correct invariant: the other user cannot see or append to
+this user's receipt. Concurrent writes and original-snapshot equality pass.
+
+## Environment and evidence limits
+
+A fresh `pnpm install --offline --frozen-lockfile --ignore-scripts` fails on the
+repository's pre-existing workspace-overrides/lockfile mismatch. Verification
+used cached external dependencies with every workspace link remapped to this
+checkout. Two absent macOS native build packages (`lightningcss-darwin-arm64`
+1.31.1, `@tailwindcss/oxide-darwin-arm64` 4.2.1) were installed in the task's
+scratch directory and exposed with NODE_PATH; no manifest or lockfile was
+changed for that repair. A clean frozen installation is still not a passed check.
+
+The feature builds and has targeted local coverage. The entire 7,043-file
+application suite, deployed DB permissions/retention, authenticated broker
+session E2E, long-running live operation and prediction edge are not certified.
+The temporary browser fixture was removed from application source after review.
+All earlier mathematical research files and execution/risk/permission files are
+unchanged by the implementation.

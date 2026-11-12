@@ -24,6 +24,7 @@ import type {
   ChartEngineInitOptions,
   ChartStructureLine,
   ChartStructureMarker,
+  ChartGhostPath,
 } from "./types";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 
@@ -80,6 +81,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // OWN line series + marker channel, separate from trade-plan price lines, so
   // clearing one never disturbs the other. Display-only.
   private structureSeries: ISeriesApi<"Line">[] = [];
+  private ghostSeries: ISeriesApi<"Candlestick">[] = [];
   private structureMarkersApi: { detach: () => void } | null = null;
   // Raw (un-snapped) structural overlay as last handed to setStructureLines, so
   // the markers can be RE-SNAPPED onto real bars whenever setCandles slides the
@@ -193,6 +195,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.overlayLines = [];
     this.markersApi = null;
     this.structureSeries = [];
+    this.ghostSeries = [];
     this.structureMarkersApi = null;
 
     const ro = new ResizeObserver(() => {
@@ -383,6 +386,23 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         this.markersApi = createSeriesMarkers(series, markerData);
       } catch { /* markers are decorative — never break the chart */ }
     }
+  }
+
+  setGhostPaths(paths: ChartGhostPath[]): void {
+    if (!this.chart) return;
+    for (const series of this.ghostSeries) this.chart.removeSeries(series);
+    this.ghostSeries = [];
+    for (const path of paths.slice(0, 3)) {
+      if (!path.candles.length) continue;
+      const series = this.chart.addSeries(CandlestickSeries, {
+        upColor: path.color, downColor: path.color, wickUpColor: path.color,
+        wickDownColor: path.color, borderVisible: false,
+        lastValueVisible: false, priceLineVisible: false, title: "Illustrative scenario",
+      });
+      series.setData(sanitizeCandlestickData(path.candles).map(c => ({ ...c, time: c.time as UTCTimestamp })));
+      this.ghostSeries.push(series);
+    }
+    if (this.ghostSeries.length) this.chart.timeScale().fitContent();
   }
 
   setStructureLines(

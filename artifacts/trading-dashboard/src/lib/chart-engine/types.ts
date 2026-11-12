@@ -30,6 +30,8 @@ export interface ChartEngineCandle {
   close: number;
 }
 
+export interface ChartGhostPath { id: string; color: string; candles: ChartEngineCandle[] }
+
 /**
  * Feed truth the engine needs to render honestly. Today this is just the
  * live-price affordance verdict (whether the last-value label and dashed "Last"
@@ -131,6 +133,8 @@ export interface ChartEngineAdapter {
   setFeedState(state: ChartEngineFeedState): void;
   /** Replace the candle series. Preserves the user's zoom/pan after first fit. */
   setCandles(candles: ChartEngineCandle[]): void;
+  /** Separate illustrative scenario candles; never replace observed bars. */
+  setGhostPaths?(paths: ChartGhostPath[]): void;
   /**
    * Draw the read-only overlay set (lines / zones / markers). `latestBarTime` is
    * the Unix-seconds time of the most recent bar (markers anchor to it); null

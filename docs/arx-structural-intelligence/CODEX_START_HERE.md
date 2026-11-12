@@ -1,3 +1,11 @@
+> **Implementation update — 2026-11-12:** The owner confirmed in the build chat
+> that no original runnable code exists and requested a working ARX integration.
+> See `../ARX_PROGRESS_MATRIX.md`, `../ARX_FORMULA_V67_IMPLEMENTATION_MAP.md`,
+> `../ARX_REAL_MARKET_VALIDATION_REPORT.md` and `../ARX_STRUCTURAL_VERIFICATION.md`
+> for the new implementation and measured evidence. The historical source-search
+> instructions below remain provenance; they are not a blocker to this authorized
+> new implementation. Prior report statistics must not be claimed as its results.
+
 # CODEX — START ARX STRUCTURAL INTELLIGENCE V6.7
 
 **Repository:** `portava/arxai`  

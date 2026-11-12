@@ -1,4 +1,87 @@
-# ARX Structural Intelligence — Stage 0 initial source audit
+# ARX Structural Intelligence — Stage 0 audit
+
+## Local implementation audit — 2026-11-12
+
+Scope: repository source inventory (7,043 tracked files), relevant consumers,
+contracts and targeted offline baseline tests. This is not a production audit.
+Checkout: PR #150 at `21ccdbb85dd768b01e89d0fa4a87b6ace8acb7f0`.
+Both `main` and `feature/structural-research-phase1-20261112` resolve to
+`76cdbdc9525a2da1eec8113cb3c5fe9b63cf2325`; the PR adds nine documentation files.
+The two structural branches were found through GitHub branch search; a formula
+branch search returned none. Local Codex filename searches found reports but no
+V6.4–V6.7 runnable source. **The owner confirmed in this implementation chat that
+there is no code, asked for a new implementation, and confirmed that it must be
+a working ARX feature rather than a research-only prototype.** Accordingly the
+implementation will be versioned as a new V6.7 implementation, not represented
+as a byte-for-byte reproduction of unavailable experiments. Coefficients must
+be fitted from data. New choices must be explicit and tested.
+
+### Evidence-based reuse and gap matrix
+
+Classifications apply to the named scope, not production certification.
+
+| Area | Exact existing paths | Finding / class | Minimum action |
+|---|---|---|---|
+| Data routing and history | `artifacts/api-server/src/lib/data/{marketDataRouter,candleHistoryService,candleCache,types}.ts`, `providers/{derivProvider,mt5Provider}.ts` | **B/E**: real provider routing, provenance and pagination exist; historical service needs isolated DB for baseline | Reuse routing; never introduce a second broker transport |
+| Closed/forming bars | `artifacts/api-server/src/lib/data/chart/{chartDataService,candleNormalization,candleTruthEngine,formingBarComposer,timeframes}.ts` | **A** for targeted offline finality/provenance tests; production data unverified | Consume `NormalizedChartCandle` with explicit finality/open/close time; add strict contiguous M1 forecast input boundary |
+| Features | `lib/features/src/index.ts`, `artifacts/api-server/src/lib/features/featureSnapshot.ts` | **A** for existing sigma and point-in-time tests; **D** for V6.7 pressure/geometry feature schema | Keep existing feature engine; add one versioned shared structural feature path used by training and inference |
+| Structure / patterns | `artifacts/api-server/src/lib/patternSync/{patternSyncEngine,patternSyncComparator}.ts`, `strategyEngine.ts`, `lib/data/chart/chartIntelligence.ts` | **A** advisory Pattern Sync (15/15 baseline); **D** for frozen two-close competing-event observer | Retain advisory reads; implement separate experimental event labels with explicit publication times rather than change existing signal definitions |
+| Scalp/scanner/intelligence | `artifacts/api-server/src/lib/{scalp/scalpEngine,marketScanner,signalIntelligence/signalIntelligenceService}.ts` | **A** for targeted scalp tests; **E** for full runtime | Do not replace or feed new forecasts into execution |
+| Formula | `docs/arx-structural-intelligence/research/*` | **D**: no competing-risk/pre-break model implementation in source | Fit explicit softmax models, empirical baseline, independent gates and coherent probability reallocation |
+| Ghost charts | `artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx`, `src/lib/chart-engine/{types,lightweightChartsAdapter}.ts` | **B**: real chart and overlay adapter exist, no three-scenario candlestick layer | Extend adapter and chart controls; validated training exemplars only, unavailable class stays unavailable |
+| Immutable memory | `lib/db/src/schema/chartDecisionMemory.ts`, `artifacts/api-server/src/lib/chart/decisionReceipts.ts` | **B**: immutable receipt JSON and append-only outcome tables already exist; no structural PMF/evaluation contract | Reuse these tables, add typed structural payload and awaited save-before-return; no new database schema |
+| Other predictions | `lib/db/src/schema/{agentPredictions,agentPredictionReviews,shadowPredictions}.ts`, `artifacts/api-server/src/lib/{shadowMode,shadowPersistence}.ts` | **B**: directional/trade-oriented journals, no joint structural event-time PMF | Reuse receipt architecture instead of extending mutable shadow outcome fields |
+| Evaluation | `lib/validation/src/{cpcv,factory}.ts`, `lib/domain/src/validation-pipeline/` | **B**: strategy/P&L evaluation and purging exist; no structural Brier/log-loss calibration pipeline | Add chronological train/selection/gate/holdout protocol; reuse separation principle, avoid using P&L grades for forecast skill |
+| Safety | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts`, `artifacts/api-server/src/lib/live/{liveCommandPipeline,killSwitchBypass}.ts`, `routes/mt5Live.ts` | **A** for 20/20 pure Phase B cases and targeted pre-gate tests; **E** broker E2E | Leave unchanged; new inference graph has no order/arming/dispatch imports |
+| DB and deployment | `lib/db/src/schema/`, `lib/db/migrations/`, `scripts/release/` | **E** deployed state; no Supabase/functions tree in this checkout | Use existing PostgreSQL/Drizzle stores; no production mutations or deployment during implementation |
+
+### Baseline, before implementation
+
+Node v24.16.0, pnpm 10.26.1. Frozen offline install fails with
+`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` (workspace overrides differ from lockfile).
+Local verification uses previously cached external dependencies, with **all
+workspace package links explicitly remapped to this checkout**. A clean frozen
+install is therefore a known repository baseline issue, not a passed check.
+
+* Pattern Sync: `pnpm --filter @workspace/api-server test:pattern-sync`: 15 pass.
+* API batch (`node --import tsx --test --test-force-exit`): Pattern Sync, feature
+  snapshot, forming bar, forming tip source, provenance, fallback honesty, shadow
+  persistence wiring, scalp engine, emergency kill pre-gate, risk pre-gates,
+  trade-engine pipeline: **135 pass, 7 fail**. All seven failures belong to the
+  DB-backed pipeline suite/hook, using intentionally unreachable localhost DB;
+  they are environment-blocked, not evidence of working integration.
+* `cd scripts && node --import tsx src/qaLivePhaseB.ts`: **20/20 pass**.
+  The equivalent tsx CLI initially failed on sandbox IPC; using the Node loader
+  executes the same test without that IPC dependency.
+* `candleHistoryServiceTest.ts`: requires a disposable database; not passed.
+
+### Follow-up verification after implementation
+
+The initially unavailable disposable DB checks were subsequently run against a
+separately created local test database: history service **33/33** and pipeline
+**6/6** passed. The initial failures above remain the baseline record, not final
+failures. New structural tests, HTTP and receipt integration, production builds,
+real-feed experiments and limitations are in `ARX_STRUCTURAL_VERIFICATION.md`
+and `ARX_REAL_MARKET_VALIDATION_REPORT.md`.
+
+### Authority trace and minimum implementation order
+
+Observed data enters Deriv/MT5 providers -> marketDataRouter -> normalized chart
+truth -> existing advisory analysis. Confirmed trading intent separately passes
+`tradeEngine/pipeline.ts` -> Risk Governor and platform safety ->
+`live/liveCommandPipeline.ts` -> Phase B evaluator -> per-user EA poll in
+`routes/mt5Live.ts` -> broker result/reconciliation. A structural forecast must
+terminate at a saved receipt and display; it must not enter that command chain.
+
+Stage 0 source audit is complete for the structural integration decision; the
+explicit runtime/DB/production gaps remain E. Proceed in order: contracts and
+architecture -> finality validation -> causal observer -> fitted/gated math ->
+three-ghost adapter -> immutable receipts/evaluation -> chronological historical
+and live-feed verification -> scorecard and operational limitations. No existing
+working feature is scheduled for replacement. The original preliminary inventory
+below is retained as provenance, not current test status.
+
+---
 
 **Audited:** 2026-11-13  
 **Reference:** `main` at `76cdbdc9525a2da1eec8113cb3c5fe9b63cf2325`  
