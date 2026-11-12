@@ -338,7 +338,8 @@
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
     "verify:secret-provisioning": "tsx ./src/verifySecretProvisioning.ts",
     "test:tier1-scorecard": "python3 -m unittest discover -s arx-scorecard -p \"test_*.py\"",
-    "test:pattern-quality": "tsx ./src/patternQualityTest.ts"
+    "test:pattern-quality": "tsx ./src/patternQualityTest.ts",
+    "test:slow-direction": "tsx ./src/slowDirectionResearchTest.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
