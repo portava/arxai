@@ -22,7 +22,7 @@ import type {
   PatternStatus,
 } from "../market/patternTruthContract.js";
 import type { ChartPatternCandle } from "./types.js";
-import { atr, clamp, findSwings, round, type Swing } from "./chartMath.js";
+import { atr, clamp, findSwings, type Swing } from "./chartMath.js";
 
 export interface PatternEngineResult {
   patterns: DetectedPattern[];
@@ -31,6 +31,19 @@ export interface PatternEngineResult {
   /** True when the window was too short for ANY pattern (fail closed). */
   insufficient: boolean;
 }
+
+// ── Pattern definitions (the thresholds ARE the definitions; see
+//    docs/PATTERN_DETECTION_QUALITY.md for how each was verified) ─────────────
+/** H&S: the head must stand at least this many ATR beyond the higher shoulder. */
+export const HS_HEAD_PROMINENCE_ATR = 0.5;
+/** H&S: head-to-neckline height of at least this many ATR. */
+export const HS_MIN_HEIGHT_ATR = 2;
+/** Double top/bottom: peak-to-neckline depth of at least this many ATR. */
+export const DOUBLE_MIN_HEIGHT_ATR = 1.5;
+/** Double top/bottom: at least this many bars between the two extremes. */
+export const DOUBLE_MIN_SEPARATION = 5;
+/** Breakout & retest: the break must have happened within this many bars. */
+export const BREAKOUT_LOOKBACK = 12;
 
 // Smallest window any detector here can act on. Below this we emit nothing.
 const GLOBAL_MIN_CANDLES = 20;
@@ -52,14 +65,18 @@ export function detectChartPatterns(
   const swings = findSwings(closed, SWING_SPAN);
   const atrVal = atr(closed, Math.min(14, closed.length - 1));
   const last = closed[closed.length - 1]!;
-  const decimals = decimalsFor(last.close);
+  const decimals = quoteDecimals(closed);
 
   const ctx: DetectorContext = { closed, swings, atr: atrVal, last, decimals };
 
   const patterns: DetectedPattern[] = [];
   for (const detector of DETECTORS) {
     const found = detector(ctx);
-    if (found) patterns.push(found);
+    // Fail closed: a pattern whose levels (after rounding to the quote's own
+    // precision) are not strictly ordered for its bias, or whose key points fall
+    // outside the window, is not shown. Displaying "stop = entry" is worse than
+    // displaying nothing.
+    if (found && geometryIsCoherent(found, closed.length)) patterns.push(found);
   }
 
   return { patterns, candlesConsidered: closed.length, insufficient: false };
@@ -77,6 +94,37 @@ interface DetectorContext {
 
 type Detector = (ctx: DetectorContext) => DetectedPattern | null;
 
+/**
+ * The instrument's own quote precision, read from the candles: the most
+ * fractional digits any recent price carries (capped at 6). Rounding a
+ * 5-decimal FX quote to 4 decimals made stop and confirmation collapse onto one
+ * price on real EURUSD bars. Only an all-integer window falls back to the
+ * magnitude default; a floor ABOVE the quote's own precision drew half-tick
+ * levels (AUDUSD x100 at 4 decimals for a 3-decimal quote) and let the status
+ * flip on a line no price can sit on.
+ */
+export function quoteDecimals(closed: readonly ChartPatternCandle[]): number {
+  let d = 0;
+  for (const c of closed.slice(-60)) {
+    for (const v of [c.open, c.high, c.low, c.close]) {
+      const s = String(v);
+      if (s.includes("e")) return Math.max(decimalsFor(closed[closed.length - 1]!.close), 6);
+      const dot = s.indexOf(".");
+      if (dot >= 0) d = Math.max(d, s.length - dot - 1);
+    }
+  }
+  return Math.min(6, d > 0 ? d : decimalsFor(closed[closed.length - 1]!.close));
+}
+
+/** Levels strictly ordered for the bias, finite, and key points inside the window. */
+export function geometryIsCoherent(p: DetectedPattern, windowLength: number): boolean {
+  const { confirmation: cf, invalidation: inv, targets } = p.levels;
+  const t = targets[0];
+  if (![cf, inv, t].every((x) => typeof x === "number" && Number.isFinite(x))) return false;
+  const ordered = p.bias === "bullish" ? inv! < cf! && cf! < t! : p.bias === "bearish" ? inv! > cf! && cf! > t! : true;
+  return ordered && p.keyPoints.every((k) => Number.isInteger(k.index) && k.index >= 0 && k.index < windowLength);
+}
+
 function decimalsFor(price: number): number {
   const p = Math.abs(price);
   if (p >= 1000) return 1;
@@ -92,9 +140,22 @@ function lows(swings: Swing[]): Swing[] {
   return swings.filter((s) => s.kind === "low");
 }
 
+/**
+ * Prices are multiples of a tick and ATR is a mean of tick multiples, so a
+ * distance often EQUALS its ATR threshold exactly. Float noise then decides the
+ * tie differently at different price scales (EURUSD vs the same chart x100
+ * picked different breakout levels on 1 window in 4). Comparisons against a
+ * threshold therefore allow a relative slack far below one tick.
+ */
+const TIE_SLACK = 1e-9;
+/** x >= y, with a tie decided the same way at every price scale. */
+const atLeast = (x: number, y: number) => x >= y - Math.abs(y) * TIE_SLACK;
+/** x <= y, with a tie decided the same way at every price scale. */
+const atMost = (x: number, y: number) => x <= y + Math.abs(y) * TIE_SLACK;
+
 /** Relative closeness of two prices, normalized by ATR when available. */
 function near(a: number, b: number, atrVal: number | null, tolAtr = 0.5): boolean {
-  if (atrVal && atrVal > 0) return Math.abs(a - b) <= tolAtr * atrVal;
+  if (atrVal && atrVal > 0) return Math.abs(a - b) <= tolAtr * atrVal * (1 + TIE_SLACK);
   const base = Math.max(Math.abs(a), Math.abs(b), 1e-9);
   return Math.abs(a - b) / base <= 0.0015;
 }
@@ -115,7 +176,11 @@ function slope(values: number[]): number {
   }
   const denom = n * sxx - sx * sx;
   if (denom === 0) return 0;
-  return (n * sxy - sx * sy) / denom;
+  const sl = (n * sxy - sx * sy) / denom;
+  // A flat run of quoted prices has slope exactly 0; float noise makes it
+  // +/-1e-17 and the sign (a trend test) then depends on the price scale.
+  const scale = Math.max(...values.map((v) => Math.abs(v)));
+  return Math.abs(sl) <= scale * 1e-12 ? 0 : sl;
 }
 
 function qualityFromScore(score: number): PatternQuality {
@@ -125,8 +190,15 @@ function qualityFromScore(score: number): PatternQuality {
   return "none";
 }
 
+/**
+ * Round to the quote's precision, half up, the same way at every price scale:
+ * the scaled value is normalised to 15 significant digits first, so a midpoint
+ * like 1.084515 (stored as 1.0845149999…) and 108.4515 (108.4515000…1) both
+ * round up. A plain Math.round sent the two in opposite directions.
+ */
 function r(n: number, decimals: number): number {
-  return round(n, decimals);
+  const f = 10 ** decimals;
+  return Math.round(Number((n * f).toPrecision(15))) / f;
 }
 
 // ── Head & Shoulders (and inverse) — reversal ────────────────────────────────
@@ -142,16 +214,19 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
   if (hs.length >= 3 && ls.length >= 2) {
     const [lShoulder, head, rShoulder] = lastThree(hs);
     if (lShoulder && head && rShoulder) {
-      const headIsHighest = head.price > lShoulder.price && head.price > rShoulder.price;
+      const headIsHighest = atLeast(head.price - Math.max(lShoulder.price, rShoulder.price), HS_HEAD_PROMINENCE_ATR * (atrVal ?? 0));
       const shouldersLevel = near(lShoulder.price, rShoulder.price, atrVal, 0.6);
-      if (headIsHighest && shouldersLevel) {
-        const troughs = ls
-          .filter((t) => t.index > lShoulder.index && t.index < rShoulder.index)
-          .sort((a, b) => a.index - b.index);
-        if (troughs.length >= 1) {
-          const neckline = mean(troughs.map((t) => t.price));
+      if (atrVal && headIsHighest && shouldersLevel) {
+        // The neckline needs a trough on EACH side of the head.
+        const leftTrough = lowestBetween(ls, lShoulder.index, head.index);
+        const rightTrough = lowestBetween(ls, head.index, rShoulder.index);
+        const troughs = leftTrough && rightTrough ? [leftTrough, rightTrough] : [];
+        if (troughs.length === 2) {
+          // Rounded to the quote's precision BEFORE status is judged, so the
+          // status always agrees with the level the user is shown.
+          const neckline = r(mean(troughs.map((t) => t.price)), decimals);
           const height = head.price - neckline;
-          if (height > 0) {
+          if (atLeast(height, HS_MIN_HEIGHT_ATR * atrVal)) {
             const broke = last.close < neckline;
             const status: PatternStatus = broke
               ? extensionExhausted(last.close, neckline, height, "down")
@@ -160,8 +235,7 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
               : last.close > head.price
                 ? "invalidated"
                 : "forming";
-            const score = symmetryScore(lShoulder.price, rShoulder.price, atrVal) +
-              (troughs.length >= 2 ? 10 : 0);
+            const score = symmetryScore(lShoulder.price, rShoulder.price, atrVal) + 10;
             return {
               id: "head_and_shoulders",
               name: "Head & Shoulders",
@@ -179,7 +253,8 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
                 { index: lShoulder.index, price: r(lShoulder.price, decimals), role: "left_shoulder" },
                 { index: head.index, price: r(head.price, decimals), role: "head" },
                 { index: rShoulder.index, price: r(rShoulder.price, decimals), role: "right_shoulder" },
-                { index: troughs[0]!.index, price: r(neckline, decimals), role: "neckline" },
+                { index: troughs[0]!.index, price: r(troughs[0]!.price, decimals), role: "neckline_left" },
+                { index: troughs[1]!.index, price: r(troughs[1]!.price, decimals), role: "neckline_right" },
               ],
               rationale: [
                 "Higher central peak (head) between two lower, level shoulders.",
@@ -200,16 +275,16 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
   if (ls.length >= 3 && hs.length >= 2) {
     const [lShoulder, head, rShoulder] = lastThree(ls);
     if (lShoulder && head && rShoulder) {
-      const headIsLowest = head.price < lShoulder.price && head.price < rShoulder.price;
+      const headIsLowest = atLeast(Math.min(lShoulder.price, rShoulder.price) - head.price, HS_HEAD_PROMINENCE_ATR * (atrVal ?? 0));
       const shouldersLevel = near(lShoulder.price, rShoulder.price, atrVal, 0.6);
-      if (headIsLowest && shouldersLevel) {
-        const peaks = hs
-          .filter((t) => t.index > lShoulder.index && t.index < rShoulder.index)
-          .sort((a, b) => a.index - b.index);
-        if (peaks.length >= 1) {
-          const neckline = mean(peaks.map((t) => t.price));
+      if (atrVal && headIsLowest && shouldersLevel) {
+        const leftPeak = highestBetween(hs, lShoulder.index, head.index);
+        const rightPeak = highestBetween(hs, head.index, rShoulder.index);
+        const peaks = leftPeak && rightPeak ? [leftPeak, rightPeak] : [];
+        if (peaks.length === 2) {
+          const neckline = r(mean(peaks.map((t) => t.price)), decimals);
           const height = neckline - head.price;
-          if (height > 0) {
+          if (atLeast(height, HS_MIN_HEIGHT_ATR * atrVal)) {
             const broke = last.close > neckline;
             const status: PatternStatus = broke
               ? extensionExhausted(last.close, neckline, height, "up")
@@ -218,8 +293,7 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
               : last.close < head.price
                 ? "invalidated"
                 : "forming";
-            const score = symmetryScore(lShoulder.price, rShoulder.price, atrVal) +
-              (peaks.length >= 2 ? 10 : 0);
+            const score = symmetryScore(lShoulder.price, rShoulder.price, atrVal) + 10;
             return {
               id: "inverse_head_and_shoulders",
               name: "Inverse Head & Shoulders",
@@ -237,7 +311,8 @@ function detectHeadAndShoulders(ctx: DetectorContext): DetectedPattern | null {
                 { index: lShoulder.index, price: r(lShoulder.price, decimals), role: "left_shoulder" },
                 { index: head.index, price: r(head.price, decimals), role: "head" },
                 { index: rShoulder.index, price: r(rShoulder.price, decimals), role: "right_shoulder" },
-                { index: peaks[0]!.index, price: r(neckline, decimals), role: "neckline" },
+                { index: peaks[0]!.index, price: r(peaks[0]!.price, decimals), role: "neckline_left" },
+                { index: peaks[1]!.index, price: r(peaks[1]!.price, decimals), role: "neckline_right" },
               ],
               rationale: [
                 "Lower central trough (head) between two higher, level shoulders.",
@@ -270,14 +345,14 @@ function detectDoubleReversal(ctx: DetectorContext): DetectedPattern | null {
   // Double top (bearish): two near-equal highs with a trough between.
   if (hs.length >= 2 && ls.length >= 1) {
     const [a, b] = lastTwo(hs);
-    if (a && b && near(a.price, b.price, atrVal, 0.5)) {
+    if (atrVal && a && b && b.index - a.index >= DOUBLE_MIN_SEPARATION && near(a.price, b.price, atrVal, 0.5)) {
       const trough = ls
         .filter((t) => t.index > a.index && t.index < b.index)
         .sort((x, y) => x.price - y.price)[0];
       if (trough) {
         const neckline = trough.price;
         const height = Math.max(a.price, b.price) - neckline;
-        if (height > 0) {
+        if (atLeast(height, DOUBLE_MIN_HEIGHT_ATR * atrVal)) {
           const broke = last.close < neckline;
           const status: PatternStatus = broke
             ? extensionExhausted(last.close, neckline, height, "down")
@@ -319,14 +394,14 @@ function detectDoubleReversal(ctx: DetectorContext): DetectedPattern | null {
   // Double bottom (bullish): two near-equal lows with a peak between.
   if (ls.length >= 2 && hs.length >= 1) {
     const [a, b] = lastTwo(ls);
-    if (a && b && near(a.price, b.price, atrVal, 0.5)) {
+    if (atrVal && a && b && b.index - a.index >= DOUBLE_MIN_SEPARATION && near(a.price, b.price, atrVal, 0.5)) {
       const peak = hs
         .filter((t) => t.index > a.index && t.index < b.index)
         .sort((x, y) => y.price - x.price)[0];
       if (peak) {
         const neckline = peak.price;
         const height = neckline - Math.min(a.price, b.price);
-        if (height > 0) {
+        if (atLeast(height, DOUBLE_MIN_HEIGHT_ATR * atrVal)) {
           const broke = last.close > neckline;
           const status: PatternStatus = broke
             ? extensionExhausted(last.close, neckline, height, "up")
@@ -375,17 +450,21 @@ function detectFlag(ctx: DetectorContext): DetectedPattern | null {
   const MIN = 20;
   if (closed.length < MIN) return null;
 
-  // Flagpole = recent strong impulse; flag = shallow counter-trend drift.
+  // Flagpole = strong impulse; flag = shallow counter-trend drift; the LAST bar
+  // is the break candidate, measured against the flag box that precedes it.
+  // (The box used to include the last bar, so its close could never be above
+  // the box high or below the box low: every flag on real data stayed
+  // "forming" forever — 4,943 of 4,943.)
   const poleLen = Math.min(8, Math.floor(closed.length / 3));
-  const flagLen = Math.min(6, Math.floor(closed.length / 4));
+  const flagLen = Math.min(5, Math.floor(closed.length / 4));
   if (poleLen < 3 || flagLen < 3) return null;
 
-  const poleStart = closed.length - flagLen - poleLen;
-  const poleEnd = closed.length - flagLen;
+  const poleEnd = closed.length - 1 - flagLen;
+  const poleStart = poleEnd - poleLen;
   if (poleStart < 0) return null;
 
   const pole = closed.slice(poleStart, poleEnd);
-  const flag = closed.slice(poleEnd);
+  const flag = closed.slice(poleEnd, closed.length - 1);
   const poleMove = pole[pole.length - 1]!.close - pole[0]!.close;
   const poleRange = Math.max(...pole.map((c) => c.high)) - Math.min(...pole.map((c) => c.low));
   if (poleRange <= 0) return null;
@@ -395,8 +474,8 @@ function detectFlag(ctx: DetectorContext): DetectedPattern | null {
   const flagRange = Math.max(...flag.map((c) => c.high)) - Math.min(...flag.map((c) => c.low));
 
   // Pole must be a clear impulse (≥ ~2 ATR move) and flag a shallow pullback.
-  const impulseOk = atrVal ? Math.abs(poleMove) >= 2 * atrVal : Math.abs(poleMove) >= poleRange * 0.6;
-  const shallowOk = flagRange <= poleRange * 0.6;
+  const impulseOk = atrVal ? atLeast(Math.abs(poleMove), 2 * atrVal) : atLeast(Math.abs(poleMove), poleRange * 0.6);
+  const shallowOk = atMost(flagRange, poleRange * 0.6);
   if (!impulseOk || !shallowOk) return null;
 
   const bullish = poleMove > 0;
@@ -439,7 +518,7 @@ function detectFlag(ctx: DetectorContext): DetectedPattern | null {
     keyPoints: [
       { index: poleStart, price: r(pole[0]!.close, decimals), role: "flagpole_start" },
       { index: poleEnd - 1, price: r(pole[pole.length - 1]!.close, decimals), role: "flagpole_end" },
-      { index: closed.length - 1, price: r(last.close, decimals), role: "flag_break" },
+      { index: closed.length - 1, price: r(last.close, decimals), role: broke ? "flag_break" : "flag_last" },
     ],
     rationale: [
       `Strong ${bullish ? "up" : "down"} impulse (flagpole) followed by a shallow ${bullish ? "down" : "up"} drift.`,
@@ -472,10 +551,17 @@ function detectLiquiditySweep(ctx: DetectorContext): DetectedPattern | null {
     .filter((s) => s.index < closed.length - 3)
     .sort((a, b) => a.price - b.price)[0];
 
+  // The target is the NEAREST prior swing on the reversal side of the close (the
+  // library's spec), not the window's extreme: the extreme of 150 bars put the
+  // drawn target several times further away than the pattern claims.
+  const before = [...highs(swings), ...lows(swings)].filter((s) => s.index < closed.length - 3);
+  const nearestBelow = before.filter((s) => s.kind === "low" && s.price < last.close).sort((a, b) => b.price - a.price)[0];
+  const nearestAbove = before.filter((s) => s.kind === "high" && s.price > last.close).sort((a, b) => a.price - b.price)[0];
+
   // Bearish sweep: wick takes prior high, closes back below it.
   if (priorHigh && target.high > priorHigh.price && target.close < priorHigh.price) {
     const pierce = target.high - priorHigh.price;
-    if (pierce >= 0.1 * atrVal) {
+    if (atLeast(pierce, 0.1 * atrVal)) {
       const score = 50 + clamp((pierce / atrVal) * 30, 0, 25);
       return sweepPattern({
         id: "liquidity_sweep_high",
@@ -484,7 +570,7 @@ function detectLiquiditySweep(ctx: DetectorContext): DetectedPattern | null {
         swept: priorHigh.price,
         close: last.close,
         invalidation: target.high,
-        target: priorLow?.price ?? last.close - 2 * atrVal,
+        target: nearestBelow?.price ?? last.close - 2 * atrVal,
         index: closed.length - 1,
         score,
         decimals,
@@ -496,7 +582,7 @@ function detectLiquiditySweep(ctx: DetectorContext): DetectedPattern | null {
   // Bullish sweep: wick takes prior low, closes back above it.
   if (priorLow && target.low < priorLow.price && target.close > priorLow.price) {
     const pierce = priorLow.price - target.low;
-    if (pierce >= 0.1 * atrVal) {
+    if (atLeast(pierce, 0.1 * atrVal)) {
       const score = 50 + clamp((pierce / atrVal) * 30, 0, 25);
       return sweepPattern({
         id: "liquidity_sweep_low",
@@ -505,7 +591,7 @@ function detectLiquiditySweep(ctx: DetectorContext): DetectedPattern | null {
         swept: priorLow.price,
         close: last.close,
         invalidation: target.low,
-        target: priorHigh?.price ?? last.close + 2 * atrVal,
+        target: nearestAbove?.price ?? last.close + 2 * atrVal,
         index: closed.length - 1,
         score,
         decimals,
@@ -566,36 +652,48 @@ function detectBreakoutRetest(ctx: DetectorContext): DetectedPattern | null {
   if (closed.length < MIN) return null;
   if (!atrVal || atrVal <= 0) return null;
 
-  // A level qualifies when ≥2 prior swings of one kind cluster near it (tested).
-  const resistance = clusteredLevel(highs(swings), atrVal);
-  const support = clusteredLevel(lows(swings), atrVal);
-
   // Bullish: a decisive close ABOVE a tested resistance, then a pullback that
-  // retested the level and is holding above it now.
-  if (resistance) {
-    const out = breakoutRetestFor({
-      level: resistance.price,
-      touches: resistance.touches,
-      breakAbove: true,
-      closed,
-      atrVal,
-      last,
-      decimals,
-    });
+  // retested the level and is holding above it now. Bearish mirrors it.
+  for (const breakAbove of [true, false]) {
+    const found = findBreak({ closed, swings, atrVal, decimals, breakAbove });
+    if (!found) continue;
+    const out = breakoutRetestFor({ ...found, breakAbove, closed, atrVal, last, decimals });
     if (out) return out;
   }
-  // Bearish: a decisive close BELOW a tested support, then a retest from below.
-  if (support) {
-    const out = breakoutRetestFor({
-      level: support.price,
-      touches: support.touches,
-      breakAbove: false,
-      closed,
-      atrVal,
-      last,
-      decimals,
-    });
-    if (out) return out;
+  return null;
+}
+
+/**
+ * The first bar in the last BREAKOUT_LOOKBACK bars that CROSSES a tested level:
+ * the level is ≥2 clustered swings already CONFIRMED before that bar (a swing at
+ * j is only known at j + SWING_SPAN), the bar closes beyond it by the buffer,
+ * and the bar before closed on the near side. Without the crossing rule any old
+ * level price had long since left behind "broke" again on every bar: the
+ * pattern fired on 47% of real chart windows. Without the "confirmed before the
+ * break" rule, swings printed AFTER the break could define the level.
+ */
+function findBreak(args: {
+  closed: ChartPatternCandle[];
+  swings: Swing[];
+  atrVal: number;
+  decimals: number;
+  breakAbove: boolean;
+}): { level: number; touches: number; breakIdx: number } | null {
+  const { closed, swings, atrVal, decimals, breakAbove } = args;
+  const buffer = 0.3 * atrVal;
+  for (let i = Math.max(1, closed.length - BREAKOUT_LOOKBACK); i < closed.length; i++) {
+    const known = swings.filter((s) => s.index + SWING_SPAN < i);
+    const cluster = clusteredLevel(breakAbove ? highs(known) : lows(known), atrVal);
+    if (!cluster) continue;
+    // Rounded to the quote's precision BEFORE it is judged, so the break and the
+    // status always agree with the level the user is shown.
+    const level = r(cluster.price, decimals);
+    const c = closed[i]!;
+    const before = closed[i - 1]!;
+    const crossed = breakAbove
+      ? !atMost(c.close - level, buffer) && before.close <= level
+      : !atMost(level - c.close, buffer) && before.close >= level;
+    if (crossed) return { level, touches: cluster.touches, breakIdx: i };
   }
   return null;
 }
@@ -623,37 +721,28 @@ function clusteredLevel(
 function breakoutRetestFor(args: {
   level: number;
   touches: number;
+  breakIdx: number;
   breakAbove: boolean;
   closed: ChartPatternCandle[];
   atrVal: number;
   last: ChartPatternCandle;
   decimals: number;
 }): DetectedPattern | null {
-  const { level, touches, breakAbove, closed, atrVal, last, decimals } = args;
+  const { level, touches, breakIdx, breakAbove, closed, atrVal, last, decimals } = args;
   const buffer = 0.3 * atrVal;
-  // Find the breakout bar: a close decisively beyond the level.
-  let breakIdx = -1;
-  for (let i = Math.max(1, closed.length - 12); i < closed.length; i++) {
-    const c = closed[i]!;
-    if (breakAbove ? c.close > level + buffer : c.close < level - buffer) {
-      breakIdx = i;
-      break;
-    }
-  }
-  if (breakIdx < 0) return null;
 
   // After the break, did price pull back to RETEST the level (within ~0.5 ATR)?
   let retested = false;
   for (let i = breakIdx + 1; i < closed.length; i++) {
     const c = closed[i]!;
     const touchedLevel = breakAbove
-      ? c.low <= level + 0.5 * atrVal
-      : c.high >= level - 0.5 * atrVal;
+      ? atMost(c.low - level, 0.5 * atrVal)
+      : atMost(level - c.high, 0.5 * atrVal);
     if (touchedLevel) retested = true;
   }
 
   const holding = breakAbove ? last.close > level : last.close < level;
-  const failed = breakAbove ? last.close < level - buffer : last.close > level + buffer;
+  const failed = breakAbove ? !atMost(level - last.close, buffer) : !atMost(last.close - level, buffer);
 
   const height = atrVal * 2;
   const confirmation = r(level, decimals);
@@ -719,7 +808,7 @@ function detectEngulfing(ctx: DetectorContext): DetectedPattern | null {
   const prevBody = Math.abs(prev.close - prev.open);
   const lastBody = Math.abs(last.close - last.open);
   if (prevBody <= 0 || lastBody <= 0) return null;
-  if (lastBody < prevBody) return null; // last body must dominate
+  if (!atLeast(lastBody, prevBody)) return null; // last body must dominate
 
   // Context: average direction of the ~5 candles before the engulfing pair.
   const ctxCloses = closed.slice(Math.max(0, closed.length - 7), closed.length - 1).map((c) => c.close);
@@ -817,7 +906,7 @@ function detectPinBar(ctx: DetectorContext): DetectedPattern | null {
   const trendSlope = slope(ctxCloses);
 
   // Bullish hammer: long lower wick, small upper wick, after a down move.
-  if (lowerWick >= 2 * bodyRef && upperWick <= bodyRef && trendSlope < 0) {
+  if (atLeast(lowerWick, 2 * bodyRef) && atMost(upperWick, bodyRef) && trendSlope < 0) {
     return pinBarPattern({
       bullish: true,
       wick: lowerWick,
@@ -828,7 +917,7 @@ function detectPinBar(ctx: DetectorContext): DetectedPattern | null {
     });
   }
   // Bearish shooting star: long upper wick, small lower wick, after an up move.
-  if (upperWick >= 2 * bodyRef && lowerWick <= bodyRef && trendSlope > 0) {
+  if (atLeast(upperWick, 2 * bodyRef) && atMost(lowerWick, bodyRef) && trendSlope > 0) {
     return pinBarPattern({
       bullish: false,
       wick: upperWick,
@@ -901,13 +990,13 @@ function detectScalpFlare(ctx: DetectorContext): DetectedPattern | null {
   const baseRangeMax = Math.max(...base.map((c) => c.high - c.low));
 
   // Compression: every base candle's range is well under ATR.
-  const compressed = baseRangeMax <= 0.8 * atrVal;
+  const compressed = atMost(baseRangeMax, 0.8 * atrVal);
   if (!compressed) return null;
 
   const flareRange = last.high - last.low;
   const flareBody = Math.abs(last.close - last.open);
   // Expansion: a wide-range candle with a dominant directional body.
-  const expanded = flareRange >= 1.5 * atrVal && flareBody >= 0.6 * flareRange;
+  const expanded = atLeast(flareRange, 1.5 * atrVal) && atLeast(flareBody, 0.6 * flareRange);
   if (!expanded) return null;
 
   const bullish = last.close > last.open;
@@ -922,7 +1011,7 @@ function detectScalpFlare(ctx: DetectorContext): DetectedPattern | null {
 
   // Overextended flare (ran far past the base) → chase, mark exhausted.
   const extension = bullish ? last.close - baseHigh : baseLow - last.close;
-  const status: PatternStatus = extension >= 3 * atrVal ? "exhausted" : "confirmed";
+  const status: PatternStatus = atLeast(extension, 3 * atrVal) ? "exhausted" : "confirmed";
 
   const score = 45 + clamp((flareRange / atrVal) * 12, 0, 30);
 
@@ -968,7 +1057,7 @@ function extensionExhausted(
   if (height <= 0) return false;
   const moved = dir === "up" ? close - confirmation : confirmation - close;
   // Past the measured move → late/exhausted (chasing).
-  return moved >= height;
+  return atLeast(moved, height);
 }
 
 function timingForBreak(status: PatternStatus): PatternEntryTiming {
@@ -998,6 +1087,13 @@ function symmetryScore(a: number, b: number, atrVal: number | null): number {
   }
   const base = Math.max(Math.abs(a), Math.abs(b), 1e-9);
   return clamp(75 - (diff / base) * 10000, 30, 90);
+}
+
+function lowestBetween(pts: Swing[], from: number, to: number): Swing | undefined {
+  return pts.filter((p) => p.index > from && p.index < to).sort((a, b) => a.price - b.price)[0];
+}
+function highestBetween(pts: Swing[], from: number, to: number): Swing | undefined {
+  return pts.filter((p) => p.index > from && p.index < to).sort((a, b) => b.price - a.price)[0];
 }
 
 function lastTwo<T>(xs: T[]): [T | undefined, T | undefined] {
