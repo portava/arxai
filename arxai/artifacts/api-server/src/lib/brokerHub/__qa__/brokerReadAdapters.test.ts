@@ -146,3 +146,31 @@ test("public market data retains public provenance and never creates trading cap
   assert.equal((await a.readCapabilities()).capabilities.openOrderSnapshot, false);
   assert.equal((await a.readInstruments())[0].brokerReportsTradeAllowed, false);
 });
+
+test("invalid tick time cannot claim connected live data or a zero-second age", async () => {
+  for (const status of [
+    {lastTickAgeMs: -1}, {lastTickAgeMs: Number.NaN}, {lastTickAgeMs: Infinity},
+    {lastTickAgeMs: null}, {lastTickAt: null}, {lastTickAt: "invalid"},
+    {lastTickAt: new Date(NOW + 60_000).toISOString()},
+  ]) {
+    const a = adapter(reader(status));
+    const health = await a.readHealth();
+    assert.equal(health.connected, false);
+    assert.equal(health.status, "DEGRADED");
+    assert.equal(health.staleSeconds, null);
+    assert.equal((await a.readCapabilities()).capabilities.marketDataSnapshot, false);
+  }
+});
+
+test("the Hub refuses future, invalid and out-of-order candles from any feed reader", async () => {
+  for (const candles of [
+    [{epoch: nowSec + 60, close: 1}], [{epoch: Number.NaN, close: 1}],
+    [{epoch: nowSec, close: Number.NaN}], [{epoch: nowSec, close: -1}],
+    [{epoch: nowSec, close: 1}, {epoch: nowSec - 60, close: 1}],
+    [{epoch: nowSec, close: 1}, {epoch: nowSec, close: 1}],
+  ]) {
+    const result = await adapter(reader({}, candles)).readMarketData({exactBrokerSymbol:"R_75",timeframe:"M1"});
+    assert.equal(result.available, false);
+    assert.equal(!result.available && result.reason, "MARKET_DATA_UNAVAILABLE");
+  }
+});

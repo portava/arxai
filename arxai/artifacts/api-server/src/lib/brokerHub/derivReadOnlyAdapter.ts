@@ -93,14 +93,19 @@ export class DerivReadOnlyAdapter implements ReadOnlyBrokerAdapter {
   async readHealth(): Promise<BrokerHealthSnapshot> {
     const feed = this.reader.feedStatus();
     const mapped = HEALTH_BY_STATE[feed.feedReadinessState];
+    const observedMs = feed.lastTickAt == null ? NaN : Date.parse(feed.lastTickAt);
+    const nowMs = this.now();
+    const validTime = feed.lastTickAgeMs != null && Number.isFinite(feed.lastTickAgeMs)
+      && feed.lastTickAgeMs >= 0 && Number.isFinite(observedMs) && Number.isFinite(nowMs) && observedMs <= nowMs;
+    const invalidLiveTime = feed.feedReadinessState === "LIVE_FEED" && !validTime;
     return {
       identity: this.identity,
-      status: mapped.status,
+      status: invalidLiveTime ? "DEGRADED" : mapped.status,
       nativeStatus: feed.feedReadinessState,
-      connected: mapped.connected && feed.connected,
+      connected: mapped.connected && feed.connected && !invalidLiveTime,
       observedAt: feed.lastTickAt,
-      staleSeconds: feed.lastTickAgeMs == null ? null : Math.floor(Math.max(0, feed.lastTickAgeMs) / 1000),
-      reason: mapped.reason,
+      staleSeconds: validTime ? Math.floor(Math.max(feed.lastTickAgeMs!, nowMs - observedMs) / 1000) : null,
+      reason: invalidLiveTime ? "DERIV_TICK_TIME_UNVERIFIED" : mapped.reason,
     };
   }
 
@@ -163,6 +168,14 @@ export class DerivReadOnlyAdapter implements ReadOnlyBrokerAdapter {
     if (!res.ok || res.candles.length === 0) return unavailable("MARKET_DATA_UNAVAILABLE");
 
     const nowMs = this.now();
+    // This boundary serves both legacy and public feeds. A cached provider
+    // success flag cannot make invalid/future bars into current Hub evidence.
+    if (!Number.isFinite(nowMs) || res.candles.some((c, i, rows) =>
+      !Number.isSafeInteger(c.epoch) || c.epoch <= 0 || c.epoch * 1000 > nowMs ||
+      [c.open, c.high, c.low, c.close].some(value => !Number.isFinite(value) || value <= 0) ||
+      c.high < Math.max(c.open, c.low, c.close) || c.low > Math.min(c.open, c.high, c.close) ||
+      i > 0 && c.epoch <= rows[i - 1].epoch
+    )) return unavailable("MARKET_DATA_UNAVAILABLE");
     const latest = res.candles[res.candles.length - 1];
     if (nowMs - latest.epoch * 1000 > granularity * 1000 * BARS_OF_SLACK) return unavailable("MARKET_DATA_STALE");
 
