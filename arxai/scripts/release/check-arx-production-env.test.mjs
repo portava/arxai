@@ -96,3 +96,28 @@ test('preview launcher never invents calendar authority and preserves explicit o
     assert.equal(configured.stdout,'operator-selected|Europe/Helsinki|false');
   } finally { rmSync(folder,{recursive:true,force:true}); }
 });
+
+
+test('Replit targets nested ARX builds and the guarded app-specific production launcher', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'arx-replit-launcher-'));
+  try {
+    mkdirSync(join(folder,'scripts')); mkdirSync(join(folder,'arxai/scripts/release'),{recursive:true}); mkdirSync(join(folder,'bin'));
+    for (const name of ['build-arx-replit-production.sh','run-arx-replit-production.sh']) {
+      writeFileSync(join(folder,'scripts',name),readFileSync(fileURLToPath(new URL('../../../scripts/'+name,import.meta.url))));
+    }
+    const fakePnpm=join(folder,'bin/pnpm');
+    writeFileSync(fakePnpm,'#!/bin/sh\nprintf "%s\\n" "$*"\n'); chmodSync(fakePnpm,0o755);
+    writeFileSync(join(folder,'arxai/scripts/release/build-arx-production.sh'),'#!/bin/sh\nprintf "build:%s\\n" "$1"\n');
+    writeFileSync(join(folder,'arxai/scripts/release/run-arx-production.sh'),'#!/bin/sh\nprintf "%s|%s|%s" "$APP_BASE_URL" "$APP_PUBLIC_ORIGIN" "$*"\n');
+    const env={PATH:join(folder,'bin')+':'+process.env.PATH,APP_BASE_URL:'https://wrong.example',APP_PUBLIC_ORIGIN:'https://wrong.example'};
+    const build=spawnSync('bash',[join(folder,'scripts/build-arx-replit-production.sh')],{env,encoding:'utf8'});
+    assert.equal(build.status,0,build.stderr);
+    assert.deepEqual(build.stdout.trim().split('\n'),['--dir '+join(folder,'arxai')+' install --frozen-lockfile','build:api','build:web']);
+    const run=spawnSync('bash',[join(folder,'scripts/run-arx-replit-production.sh'),'--check'],{env,encoding:'utf8'});
+    assert.equal(run.status,0,run.stderr);
+    assert.equal(run.stdout,'https://arx-ai-baseline-import.replit.app|https://arx-ai-baseline-import.replit.app|--check');
+    const config=readFileSync(fileURLToPath(new URL('../../../.replit',import.meta.url)),'utf8');
+    assert.match(config,/build = "bash scripts\/build-arx-replit-production.sh"/);
+    assert.match(config,/run = "bash scripts\/run-arx-replit-production.sh"/);
+  } finally {rmSync(folder,{recursive:true,force:true});}
+});

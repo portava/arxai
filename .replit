@@ -3,6 +3,8 @@ modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+build = "bash scripts/build-arx-replit-production.sh"
+run = "bash scripts/run-arx-replit-production.sh"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
