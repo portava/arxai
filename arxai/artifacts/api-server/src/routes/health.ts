@@ -24,6 +24,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 import { checkDatabaseReadiness } from "../lib/startup/databaseReadiness.js";
+import { getBuildIdentity } from "../lib/startup/buildIdentity.js";
 
 const router: IRouter = Router();
 
@@ -41,6 +42,7 @@ const SAFETY_ENVELOPE = {
 };
 
 router.get("/healthz", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   // Keep the canonical zod-validated minimal payload first (back-compat),
   // then add safe public diagnostics (uptime, timestamp, version).
   const data = HealthCheckResponse.parse({ status: "ok" });
@@ -49,6 +51,7 @@ router.get("/healthz", (_req, res) => {
     ok: true,
     app: "ARX AI",
     version: APP_VERSION,
+    build: getBuildIdentity(),
     uptimeSeconds: Math.floor((Date.now() - PROCESS_STARTED_AT) / 1000),
     timestamp: new Date().toISOString(),
   });

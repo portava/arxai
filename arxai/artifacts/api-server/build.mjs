@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 import { rm } from "node:fs/promises";
+import { captureBuildIdentity } from "./buildIdentity.mjs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -15,6 +16,7 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
+    define: { __ARX_BUILD_IDENTITY__: JSON.stringify(captureBuildIdentity(artifactDir)) },
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
     platform: "node",
     bundle: true,
