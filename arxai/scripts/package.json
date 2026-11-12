@@ -337,7 +337,8 @@
     "test:broker-hub-contracts": "tsx ./src/brokerHubContractsTest.ts && tsx ./src/ci/check-broker-hub-no-execution.test.ts",
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
     "verify:secret-provisioning": "tsx ./src/verifySecretProvisioning.ts",
-    "test:tier1-scorecard": "python3 -m unittest discover -s arx-scorecard -p \"test_*.py\""
+    "test:tier1-scorecard": "python3 -m unittest discover -s arx-scorecard -p \"test_*.py\"",
+    "test:pattern-quality": "tsx ./src/patternQualityTest.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

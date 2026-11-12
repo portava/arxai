@@ -122,8 +122,9 @@ describe("existing geometry, causal confirmation and plain English", () => {
     const b = hs();
     b[4] = { ...b[4]!, low: 89 };
     for (let i = 21; i <= 27; i++) b[i] = { ...b[i]!, low: 98 };
-    // The unchanged catalogue permits one intervening trough; the chart boundary must not.
-    expect(detectChartPatterns(b).patterns.some(p => p.id === "head_and_shoulders")).toBe(true);
+    // The domain detector now requires a trough on EACH side of the head too
+    // (docs/PATTERN_DETECTION_QUALITY.md), so catalogue and chart boundary agree.
+    expect(detectChartPatterns(b).patterns.some(p => p.id === "head_and_shoulders")).toBe(false);
     expect(find(input(b), "head_and_shoulders")).toBeUndefined();
   });
   it("retains supported catalogue observations at their actual 20-bar minimum", () => {
