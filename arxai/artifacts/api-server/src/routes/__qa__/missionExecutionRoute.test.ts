@@ -575,3 +575,91 @@ test("isolation: a user cannot dispatch another user's draft", async () => {
   // User A's draft is untouched.
   assert.equal(await draftStatus(draftId), "approved");
 });
+
+// Lifecycle and approval checks must hold at the claim boundary, after awaits.
+test("mission lifecycle: inactive states cannot dispatch an otherwise approved live draft", async () => {
+  for (const status of ["draft", "pending_approval", "paused", "target_hit", "stopped_by_risk", "failed", "expired", "completed", "cancelled", "unknown"]) {
+    const missionId = await seedMission(userAId, "live");
+    const draftId = `exec-inactive-${status}`;
+    await seedApprovedDraft({ userId: userAId, missionId, draftId, proposalId: `prop-inactive-${status}` });
+    await db.update(profitMissionsTable).set({ status }).where(eq(profitMissionsTable.id, missionId));
+    const spy = makeSpy({ ok: true, commandId: "must-not-send", action: "BUY" });
+    const result = await dispatchApprovedDraft({ userId: userAId, missionId, draftId }, { executor: spy.fn, phase7Evaluator: passingPhase7Evaluator });
+    assert.equal(result.ok, false, status);
+    if (!result.ok) assert.equal(result.kind, "mission_not_running", status);
+    assert.equal(spy.calls.length, 0, status);
+    assert.equal(await draftStatus(draftId), "approved");
+  }
+});
+
+test("mission lifecycle: protect mode retains the gated execution path", async () => {
+  const missionId = await seedMission(userAId, "live");
+  const draftId = "exec-protect-control";
+  await seedApprovedDraft({ userId: userAId, missionId, draftId, proposalId: "prop-protect-control" });
+  await db.update(profitMissionsTable).set({ status: "protect_mode" }).where(eq(profitMissionsTable.id, missionId));
+  const spy = makeSpy({ ok: true, commandId: "protect-control", action: "BUY" });
+  assert.equal((await dispatchApprovedDraft({ userId: userAId, missionId, draftId }, { executor: spy.fn, phase7Evaluator: passingPhase7Evaluator })).ok, true);
+  assert.equal(spy.calls.length, 1);
+});
+
+test("mission claim rechecks pause, cancellation, execution mode and changed approved economics", async () => {
+  const cases = [
+    { name: "pause", kind: "mission_not_running", mutate: async (id: number, _draft: string) => { await db.update(profitMissionsTable).set({ status: "paused" }).where(eq(profitMissionsTable.id, id)); } },
+    { name: "cancel", kind: "mission_not_running", mutate: async (id: number, _draft: string) => { await db.update(profitMissionsTable).set({ status: "cancelled" }).where(eq(profitMissionsTable.id, id)); } },
+    { name: "mode", kind: "non_live", mutate: async (id: number, _draft: string) => { await db.update(profitMissionsTable).set({ executionMode: "paper" }).where(eq(profitMissionsTable.id, id)); } },
+    { name: "lot", kind: "approval_changed", mutate: async (_id: number, draft: string) => { await db.update(missionTradeDraftsTable).set({ lot: 100 }).where(eq(missionTradeDraftsTable.draftId, draft)); } },
+    { name: "risk", kind: "approval_changed", mutate: async (id: number, _draft: string) => {
+      const [row] = await db.select().from(profitMissionsTable).where(eq(profitMissionsTable.id, id));
+      const previous = row!.riskJson as Record<string, unknown>;
+      await db.update(profitMissionsTable).set({ riskJson: { ...previous, mode: "stop", emergency: { triggered: true, action: "stop", primary: "user_emergency_stop", conditions: ["user_emergency_stop"] } } }).where(eq(profitMissionsTable.id, id));
+    } },
+    { name: "budget", kind: "approval_changed", mutate: async (id: number, _draft: string) => { await db.update(profitMissionsTable).set({ settingsJson: { riskBudget: { maxLossPerDayPct: 0.1 } } }).where(eq(profitMissionsTable.id, id)); } },
+  ];
+  for (const scenario of cases) {
+    const missionId = await seedMission(userAId, "live");
+    const draftId = `exec-claim-${scenario.name}`;
+    await seedApprovedDraft({ userId: userAId, missionId, draftId, proposalId: `prop-claim-${scenario.name}` });
+    const spy = makeSpy({ ok: true, commandId: "must-not-send", action: "BUY" });
+    // The mutation completes while the dispatch is suspended in its evaluator.
+    const evaluator: Phase7Evaluator = async () => { await scenario.mutate(missionId, draftId); return passingPhase7Verdict(); };
+    const result = await dispatchApprovedDraft({ userId: userAId, missionId, draftId }, { executor: spy.fn, phase7Evaluator: evaluator });
+    assert.equal(result.ok, false, scenario.name);
+    if (!result.ok) assert.equal(result.kind, scenario.kind, scenario.name);
+    assert.equal(spy.calls.length, 0, scenario.name);
+    assert.equal(await draftStatus(draftId), "approved");
+  }
+});
+
+test("mission claim reads current time after prechecks: draft and mission expiry refuse at the exact boundary", async () => {
+  for (const expiry of ["draft", "mission"] as const) {
+    const missionId = await seedMission(userAId, "live");
+    const draftId = `exec-clock-${expiry}`;
+    await seedApprovedDraft({ userId: userAId, missionId, draftId, proposalId: `prop-clock-${expiry}` });
+    let clock = Date.now();
+    const deadline = clock + 60_000;
+    if (expiry === "draft") await db.update(missionTradeDraftsTable).set({ expiresAt: new Date(deadline) }).where(eq(missionTradeDraftsTable.draftId, draftId));
+    else await db.update(profitMissionsTable).set({ timeframeEnd: new Date(deadline) }).where(eq(profitMissionsTable.id, missionId));
+    const spy = makeSpy({ ok: true, commandId: "must-not-send", action: "BUY" });
+    const evaluator: Phase7Evaluator = async () => { clock = deadline; return passingPhase7Verdict(); };
+    const result = await dispatchApprovedDraft({ userId: userAId, missionId, draftId }, { executor: spy.fn, phase7Evaluator: evaluator, now: () => clock });
+    assert.equal(result.ok, false, expiry);
+    if (!result.ok) assert.equal(result.kind, expiry === "draft" ? "expired" : "mission_window_closed");
+    assert.equal(spy.calls.length, 0);
+    assert.equal(await draftStatus(draftId), "approved");
+  }
+});
+
+test("mission dispatch HTTP refusals expose lifecycle and approval changes as 409", () => {
+  for (const result of [
+    { ok: false as const, kind: "mission_not_running" as const, status: "paused" },
+    { ok: false as const, kind: "mission_window_closed" as const },
+    { ok: false as const, kind: "approval_changed" as const },
+  ]) {
+    let code = 0;
+    let body: any;
+    const res = { status: (value: number) => { code = value; return res; }, json: (value: unknown) => { body = value; return res; } };
+    sendDispatchFailure(res as any, result);
+    assert.equal(code, 409);
+    assert.equal(typeof body.error, "string");
+  }
+});

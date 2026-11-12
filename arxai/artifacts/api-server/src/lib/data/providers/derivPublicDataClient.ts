@@ -326,7 +326,13 @@ export class DerivPublicDataClient {
       this.requireSession(generation);
       const echo = record(msg.echo_req);
       if (echo && echo.ticks_history !== undefined && echo.ticks_history !== symbol) throw ERROR("DERIV_PUBLIC_SYMBOL_MISMATCH");
+      // req_id binds the response to a request, but contradictory provider
+      // metadata must never relabel a different timeframe/history range.
+      for (const field of ["style", "granularity", "count", "end"] as const) {
+        if (echo && echo[field] !== undefined && echo[field] !== payload[field]) throw ERROR("DERIV_PUBLIC_HISTORY_REQUEST_MISMATCH");
+      }
       const candles = normalizePublicCandles(msg.candles, this.now());
+      if (candles.length > payload.count || end !== undefined && candles.some(c => c.epoch > end)) throw ERROR("DERIV_PUBLIC_HISTORY_RANGE_MISMATCH");
       if (candles.length) { this.lastCandle = Math.max(this.lastCandle ?? 0, candles[candles.length - 1]!.epoch); this.historySymbols.add(symbol); }
       return candles;
     })();

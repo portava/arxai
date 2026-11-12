@@ -19,9 +19,10 @@
 //   - DEMO never touches the live broker: a non-live mission (`paper`/`demo`)
 //     audits + journals the intent and returns without ever calling the live
 //     pipeline. Demo stays demo.
-//   - Per-user / per-mission isolation: mission + draft are loaded `FOR UPDATE`
-//     scoped by (id, userId); the executed-flip is a CAS on the still-approved
-//     row inside one transaction (fail-closed).
+//   - Per-user / per-mission isolation: the final claim locks mission then draft,
+//     revalidates lifecycle, expiry and evaluated inputs, and flips approved to
+//     executed in one short transaction. No broker call holds a database lock.
+import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
 import {
   db,
@@ -68,6 +69,8 @@ export interface DispatchApprovedDraftArgs {
 
 export interface DispatchApprovedDraftOpts {
   executor?: MissionExecutor;
+  /** Injectable advancing clock for deterministic claim-boundary tests. */
+  now?: () => number;
   /** Injectable Phase 7 pre-check evaluator — defaults to the real one. */
   phase7Evaluator?: Phase7Evaluator;
 }
@@ -76,6 +79,9 @@ export type DispatchApprovedDraftResult =
   | { ok: true; commandId?: string; draft: MissionTradeDraftRow }
   | { ok: false; kind: "mission_not_found" }
   | { ok: false; kind: "draft_not_found" }
+  | { ok: false; kind: "mission_not_running"; status: string }
+  | { ok: false; kind: "mission_window_closed" }
+  | { ok: false; kind: "approval_changed" }
   | { ok: false; kind: "not_approved"; status: string }
   | { ok: false; kind: "expired" }
   | { ok: false; kind: "no_direction" }
@@ -89,6 +95,14 @@ export type DispatchApprovedDraftResult =
       primaryReason?: string;
       httpStatus: number;
     };
+
+
+/** Only active lifecycle states inside the mission's time window may claim. */
+function missionDispatchFailure(mission: MissionRow, nowMs: number): Extract<DispatchApprovedDraftResult, { ok: false }> | null {
+  if (mission.status !== "running" && mission.status !== "protect_mode") return { ok: false, kind: "mission_not_running", status: mission.status };
+  if (!Number.isFinite(nowMs) || !(mission.timeframeStart.getTime() <= nowMs) || !(mission.timeframeEnd.getTime() > nowMs)) return { ok: false, kind: "mission_window_closed" };
+  return null;
+}
 
 /** Conservative defaults: no observed anomaly. `feedStatus`/`quoteFresh` are the
  * NEUTRAL element of the additive mission gate ("no extra degradation observed",
@@ -142,7 +156,8 @@ export async function dispatchApprovedDraft(
   opts: DispatchApprovedDraftOpts = {},
 ): Promise<DispatchApprovedDraftResult> {
   const executor = opts.executor ?? submitInstantTrade;
-  const nowMs = args.nowMs ?? Date.now();
+  const now = opts.now ?? (() => args.nowMs ?? Date.now());
+  const nowMs = now();
 
   // ── Load mission + draft, both scoped by userId (per-user isolation) ────────
   const missionRows = await db
@@ -152,6 +167,8 @@ export async function dispatchApprovedDraft(
     .limit(1);
   const mission = missionRows[0] as MissionRow | undefined;
   if (!mission) return { ok: false, kind: "mission_not_found" };
+  const lifecycleFailure = missionDispatchFailure(mission, nowMs);
+  if (lifecycleFailure) return lifecycleFailure;
 
   const draftFilter = args.draftId
     ? eq(missionTradeDraftsTable.draftId, args.draftId)
@@ -316,22 +333,44 @@ export async function dispatchApprovedDraft(
   // row (0 rows updated) and bails WITHOUT ever calling live execution, so an
   // approved draft can never be double-dispatched. This is the safety-critical
   // chokepoint for the first real execution path.
-  const claimedRows = await db
-    .update(missionTradeDraftsTable)
-    .set({ status: "executed", updatedAt: new Date(nowMs) })
-    .where(
-      and(
-        eq(missionTradeDraftsTable.draftId, draft.draftId),
-        eq(missionTradeDraftsTable.userId, args.userId),
-        eq(missionTradeDraftsTable.status, "approved"),
-      ),
-    )
-    .returning();
-  const claimed = claimedRows[0] as MissionTradeDraftRow | undefined;
-  if (!claimed) {
-    // Lost the race: another in-flight dispatch already claimed this draft.
-    return { ok: false, kind: "not_approved", status: "executed" };
-  }
+  const claim = await db.transaction(async (tx): Promise<
+    { ok: true; draft: MissionTradeDraftRow } | Extract<DispatchApprovedDraftResult, { ok: false }>
+  > => {
+    // Same lock order as mission approval/lifecycle writers: parent then child.
+    const [currentMission] = await tx.select().from(profitMissionsTable)
+      .where(and(eq(profitMissionsTable.id, args.missionId), eq(profitMissionsTable.userId, args.userId)))
+      .for("update").limit(1);
+    if (!currentMission) return { ok: false, kind: "mission_not_found" };
+    const [currentDraft] = await tx.select().from(missionTradeDraftsTable)
+      .where(and(eq(missionTradeDraftsTable.draftId, draft.draftId), eq(missionTradeDraftsTable.missionId, args.missionId), eq(missionTradeDraftsTable.userId, args.userId)))
+      .for("update").limit(1);
+    if (!currentDraft) return { ok: false, kind: "draft_not_found" };
+    // Read the clock AFTER lock waits and all asynchronous pre-checks.
+    const claimMs = now();
+    const lifecycleFailure = missionDispatchFailure(currentMission, claimMs);
+    if (lifecycleFailure) return lifecycleFailure;
+    if (currentMission.executionMode !== "live") return { ok: false, kind: "non_live", executionMode: currentMission.executionMode };
+    if (currentDraft.status !== "approved") return { ok: false, kind: "not_approved", status: currentDraft.status };
+    if (currentDraft.expiresAt && !(currentDraft.expiresAt.getTime() > claimMs)) return { ok: false, kind: "expired" };
+    // A new approval/configuration must receive its own pre-checks. Do not send
+    // the stale intent evaluated before an intervening change.
+    // jsonb reorders keys. Compare the persisted operational risk state by
+    // value, ignoring only its observation timestamp (equivalent refreshes).
+    const evaluatedRisk = { ...JSON.parse(JSON.stringify(state)), asOf: null };
+    const persistedRisk = { ...(currentMission.riskJson as Record<string, unknown> | null), asOf: null };
+    if (!isDeepStrictEqual(evaluatedRisk, persistedRisk)) return { ok: false, kind: "approval_changed" };
+    const missionFields = ["status", "startingAmount", "targetAmount", "currentValue", "riskProfile", "settingsJson", "timeframeStart", "timeframeEnd"] as const;
+    const draftFields = ["updatedAt", "symbol", "timeframe", "direction", "entryPrice", "stopLoss", "takeProfit", "lot", "riskAmount", "expectedR", "edgeTier", "expiresAt"] as const;
+    if (missionFields.some(key => JSON.stringify(currentMission[key]) !== JSON.stringify(mission[key])) ||
+      draftFields.some(key => JSON.stringify(currentDraft[key]) !== JSON.stringify(draft[key]))) return { ok: false, kind: "approval_changed" };
+    const [claimed] = await tx.update(missionTradeDraftsTable)
+      .set({ status: "executed", updatedAt: new Date(claimMs) })
+      .where(and(eq(missionTradeDraftsTable.draftId, draft.draftId), eq(missionTradeDraftsTable.userId, args.userId), eq(missionTradeDraftsTable.status, "approved")))
+      .returning();
+    return claimed ? { ok: true, draft: claimed } : { ok: false, kind: "not_approved", status: "executed" };
+  });
+  if (!claim.ok) return claim;
+  const claimed = claim.draft;
 
   const result = await executor({ userId: args.userId, intent, ip: args.ip, ua: args.ua });
 

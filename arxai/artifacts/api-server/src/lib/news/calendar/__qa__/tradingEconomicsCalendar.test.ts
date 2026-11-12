@@ -43,6 +43,7 @@ const ENV_KEYS = [
   "ECONOMIC_CALENDAR_PROVIDER",
   "TRADING_ECONOMICS_KEY",
   "TRADING_ECONOMICS_SECRET",
+  "FRED_API_KEY",
 ] as const;
 
 let envSnapshot: Record<string, string | undefined> = {};
@@ -430,4 +431,140 @@ test("11. heat readCalendarProvider reports the last SUCCESSFUL fetch time, neve
   unconfigureNoKey();
   const missing = await readCalendarProvider("EURUSD", t1);
   assert.equal(missing.updatedAt, null);
+});
+
+
+// Cache provenance adversaries: no provider request leaves this process.
+test("cache identity includes provider and credentials; a failed replacement cannot borrow old events", async () => {
+  configure();
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let calls = 0;
+  __setEconomicCalendarFetcherForTests(async () => {
+    calls++;
+    return { ok: true, status: 200, text: async () => JSON.stringify([rawEvent({})]) };
+  });
+  const first = await getEconomicCalendarResult({ nowMs });
+  const cached = await getEconomicCalendarResult({ nowMs: nowMs + 1000 });
+  assert.equal(calls, 1);
+  assert.equal(cached.events[0]?.lastUpdatedAt, first.events[0]?.lastUpdatedAt);
+  configure("rotated-test-key");
+  await getEconomicCalendarResult({ nowMs: nowMs + 2000 });
+  assert.equal(calls, 2, "credential rotation refetches even the same provider/horizon");
+  process.env.ECONOMIC_CALENDAR_PROVIDER = "fred";
+  process.env.FRED_API_KEY = "fixture-fred-key";
+  __setEconomicCalendarFetcherForTests(async () => {
+    calls++;
+    return { ok: false, status: 503, text: async () => "unavailable" };
+  });
+  const replacement = await getEconomicCalendarResult({ nowMs: nowMs + 3000 });
+  assert.equal(calls, 3);
+  assert.equal(replacement.provider, "fred");
+  assert.equal(replacement.connected, false);
+  assert.equal(replacement.diagnostics.lastSuccessAt, null);
+  assert.deepEqual(replacement.events, [], "TE rows never become FRED stale evidence");
+});
+
+test("calendar cache cannot cross UTC request windows or a clock rollback", async () => {
+  configure();
+  let calls = 0;
+  __setEconomicCalendarFetcherForTests(async () => {
+    calls++;
+    return { ok: true, status: 200, text: async () => "[]" };
+  });
+  const midnight = Date.UTC(2030, 0, 16);
+  await getEconomicCalendarResult({ nowMs: midnight - 1000 });
+  await getEconomicCalendarResult({ nowMs: midnight + 1000 });
+  assert.equal(calls, 2, "new UTC day extends the provider date range");
+  await getEconomicCalendarResult({ nowMs: midnight });
+  assert.equal(calls, 3, "future fetchedAt is never fresh");
+});
+
+test("a delayed old request cannot replace a newer calendar result or its diagnostics", async () => {
+  configure();
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => new Promise(resolve => { release = resolve; }));
+  const older = getEconomicCalendarResult({ nowMs });
+  fetcherReturning([rawEvent({ CalendarId: "newer" })]);
+  const newer = await getEconomicCalendarResult({ nowMs: nowMs + 1000, forceRefresh: true });
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({ CalendarId: "older" })]) });
+  assert.equal((await older).connected, false);
+  const cached = await getEconomicCalendarResult({ nowMs: nowMs + 2000 });
+  assert.deepEqual(cached.events, newer.events);
+  assert.equal(cached.diagnostics.lastError, null);
+  assert.equal(cached.diagnostics.lastSuccessAt, new Date(nowMs + 1000).toISOString());
+});
+
+test("configuration changes invalidate requests already in flight", async () => {
+  configure("old-test-key");
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => new Promise(resolve => { release = resolve; }));
+  const older = getEconomicCalendarResult({ nowMs });
+  configure("new-test-key");
+  fetcherReturning([rawEvent({ CalendarId: "new-key" })]);
+  const fresh = await getEconomicCalendarResult({ nowMs: nowMs + 1000 });
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({ CalendarId: "old-key" })]) });
+  const obsolete = await older;
+  assert.equal(obsolete.connected, false);
+  assert.deepEqual(obsolete.events, []);
+  assert.deepEqual((await getEconomicCalendarResult({ nowMs: nowMs + 2000 })).events, fresh.events);
+});
+
+
+test("concurrent equivalent calendar reads share one fetch and preserve its original evidence time", async () => {
+  configure();
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let calls = 0;
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => { calls++; return new Promise(resolve => { release = resolve; }); });
+  const reads = Array.from({ length: 8 }, (_, i) => getEconomicCalendarResult({ nowMs: nowMs + i }));
+  assert.equal(calls, 1);
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({})]) });
+  for (const result of await Promise.all(reads)) {
+    assert.equal(result.connected, true);
+    assert.equal(result.events[0]?.lastUpdatedAt, new Date(nowMs).toISOString());
+    assert.equal(result.diagnostics.lastSuccessAt, new Date(nowMs).toISOString());
+  }
+});
+
+test("an in-flight provider result is refused if credentials change before another read", async () => {
+  configure();
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => new Promise(resolve => { release = resolve; }));
+  const result = getEconomicCalendarResult({ nowMs: Date.UTC(2030, 0, 15, 10) });
+  configure("changed-with-no-new-read");
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({})]) });
+  assert.equal((await result).connected, false);
+});
+
+test("concurrent different calendar horizons retain their own evidence without overwriting newer cache", async () => {
+  configure();
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => new Promise(resolve => { release = resolve; }));
+  const short = getEconomicCalendarResult({ nowMs, daysAhead: 1 });
+  fetcherReturning([rawEvent({ CalendarId: "wide-window" })]);
+  const wide = await getEconomicCalendarResult({ nowMs: nowMs + 1000, daysAhead: 7 });
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({ CalendarId: "short-window" })]) });
+  const shortResult = await short;
+  assert.equal(shortResult.connected, true);
+  assert.match(shortResult.events[0]!.id, /short-window/);
+  const cached = await getEconomicCalendarResult({ nowMs: nowMs + 2000, daysAhead: 7 });
+  assert.deepEqual(cached.events, wide.events);
+  assert.equal(cached.diagnostics.lastSuccessAt, new Date(nowMs + 1000).toISOString());
+});
+
+test("a hung calendar request cannot monopolize its single-flight slot beyond the request timeout", async () => {
+  configure();
+  const nowMs = Date.UTC(2030, 0, 15, 10);
+  let release!: (value: { ok: boolean; status: number; text(): Promise<string> }) => void;
+  __setEconomicCalendarFetcherForTests(() => new Promise(resolve => { release = resolve; }));
+  const hung = getEconomicCalendarResult({ nowMs });
+  fetcherReturning([rawEvent({ CalendarId: "after-timeout" })]);
+  const recovered = await getEconomicCalendarResult({ nowMs: nowMs + 8000 });
+  assert.equal(recovered.connected, true);
+  release({ ok: true, status: 200, text: async () => JSON.stringify([rawEvent({ CalendarId: "timed-out" })]) });
+  assert.equal((await hung).connected, false);
+  assert.deepEqual((await getEconomicCalendarResult({ nowMs: nowMs + 9000 })).events, recovered.events);
 });

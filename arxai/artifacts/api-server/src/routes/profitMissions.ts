@@ -901,6 +901,15 @@ export function sendDispatchFailure(
     case "draft_not_found":
       res.status(404).json({ error: "Mission or approved draft not found" });
       return;
+    case "mission_not_running":
+      res.status(409).json({ error: "This mission is not running; execution is refused.", missionStatus: result.status });
+      return;
+    case "mission_window_closed":
+      res.status(409).json({ error: "This mission is outside its execution time window." });
+      return;
+    case "approval_changed":
+      res.status(409).json({ error: "The mission or approved draft changed during safety checks. Run the checks again before execution." });
+      return;
     case "not_approved":
       res.status(409).json({ error: "This draft must be approved before it can be executed." });
       return;

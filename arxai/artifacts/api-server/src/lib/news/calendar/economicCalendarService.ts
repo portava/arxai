@@ -13,6 +13,7 @@
 // Read/risk-context only. Imports nothing from the execution path, MT5 bridge,
 // broker dispatch, or any safety gate.
 
+import { createHash } from "node:crypto";
 import { logger } from "../../logger.js";
 import type {
   CalendarEvent,
@@ -39,15 +40,26 @@ import {
 const CACHE_TTL_MS = 5 * 60_000; // 5 min — calendars change slowly.
 const DELAYED_AFTER_MS = 2 * 60_000;
 const DEFAULT_DAYS_AHEAD = 7;
+const FETCH_TIMEOUT_MS = 8_000;
 
 interface CacheEntry {
   events: CalendarEvent[];
   fetchedAtMs: number;
   /** Horizon this entry was fetched for — cache is only reused for the SAME window. */
   daysAhead: number;
+  windowStart: string;
 }
 
 let _cache: CacheEntry | null = null;
+// A cache belongs to a provider configuration, never merely to a horizon.
+// Hashes are internal only; raw credentials never enter diagnostics or cache keys.
+let _configurationKey: string | null = null;
+let _generation = 0;
+let _fetchSequence = 0;
+interface PendingFetch { promise: Promise<CalendarEvent[]>; sequence: number; fetchedAtMs: number; superseded: boolean }
+const _pending = new Map<string, PendingFetch>();
+const configurationKey = (provider: string, config: unknown) =>
+  createHash("sha256").update(JSON.stringify([provider, config])).digest("hex");
 let _lastFetchAt: number | null = null;
 let _lastSuccessAt: number | null = null;
 let _lastError: string | null = null;
@@ -61,18 +73,24 @@ export function __setEconomicCalendarFetcherForTests(fn: CalendarHttpFetcher | n
   _fetcher = fn;
 }
 
-/** TEST-ONLY: clear the in-memory cache + last-* telemetry. */
-export function __resetEconomicCalendarStateForTests(): void {
+/** Invalidate cached evidence, pending publication rights and telemetry. */
+function resetCalendarState(): void {
   _cache = null;
+  _configurationKey = null;
+  _generation++;
+  _fetchSequence = 0;
+  _pending.clear();
   _lastFetchAt = null;
   _lastSuccessAt = null;
   _lastError = null;
   _lastStatus = "missing";
 }
 
+export function __resetEconomicCalendarStateForTests(): void { resetCalendarState(); }
+
 function defaultFetcher(): CalendarHttpFetcher {
   return async (url: string) => {
-    const r = await fetch(url, { headers: { accept: "application/json" } });
+    const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     return { ok: r.ok, status: r.status, text: () => r.text() };
   };
 }
@@ -127,6 +145,7 @@ function buildDiagnostics(args: {
  */
 interface ActiveCalendarProvider {
   name: string;
+  configurationKey: string;
   apiKeyPresent: boolean;
   fetch(opts: { daysAhead: number; nowMs: number; fetcher: CalendarHttpFetcher }): Promise<CalendarEvent[]>;
   redact(err: unknown): string;
@@ -137,6 +156,7 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
   if (teCfg) {
     return {
       name: TRADING_ECONOMICS_PROVIDER,
+      configurationKey: configurationKey(TRADING_ECONOMICS_PROVIDER, teCfg),
       apiKeyPresent: (process.env["TRADING_ECONOMICS_KEY"] ?? "").trim().length > 0,
       fetch: (o) => fetchTradingEconomicsCalendar(teCfg, o),
       redact: (err) => redactError(err, teCfg),
@@ -146,6 +166,7 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
   if (fredCfg) {
     return {
       name: FRED_PROVIDER,
+      configurationKey: configurationKey(FRED_PROVIDER, fredCfg),
       apiKeyPresent: (process.env["FRED_API_KEY"] ?? "").trim().length > 0,
       fetch: (o) => fetchFredCalendar(fredCfg, o),
       redact: (err) => redactFredError(err, fredCfg),
@@ -187,6 +208,11 @@ export async function getEconomicCalendarResult(
   const nowMs = opts.nowMs ?? Date.now();
   const daysAhead = opts.daysAhead ?? DEFAULT_DAYS_AHEAD;
   const active = resolveActiveCalendarProvider();
+  if (_configurationKey !== (active?.configurationKey ?? null)) {
+    resetCalendarState();
+    _configurationKey = active?.configurationKey ?? null;
+  }
+  const generation = _generation;
 
   // ── Not configured ⇒ honest "missing" (never "no events"). ────────────────
   if (!active) {
@@ -215,6 +241,8 @@ export async function getEconomicCalendarResult(
 
   const provider = active.name;
   const apiKeyPresent = active.apiKeyPresent;
+  const requestDate = new Date(nowMs);
+  const windowStart = Number.isFinite(requestDate.getTime()) ? requestDate.toISOString().slice(0, 10) : "invalid";
 
   // ── Serve from cache when fresh AND for the SAME horizon. ─────────────────
   // The cache is keyed by daysAhead so a request for one window can never reuse
@@ -223,6 +251,8 @@ export async function getEconomicCalendarResult(
     !opts.forceRefresh &&
     _cache &&
     _cache.daysAhead === daysAhead &&
+    _cache.windowStart === windowStart &&
+    nowMs >= _cache.fetchedAtMs &&
     nowMs - _cache.fetchedAtMs <= CACHE_TTL_MS
   ) {
     const ageMs = nowMs - _cache.fetchedAtMs;
@@ -251,59 +281,83 @@ export async function getEconomicCalendarResult(
 
   // ── Fresh fetch. ──────────────────────────────────────────────────────────
   const fetcher = _fetcher ?? defaultFetcher();
-  _lastFetchAt = nowMs;
+  const requestKey = JSON.stringify([generation, windowStart, daysAhead]);
+  let pending = !opts.forceRefresh ? _pending.get(requestKey) : undefined;
+  // Never let a hung request (including an injected transport) permanently own
+  // the single-flight slot, or treat a future-stamped request as fresh.
+  if (pending && (nowMs < pending.fetchedAtMs || nowMs - pending.fetchedAtMs >= FETCH_TIMEOUT_MS)) pending = undefined;
+  if (!pending) {
+    const sequence = ++_fetchSequence;
+    const previous = _pending.get(requestKey);
+    if (previous) previous.superseded = true;
+    pending = { promise: active.fetch({ daysAhead, nowMs, fetcher }), sequence, fetchedAtMs: nowMs, superseded: false };
+    _pending.set(requestKey, pending);
+    _lastFetchAt = Number.isFinite(requestDate.getTime()) ? nowMs : null;
+  }
+  const { sequence: fetchSequence, fetchedAtMs } = pending;
   try {
-    const events = await active.fetch({ daysAhead, nowMs, fetcher });
-    _cache = { events, fetchedAtMs: nowMs, daysAhead };
-    _lastSuccessAt = nowMs;
-    _lastError = null;
+    const events = await pending.promise;
+    // A newer fetch for this exact window supersedes old evidence. Distinct
+    // windows remain independently valid, but only the latest request publishes
+    // shared cache/diagnostics so an older completion cannot overwrite them.
+    if (generation !== _generation || pending.superseded || active.configurationKey !== resolveActiveCalendarProvider()?.configurationKey) throw new Error("Calendar request superseded");
     const status: EconomicCalendarStatus = events.length > 0 ? "ok" : "empty";
-    _lastStatus = status;
+    if (fetchSequence === _fetchSequence) {
+      _cache = { events, fetchedAtMs, daysAhead, windowStart };
+      _lastSuccessAt = fetchedAtMs;
+      _lastError = null;
+      _lastStatus = status;
+    }
     return {
       status,
       connected: true,
       configured: true,
       provider,
       events,
-      diagnostics: buildDiagnostics({
-        provider,
-        configured: true,
-        apiKeyPresent,
-        status,
-        events,
-        freshness: "LIVE",
-        cacheAgeMs: 0,
-      }),
+      diagnostics: {
+        ...buildDiagnostics({ provider, configured: true, apiKeyPresent, status, events,
+          freshness: "LIVE", cacheAgeMs: 0 }),
+        lastFetchAt: new Date(fetchedAtMs).toISOString(),
+        lastSuccessAt: new Date(fetchedAtMs).toISOString(),
+        lastError: null,
+      },
       message: messageFor(status, provider),
     };
   } catch (err) {
-    _lastError = active.redact(err);
-    _lastStatus = "error";
+    const error = active.redact(err);
+    const current = generation === _generation && !pending.superseded && fetchSequence === _fetchSequence && active.configurationKey === resolveActiveCalendarProvider()?.configurationKey;
+    if (current) {
+      _lastError = error;
+      _lastStatus = "error";
+    }
     // Log presence only — NEVER the key/secret.
     logger.warn(
-      { provider, configured: true, error: _lastError },
+      { provider, configured: true, error },
       "economic calendar fetch failed",
     );
     // Stale cache is returned ONLY for diagnostics, labelled STALE + disconnected.
-    const staleEvents =
-      _cache != null ? _cache.events.map((e) => ({ ...e, freshness: "STALE" as const })) : [];
+    const staleCache = current && _cache?.daysAhead === daysAhead && _cache.windowStart === windowStart
+      && nowMs >= _cache.fetchedAtMs ? _cache : null;
+    const staleEvents = staleCache?.events.map((e) => ({ ...e, freshness: "STALE" as const })) ?? [];
     return {
       status: "error",
       connected: false,
       configured: true,
       provider,
       events: staleEvents,
-      diagnostics: buildDiagnostics({
-        provider,
-        configured: true,
-        apiKeyPresent,
-        status: "error",
-        events: staleEvents,
-        freshness: staleEvents.length > 0 ? "STALE" : "UNAVAILABLE",
-        cacheAgeMs: _cache != null ? nowMs - _cache.fetchedAtMs : null,
-      }),
+      diagnostics: {
+        ...buildDiagnostics({
+          provider, configured: true, apiKeyPresent, status: "error", events: staleEvents,
+          freshness: staleEvents.length > 0 ? "STALE" : "UNAVAILABLE",
+          cacheAgeMs: staleCache != null ? nowMs - staleCache.fetchedAtMs : null,
+        }),
+        ...(!current ? { lastFetchAt: Number.isFinite(requestDate.getTime()) ? requestDate.toISOString() : null, lastSuccessAt: null } : {}),
+        lastError: error,
+      },
       message: messageFor("error", provider),
     };
+  } finally {
+    if (_pending.get(requestKey) === pending) _pending.delete(requestKey);
   }
 }
 

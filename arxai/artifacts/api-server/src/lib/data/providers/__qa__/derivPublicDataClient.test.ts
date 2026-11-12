@@ -235,3 +235,34 @@ test("public request budget refuses bursts while ping remains available", async 
   await f.client.request({ ping: 1 });
   assert.equal(f.sockets[0]!.sent.filter(r => !r.ping).length, 180);
 });
+
+
+test("history refuses contradictory timeframe, style, count and end evidence before caching", async t => {
+  for (const mismatch of [{ granularity: 300 }, { style: "ticks" }, { count: 200 }, { end: epoch - 60 }]) {
+    const f = fixture({ reply: (socket, request) => {
+      if (!request.ticks_history) return false;
+      socket.respond(request, { echo_req: { ...request, ...mismatch }, candles: [{ epoch, open: 10, high: 11, low: 9, close: 10 }] });
+      return true;
+    }});
+    t.after(() => f.client.stop());
+    await assert.rejects(f.client.getCandles("R_75", 60, 5), /HISTORY_REQUEST_MISMATCH/);
+    assert.equal(f.client.hasSymbolHistory("R_75"), false);
+    assert.equal(f.client.getLastCandleAt(), null);
+  }
+});
+
+test("history refuses bars past requested end and over-count responses while accepting exact boundaries", async t => {
+  const candle = (at: number) => ({ epoch: at, open: 10, high: 11, low: 9, close: 10 });
+  let candles = [candle(epoch)];
+  const f = fixture({ reply: (socket, request) => {
+    if (!request.ticks_history) return false;
+    socket.respond(request, { echo_req: request, candles }); return true;
+  }});
+  t.after(() => f.client.stop());
+  await assert.rejects(f.client.getCandles("R_75", 60, 1, epoch - 60), /HISTORY_RANGE_MISMATCH/);
+  candles = [candle(epoch - 60), candle(epoch)];
+  await assert.rejects(f.client.getCandles("R_75", 60, 1, epoch), /HISTORY_RANGE_MISMATCH/);
+  assert.equal(f.client.hasSymbolHistory("R_75"), false);
+  assert.deepEqual(await f.client.getCandles("R_75", 60, 2, epoch), candles);
+  assert.equal(f.client.hasSymbolHistory("R_75"), true);
+});
