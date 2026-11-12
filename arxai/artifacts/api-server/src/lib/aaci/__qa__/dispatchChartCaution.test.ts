@@ -84,17 +84,20 @@ function legacySnapshot(snap: AaciSharedTruthSnapshot, state: ChartIntelligenceS
 
 let nextSnapshot: AaciSharedTruthSnapshot | null = null;
 const scored: AaciSharedTruthSnapshot[] = [];
+const contexts: Array<{ timeframe?: string; setupType?: string }> = [];
+const snapshotTimeframes: Array<string | undefined> = [];
 
 mock.module("../snapshotService.js", {
   namedExports: {
-    buildAaciSnapshot: async () => structuredClone(nextSnapshot),
+    buildAaciSnapshot: async (input: { timeframe?: string }) => { snapshotTimeframes.push(input.timeframe); return structuredClone(nextSnapshot); },
     smartChartFromState: realSmartChartFromState,
   },
 });
 mock.module("../decisionService.js", {
   namedExports: {
-    buildAaciDecision: async (input: { snapshot: AaciSharedTruthSnapshot }) => {
+    buildAaciDecision: async (input: { snapshot: AaciSharedTruthSnapshot; timeframe?: string; setupType?: string }) => {
       scored.push(input.snapshot);
+      contexts.push({ timeframe: input.timeframe, setupType: input.setupType });
       return {
         decisionId: "d",
         timestamp: iso(NOW),
@@ -228,4 +231,25 @@ test("an old closed bar keeps its lower candle score on the dispatch path", asyn
   const rec = candle(snap, Date.now());
   assert.equal(rec.stale, true);
   assert.equal(rec.score, 0, "a bar a minute old scores below the old unknown 25");
+});
+
+
+test("execution advisory preserves the persisted timeframe and outcome classifier", async () => {
+  nextSnapshot = snapshotFromState(chartState({ chartTruthScore: 75, structureClarity: 100 }));
+  snapshotTimeframes.length = contexts.length = 0;
+  await evaluateAaciExecutionAdvisory({ executingUserId: 7, agentId: 1, agentKey: "agent-1", funded: true, active: true,
+    symbol: "EURUSD", timeframe: "M5", setupType: "Breakout" });
+  assert.deepEqual(snapshotTimeframes, ["M5"]);
+  assert.deepEqual(contexts, [{ timeframe: "M5", setupType: "Breakout" }]);
+});
+
+test("unsupported timeframe withholds dispatch instead of scoring a substitute timeframe", async () => {
+  snapshotTimeframes.length = contexts.length = 0;
+  const result = await evaluateAaciExecutionAdvisory({ executingUserId: 7, agentId: 1, agentKey: "agent-1", funded: true, active: true,
+    symbol: "EURUSD", timeframe: "M2", setupType: "Breakout" });
+  assert.equal(result.decision, null);
+  assert.equal(result.advisory.proceed, false);
+  assert.equal(result.advisory.downgradeToPrepareOnly, true);
+  assert.deepEqual(snapshotTimeframes, []);
+  assert.deepEqual(contexts, []);
 });

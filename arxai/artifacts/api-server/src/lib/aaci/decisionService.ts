@@ -42,6 +42,8 @@ export interface BuildAaciDecisionInput {
   symbol?: string;
   timeframe?: string;
   strategy?: AaciStrategyKind;
+  /** Exact stored outcome classifier; separate from the decay strategy kind. */
+  setupType?: string;
   // Age (ms) of the signal being acted on, for edge-decay. Default 0 (fresh).
   signalAgeMs?: number;
   persist?: boolean;
@@ -169,12 +171,12 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
   // We fold every entity dimension whose trust key shares the decision's own
   // vocabulary — symbol, timeframe, and (for agent actors) the agent key — and
   // take the MOST CAUTIOUS reading across them (lowest trust/drift, excluded if
-  // any is quarantined). Strategy trust is intentionally NOT consumed here: its
-  // ingested key is the decision's setupType classifier, a different vocabulary
-  // from `input.strategy` (AaciStrategyKind), so reading it would be dead wiring.
+  // any is quarantined). Strategy trust uses only an explicitly supplied
+  // stored setupType, never the unrelated decay-strategy vocabulary.
   const learnedScopeKeys: { entityType: AaciTrustEntityType; entityKey: string }[] = [];
   if (input.symbol) learnedScopeKeys.push({ entityType: "symbol", entityKey: input.symbol });
   if (input.timeframe) learnedScopeKeys.push({ entityType: "timeframe", entityKey: input.timeframe });
+  if (input.setupType?.trim()) learnedScopeKeys.push({ entityType: "strategy", entityKey: input.setupType.trim() });
   if (actorType === "self_trade_agent" && input.actorId) {
     learnedScopeKeys.push({ entityType: "agent", entityKey: input.actorId });
   }

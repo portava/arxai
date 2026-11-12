@@ -261,6 +261,8 @@ export async function executeAgentDecision(
     funded: (input.ledger?.allocatedFunds ?? 0) > 0,
     active: true,
     symbol: decision.symbol,
+    timeframe: decision.timeframe ?? "",
+    setupType: decision.setupType ?? undefined,
     signalAgeMs,
   });
 

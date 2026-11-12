@@ -149,13 +149,16 @@ mock.module("../../live/accountCurrency.js", {
 });
 mock.module("../../aaci/executionAdvisory.js", {
   namedExports: {
-    evaluateAaciExecutionAdvisory: async () => ({
+    evaluateAaciExecutionAdvisory: async (input: { timeframe?: string; setupType?: string }) => {
+      assert.equal(input.timeframe, "M5", "the executor forwards its stored decision timeframe");
+      assert.equal(input.setupType, "TEST", "the executor forwards its stored classifier");
+      return {
       advisory: {
         proceed: true,
         downgradeToPrepareOnly: false,
         sizeMultiplier: 1,
       },
-    }),
+    }; },
   },
 });
 const { reserveAgentEntry } = await import("../entryReservation.js");

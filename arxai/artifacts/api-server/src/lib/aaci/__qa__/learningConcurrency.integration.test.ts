@@ -153,15 +153,16 @@ test("trust, adaptive weight and both audits roll back together", async () => {
 });
 
 test("real closed outcomes update bounded weights consumed by actual AACI decision scoring", async () => {
-  const agentKey = key("pipeline-agent"), symbol = key("pipeline-symbol"), timeframe = key("pipeline-timeframe");
+  const agentKey = key("pipeline-agent"), symbol = key("pipeline-symbol"), timeframe = key("pipeline-timeframe"), setupType = key("pipeline-classifier");
+  weightKeys.add(outcomeWeightKey("strategy", setupType));
   weightKeys.add(outcomeWeightKey("timeframe", timeframe));
   weightKeys.add(outcomeWeightKey("agent", agentKey));
   const [agent] = await db.insert(agents).values({ agentKey, name: "QA learning pipeline", profileTemplate: "ALPHA" }).returning();
   agentIds.push(agent!.id);
-  const [decision] = await db.insert(decisions).values({ agentId: agent!.id, agentKey, cycleId: tag, symbol, timeframe, outcome: "TRADE", confidence: 0, setupScore: 95, plannedAction: "BUY", reason: "QA: zero confidence must remain a poor decision" }).returning();
+  const [decision] = await db.insert(decisions).values({ agentId: agent!.id, agentKey, cycleId: tag, symbol, timeframe, setupType, outcome: "TRADE", confidence: 0, setupScore: 95, plannedAction: "BUY", reason: "QA: zero confidence must remain a poor decision" }).returning();
   await db.insert(executions).values(Array.from({ length: 20 }, (_, i) => ({ agentId: agent!.id, agentKey, decisionId: decision!.id, symbol, side: "BUY", idempotencyKey: `${tag}-pipeline-${i}`, status: "CLOSED", realizedPnl: -1 })));
   const ingested = await ingestAgentOutcomes(agent!.id);
-  assert.equal(ingested.applied, 60);
+  assert.equal(ingested.applied, 80);
   const scope = { entityType: "symbol" as const, entityKey: symbol };
   const row = (await getTrustRow(db, scope))!;
   const weight = await getActiveWeight({ weightKey: outcomeWeightKey("symbol", symbol) });
@@ -175,6 +176,14 @@ test("real closed outcomes update bounded weights consumed by actual AACI decisi
   assert.equal(scored.learningEvidence![0]!.trustVersion, row.version);
   assert.equal(scored.learningEvidence![0]!.weightVersion, (await weightRow(outcomeWeightKey("symbol", symbol))).version);
   assert.equal(scored.hardGatePass, false, "learned weights never bypass the unavailable bridge/risk gates");
+  const classifierTrust = await getLearnedTrustForDecision({ entityType: "strategy", entityKey: setupType });
+  const classifierDecision = await buildAaciDecision({ snapshot, userId: 7, actorType: "user", setupType,
+    actionRequested: "advisory", persist: false });
+  assert.equal(classifierDecision.learnedTrustScore, classifierTrust.learnedTrustScore);
+  assert.deepEqual(classifierDecision.learningEvidence, [classifierTrust.learningEvidence]);
+  assert.equal(classifierDecision.hardGatePass, false);
+  const unrelated = await buildAaciDecision({ snapshot, userId: 7, actorType: "user", setupType: `${setupType}-other`, actionRequested: "advisory", persist: false });
+  assert.equal(unrelated.learnedTrustScore, 50, "a different classifier cannot inherit this strategy's history");
   assert.equal((await ingestAgentOutcomes(agent!.id)).applied, 0);
   assert.equal(await getActiveWeight({ weightKey: outcomeWeightKey("symbol", symbol) }), weight);
   const [lucky] = await db.insert(executions).values({ agentId: agent!.id, agentKey, decisionId: decision!.id, symbol, side: "BUY", idempotencyKey: `${tag}-lucky`, status: "CLOSED", realizedPnl: 100 }).returning();

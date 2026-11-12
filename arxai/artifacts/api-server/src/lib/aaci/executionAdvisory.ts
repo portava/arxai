@@ -272,7 +272,9 @@ export interface AaciExecutionAdvisoryInput {
   funded: boolean;
   active: boolean;
   symbol: string;
-  timeframe?: "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1";
+  timeframe?: string;
+  /** Exact classifier on the persisted decision, matching outcome ingestion. */
+  setupType?: string;
   signalAgeMs?: number;
   threshold?: number;
 }
@@ -289,6 +291,9 @@ export async function evaluateAaciExecutionAdvisory(
 ): Promise<{ advisory: AaciExecutionAdvisory; decision: AaciDecision | null }> {
   const timeframe = input.timeframe ?? "M15";
   try {
+    if (!["M1", "M5", "M15", "M30", "H1", "H4", "D1"].includes(timeframe)) {
+      throw new Error("Unsupported decision timeframe; no substitute timeframe may authorize dispatch");
+    }
     // Dispatch never scores looser chart inputs than the shared snapshot
     // gave it before its chart read was made truthful (see the helper).
     const snapshot = holdDispatchChartInputsCautious(
@@ -329,6 +334,7 @@ export async function evaluateAaciExecutionAdvisory(
       actionRequested: "AUTONOMOUS_EXECUTE",
       symbol: input.symbol,
       timeframe,
+      setupType: input.setupType,
       signalAgeMs: input.signalAgeMs ?? 0,
       securityHandshakePass: handshake.verdict.securityHandshakePass,
       persist: true,
