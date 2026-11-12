@@ -13,6 +13,7 @@ export type EvidenceSource = "tool" | "user";
 
 export interface EvidenceNumber {
   value: number;
+  entities?: string[];
   /** Lower-cased key tokens of the leaf, e.g. stopLoss -> ["stop", "loss"]. */
   keyTokens: string[];
   key: string;
@@ -103,6 +104,9 @@ export function numbersInText(s: string): number[] {
 }
 
 interface Frame {
+  entities?: string[];
+  entitySymbols?: string[];
+  entityIds?: string[];
   stale: boolean | null;
   staleAsOf: string | null;
   calibrated: boolean | null;
@@ -169,7 +173,17 @@ function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
     calibrationKind = obj.calibrated ? "measured" : null;
     calibrationN = null;
   }
-  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN };
+  const valuesFor = (keys: RegExp) => Object.entries(obj)
+    .filter(([key, value]) => keys.test(key) && (typeof value === "string" || typeof value === "number"))
+    .map(([, value]) => String(value).toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const ownSymbols = valuesFor(/^(symbol|displaySymbol|instrument|ticker|pair)$/);
+  const ownIds = valuesFor(/^(ticket|id|actionId|mt5OrderTicket|mt5PositionTicket)$/);
+  // A child with its own identity replaces that part of the ancestor scope.
+  const entitySymbols = ownSymbols.length ? ownSymbols : parent.entitySymbols ?? [];
+  const entityIds = ownIds.length ? ownIds : parent.entityIds ?? [];
+  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN,
+    entitySymbols, entityIds, entities: [...entitySymbols, ...entityIds] };
+
 }
 
 function addTimes(s: string, tool: string, out: EvidenceTime[]): void {
@@ -194,7 +208,7 @@ function executionOf(obj: Record<string, unknown>, tool: string, path: string): 
   const hasFill = obj.fillPrice != null && (obj.executedAt != null || obj.filledAt != null);
   const executed = EXECUTED_STATUSES.has(s) || obj.executed === true || obj.filled === true || (hasFill && !PARTIAL_STATUSES.has(s));
   const partial = PARTIAL_STATUSES.has(s);
-  const looksLikeOrder = status != null || "fillPrice" in obj || "executed" in obj || "mt5OrderTicket" in obj || "ticket" in obj;
+  const looksLikeOrder = "actionId" in obj || "mt5OrderTicket" in obj || "mt5PositionTicket" in obj || "ticket" in obj || (hasFill && /execution|order|trade|fill/i.test(tool));
   if (!looksLikeOrder) return null;
   const t = obj.mt5PositionTicket ?? obj.mt5OrderTicket ?? obj.ticket ?? null;
   const ids = Object.entries(obj)

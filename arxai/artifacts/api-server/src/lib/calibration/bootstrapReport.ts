@@ -25,6 +25,8 @@ export interface StrategyReportRow {
   n: number;
   status: CalibrationFit["status"];
   baseRate: number | null;
+  method: CalibrationFit["method"];
+  holdout: CalibrationFit["holdout"];
   model: CalibrationFit["model"];
   edgeDetected: boolean;
   improvementLower95: number | null;
@@ -39,6 +41,8 @@ export interface AgentReportRow {
   n: number;
   status: CalibrationFit["status"];
   baseRate: number | null;
+  method: CalibrationFit["method"];
+  holdout: CalibrationFit["holdout"];
   edgeDetected: boolean;
   influence: number;
   basis: string;
@@ -66,6 +70,8 @@ export function strategyReport(ev: ReplayEvidence): StrategyReportRow[] {
       n: fit.n,
       status: fit.status,
       baseRate: round(fit.baseRate),
+      method: fit.method,
+      holdout: fit.holdout,
       model: fit.model,
       edgeDetected: fit.edgeDetected,
       improvementLower95: fit.cv ? round(fit.cv.improvementLower95, 6) : null,
@@ -87,6 +93,8 @@ export function agentReport(ev: ReplayEvidence): AgentReportRow[] {
       n: t.n,
       status: t.status,
       baseRate: round(t.fit.baseRate),
+      method: t.fit.method,
+      holdout: t.fit.holdout,
       edgeDetected: t.fit.edgeDetected,
       influence: t.influence,
       basis: t.basis,

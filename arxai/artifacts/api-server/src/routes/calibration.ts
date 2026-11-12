@@ -27,6 +27,7 @@ import {
 import { getCalibrationRefitStatus } from "../lib/calibration/refitWorker.js";
 import { isPublicReplay, PRECEDENCE_RULE, type FitProvenance } from "../lib/calibration/provenance.js";
 import {
+  type CalibrationFit,
   CALIBRATION_EDGE_MIN_SAMPLE,
   CALIBRATION_METHOD,
   CALIBRATION_MIN_SAMPLE,
@@ -50,6 +51,7 @@ export interface CalibrationSummaryRow {
   brierBaseline: number | null;
   brierRaw: number | null;
   edgeDetected: boolean;
+  holdout: CalibrationFit["holdout"];
   label: string;
   reliability: { lo: number; hi: number; n: number; meanPredicted: number | null; observedRate: number | null }[];
   rawReliability: { lo: number; hi: number; n: number; meanPredicted: number | null; observedRate: number | null }[];
@@ -80,6 +82,7 @@ export function buildCalibrationSummary() {
       brierBaseline: f.brierBaseline,
       brierRaw: f.brierRaw,
       edgeDetected: f.edgeDetected,
+      holdout: f.holdout ?? null,
       label: formatCalibrationLabel(f.status === "measured" ? f.baseRate : null, f.n),
       reliability: f.reliability,
       rawReliability: f.rawReliability,

@@ -4,6 +4,7 @@
 // (N, wins or the newest outcome time). An unchanged refit writes nothing, so
 // versions mark real changes in evidence, not worker ticks.
 
+import { stableStringify } from "@workspace/features/event-chain";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, calibrationFitsTable } from "@workspace/db";
 import type { CalibrationFit } from "@workspace/domain/calibration";
@@ -26,6 +27,8 @@ export async function persistFit(f: FitToPersist): Promise<{ version: number; wr
   const latest = await db
     .select({
       version: calibrationFitsTable.version,
+      method: calibrationFitsTable.method,
+      fit: calibrationFitsTable.fit,
       n: calibrationFitsTable.n,
       wins: calibrationFitsTable.wins,
       dataTo: calibrationFitsTable.dataTo,
@@ -39,6 +42,8 @@ export async function persistFit(f: FitToPersist): Promise<{ version: number; wr
   const prev = latest[0];
   const sameData =
     prev &&
+    prev.method === f.fit.method &&
+    stableStringify(prev.fit) === stableStringify(f.fit) &&
     prev.n === f.fit.n &&
     prev.wins === f.fit.wins &&
     prev.source === f.source &&

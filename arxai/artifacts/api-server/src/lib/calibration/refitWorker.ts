@@ -95,6 +95,7 @@ async function eleanorSamples(): Promise<{ all: TimedSample[]; scanner: TimedSam
       outcomeStatus: eleanorSignalOutcomesTable.outcomeStatus,
       scannerSignalId: eleanorSignalOutcomesTable.scannerSignalId,
       createdAt: eleanorSignalOutcomesTable.createdAt,
+      resolvedAt: eleanorSignalOutcomesTable.resolvedAt,
     })
     .from(eleanorSignalOutcomesTable)
     .where(and(
@@ -110,6 +111,7 @@ async function eleanorSamples(): Promise<{ all: TimedSample[]; scanner: TimedSam
       score: r.confidenceScore,
       outcome: (r.outcomeStatus === "WIN" ? 1 : 0) as 0 | 1,
       at: r.createdAt,
+      resolvedAt: r.resolvedAt ?? undefined,
       symbol: r.symbol,
       timeframe: r.timeframe || POOLED,
     };
@@ -193,6 +195,7 @@ async function agentSamples(): Promise<Map<string, TimedSample[]>> {
       confidenceScore: agentPredictionsTable.confidenceScore,
       outcomeStatus: agentPredictionsTable.outcomeStatus,
       at: agentPredictionsTable.timestampCreated,
+      resolvedAt: agentPredictionsTable.outcomeReviewedAt,
     })
     .from(agentPredictionsTable)
     .innerJoin(agentsTable, eq(agentsTable.id, agentPredictionsTable.agentId))
@@ -215,6 +218,7 @@ async function agentSamples(): Promise<Map<string, TimedSample[]>> {
       score: r.confidenceScore,
       outcome: r.outcomeStatus === "WIN" ? 1 : 0,
       at: r.at,
+      resolvedAt: r.resolvedAt ?? undefined,
       symbol: POOLED,
       timeframe: POOLED,
       component: AGENT_LIVE,

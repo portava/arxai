@@ -48,13 +48,13 @@ const src = (p: string) => readFileSync(resolve(here, "../../..", p), "utf8");
 
 function noise(n: number, seed: number) {
   const r = seededRandom(seed);
-  return Array.from({ length: n }, () => ({ score: Math.floor(r() * 50) + 45, outcome: (r() < 0.45 ? 1 : 0) as 0 | 1 }));
+  return Array.from({ length: n }, (_, i) => ({ at: new Date(i * 1000), resolvedAt: new Date(i * 1000 + 1), score: Math.floor(r() * 50) + 45, outcome: (r() < 0.45 ? 1 : 0) as 0 | 1 }));
 }
 function skilled(n: number, seed: number) {
   const r = seededRandom(seed);
-  return Array.from({ length: n }, () => {
+  return Array.from({ length: n }, (_, i) => {
     const score = r() * 100;
-    return { score, outcome: (r() < 0.1 + 0.8 * (score / 100) ? 1 : 0) as 0 | 1 };
+    return { at: new Date(i * 1000), resolvedAt: new Date(i * 1000 + 1), score, outcome: (r() < 0.1 + 0.8 * (score / 100) ? 1 : 0) as 0 | 1 };
   });
 }
 function cache(entries: [string, CalibrationFit][], source = "test") {
@@ -197,4 +197,11 @@ describe("worker gating and trader route scope", () => {
       assert.equal(typeof f.n, "number");
     }
   });
+});
+
+
+it("loading legacy fits keeps the cache unmeasured until refitting", () => {
+  const legacy = { ...fitCalibration(skilled(1500, 10)), method: "isotonic_pav_beta_shrinkage_v1" } as unknown as CalibrationFit;
+  cache([[fitKey("scanner", "EURUSD", "M15"), legacy]]);
+  assert.equal(calibrate("scanner", "EURUSD", "M15", 90).probability, null);
 });

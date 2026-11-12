@@ -51,7 +51,7 @@ import {
   strategyCalibrationKey,
 } from "../cache.js";
 import { AGENT_REPLAY_SPECS, REPLAYABLE_AGENT_KEYS, replayAgents, type ReplayScorer } from "../agentReplay.js";
-import { REPLAYABLE_STRATEGIES } from "../strategyReplay.js";
+import { REPLAYABLE_STRATEGIES, replayBarAvailableAt } from "../strategyReplay.js";
 import { measuredSnapshot } from "../../agentEcosystem/advisoryInfluence.js";
 import { sessionBreakoutStrategy, type Candle } from "../../strategyEngine.js";
 
@@ -263,13 +263,15 @@ describe("controls through the same replay path", () => {
     assert.equal(probe.influence, 0);
   });
 
-  it("planted momentum: the probe's edge is detected and earns influence", () => {
+  it("the old planted momentum fixture is insufficient under forward validation", () => {
     const recs = [1, 2, 3].flatMap((seed) => replayAgents(momentumBars(20_000, seed) as Candle[], `MOM${seed}`, "M1", { scorers: [momentumProbe] }));
     const t = measureAgentTrust("probe", recs);
     process.stdout.write(`[historical-bootstrap] planted momentum probe n=${t.n} ${t.basis} influence=${t.influence}\n`);
-    assert.equal(t.fit.edgeDetected, true, t.basis);
-    assert.ok(t.influence > 0, t.basis);
-    assert.equal(t.fit.model, "isotonic");
+    // This fixture passed bidirectional K-fold selection, but fails the stricter
+    // temporal test. Preserve the negative finding instead of loosening the gate.
+    assert.equal(t.fit.edgeDetected, false, t.basis);
+    assert.equal(t.influence, 0, t.basis);
+    assert.equal(t.fit.model, "base_rate");
   });
 });
 
@@ -352,4 +354,11 @@ describe("Session Breakout reads the bar's own session", () => {
     assert.equal(asia.direction, "WAIT");
     assert.match(asia.reason, /inactive during Asia/);
   });
+});
+
+
+it("replay evidence is timestamped at bar availability, not bar open", () => {
+  const bars = [{ time: "2026-01-01T00:00:00Z" }, { time: "2026-01-01T01:00:00Z" }, { time: "2026-01-01T02:00:00Z" }];
+  assert.equal(replayBarAvailableAt(bars, 0).toISOString(), "2026-01-01T01:00:00.000Z");
+  assert.equal(replayBarAvailableAt(bars, 2).toISOString(), "2026-01-01T03:00:00.000Z");
 });

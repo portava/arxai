@@ -259,3 +259,18 @@ test("gate cost: a 2,000-char spoken turn is checked in well under a frame", () 
   process.stdout.write(`[voice-claim-gate] gateVoiceTurn median ${median.toFixed(2)} ms over 25 runs (2,000 chars)\n`);
   assert.ok(median < 50, `median ${median} ms`);
 });
+
+test('review regression: a trusted negative sentence cannot authorize its positive substring', () => {
+  const result = gateSpeech({text:'Your order was filled.',trusted:['It is not true that your order was filled.']});
+  assert.equal(result.clean,false);
+  assert.ok(!result.speech.includes('Your order was filled.'));
+});
+
+
+test("number words cannot reach recorded audio as unchecked financial facts", () => {
+  for (const text of ["Your balance is ten thousand dollars.", "Your profit is fifteen dollars.", "The probability is eighty percent."]) {
+    const result = gateVoiceTurn(text, "", []);
+    assert.equal(result.audioMayPlay, false, text);
+    assert.ok(!result.speech.includes(text));
+  }
+});

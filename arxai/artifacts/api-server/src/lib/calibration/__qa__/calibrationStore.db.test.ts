@@ -41,6 +41,7 @@ async function insertOutcomes(n: number, seed: number, startMs: number) {
     locked: true,
     createdAt: new Date(startMs + i * 60_000),
     updatedAt: new Date(startMs + i * 60_000),
+    resolvedAt: new Date(startMs + i * 60_000 + 1),
   }));
   await db.insert(eleanorSignalOutcomesTable).values(rows);
 }
@@ -104,6 +105,20 @@ describe("calibration store + refit worker (Postgres)", () => {
     const rows = await db.select().from(calibrationFitsTable).where(inArray(calibrationFitsTable.fitKey, [key]));
     assert.equal(rows.length, 2);
     assert.equal(calibrate(ELEANOR_CALIBRATION_KEY, SYMBOL, "M15", 80).fitVersion, 2);
+  });
+
+  it("an obsolete method forces a new version even when the outcomes are unchanged", async () => {
+    const key = fitKey(ELEANOR_CALIBRATION_KEY, SYMBOL, "M15");
+    const rows = await db.select().from(calibrationFitsTable).where(eq(calibrationFitsTable.fitKey, key));
+    const latest = rows.sort((a, b) => b.version - a.version)[0];
+    const obsolete = "isotonic_pav_beta_shrinkage_cv_selected";
+    await db.update(calibrationFitsTable).set({ method: obsolete, fit: { ...latest.fit, method: obsolete } }).where(eq(calibrationFitsTable.id, latest.id));
+    await runCalibrationRefit();
+    let history = await fitHistory(key);
+    assert.equal(history[0].version, latest.version + 1);
+    await runCalibrationRefit();
+    history = await fitHistory(key);
+    assert.equal(history[0].version, latest.version + 1, "same new-method fit is idempotent");
   });
 
   it("bootstraps from the committed real history with provenance, idempotently", async () => {

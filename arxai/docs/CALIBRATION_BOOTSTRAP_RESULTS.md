@@ -1,61 +1,53 @@
-# Calibration bootstrap: measured results on real history
+# Calibration bootstrap: forward validation results
 
-Measured 2026-11-10 by replaying every replayable strategy and agent on the two
-pinned real-history fixtures. Reproduce with:
+Regenerated 2026-11-12 with `isotonic_pav_beta_shrinkage_forward_v2` against the committed, hash-verified real-history fixtures. This supersedes the 2026-11-10 blocked K-fold report.
 
+Reproduce without a database (from `artifacts/api-server`):
+
+```sh
+node --import tsx src/scripts/calibrationBootstrap.ts --report --json
 ```
-pnpm --filter @workspace/api-server run calibration:bootstrap -- --report
-```
 
-| Fixture | Dataset hash | Series |
-|---|---|---|
-| `real-history-v1` (FRED FX + Binance, daily, 2010-2025) | `fa83f149…dbc6d232` | 10 |
-| `real-history-intraday-v1` (Deriv V-indices, FX, gold; M1/M5/M15/H1) | `a5f9b3cc…a9725dc` | 32 |
+## Validation and interpretation
 
-Both are pinned in `artifacts/api-server/src/lib/calibration/historicalFixtures.ts`; a tampered or re-hashed copy is refused.
+- Sort by prediction availability time. Replay OHLC observations are available at the next bar boundary, not the current bar open. The terminal bar uses the preceding interval. Live samples use their recorded creation and resolution/review timestamps.
+- Reserve the final 20% of observations for evaluation. Remove development labels that had not resolved strictly before that boundary.
+- Select the candidate on the earlier data using expanding training windows. Every fold trains only on earlier outcomes resolved strictly before its validation boundary.
+- Freeze the selected candidate and evaluate it on the final period. Both selection and the final check must pass before serving score-dependent probabilities or granting agent influence. Require at least 100 scored observations for selection and 100 in the final check.
+- Check improvement using both observation-level and chronological-block lower bounds. The block calculation is conservative, but does not establish independence across markets, overlapping outcomes or regimes.
+- A record without valid prediction/resolution timing may support only a descriptive base rate. It cannot establish an edge, out-of-sample Brier/reliability, or agent authority.
+- `cv` reports selection metrics; `holdout` reports the preselected candidate and its final-period metrics, including sample sizes and cutoff. Top-level Brier/reliability describe the served choice on that same final period, using a frozen pre-holdout fit. Since the final check can veto promotion, use `holdout.brierSelected` when assessing the preselected candidate, not the better-looking post-veto metric. The eventual serving fit is refitted on all resolved samples.
+- This is retrospective temporal validation on previously inspected fixtures, not a fresh prospective trading trial. Pooling markets and timeframes changes sample composition over time. No guarantee of profitability, false-positive rate, or future performance follows.
 
-## Strategies (pooled `strategy|*|*`, source `historical_replay`)
+## Strategies (pooled keys)
 
-| Strategy | N | Base rate | Served model | Edge detected |
-|---|---|---|---|---|
-| Trend Continuation | 7243 | 0.3849 | base rate | no |
-| Break of Structure | 2136 | 0.3764 | base rate | no |
-| Liquidity Sweep Reversal | 3164 | 0.3448 | base rate | no |
-| Volatility Expansion | 943 | 0.4083 | base rate | no |
-| Pullback Continuation | 5982 | 0.3034 | base rate | no |
-| Session Breakout | 452 | 0.4093 | base rate | no |
-| Mean Reversion | 0 | – | unmeasured | – (see the defect below) |
+| Strategy | N | Base rate | Holdout N | Selected / served | Holdout Brier | Edge |
+|---|---:|---:|---:|---|---:|---|
+| Trend Continuation | 7243 | 0.3849 | 1449 | base_rate / base_rate | 0.239083 | no |
+| Break of Structure | 2118 | 0.3805 | 424 | base_rate / base_rate | 0.24457 | no |
+| Liquidity Sweep Reversal | 3164 | 0.3448 | 633 | base_rate / base_rate | 0.220981 | no |
+| Volatility Expansion | 943 | 0.4083 | 189 | base_rate / base_rate | 0.239576 | no |
+| Pullback Continuation | 5982 | 0.3034 | 1197 | base_rate / base_rate | 0.211951 | no |
+| Mean Reversion | 4081 | 0.257 | 817 | base_rate / base_rate | 0.175967 | no |
+| Session Breakout | 452 | 0.4093 | 91 | base_rate / base_rate | 0.2528 | no |
 
-Session Breakout is now measured: it replays on each bar's own session time,
-and the intraday fixture contains London and New York bars.
-
-No strategy's score beats its base rate out of sample, so every probability
-served is the measured base rate with its N. This agrees with the validation
-factory (0 survivors on daily and intraday real history).
+No tested strategy passed the score-dependent edge gate. Each serves its observed base rate. Mean Reversion now fires and is measured (4,081 outcomes); the earlier zero-fire defect was fixed before this validation change. Session Breakout has only 91 final-period observations, below the 100 required for an edge.
 
 ## Agents
 
 | Agent | N | Influence | Basis |
-|---|---|---|---|
-| STRUCT | 11336 | 0 | no out-of-sample skill (lower95 = −0.000089) |
-| RISK | 11336 | 0 | no out-of-sample skill (constant read) |
-| PRECISION | 11336 | 0 | no out-of-sample skill (lower95 = −0.000022) |
-| SCANNER_AI | 11336 | 0 | no out-of-sample skill (lower95 = −0.000132) |
-| ELEANOR, EXEC, SCALP_AI, EXIT_TP_AI, TRADE_REVIEW_AI, 5 ops agents | 0 | 0 | no replayable record, each with its stated reason |
+|---|---:|---:|---|
+| STRUCT | 11336 | 0 | no_out_of_sample_skill:selectionLower95=-0.00065; holdoutLower95=0 |
+| RISK | 11336 | 0 | no_out_of_sample_skill:selectionLower95=0; holdoutLower95=0 |
+| PRECISION | 11336 | 0 | no_out_of_sample_skill:selectionLower95=-0.000022; holdoutLower95=0 |
+| SCANNER_AI | 11336 | 0 | no_out_of_sample_skill:selectionLower95=-0.000693; holdoutLower95=0 |
 
-The admin Agent Ecosystem page now shows this measured influence, N and reason.
-The registry's own trust and authority scores are labelled as not validated
-and not driving influence.
+Other agents have no replayable prediction record and receive zero influence, with a specific reason in the JSON report. These findings describe the tested agents and data; they do not establish that no predictive signal exists.
 
-## Known defect: Mean Reversion cannot fire
+## Saved-fit upgrade
 
-`meanReversionStrategy` requires RSI(14) < 28 (or > 72) **and** a 20-bar close
-range below 1.2 × ATR(14). An RSI that extreme needs a sustained one-way move,
-and that move makes the 20-bar close range much wider than 1.2 × ATR. The two
-conditions exclude each other in practice: the rule fired **0 times** on all 42
-real series (129,504 bars). The strategy therefore always reports
-"no setup".
+Legacy `isotonic_pav_beta_shrinkage_cv_selected` fits are rejected by the cache, reading API and agent-trust calculation. The next authorized refit appends a new version even if N, wins and provenance are unchanged, because the method changed. Changed fit contents also invalidate the persistence shortcut. Repeating an identical new-method fit is idempotent. Until refit, old readings are unmeasured; no migration fabricates missing resolution times.
 
-Redesigning the rule changes which BUY/SELL signals users see, so it is an
-owner decision. Until then `historicalBootstrap.test.ts` pins the 0-fire result
-as a known defect; a redesign must replace that pin with a measured result.
+## Test controls
+
+The original planted-momentum replay does not establish an edge under this validation method; its negative result is retained as a regression. Direct planted-score controls use larger records (12,000 observations for reliability/agent influence; 16,000 generated scanner training observations before excluding H4) to exercise successful detection with separate selection and holdout periods. The thresholds are unchanged to accommodate these controls. Driftless-GBM controls remain negative.

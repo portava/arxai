@@ -169,7 +169,7 @@ test("live run 2: a bullet dash is not a minus, and 'profit target' is the tp fi
   const text = "It's currently up 3.65, opened at 412345.12, with price around 411980.5, stop at 415000 and target at 405000.\n\nWhat to watch:\n- Price staying below 412345.12 keeps the short under less pressure.\n- 415000 is the clear invalidation level from your stop.\n- 405000 is the profit target already set on the trade.";
   assert.deepEqual(kinds(text, liveTrade), []);
   assert.deepEqual(kinds("- 3.65 is the profit target.", liveTrade), ["WRONG_NUMBER"], "the P&L quoted as the target is still wrong");
-  assert.deepEqual(kinds("Your P&L is -3.65.", liveTrade), [], "a real minus sign still parses");
+  assert.deepEqual(kinds("Your P&L is -3.65.", liveTrade), ["FABRICATION"], "a real minus sign still parses");
 });
 
 test("live run 3: 'nothing was filled', 'N of M slots' and a `code` example are not false claims", () => {
@@ -185,4 +185,38 @@ test("live run 3: 'nothing was filled', 'N of M slots' and a `code` example are 
 test("live run 4: a phrasing after 'send' is an example", () => {
   assert.deepEqual(kinds("Next: send **“check action #123”** or **“show my recent fills”**, and I'll check the actual execution status.", []), []);
   assert.deepEqual(kinds("I sent action #123 to the broker.", []), ["FABRICATION"], "an id stated as fact is still checked");
+});
+
+test('review regressions: preserve sign and bind numbers to their entity', () => {
+  assert.ok(kinds('Your P&L is +$125.50.', [{name:'getTradeJournalSummary',result:{pnl:-125.5}}]).length);
+  const quotes=[{name:'getMarketSnapshot',result:{symbol:'EURUSD',lastPrice:1.08}},{name:'getMarketSnapshot',result:{symbol:'GBPUSD',lastPrice:1.28}}];
+  assert.deepEqual(kinds('EURUSD is trading at 1.2800.',quotes),['WRONG_NUMBER']);
+  assert.deepEqual(kinds('EURUSD is trading at 1.0800.',quotes),[]);
+  const positions=[{name:'getOpenPositions',result:{positions:[{ticket:12345,pnl:-100},{ticket:67890,pnl:500}]}}];
+  assert.deepEqual(kinds('Position #12345 has P&L of +$500.',positions),['WRONG_NUMBER']);
+});
+test('review regressions: execution proof and spelled-out financial facts', () => {
+  assert.deepEqual(kinds('Your order was filled, no further action is needed.',[]),['EXECUTION_UNCONFIRMED']);
+  assert.deepEqual(kinds('Your order was filled.',[{name:'getMarketSnapshot',result:{status:'completed'}}]),['EXECUTION_UNCONFIRMED']);
+  assert.deepEqual(kinds('Your current balance is ten thousand dollars.',[]),['FABRICATION']);
+});
+
+
+test("execution negation is local to each clause", () => {
+  assert.deepEqual(kinds("No problem, your order was filled.", []), ["EXECUTION_UNCONFIRMED"]);
+  assert.deepEqual(kinds("Your order was not filled, but your trade was executed.", []), ["EXECUTION_UNCONFIRMED"]);
+  assert.deepEqual(kinds("Your order was not filled.", []), []);
+});
+
+
+test("nested instruments replace parent scope and unscoped numbers cannot prove a scoped price", () => {
+  const outputs = [{ name: "getMarketSnapshot", result: { symbol: "EURUSD", lastPrice: 1.08, count: 2, related: { symbol: "GBPUSD", lastPrice: 1.28 } } }];
+  assert.ok(kinds("EURUSD is trading at 1.2800.", outputs).includes("WRONG_NUMBER"));
+  assert.deepEqual(kinds("GBPUSD is trading at 1.2800.", outputs), []);
+});
+
+
+test("a partial fill cannot prove a subsequent complete execution claim", () => {
+  const partial = [{ name: "getActionExecutionResult", result: { actionId: 5124, status: "partially_filled", filledLotSize: 0.05 } }];
+  assert.ok(kinds("Order 5124 was partially filled and fully executed.", partial).includes("EXECUTION_UNCONFIRMED"));
 });

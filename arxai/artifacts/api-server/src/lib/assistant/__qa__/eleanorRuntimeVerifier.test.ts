@@ -178,3 +178,19 @@ test("loop wiring: every content event goes through the claim gate; the loop can
   assert.match(loop, /resolveAssistantToolChoice\(turn, input\.forceStructuralRead, input\.maxTurns\)/);
   assert.doesNotMatch(loop, /placeOrder|enforcePreTradeRisk|liveAllowed|recordAndExecuteEleanor/);
 });
+
+// Regressions from the independent review: exercise the actual turn pipeline.
+import { runEvalFixture, type EvalFixture } from "../evals/harness.js";
+const pipelineCases: EvalFixture[] = [
+  {id:'pipeline-sign-flip',category:'positions',description:'A loss becomes a profit',user:'What is my P&L?',turns:[{toolCalls:[{name:'getTradeJournalSummary'}]},{text:'Your EURUSD P&L is +$125.50.'}],toolResults:{getTradeJournalSummary:{lookbackDays:30,totalClosed:1,perSymbol:[{symbol:'EURUSD',count:1,pnl:-125.5}],isEmpty:false}},expect:{findings:['WRONG_NUMBER'],visibleExcludes:['+$125.50']}},
+  {id:'pipeline-symbol-swap',category:'prices',description:'One symbol uses another symbol price',user:'Compare EURUSD and GBPUSD prices.',turns:[{toolCalls:[{name:'getMarketSnapshot',args:{symbol:'EURUSD'}},{name:'getMarketSnapshot',args:{symbol:'GBPUSD'}}]},{text:'EURUSD is trading at 1.2800 right now.'}],toolResults:{getMarketSnapshot:[{__call:{symbol:'EURUSD',lastPrice:1.08,stale:false,freshness:'REALTIME'}},{__call:{symbol:'GBPUSD',lastPrice:1.28,stale:false,freshness:'REALTIME'}}]},expect:{findings:['WRONG_NUMBER'],visibleExcludes:['1.2800']}},
+  {id:'pipeline-false-execution',category:'executions',description:'No execution result, unrelated negation',user:'Did my order execute?',turns:[{text:'Your order was filled, no further action is needed.'}],toolResults:{},expect:{findings:['EXECUTION_UNCONFIRMED'],visibleExcludes:['Your order was filled']}},
+];
+
+for (const fixture of pipelineCases) {
+  test(fixture.id, async () => {
+    const result = await runEvalFixture(fixture);
+    assert.equal(result.pass, true, JSON.stringify(result.failures));
+    assert.equal(result.loop.assistantText, result.visible);
+  });
+}

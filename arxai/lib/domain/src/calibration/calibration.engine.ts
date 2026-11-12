@@ -15,13 +15,14 @@
 //      restores monotonicity. 5 was chosen on synthetic data: 20 biased large
 //      blocks toward the base rate (worse Brier and reliability), 2 bought no
 //      further accuracy; the false-edge rate on noise was the same.
-//   3. Model selection against the base rate by blocked (time-ordered) K-fold
-//      cross-validation. The isotonic model is SERVED only when its
-//      out-of-sample Brier score beats the base-rate forecast with the lower
-//      95% bound of the per-sample improvement above zero. Otherwise the served
-//      probability IS the base rate. On a driftless market this is what makes
-//      the engine converge to the base rate and never claim an edge.
-//   4. Below MIN_SAMPLE graded outcomes the reading is null + "unmeasured",
+//   3. Model selection against the base rate by purged forward
+//      validation. The isotonic model is SERVED only when its
+//      out-of-sample Brier score beats the base-rate forecast with a conservative
+//      lower bound across observations AND time blocks above zero. Otherwise
+//      serve the base rate. Finite-sample validation cannot prove an edge.
+//   4. Reserve the final 20% for a frozen-model check; require that check
+//      to pass too. Report both selection and holdout metrics separately.
+//   5. Below MIN_SAMPLE graded outcomes the reading is null + "unmeasured",
 //      always with its N. A fabricated rate off a tiny sample is never served.
 //
 // Every number this file returns carries its sample size.
@@ -31,6 +32,9 @@ export type BinaryOutcome = 0 | 1;
 export interface CalibrationSample {
   /** Raw heuristic score, 0-100 (clamped). */
   score: number;
+  /** Prediction and resolution times. Missing timing cannot establish an edge. */
+  at?: Date;
+  resolvedAt?: Date;
   /** 1 = the call worked (WIN), 0 = it did not (LOSS). */
   outcome: BinaryOutcome;
 }
@@ -44,7 +48,7 @@ export const CALIBRATION_CV_FOLDS = 5;
  *  that collapses to one isotonic block predicts the base rate to ~1e-17 and
  *  must not read as an edge. Far below any decision-relevant gain. */
 export const CALIBRATION_EDGE_TOLERANCE = 1e-9;
-export const CALIBRATION_METHOD = "isotonic_pav_beta_shrinkage_cv_selected" as const;
+export const CALIBRATION_METHOD = "isotonic_pav_beta_shrinkage_forward_v2" as const;
 
 export interface CalibrationBlock {
   /** Lowest raw score in the block. */
@@ -67,6 +71,8 @@ export interface ReliabilityBin {
 }
 
 export interface CrossValidation {
+  /** Number actually scored; excludes the initial training window and purged folds. */
+  n?: number;
   folds: number;
   /** Out-of-sample Brier of the isotonic candidate. */
   brierModel: number;
@@ -78,6 +84,18 @@ export interface CrossValidation {
   meanImprovement: number;
   improvementLower95: number;
   edgeDetected: boolean;
+}
+
+export interface HoldoutValidation {
+  n: number;
+  trainN: number;
+  from: string;
+  /** Candidate fixed by forward validation before seeing the holdout. */
+  selectedModel: "isotonic" | "base_rate";
+  brierSelected: number;
+  brierBaseline: number;
+  improvementLower95: number;
+  passed: boolean;
 }
 
 export type CalibrationStatus = "measured" | "unmeasured";
@@ -94,6 +112,8 @@ export interface CalibrationFit {
   priorStrength: number;
   blocks: CalibrationBlock[];
   cv: CrossValidation | null;
+  /** Last 20% of prediction times, excluded from model selection. */
+  holdout?: HoldoutValidation | null;
   edgeDetected: boolean;
   /** Out-of-sample Brier of the SERVED model (null when unmeasured). */
   brier: number | null;
@@ -250,21 +270,38 @@ export function reliabilityDiagram(
 // ── Cross-validated model selection ────────────────────────────────────────
 
 interface CvResult {
+  outcomes: BinaryOutcome[];
   cv: CrossValidation;
   isoPreds: number[];
   basePreds: number[];
 }
 
-/** Blocked K-fold: contiguous folds in the given (time) order, so a fold never
- *  trains on its own neighbours' future. */
-function crossValidate(samples: CalibrationSample[], folds: number, k: number): CvResult {
+/** Conservative diagnostic, not an independence guarantee: observations may
+ * share markets/regimes. Check both individual and chronological block means;
+ * t=4.303 is conservative for at least three blocks (two degrees of freedom). */
+function improvementLowerBound(d: number[], blockMeans: number[]): number {
+  if (d.length < 2 || blockMeans.length < 3) return -Infinity;
+  const mean = d.reduce((sum, v) => sum + v, 0) / d.length;
+  const variance = d.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (d.length - 1);
+  const blockMean = blockMeans.reduce((sum, v) => sum + v, 0) / blockMeans.length;
+  const blockVariance = blockMeans.reduce((sum, v) => sum + (v - blockMean) ** 2, 0) / (blockMeans.length - 1);
+  return Math.min(mean - 1.96 * Math.sqrt(variance / d.length), blockMean - 4.303 * Math.sqrt(blockVariance / blockMeans.length));
+}
+
+/** Expanding-window validation with an initial training-only block. Only
+ * earlier outcomes resolved strictly before the validation block may train it.
+ * These folds select the model; they are not an independent final performance test. */
+export function crossValidate(samples: CalibrationSample[], folds: number, k: number): CvResult {
   const n = samples.length;
-  const isoPreds = new Array<number>(n).fill(0);
-  const basePreds = new Array<number>(n).fill(0);
-  for (let f = 0; f < folds; f++) {
-    const start = Math.floor((f * n) / folds);
-    const end = Math.floor(((f + 1) * n) / folds);
-    const train = samples.slice(0, start).concat(samples.slice(end));
+  const isoPreds = new Array<number>(n).fill(Number.NaN);
+  const basePreds = new Array<number>(n).fill(Number.NaN);
+  const blockMeans: number[] = [];
+  for (let f = 1; f <= folds; f++) {
+    const start = Math.floor((f * n) / (folds + 1));
+    const end = Math.floor(((f + 1) * n) / (folds + 1));
+    const cutoff = samples[start]?.at?.getTime();
+    const train = samples.slice(0, start).filter(s => cutoff != null && s.resolvedAt != null && s.resolvedAt.getTime() < cutoff);
+    if (train.length < CALIBRATION_MIN_SAMPLE) continue;
     const trainWins = train.reduce((s, x) => s + x.outcome, 0);
     const base = train.length > 0 ? trainWins / train.length : 0.5;
     const blocks = fitIsotonic(train, base, k, true);
@@ -272,26 +309,33 @@ function crossValidate(samples: CalibrationSample[], folds: number, k: number): 
       basePreds[i] = base;
       isoPreds[i] = lookupBlock(blocks, samples[i].score)?.probability ?? base;
     }
+    const improvement = samples.slice(start, end).map((sample, j) =>
+      (basePreds[start + j] - sample.outcome) ** 2 - (isoPreds[start + j] - sample.outcome) ** 2);
+    blockMeans.push(improvement.reduce((sum, value) => sum + value, 0) / (end - start));
   }
-  const ys = samples.map((s) => s.outcome);
-  const d = ys.map((y, i) => (basePreds[i] - y) ** 2 - (isoPreds[i] - y) ** 2);
-  const mean = d.reduce((s, v) => s + v, 0) / n;
-  const variance = n > 1 ? d.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1) : 0;
-  const se = Math.sqrt(variance / n);
-  const lower = mean - 1.96 * se;
-  const brierModel = brierScore(isoPreds, ys) ?? 0;
-  const brierBaseline = brierScore(basePreds, ys) ?? 0;
+  const scored = samples.map((s, i) => ({ s, i })).filter(({ i }) => Number.isFinite(isoPreds[i]));
+  const ys = scored.map(({ s }) => s.outcome);
+  const ip = scored.map(({ i }) => isoPreds[i]);
+  const bp = scored.map(({ i }) => basePreds[i]);
+  const count = ys.length;
+  const d = ys.map((y, i) => (bp[i] - y) ** 2 - (ip[i] - y) ** 2);
+  const mean = d.reduce((s, v) => s + v, 0) / Math.max(1, count);
+  const lower = improvementLowerBound(d, blockMeans);
+  const brierModel = brierScore(ip, ys) ?? 0;
+  const brierBaseline = brierScore(bp, ys) ?? 0;
   return {
-    isoPreds,
-    basePreds,
+    isoPreds: ip,
+    basePreds: bp,
+    outcomes: ys,
     cv: {
-      folds,
+      n: count,
+      folds: blockMeans.length,
       brierModel,
       brierBaseline,
       skill: brierBaseline > 0 ? round(1 - brierModel / brierBaseline) : 0,
       meanImprovement: round(mean),
-      improvementLower95: round(lower),
-      edgeDetected: lower > CALIBRATION_EDGE_TOLERANCE,
+      improvementLower95: Number.isFinite(lower) ? round(lower) : 0,
+      edgeDetected: blockMeans.length >= 3 && count >= CALIBRATION_EDGE_MIN_SAMPLE && lower > CALIBRATION_EDGE_TOLERANCE,
     },
   };
 }
@@ -306,8 +350,8 @@ export interface FitOptions {
 }
 
 /**
- * Fit a calibration over graded samples IN TIME ORDER (oldest first). The order
- * matters only for the blocked cross-validation.
+ * Fit graded samples, ordered by prediction time internally. Missing or invalid
+ * timing permits a descriptive base rate only, never a validated edge.
  */
 export function fitCalibration(samples: CalibrationSample[], opts: FitOptions = {}): CalibrationFit {
   const minSample = Math.max(1, Math.floor(opts.minSample ?? CALIBRATION_MIN_SAMPLE));
@@ -315,6 +359,8 @@ export function fitCalibration(samples: CalibrationSample[], opts: FitOptions = 
   const k = opts.priorStrength ?? CALIBRATION_PRIOR_STRENGTH;
   const folds = Math.max(2, Math.floor(opts.folds ?? CALIBRATION_CV_FOLDS));
   const clean = samples.filter((s) => (s.outcome === 0 || s.outcome === 1) && Number.isFinite(s.score));
+  const timed = clean.every(s => s.at instanceof Date && s.resolvedAt instanceof Date && Number.isFinite(s.at.getTime()) && s.resolvedAt.getTime() >= s.at.getTime());
+  if (timed) clean.sort((a, b) => a.at!.getTime() - b.at!.getTime());
   const n = clean.length;
   const wins = clean.reduce((s, x) => s + x.outcome, 0);
   const ys = clean.map((s) => s.outcome);
@@ -331,6 +377,7 @@ export function fitCalibration(samples: CalibrationSample[], opts: FitOptions = 
     priorStrength: k,
     blocks: [],
     cv: null,
+    holdout: null,
     edgeDetected: false,
     brier: null,
     brierBaseline: null,
@@ -343,42 +390,61 @@ export function fitCalibration(samples: CalibrationSample[], opts: FitOptions = 
   const baseRate = round(wins / n);
   const blocks = fitIsotonic(clean, baseRate, k);
 
-  if (n < edgeMin) {
-    // Enough to measure the base rate, not enough to test for an edge: the
-    // base rate is served. Its out-of-sample Brier is the leave-fold-out one.
-    const { basePreds } = crossValidate(clean, folds, k);
-    const b = brierScore(basePreds, ys);
-    return {
-      ...empty,
-      status: "measured",
-      model: "base_rate",
-      baseRate,
-      blocks,
-      brier: b,
-      brierBaseline: b,
-      reliability: reliabilityDiagram(basePreds, ys),
-    };
-  }
+  if (!timed) return { ...empty, status: "measured", model: "base_rate", baseRate, blocks };
 
-  const { cv, isoPreds, basePreds } = crossValidate(clean, folds, k);
-  const served = cv.edgeDetected ? isoPreds : basePreds;
+  // Reserve the final 20% of rows before selecting the model. Also purge any
+  // development outcome that would not yet be known at the holdout boundary.
+  const split = Math.floor(n * 0.8);
+  const cutoff = clean[split].at!.getTime();
+  const development = clean.slice(0, split).filter(s => s.resolvedAt!.getTime() < cutoff);
+  const holdout = clean.slice(split);
+  if (development.length < minSample) {
+    return { ...empty, status: "measured", model: "base_rate", baseRate, blocks };
+  }
+  const { cv } = crossValidate(development, folds, k);
+  const selected = development.length >= edgeMin && cv.edgeDetected;
+  const trainBase = development.reduce((sum, s) => sum + s.outcome, 0) / development.length;
+  const trainBlocks = fitIsotonic(development, trainBase, k, true);
+  const testY = holdout.map(s => s.outcome);
+  const baseline = holdout.map(() => trainBase);
+  const predicted = holdout.map(s => selected ? lookupBlock(trainBlocks, s.score)!.probability : trainBase);
+  const improvements = testY.map((y, i) => (baseline[i] - y) ** 2 - (predicted[i] - y) ** 2);
+  const holdoutBlocks = Array.from({ length: 5 }, (_, i) => {
+    const block = improvements.slice(Math.floor(i * holdout.length / 5), Math.floor((i + 1) * holdout.length / 5));
+    return block.reduce((sum, v) => sum + v, 0) / Math.max(1, block.length);
+  });
+  const lower = improvementLowerBound(improvements, holdoutBlocks);
+  const edgeDetected = selected && holdout.length >= CALIBRATION_EDGE_MIN_SAMPLE && lower > CALIBRATION_EDGE_TOLERANCE;
+  const served = edgeDetected ? predicted : baseline;
   return {
     ...empty,
     status: "measured",
-    model: cv.edgeDetected ? "isotonic" : "base_rate",
+    model: edgeDetected ? "isotonic" : "base_rate",
     baseRate,
     blocks,
     cv,
-    edgeDetected: cv.edgeDetected,
-    brier: brierScore(served, ys),
-    brierBaseline: cv.brierBaseline,
-    reliability: reliabilityDiagram(served, ys),
+    holdout: {
+      n: holdout.length,
+      trainN: development.length,
+      from: clean[split].at!.toISOString(),
+      selectedModel: selected ? "isotonic" : "base_rate",
+      brierSelected: brierScore(predicted, testY)!,
+      brierBaseline: brierScore(baseline, testY)!,
+      improvementLower95: Number.isFinite(lower) ? round(lower) : 0,
+      passed: edgeDetected,
+    },
+    edgeDetected,
+    brier: brierScore(served, testY),
+    brierBaseline: brierScore(baseline, testY),
+    brierRaw: brierScore(holdout.map(s => clampScore(s.score) / 100), testY),
+    reliability: reliabilityDiagram(served, testY),
+    rawReliability: reliabilityDiagram(holdout.map(s => clampScore(s.score) / 100), testY),
   };
 }
 
 /** Read a calibrated probability for one raw score off a fit. */
 export function readCalibration(fit: CalibrationFit | null | undefined, score: number): CalibratedReading {
-  if (!fit || fit.status !== "measured" || fit.baseRate == null) {
+  if (!fit || fit.method !== CALIBRATION_METHOD || fit.status !== "measured" || fit.baseRate == null) {
     const n = fit?.n ?? 0;
     return {
       probability: null,
@@ -387,7 +453,9 @@ export function readCalibration(fit: CalibrationFit | null | undefined, score: n
       model: "none",
       baseRate: null,
       edgeDetected: false,
-      reason: `Unmeasured: ${n} graded outcome${n === 1 ? "" : "s"}, ${fit?.minSample ?? CALIBRATION_MIN_SAMPLE} needed.`,
+      reason: fit && fit.method !== CALIBRATION_METHOD
+        ? "Unmeasured: obsolete calibration method; refit required."
+        : `Unmeasured: ${n} graded outcome${n === 1 ? "" : "s"}, ${fit?.minSample ?? CALIBRATION_MIN_SAMPLE} needed.`,
     };
   }
   const probability =

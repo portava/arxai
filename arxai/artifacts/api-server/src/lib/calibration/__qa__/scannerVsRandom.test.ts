@@ -35,6 +35,8 @@ import { calibrate, clearCalibrationCache, rankByCalibration, replaceCalibration
 import type { Candle } from "../../strategyEngine.js";
 
 interface Cand {
+  at: Date;
+  resolvedAt: Date;
   strategy: string;
   symbol: string;
   timeframe: string;
@@ -105,7 +107,7 @@ function fitAndCache(train: Cand[]): void {
   }
   const entries: [string, { fit: CalibrationFit; version: number; source: string; fittedAt: string }][] = [];
   for (const [k, rows] of groups) {
-    entries.push([k, { fit: fitCalibration(rows.map((r) => ({ score: r.rawScore, outcome: r.outcome }))), version: 1, source: "test", fittedAt: "" }]);
+    entries.push([k, { fit: fitCalibration(rows.map((r) => ({ score: r.rawScore, outcome: r.outcome, at: r.at, resolvedAt: r.resolvedAt }))), version: 1, source: "test", fittedAt: "" }]);
   }
   replaceCalibrationCache(entries);
 }
@@ -125,10 +127,12 @@ describe("scanner ranking vs random", () => {
         const cut = Math.floor(bars.length * 0.6);
         for (const s of samples) {
           const c: Cand = {
-            strategy: s.strategyKey, symbol, timeframe: tf, rawScore: s.score, outcome: s.outcome,
+            at: s.at!, resolvedAt: s.resolvedAt!, strategy: s.strategyKey, symbol, timeframe: tf, rawScore: s.score, outcome: s.outcome,
             r: s.outcome === 1 ? s.rr : -1,
           };
-          (s.barIndex < cut ? train : test).push(c);
+          // Purge training labels that were not known before the held-out period.
+          if (s.barIndex < cut && s.resolvedAt! < new Date(bars[cut].time)) train.push(c);
+          else if (s.barIndex >= cut) test.push(c);
         }
       }
     }
@@ -151,10 +155,12 @@ describe("scanner ranking vs random", () => {
         const tf = ["M5", "M15", "H1", "H4"][i % 4];
         const rawScore = rand() * 100;
         const outcome = (rand() < 0.2 + 0.5 * (rawScore / 100) ? 1 : 0) as 0 | 1;
-        return { strategy: "scanner", symbol: "PLANTED", timeframe: tf, rawScore, outcome, r: outcome ? 1.5 : -1 };
+        return { at: new Date(i * 1000), resolvedAt: new Date(i * 1000 + 1), strategy: "scanner", symbol: "PLANTED", timeframe: tf, rawScore, outcome, r: outcome ? 1.5 : -1 };
       });
     // Train has no H4 fits: H4 rows must read through the cross-timeframe fallback.
-    const train = mk(4000).filter((c) => c.timeframe !== "H4");
+    // More training evidence is required now that each timeframe needs a
+    // separate 20% holdout in addition to forward model selection.
+    const train = mk(16000).filter((c) => c.timeframe !== "H4");
     fitAndCache(train);
     const rep = evaluate(mk(2000), "planted_edge", 78);
     assert.ok(rep.fallbackScopes.some((s) => s.startsWith("timeframe_fallback:")), "H4 rows used the cross-timeframe fallback");

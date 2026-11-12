@@ -49,10 +49,10 @@ export async function replaySeries(series: readonly ReplaySeriesInput[]): Promis
   for (const s of series) {
     const base = { symbol: s.symbol, timeframe: s.timeframe, component: s.component };
     for (const r of replayStrategies(s.candles, s.symbol)) {
-      push(out.strategies, r.strategyKey, { ...base, score: r.score, outcome: r.outcome, at: new Date(s.candles[r.barIndex].time) });
+      push(out.strategies, r.strategyKey, { ...base, score: r.score, outcome: r.outcome, at: r.at!, resolvedAt: r.resolvedAt });
     }
     for (const r of replayAgents(s.candles, s.symbol, s.timeframe)) {
-      push(out.agents, agentCalibrationKey(r.agentKey), { ...base, score: r.score, outcome: r.outcome, at: new Date(s.candles[r.barIndex].time) });
+      push(out.agents, agentCalibrationKey(r.agentKey), { ...base, score: r.score, outcome: r.outcome, at: r.at!, resolvedAt: r.resolvedAt });
     }
     await yieldToLoop();
   }

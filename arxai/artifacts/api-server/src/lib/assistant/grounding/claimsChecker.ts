@@ -213,7 +213,7 @@ function labelStrength(e: EvidenceNumber, tokens: Set<string>): number {
 
 // ── grounding ────────────────────────────────────────────────────────────────
 interface NumClaim {
-  value: number; // absolute value as written (after k/bn scaling)
+  value: number; // signed value as written (after k/bn scaling)
   decimals: number;
   scale: number;
   percent: boolean;
@@ -226,7 +226,7 @@ function tolerance(decimals: number, scale: number): number {
 }
 
 function matchesValue(c: NumClaim, e: EvidenceNumber): boolean {
-  const ev = Math.abs(e.value);
+  const ev = e.value;
   const tol = tolerance(c.decimals, c.scale);
   if (Math.abs(ev - c.value) <= tol) return true;
   if (c.percent && Math.abs(ev * 100 - c.value) <= tol) return true;
@@ -351,11 +351,19 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     const rest = raw.slice(localEnd);
     const unit = UNIT_AFTER_RE.exec(rest)?.[1] ?? null;
     const nc: NumClaim = {
-      value, decimals: frac ? frac.length - 1 : 0, scale, percent,
+      value: (m[1] === "-" || m[1] === "−" ? -1 : 1) * value, decimals: frac ? frac.length - 1 : 0, scale, percent,
       unitMs: unit ? unitMs(unit) : null,
       pips: !!unit && /^(pips?|points?|pts)$/i.test(unit),
     };
-    const matches = idx.numbers.filter((e) => matchesValue(nc, e));
+    // Bind values to the most recently named instrument and ticket in this segment.
+    const prefix = raw.slice(0, localStart).toLowerCase();
+    const normalize = (x: string) => x.replace(/[^a-z0-9]/g, "");
+    const named = [...idx.symbols].filter(x => x.length >= 3 && normalize(prefix).includes(normalize(x)));
+    named.sort((a,b) => normalize(prefix).lastIndexOf(normalize(b)) - normalize(prefix).lastIndexOf(normalize(a)));
+    const ticket = [...prefix.matchAll(/(?:#|(?:ticket|position|order|action)\s*(?:#|id)?\s*)(\d{3,})/g)].at(-1)?.[1];
+    const entityMatches = (e: EvidenceNumber) => (!named.length || !!e.entities?.includes(normalize(named[0]))) && (!ticket || !!e.entities?.includes(ticket));
+    const candidates = idx.numbers.filter(e => e.source === "user" ? /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw) : entityMatches(e));
+    const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({
       kind: "number", text: raw.slice(localStart, localEnd).trim(), value: (m[1] === "-" || m[1] === "−" ? -1 : 1) * value,
       grounded: matches.length > 0, groundedBy: matches.slice(0, 3).map((e) => e.path), localStart, localEnd,
@@ -409,9 +417,9 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     // filledLotSize, not fillPrice.
     let labelled: EvidenceNumber[] = [];
     if (!nc.pips && nc.unitMs == null && !before.denominator && tokens.size > 0) {
-      const strength = idx.numbers.map((e) => labelStrength(e, tokens));
+      const strength = candidates.map((e) => labelStrength(e, tokens));
       const best = Math.max(0, ...strength);
-      if (best > 0) labelled = idx.numbers.filter((_, i) => strength[i] === best);
+      if (best > 0) labelled = candidates.filter((_, i) => strength[i] === best);
     }
     {
       if (labelled.length > 0 && !labelled.some((e) => matchesValue(nc, e))) {
@@ -424,6 +432,10 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
       }
     }
 
+    if (matches.length === 0 && idx.numbers.some(e => !entityMatches(e) && matchesValue(nc, e))) {
+      findings.push({kind:"WRONG_NUMBER",claim,detail:"The value belongs to a different instrument or ticket"});
+      continue;
+    }
     if (matches.length === 0) {
       findings.push({ kind: "FABRICATION", claim, detail: `"${claim.text}" does not match any value in this turn's tool outputs` });
       continue;
@@ -436,15 +448,27 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     }
   }
 
-  // "It executed" with no executed result.
-  if (EXECUTION_AFFIRM.test(raw) && EXECUTION_CONTEXT.test(raw) && !EXECUTION_NEGATED.test(raw)) {
-    const m = EXECUTION_AFFIRM.exec(raw)!;
-    const partialClaim = /partial/i.test(raw);
-    const tickets = claims.filter((c) => c.kind === "ticket").map((c) => c.text);
-    const proof = idx.executions.filter((e) => (e.executed || (partialClaim && e.partial)) && (tickets.length === 0 || tickets.some((t) => e.ids.includes(t))));
-    const claim = pushClaim({ kind: "execution", text: m[0], grounded: proof.length > 0, groundedBy: proof.map((p) => p.path), localStart: m.index, localEnd: m.index + m[0].length });
-    if (proof.length === 0) {
-      const statuses = idx.executions.map((e) => e.status).filter(Boolean);
+  // Fail closed for spelled-out financial quantities the numeric parser cannot verify.
+  const words = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)(?:[ -]+(?:and|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion))*\s+(?:dollars?|euros?|pounds?|percent|lots?|pips?)\b/gi;
+  for (const m of work.matchAll(words)) {
+    const claim = pushClaim({kind: "number", text:m[0], grounded:false, groundedBy:[], localStart:m.index!, localEnd:m.index!+m[0].length});
+    findings.push({kind:"FABRICATION",claim,detail:"Spelled-out financial quantity requires a structured numeric source; withheld pending verification"});
+  }
+  // Check each execution clause, so unrelated negation cannot suppress it.
+  const reportedExecutionClauses = new Set<number>();
+  for (const m of raw.matchAll(new RegExp(EXECUTION_AFFIRM.source, "gi"))) {
+    const before = raw.slice(0, m.index);
+    const boundary = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(" but "));
+    const clauseStart = boundary < 0 ? 0 : boundary + 1;
+    const clause = raw.slice(clauseStart, m.index + m[0].length);
+    if (!EXECUTION_CONTEXT.test(clause) || EXECUTION_NEGATED.test(clause)) continue;
+    const partialClaim = /partial(?:ly)?\s+$/i.test(before);
+    const tickets = claims.filter(c => c.kind === "ticket" && c.start >= seg.start + clauseStart && c.end <= seg.start + m.index).map(c => c.text);
+    const proof = idx.executions.filter(e => (e.executed || (partialClaim && e.partial)) && tickets.every(t => e.ids.includes(t)));
+    const claim = pushClaim({ kind: "execution", text: m[0], grounded: proof.length > 0, groundedBy: proof.map(p => p.path), localStart: m.index, localEnd: m.index + m[0].length });
+    if (proof.length === 0 && !reportedExecutionClauses.has(clauseStart)) {
+      reportedExecutionClauses.add(clauseStart);
+      const statuses = idx.executions.map(e => e.status).filter(Boolean);
       findings.push({ kind: "EXECUTION_UNCONFIRMED", claim, detail: `"${m[0]}" claimed but no tool output this turn shows an executed result${statuses.length ? ` (statuses seen: ${[...new Set(statuses)].join(", ")})` : ""}` });
     }
   }

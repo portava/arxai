@@ -7,10 +7,10 @@
 //   - no record, or fewer than the edge sample      → influence 0
 //   - a record whose scores do not beat the base rate → influence 0
 //   - a record that beats it out of sample           → influence in (0, 1]
-// A noise agent therefore ends at zero influence; the CI test proves it.
+// Noise controls check the false-positive behaviour; they cannot prove a zero false-positive rate.
 
 import {
-  CALIBRATION_EDGE_MIN_SAMPLE,
+  CALIBRATION_METHOD,
   fitCalibration,
   type CalibrationFit,
   type CalibrationSample,
@@ -47,7 +47,7 @@ export function agentTrustFromFit(
   fit: CalibrationFit | null | undefined,
   noReplayReason?: string | null,
 ): MeasuredAgentTrust {
-  const f = fit ?? fitCalibration([]);
+  const f = fit?.method === CALIBRATION_METHOD ? fit : fitCalibration([]);
   let influence = 0;
   let basis: string;
   if (f.status !== "measured" && !fit && noReplayReason) {
@@ -55,12 +55,13 @@ export function agentTrustFromFit(
   } else if (f.status !== "measured") {
     basis = `no_scored_record:n=${f.n}`;
   } else if (!f.cv) {
-    basis = `record_too_small_for_skill_test:n=${f.n}<${CALIBRATION_EDGE_MIN_SAMPLE}`;
-  } else if (!f.cv.edgeDetected) {
-    basis = `no_out_of_sample_skill:lower95=${f.cv.improvementLower95}`;
+    basis = `no_prospective_validation:n=${f.n}; timed resolved outcomes required`;
+  } else if (!f.edgeDetected || !f.holdout?.passed) {
+    basis = `no_out_of_sample_skill:selectionLower95=${f.cv.improvementLower95}; holdoutLower95=${f.holdout?.improvementLower95 ?? "unmeasured"}`;
   } else {
-    influence = Math.min(1, Math.max(0, f.cv.improvementLower95 / AGENT_FULL_INFLUENCE_IMPROVEMENT));
-    basis = `out_of_sample_skill:lower95=${f.cv.improvementLower95}`;
+    const lower = Math.min(f.cv.improvementLower95, f.holdout.improvementLower95);
+    influence = Math.min(1, Math.max(0, lower / AGENT_FULL_INFLUENCE_IMPROVEMENT));
+    basis = `out_of_sample_skill:lower95=${lower}`;
   }
   influence = Math.round(influence * 1000) / 1000;
   return {

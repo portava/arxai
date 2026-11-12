@@ -25,7 +25,7 @@ import { analyzeMarketFromCandles } from "../aiBrain.js";
 import { advisoryDirectionFor, opportunityScore } from "../marketScanner.js";
 import { scannerStrength, type ScannerAdvisoryContext } from "../agentEcosystem/advisoryInfluence.js";
 import type { Candle } from "../strategyEngine.js";
-import { REPLAY_HORIZON_BARS, resolutionBar } from "./strategyReplay.js";
+import { REPLAY_HORIZON_BARS, resolutionBar, replayBarAvailableAt } from "./strategyReplay.js";
 import { AGENT_REPLAY_SPECS, REPLAYABLE_AGENT_KEYS } from "./agentReplaySpecs.js";
 
 export { AGENT_REPLAY_SPECS, REPLAYABLE_AGENT_KEYS, agentNoReplayReason } from "./agentReplaySpecs.js";
@@ -38,6 +38,8 @@ const SCANNER_STRATEGY_MATCH = 7;
 export interface AgentReplaySample {
   agentKey: string;
   barIndex: number;
+  at: Date;
+  resolvedAt: Date;
   direction: "BUY" | "SELL";
   /** The agent's strength on this row, 0-100. */
   score: number;
@@ -103,6 +105,8 @@ export function replayAgents(
       out.push({
         agentKey: sc.key,
         barIndex: i,
+        at: replayBarAvailableAt(candles, i),
+        resolvedAt: replayBarAvailableAt(candles, resolutionBar(candles, i, direction, analysis.stopLoss, analysis.takeProfit, horizon)),
         direction,
         score: Math.max(0, Math.min(100, strength * 100)),
         outcome,

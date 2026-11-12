@@ -77,6 +77,8 @@ export function replayStrategies(
       out.push({
         strategyKey: strategyCalibrationKey(s.name),
         barIndex: i,
+        at: replayBarAvailableAt(candles, i),
+        resolvedAt: replayBarAvailableAt(candles, j),
         direction: sig.direction,
         score: sig.score,
         outcome,
@@ -101,4 +103,15 @@ export function resolutionBar(
     if (labelFirstTouch(candles, i, direction, stopLoss, takeProfit, j - i) !== null) break;
   }
   return j;
+}
+
+
+/** OHLC values are known after the bar closes, never at its opening timestamp.
+ * Use the next bar boundary, conservatively spanning gaps. For the terminal
+ * bar use the preceding interval; it cannot train any later row in this series. */
+export function replayBarAvailableAt(candles: readonly { time: string }[], i: number): Date {
+  if (candles[i + 1]) return new Date(candles[i + 1].time);
+  const current = new Date(candles[i].time).getTime();
+  const previous = new Date(candles[i - 1]?.time ?? candles[i].time).getTime();
+  return new Date(current + Math.max(1, current - previous));
 }

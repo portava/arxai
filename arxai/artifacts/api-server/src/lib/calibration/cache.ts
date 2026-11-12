@@ -8,6 +8,7 @@
 
 import {
   readScoped,
+  CALIBRATION_METHOD,
   rankByCalibration,
   type CalibrationFit,
   type FitLookup,
@@ -33,7 +34,7 @@ export const calibrationLookup: FitLookup = {
 
 export function replaceCalibrationCache(entries: Iterable<[string, CachedFit]>): void {
   fits.clear();
-  for (const [k, v] of entries) fits.set(k, v);
+  for (const [k, v] of entries) if (v.fit.method === CALIBRATION_METHOD) fits.set(k, v);
   loadedAt = new Date().toISOString();
 }
 

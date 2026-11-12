@@ -12,6 +12,7 @@
 //
 // Run: pnpm --filter @workspace/api-server run test:calibration
 
+import { crossValidate } from "../calibration.engine";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -33,14 +34,14 @@ import {
 
 function noise(n: number, seed: number, base = 0.4): CalibrationSample[] {
   const r = seededRandom(seed);
-  return Array.from({ length: n }, () => ({ score: Math.floor(r() * 50) + 45, outcome: (r() < base ? 1 : 0) as 0 | 1 }));
+  return Array.from({ length: n }, (_, i) => ({ at: new Date(i*1000), resolvedAt: new Date(i*1000+1), score: Math.floor(r() * 50) + 45, outcome: (r() < base ? 1 : 0) as 0 | 1 }));
 }
 
 function signal(n: number, seed: number): CalibrationSample[] {
   const r = seededRandom(seed);
-  return Array.from({ length: n }, () => {
+  return Array.from({ length: n }, (_, i) => {
     const score = r() * 100;
-    return { score, outcome: (r() < 0.15 + 0.7 * (score / 100) ? 1 : 0) as 0 | 1 };
+    return { at: new Date(i*1000), resolvedAt: new Date(i*1000+1), score, outcome: (r() < 0.15 + 0.7 * (score / 100) ? 1 : 0) as 0 | 1 };
   });
 }
 
@@ -83,7 +84,7 @@ describe("calibration engine: isotonic fit", () => {
   });
 
   it("a predictive score is served isotonic, beats the base rate out of sample, and is reliable", () => {
-    const fit = fitCalibration(signal(3000, 7));
+    const fit = fitCalibration(signal(12000, 7));
     assert.equal(fit.model, "isotonic");
     assert.equal(fit.edgeDetected, true);
     assert.ok(fit.cv && fit.cv.improvementLower95 > 0);
@@ -145,7 +146,7 @@ describe("agent trust is measured only from the agent's own scored record", () =
   });
 
   it("a skilled agent earns positive influence", () => {
-    const t = measureAgentTrust("skilled", signal(1500, 21));
+    const t = measureAgentTrust("skilled", signal(12000, 21));
     assert.ok(t.influence > 0.2, `influence ${t.influence}`);
     assert.ok(t.trustScore > 50);
   });
@@ -186,5 +187,47 @@ describe("cross-timeframe fallback and calibrated ranking", () => {
     assert.deepEqual(ranked.map((r) => r.rankBasis), [
       "calibrated_probability", "calibrated_probability", "unmeasured_raw_order", "unmeasured_raw_order",
     ]);
+  });
+});
+
+describe('prospective validation integrity', () => {
+  it('missing outcome timing never earns an edge or a reported out-of-sample Brier', () => {
+    const untimed=signal(1000,7).map(({score,outcome})=>({score,outcome}));
+    const f=fitCalibration(untimed);
+    assert.equal(f.edgeDetected,false);
+    assert.equal(f.cv,null);
+    assert.equal(f.brier,null);
+  });
+  it('outcomes resolved after the entire validation period never train a fold', () => {
+    const late=signal(1000,7).map(s=>({...s,resolvedAt:new Date(1e12)}));
+    const f=fitCalibration(late);
+    assert.equal(f.edgeDetected,false);
+    assert.equal(f.reliability.reduce((n,b)=>n+b.n,0),0);
+  });
+  it('future changes cannot alter earlier validation predictions', () => {
+    // First 5/6 are identical. Alter only outcomes in the final block.
+    const first=signal(1200,22), changed=first.map((s,i)=>i<1000?s:{...s,outcome:(1-s.outcome) as 0|1});
+    assert.deepEqual(crossValidate(first,5,5).isoPreds, crossValidate(changed,5,5).isoPreds);
+  });
+});
+
+
+describe("independent holdout and legacy fit invalidation", () => {
+  it("changing only holdout labels cannot change selection, and a failed holdout vetoes influence", () => {
+    const original = signal(12000, 7);
+    const reversed = original.map((s, i) => i < 9600 ? s : { ...s, outcome: (1 - s.outcome) as 0 | 1 });
+    const a = fitCalibration(original), b = fitCalibration(reversed);
+    assert.deepEqual(a.cv, b.cv);
+    assert.equal(a.holdout?.selectedModel, "isotonic");
+    assert.equal(a.holdout?.n, 2400);
+    assert.equal(b.holdout?.selectedModel, "isotonic");
+    assert.equal(b.edgeDetected, false);
+    assert.equal(agentTrustFromFit("reversed", b).influence, 0);
+    assert.ok(b.holdout!.brierSelected > b.holdout!.brierBaseline);
+  });
+  it("old bidirectional fits cannot be served or confer agent authority", () => {
+    const legacy = { ...fitCalibration(signal(12000, 7)), method: "isotonic_pav_beta_shrinkage_v1" } as unknown as CalibrationFit;
+    assert.equal(readCalibration(legacy, 90).probability, null);
+    assert.equal(agentTrustFromFit("legacy", legacy).influence, 0);
   });
 });

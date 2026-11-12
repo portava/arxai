@@ -95,7 +95,7 @@ function hasVerifierMarkup(seg: string): boolean {
 
 export function gateSpeech(input: SpeechGateInput): SpeechGateResult {
   const idx = buildEvidenceIndex(input.outputs ?? [], input.userText ?? "");
-  const trusted = (input.trusted ?? []).map(normalizeForSpeechMatch).filter((t) => t.length > 0);
+  const trusted = (input.trusted ?? []).flatMap(t => splitSegments(t).map(s => normalizeForSpeechMatch(s.text))).filter((t) => t.length > 0);
   const segments: SpeechSegment[] = [];
   const findings: Finding[] = [];
   const out: string[] = [];
@@ -117,7 +117,7 @@ export function gateSpeech(input: SpeechGateInput): SpeechGateResult {
       continue;
     }
     const norm = normalizeForSpeechMatch(raw);
-    if (norm.length >= MIN_TRUSTED_MATCH_CHARS && trusted.some((t) => t.includes(norm))) {
+    if (norm.length >= MIN_TRUSTED_MATCH_CHARS && trusted.some((t) => t === norm)) {
       flushNotice();
       segments.push({ original: raw, verdict: "spoken_trusted", findings: [] });
       out.push(raw);
