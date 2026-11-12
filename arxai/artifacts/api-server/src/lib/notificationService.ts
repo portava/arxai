@@ -7,13 +7,14 @@
 // SAFETY: never accept userId from client; never log raw bridge tokens or any
 // secret-named fields. Caller payloads are scrubbed defensively.
 import { db, userNotificationsTable, userNotificationPreferencesTable, userActivityTimelineTable } from "@workspace/db";
+import { redactSecretString } from "@workspace/domain/security";
 import { and, eq, sql } from "drizzle-orm";
 
 const SECRET_KEY_RE = /token|secret|password|bridge|api[_-]?key|authorization|cookie|x-mt5/i;
 const SECRET_VAL_RE = /MT5_BRIDGE_TOKEN|X-MT5-Bridge-Token/i;
 
 function scrubText(v: string): string {
-  return SECRET_VAL_RE.test(v) ? "[REDACTED]" : v;
+  return SECRET_VAL_RE.test(v) ? "[REDACTED]" : redactSecretString(v);
 }
 function scrubValue(v: unknown, depth = 0): unknown {
   if (v == null) return v;

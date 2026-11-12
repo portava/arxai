@@ -13,6 +13,7 @@
 //   - other users' data (user_id FK + cascade)
 //   - full chat history (only a compact narrative)
 
+import { redactSecretString, redactSecrets } from "@workspace/domain/security";
 import { toolResultText } from "./toolResultText.js";
 import {
   db, arxAssistantMemoryTable, arxAssistantConversationsTable,
@@ -30,20 +31,11 @@ const UNRESOLVED_ACTIONS_MAX = 8;
 const SUMMARIZE_EVERY_N_MESSAGES = 10;
 const SUMMARIZE_MIN_INTERVAL_MS = 60_000; // throttle: at most once per minute per user
 
-// Words / fragments that strongly look like a secret. Belt-and-suspenders.
-const SECRET_PATTERNS = [
-  /MT5_BRIDGE_TOKEN/i,
-  /SESSION_SECRET/i,
-  /apiKeyHash/i,
-  /sk-[a-z0-9-]{16,}/i,
-  /ey[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/, // JWT-ish
-];
+// One shared redaction policy covers repeated secrets, assignment values,
+// nested preferences and tool data before persistence or model context.
+const stripSecrets = redactSecretString;
+const sanitizeMemory = <T>(value: T): T => redactSecrets(value).value;
 
-function stripSecrets(s: string): string {
-  let out = s;
-  for (const re of SECRET_PATTERNS) out = out.replace(re, "[REDACTED]");
-  return out;
-}
 
 export interface PendingAction {
   type: string;                  // e.g. "scanner_check" | "mt5_status" | "trade_analysis" | "risk_explanation" | "generic"
@@ -80,11 +72,11 @@ export async function getMemory(userId: number): Promise<AssistantMemorySnapshot
   }
   return {
     // Decrypt at rest (legacy plaintext is returned verbatim by readField).
-    rollingSummary: r.rollingSummary != null ? readField(r.rollingSummary).value : null,
-    tradingStyle: (r.tradingStyle as Record<string, unknown> | null) ?? null,
-    preferences: (r.preferences as Record<string, unknown> | null) ?? null,
+    rollingSummary: r.rollingSummary != null ? stripSecrets(readField(r.rollingSummary).value) : null,
+    tradingStyle: sanitizeMemory((r.tradingStyle as Record<string, unknown> | null) ?? null),
+    preferences: sanitizeMemory((r.preferences as Record<string, unknown> | null) ?? null),
     unresolvedActions: Array.isArray(r.unresolvedActions)
-      ? (r.unresolvedActions as PendingAction[]).slice(0, UNRESOLVED_ACTIONS_MAX) : [],
+      ? sanitizeMemory(r.unresolvedActions as PendingAction[]).slice(0, UNRESOLVED_ACTIONS_MAX) : [],
     summaryUpdatedAt: r.summaryUpdatedAt ? new Date(r.summaryUpdatedAt).toISOString() : null,
     memoryEnabled: r.memoryEnabled !== false,
   };
@@ -171,6 +163,12 @@ async function upsertMemory(userId: number, patch: Partial<{
   summaryUpdatedAt: Date | null;
 }>): Promise<void> {
   const safe = { ...patch };
+  for (const field of ["tradingStyle", "preferences"] as const) {
+    const value = safe[field];
+    if (value && typeof value === "object") {
+      safe[field] = Array.isArray(value) ? {} : sanitizeMemory(Object.fromEntries(Object.entries(value).slice(0, 32)));
+    }
+  }
   if (typeof safe.rollingSummary === "string") {
     // Strip secrets + cap BEFORE encryption, then encrypt at rest. When no
     // encryption key is configured, encryptField returns plaintext verbatim
@@ -178,7 +176,7 @@ async function upsertMemory(userId: number, patch: Partial<{
     safe.rollingSummary = encryptField(stripSecrets(safe.rollingSummary).slice(0, ROLLING_SUMMARY_MAX));
   }
   if (Array.isArray(safe.unresolvedActions)) {
-    safe.unresolvedActions = safe.unresolvedActions.slice(0, UNRESOLVED_ACTIONS_MAX);
+    safe.unresolvedActions = sanitizeMemory(safe.unresolvedActions).slice(0, UNRESOLVED_ACTIONS_MAX);
   }
   // Phase 22K v2 — atomic upsert to close the concurrent-first-write race
   // (architect HIGH→MEDIUM finding). The unique index on user_id is the
@@ -223,7 +221,7 @@ export async function setConversationPendingAction(
   userId: number, conversationId: number, action: PendingAction | null,
 ): Promise<void> {
   await db.update(arxAssistantConversationsTable)
-    .set({ pendingAction: action as unknown as Record<string, unknown> | null })
+    .set({ pendingAction: sanitizeMemory(action) as unknown as Record<string, unknown> | null })
     .where(and(
       eq(arxAssistantConversationsTable.id, conversationId),
       eq(arxAssistantConversationsTable.userId, userId),
@@ -239,7 +237,7 @@ export async function getConversationPendingAction(
       eq(arxAssistantConversationsTable.id, conversationId),
       eq(arxAssistantConversationsTable.userId, userId),
     )).limit(1);
-  return (rows[0]?.pendingAction as PendingAction | null) ?? null;
+  return sanitizeMemory((rows[0]?.pendingAction as PendingAction | null) ?? null);
 }
 
 // ── Tool result rehydration: surface last N tool results into context ────
@@ -257,7 +255,7 @@ export async function getRecentToolResults(
   return rows.reverse().map((r) => ({
     toolName: r.toolName,
     status: r.status,
-    result: r.result,
+    result: sanitizeMemory(r.result),
     createdAt: r.createdAt.toISOString(),
   }));
 }

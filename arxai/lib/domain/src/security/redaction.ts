@@ -41,6 +41,11 @@ const SECRET_VALUE_PATTERNS: ReadonlyArray<RegExp> = [
 export function redactSecretString(input: unknown): string {
   let s = typeof input === "string" ? input : String(input ?? "");
   for (const rx of SECRET_VALUE_PATTERNS) s = s.replace(rx, REDACT_PLACEHOLDER);
+  // Named assignments also contain short/opaque credentials that have no
+  // recognizable provider prefix. Redact every occurrence, including quotes.
+  s = s.replace(/\b(api[_ -]?key|api[_ -]?secret|password|passwd|access[_ -]?token|refresh[_ -]?token|session[_ -]?(?:secret|token)|mt5[_ -]?bridge[_ -]?token|database[_ -]?url|private[_ -]?key|signing[_ -]?key|encryption[_ -]?key)["']?\s*[:=]\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}]+)/gi,
+    (_match, key: string) => `${key}=[REDACTED]`);
+  s = s.replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [REDACTED]");
   return s;
 }
 

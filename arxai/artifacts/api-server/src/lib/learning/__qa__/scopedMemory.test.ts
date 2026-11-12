@@ -23,10 +23,10 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import cookieParser from "cookie-parser";
-import { inArray, like } from "drizzle-orm";
+import { inArray, like, eq, sql } from "drizzle-orm";
 import {
-  authUserSessionsTable, db, learningEventsTable, mistakePatternsTable, postTradeDebriefsTable,
-  strategyEdgesTable, usersTable,
+  arxAssistantMemoryTable, arxAssistantConversationsTable, authUserSessionsTable, db, learningEventsTable, mistakePatternsTable, postTradeDebriefsTable,
+  strategyEdgesTable, usersTable, paperOrdersTable,
 } from "@workspace/db";
 import { createUserSession } from "../../auth/userSessions.js";
 import { getSymbolLearningView, processLearningPayload, type LearningPayload } from "../../learningEngine.js";
@@ -34,6 +34,9 @@ import {
   listEdgesForOperator, listOwnEdges, listOwnMistakes, listPlatformEdges, listPlatformMistakes,
   PLATFORM_MIN_CONTRIBUTORS, recordEdgeOutcome, recordMistakeOutcome, type EdgeOutcome,
 } from "../scopedMemory.js";
+import { runAutoDebrief } from "../../autoDebriefService.js";
+import { retryPendingLearning } from "../retryWorker.js";
+import { getMemory, setConversationPendingAction, getConversationPendingAction } from "../../assistant/memoryStore.js";
 import learningRouter from "../../../routes/learning.js";
 
 const EMAILS = ["qa+learn-a@arx.test", "qa+learn-b@arx.test", "qa+learn-c@arx.test"];
@@ -177,7 +180,9 @@ test("engine: refuses another trader's debrief and an ownerless payload", async 
 });
 
 test("engine: the debrief owner's memory learns; only a real own debrief is shared", async () => {
-  const own = await processLearningPayload(payload(await debrief(a)));
+  const canonical = payload(await debrief(a));
+  await db.update(postTradeDebriefsTable).set({ learningPayload: canonical }).where(eq(postTradeDebriefsTable.id, canonical.debrief_id));
+  const own = await processLearningPayload(canonical);
   assert.equal(own.status, "processed");
   assert.deepEqual(own.warnings, []);
   assert.equal((await listOwnEdges(a, { symbol: sym })).length, 1);
@@ -226,4 +231,150 @@ test("routes: a session is required and rows stay with their owner", async () =>
   assert.equal((bEdges.edges as unknown[]).length, 0, "scope=all is operator-only; B sees nothing of A's");
   assert.equal(((bEdges.platform as { edges: unknown[] }).edges).length, 0);
   assert.equal(((await get(`/learning/mistakes?symbol=${sym}`, cookieB)).mistakes as unknown[]).length, 0);
+});
+
+
+test("concurrent first outcomes preserve every sample and distinct contributor", async () => {
+  const owners = Array.from({ length: 18 }, (_, i) => [a, b, c][i % 3]!);
+  await Promise.all(owners.map(u => recordEdgeOutcome(u, edge({ pnl: 1 }))));
+  const [platform] = await listPlatformEdges({ symbol: sym });
+  assert.equal(platform.sampleCount, 18);
+  assert.equal(platform.netPnl, 18);
+  assert.equal(platform.contributors, 3);
+  for (const u of [a, b, c]) assert.equal((await listOwnEdges(u, { symbol: sym }))[0].sampleCount, 6);
+  await Promise.all(owners.map(u => recordMistakeOutcome(u, { tag: "CONCURRENT", symbol: sym, action: "BUY", isLoss: true, tradeId: 1, guardrail: "wait" })));
+  const [mistake] = await listPlatformMistakes({ symbol: sym });
+  assert.equal(mistake.count, 18);
+  assert.equal(mistake.contributors, 3);
+});
+
+test("racing duplicate debriefs fold once; opposing signal order does not deadlock", async () => {
+  const id = await debrief(a);
+  const p = payload(id);
+  const results = await Promise.all(Array.from({ length: 8 }, () => processLearningPayload(p, { ownerUserId: a })));
+  assert.equal(results.filter(r => r.status === "processed").length, 1);
+  assert.equal(results.filter(r => r.status === "skipped_already_processed").length, 7);
+  assert.equal((await listOwnEdges(a, { symbol: sym }))[0].sampleCount, 1);
+  const signals = [{ source: "first", status: "PASS", score: 1 }, { source: "second", status: "PASS", score: 1 }];
+  const outcomes = await Promise.all([
+    processLearningPayload(payload(await debrief(a), { signals_used: signals }), { ownerUserId: a }),
+    processLearningPayload(payload(await debrief(b), { signals_used: [...signals].reverse() }), { ownerUserId: b }),
+  ]);
+  assert.ok(outcomes.every(r => r.status === "processed"));
+  assert.equal((await processLearningPayload(p, { ownerUserId: b })).status, "skipped_invalid_payload");
+});
+
+test("a mid-fold database failure rolls back the event and every scope; retry succeeds", async () => {
+  const id = await debrief(a), p = payload(id, { mistake_tags: ["QA_SCOPE_FAIL"] });
+  await db.execute(sql`ALTER TABLE mistake_patterns ADD CONSTRAINT qa_scope_failure CHECK (tag <> 'QA_SCOPE_FAIL') NOT VALID`);
+  try {
+    assert.equal((await processLearningPayload(p, { ownerUserId: a })).status, "error");
+    assert.deepEqual(await listOwnEdges(a, { symbol: sym }), []);
+    assert.deepEqual(await listEdgesForOperator({ symbol: sym }), []);
+    assert.deepEqual(await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, id)), []);
+  } finally {
+    await db.execute(sql`ALTER TABLE mistake_patterns DROP CONSTRAINT qa_scope_failure`);
+  }
+  assert.equal((await processLearningPayload(p, { ownerUserId: a })).status, "processed");
+  assert.equal((await listOwnEdges(a, { symbol: sym }))[0].sampleCount, 1);
+});
+
+
+test("an owned debrief does not authorize forged shared learning evidence", async () => {
+  const canonical = payload(await debrief(a));
+  await db.update(postTradeDebriefsTable).set({ learningPayload: canonical }).where(eq(postTradeDebriefsTable.id, canonical.debrief_id));
+  for (const change of [{ pnl: 9999 }, { result: "WIN" }, { symbol: "OTHER" }, { trade_id: 42 }, { signals_used: [] }]) {
+    const result = await processLearningPayload({ ...canonical, ...change }, { ownerUserId: a });
+    assert.equal(result.status, "skipped_invalid_payload");
+  }
+  assert.deepEqual(await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, canonical.debrief_id)), []);
+  assert.equal((await processLearningPayload(canonical, { ownerUserId: a })).status, "processed");
+});
+
+
+test("pending stored outcomes recover after a worker restart and remain idempotent", async () => {
+  const canonical = payload(await debrief(a));
+  await db.update(postTradeDebriefsTable).set({ learningPayload: canonical }).where(eq(postTradeDebriefsTable.id, canonical.debrief_id));
+  const replay = await retryPendingLearning(0, 100);
+  assert.ok(replay.processed >= 1);
+  const receipt = await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, canonical.debrief_id));
+  assert.equal(receipt.length, 1);
+  await retryPendingLearning(0, 100);
+  assert.equal((await listOwnEdges(a, { symbol: sym }))[0].sampleCount, 1);
+});
+
+test("assistant memory redacts repeated and nested credentials and keeps owner boundaries", async () => {
+  const [conversation] = await db.insert(arxAssistantConversationsTable).values({ userId: a, title: "privacy probe" }).returning();
+  const secret = "sk-abcdefghijklmnopqrstuvwx";
+  const action = { type: "generic", status: "open" as const, userIntent: `API_KEY=opaqueSecret ${secret} ${secret}`,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastAssistantPromise: "Check EURUSD",
+    toolResult: { apiKey: "nestedSecret", quote: 1.08 } };
+  await setConversationPendingAction(a, conversation.id, action);
+  const [stored] = await db.select().from(arxAssistantConversationsTable).where(eq(arxAssistantConversationsTable.id, conversation.id));
+  for (const value of [secret, "opaqueSecret", "nestedSecret"]) assert.ok(!JSON.stringify(stored.pendingAction).includes(value));
+  assert.equal((await getConversationPendingAction(a, conversation.id))?.lastAssistantPromise, "Check EURUSD");
+  await setConversationPendingAction(b, conversation.id, null);
+  assert.equal(await getConversationPendingAction(b, conversation.id), null);
+  assert.ok(await getConversationPendingAction(a, conversation.id));
+  await db.insert(arxAssistantMemoryTable).values({ userId: a, rollingSummary: secret, preferences: { apiKey: "legacySecret", market: "EURUSD" } })
+    .onConflictDoUpdate({ target: arxAssistantMemoryTable.userId, set: { rollingSummary: secret, preferences: { apiKey: "legacySecret", market: "EURUSD" } } });
+  const memory = await getMemory(a);
+  assert.ok(!JSON.stringify(memory).includes(secret));
+  assert.ok(!JSON.stringify(memory).includes("legacySecret"));
+  assert.equal(memory.preferences?.market, "EURUSD");
+});
+
+
+test("private-only history never prevents later verified cohort membership", async () => {
+  const m = { tag: "PRIVATE_FIRST", symbol: sym, action: "BUY", isLoss: true, tradeId: 1, guardrail: "wait" };
+  for (const owner of [a, b, c]) {
+    await recordEdgeOutcome(owner, edge(), [], false);
+    await recordMistakeOutcome(owner, m, [], false);
+  }
+  assert.equal((await listPlatformEdges({ symbol: sym })).length, 0);
+  for (const owner of [a, b, c, a]) {
+    await recordEdgeOutcome(owner, edge(), [], true);
+    await recordMistakeOutcome(owner, m, [], true);
+  }
+  const [e] = await listPlatformEdges({ symbol: sym });
+  const [mistake] = await listPlatformMistakes({ symbol: sym });
+  assert.equal(e?.contributors, 3);
+  assert.equal(e?.sampleCount, 4);
+  assert.equal(mistake?.contributors, 3);
+  assert.equal(mistake?.count, 4);
+});
+
+
+test("auto-debrief insertion and canonical learning ID roll back together", async () => {
+  const [order] = await db.insert(paperOrdersTable).values({ paperAccountId: -42, symbol: sym,
+    direction: "BUY", entryPrice: 100, stopLoss: 90, takeProfit: 110,
+    status: "CLOSED_TP", exitPrice: 110, profitLoss: 10, closedAt: new Date() }).returning();
+  try {
+    await db.execute(sql.raw(`ALTER TABLE post_trade_debriefs ADD CONSTRAINT qa_canonical_id_failure CHECK (trade_id <> ${order!.id} OR (learning_payload->>'debrief_id')::int = 0) NOT VALID`));
+    try {
+      const failed = await runAutoDebrief(order!.id, { triggeredBy: "qa" });
+      assert.equal(failed.status, "error");
+      assert.equal((await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.tradeId, order!.id))).length, 0);
+    } finally { await db.execute(sql`ALTER TABLE post_trade_debriefs DROP CONSTRAINT qa_canonical_id_failure`); }
+    const recovered = await runAutoDebrief(order!.id, { triggeredBy: "qa" });
+    assert.equal(recovered.status, "created");
+    const [stored] = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.tradeId, order!.id));
+    assert.equal((stored!.learningPayload as Record<string, unknown>).debrief_id, stored!.id);
+    debriefIds.push(stored!.id);
+  } finally { await db.delete(paperOrdersTable).where(eq(paperOrdersTable.id, order!.id)); }
+});
+
+test("recovery repairs only provenance-backed historical system draft IDs", async () => {
+  for (const system of [false, true]) {
+    const id = await debrief(a);
+    const [row] = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.id, id));
+    const draft = payload(0, { trade_id: row!.tradeId });
+    await db.update(postTradeDebriefsTable).set({ learningPayload: draft,
+      createdBy: system ? "SYSTEM_AUTO_DEBRIEF" : "USER",
+      autoMeta: { created_by: "SYSTEM_AUTO_DEBRIEF", trade_id: row!.tradeId, symbol: sym, action: "BUY" },
+    }).where(eq(postTradeDebriefsTable.id, id));
+    await retryPendingLearning(id - 1, 1);
+    const receipts = await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, id));
+    assert.equal(receipts.length, system ? 1 : 0);
+  }
 });

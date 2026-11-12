@@ -12,6 +12,7 @@
 //     the same debrief can never be processed twice.
 //   • All errors are non-fatal: BB's debrief survives even if CC throws.
 
+import { stableStringify } from "@workspace/features/event-chain";
 import { and, desc, eq } from "drizzle-orm";
 import {
   db,
@@ -23,7 +24,7 @@ import {
 import {
   clamp, CONF_ADJ_MAX, CONF_ADJ_MIN, RISK_ADJ_MAX, RISK_ADJ_MIN,
   listOwnEdges, listOwnMistakes, listPlatformEdges, recordEdgeOutcome, recordMistakeOutcome,
-  type OwnedScope,
+  type OwnedScope, type MemoryTransaction,
 } from "./learning/scopedMemory.js";
 import { logger } from "./logger.js";
 
@@ -114,16 +115,27 @@ export interface LearningOptions {
 }
 
 /** Account scope for a paper trade: the paper account it was placed on. */
-async function derivedScopes(ownerUserId: number, tradeId: number): Promise<OwnedScope[]> {
+async function derivedScopes(tx: MemoryTransaction, ownerUserId: number, tradeId: number): Promise<OwnedScope[]> {
   try {
-    const [o] = await db.select({ acct: paperOrdersTable.paperAccountId }).from(paperOrdersTable)
+    const [o] = await tx.select({ acct: paperOrdersTable.paperAccountId }).from(paperOrdersTable)
       .where(and(eq(paperOrdersTable.id, tradeId), eq(paperOrdersTable.userId, ownerUserId))).limit(1);
     return o?.acct != null ? [{ type: "account", key: `paper:${o.acct}` }] : [];
   } catch { return []; }
 }
 
 export async function processLearningPayload(payload: LearningPayload, opts: LearningOptions = {}): Promise<LearningResult> {
-  const debriefId = payload.debrief_id;
+  try {
+    return await db.transaction(tx => processLearningPayloadInTransaction(tx, payload, opts));
+  } catch (error) {
+    log.error({ err: String(error), debriefId: payload?.debrief_id }, "learning transaction rolled back");
+    return { status: "error", eventId: null, debriefId: payload?.debrief_id ?? 0,
+      edgeAdjustments: [], mistakeAdjustments: [], warnings: ["No learning changes committed; retry is safe"],
+      error: String(error).slice(0, 300) };
+  }
+}
+
+async function processLearningPayloadInTransaction(tx: MemoryTransaction, payload: LearningPayload, opts: LearningOptions = {}): Promise<LearningResult> {
+  const debriefId = payload?.debrief_id ?? 0;
   const baseRes: LearningResult = {
     status: "processed", eventId: null, debriefId,
     edgeAdjustments: [], mistakeAdjustments: [], warnings: [],
@@ -137,16 +149,9 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
     return { ...baseRes, status: "skipped_not_ready", warnings: ["ready_for_learning is not true"] };
   }
 
-  // 2. Idempotency check — debriefId is unique-indexed.
-  const existing = await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, debriefId)).limit(1);
-  if (existing[0]) {
-    log.info({ debriefId, eventId: existing[0].id }, "learning event already exists — idempotent skip");
-    return { ...baseRes, status: "skipped_already_processed", eventId: existing[0].id, warnings: [`Learning event already exists (id=${existing[0].id})`] };
-  }
-
   // 3. Hydrate from the debrief row if any field is missing; the row also
   // decides ownership and provenance (below).
-  const dbRow = (await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.id, debriefId)).limit(1))[0];
+  const dbRow = (await tx.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.id, debriefId)).limit(1))[0];
   // Learning memory is per trader: the debrief's owner is the owner; a caller
   // may not teach another trader's memory, and an ownerless payload teaches nothing.
   const callerId = opts.ownerUserId ?? null;
@@ -157,12 +162,27 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
   if (ownerUserId == null) {
     return { ...baseRes, status: "skipped_invalid_payload", warnings: ["No owner: learning memory is per trader"] };
   }
-  const scopes = [...(opts.scopes ?? []), ...(await derivedScopes(ownerUserId, payload.trade_id))];
+  // 2. Idempotency check — debriefId is unique-indexed.
+  const existing = await tx.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, debriefId)).limit(1);
+  if (existing[0]) {
+    log.info({ debriefId, eventId: existing[0].id }, "learning event already exists — idempotent skip");
+    return { ...baseRes, status: "skipped_already_processed", eventId: existing[0].id, warnings: [`Learning event already exists (id=${existing[0].id})`] };
+  }
+
+  const scopes = [...(opts.scopes ?? []), ...(await derivedScopes(tx, ownerUserId, payload.trade_id))];
   // Provenance gate: only an outcome backed by the owner's own debrief row is
   // shared beyond their private memory (scoped kinds and the platform cohort).
   // A synthesized payload (demo, or a debrief id that does not exist) teaches
   // the caller's private memory only.
-  const verified = dbRow?.userId === ownerUserId;
+  const stored = dbRow?.learningPayload as Partial<LearningPayload> | undefined;
+  const hasStoredOutcome = stored?.ready_for_learning === true && stored.debrief_id === debriefId;
+  const materialKeys = ["trade_id", "decision_id", "result", "pnl", "pnl_percent", "symbol", "action", "confidence_before_trade", "risk_score_before_trade", "signals_used", "mistake_tags"] as const;
+  if (hasStoredOutcome && materialKeys.some(key => stableStringify(stored[key] ?? null) !== stableStringify(payload[key] ?? null))) {
+    return { ...baseRes, status: "skipped_invalid_payload", warnings: ["Outcome does not match the stored debrief evidence"] };
+  }
+  // A debrief identifier is not evidence for arbitrary caller-supplied gains.
+  const verified = dbRow?.userId === ownerUserId && hasStoredOutcome;
+
   const meta = (dbRow?.autoMeta as Record<string, unknown> | undefined) ?? {};
   let symbol = payload.symbol ?? "";
   let action = payload.action ?? "";
@@ -202,37 +222,29 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
 
   // 5. CLAIM idempotency row FIRST — this guarantees that no second caller
   // can apply edge/mistake mutations for the same debriefId. The unique index
-  // on debrief_id rejects concurrent inserts, so only one caller proceeds to
+  // on debrief_id makes concurrent claims no-ops, so only one caller proceeds to
   // mutate strategy_edges/mistake_patterns. The row is updated with the
   // final summary/adjustments at step 8 after mutations succeed.
-  let eventId: number | null = null;
-  try {
-    const ins = await db.insert(learningEventsTable).values({
-      userId: ownerUserId,
-      tradeId: payload.trade_id,
-      decisionId: payload.decision_id,
-      debriefId,
-      // NOT NULL column: 0 when the P&L is not known, flagged in adjustments.
-      symbol, action, result, pnl: pnl ?? 0, pnlPercent,
-      confidenceBeforeTrade: payload.confidence_before_trade ?? null,
-      riskScoreBeforeTrade:  payload.risk_score_before_trade ?? null,
-      signalsUsed: signals as unknown as object,
-      mistakeTags: mistakeTags as unknown as object,
-      lesson: payload.lesson ?? "",
-      learningSummary: "PENDING",
-      adjustments: { pending: true, pnlKnown: pnl != null } as unknown as object,
-    }).returning({ id: learningEventsTable.id });
-    eventId = ins[0]?.id ?? null;
-  } catch (err) {
-    // Race condition: another caller claimed first.
-    const racy = await db.select().from(learningEventsTable).where(eq(learningEventsTable.debriefId, debriefId)).limit(1);
-    if (racy[0]) {
-      log.warn({ debriefId, eventId: racy[0].id, err: String(err) }, "race-condition: existing learning event found, mutations skipped");
-      return { ...baseRes, status: "skipped_already_processed", eventId: racy[0].id, warnings: ["Race-condition: another learning event was created concurrently — no edges/mistakes mutated by this call"] };
-    }
-    log.error({ err: String(err), debriefId }, "learning event insert failed");
-    return { ...baseRes, status: "error", error: String(err).slice(0, 300), warnings: ["learning_events insert failed"] };
+  const ins = await tx.insert(learningEventsTable).values({
+    userId: ownerUserId,
+    tradeId: payload.trade_id,
+    decisionId: payload.decision_id,
+    debriefId,
+    // NOT NULL column: 0 when the P&L is not known, flagged in adjustments.
+    symbol, action, result, pnl: pnl ?? 0, pnlPercent,
+    confidenceBeforeTrade: payload.confidence_before_trade ?? null,
+    riskScoreBeforeTrade:  payload.risk_score_before_trade ?? null,
+    signalsUsed: signals as unknown as object,
+    mistakeTags: mistakeTags as unknown as object,
+    lesson: payload.lesson ?? "",
+    learningSummary: "PENDING",
+    adjustments: { pending: true, pnlKnown: pnl != null } as unknown as object,
+  }).onConflictDoNothing({ target: learningEventsTable.debriefId }).returning({ id: learningEventsTable.id });
+  if (!ins[0]) {
+    const [claimed] = await tx.select({ id: learningEventsTable.id }).from(learningEventsTable).where(eq(learningEventsTable.debriefId, debriefId));
+    return { ...baseRes, status: "skipped_already_processed", eventId: claimed?.id ?? null };
   }
+  const eventId = ins[0].id;
 
   const edgeAdjustments: LearningResult["edgeAdjustments"] = [];
   const mistakeAdjustments: LearningResult["mistakeAdjustments"] = [];
@@ -240,7 +252,8 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
   // 6. Update strategy_edges per supporting signal (status PASS or INFO with score>0).
   const supportingSignals = signals.filter((s) =>
     s && typeof s.source === "string" && (s.status === "PASS" || (s.status === "INFO" && (s.score ?? 0) > 0))
-  );
+  ).sort((a, b) => a.source < b.source ? -1 : a.source > b.source ? 1 : 0);
+  // Stable cohort lock order prevents opposing multi-signal batches deadlocking.
   // De-dup by source.
   const seen = new Set<string>();
   for (const sig of supportingSignals) {
@@ -249,7 +262,7 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
     const row = await recordEdgeOutcome(ownerUserId, {
       symbol, signalName: sig.source, action, result, pnl, tradeId: payload.trade_id,
       deltaEdge: deltaEdgePerSig, deltaConf: deltaConfPerSig, deltaRisk: deltaRiskPerSig,
-    }, scopes, verified);
+    }, scopes, verified, tx);
     edgeAdjustments.push({
       signalName: sig.source, action, deltaEdge: deltaEdgePerSig, deltaConf: deltaConfPerSig, deltaRisk: deltaRiskPerSig,
       newEdgeScore: row.edgeScore, sampleCount: row.sampleCount,
@@ -258,10 +271,10 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
 
   // 7. Update mistake_patterns per tag (LOSS amplifies; WIN does not erase).
   if (mistakeTags.length > 0) {
-    for (const tag of mistakeTags) {
+    for (const tag of [...new Set(mistakeTags.map(String))].sort()) {
       const row = await recordMistakeOutcome(ownerUserId, {
         tag: String(tag), symbol, action, isLoss, tradeId: payload.trade_id, guardrail: recommendedGuardrailFor(String(tag)),
-      }, scopes, verified);
+      }, scopes, verified, tx);
       mistakeAdjustments.push({ tag: row.tag, symbol, action, count: row.count, severityScore: row.severityScore });
     }
   }
@@ -271,7 +284,7 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
                      : totalSamples(edgeAdjustments) < SAMPLE_MEDIUM ? "MEDIUM" : "HIGH";
   const pnlText = pnl == null ? "P&L not sized" : `pnl=${pnl.toFixed(2)}`;
   const summary = `${result} on ${symbol} ${action} (${pnlText}). ${edgeAdjustments.length} signal edge(s) updated, ${mistakeAdjustments.length} mistake pattern(s). Sample bucket=${sampleBucket}.`;
-  await db.update(learningEventsTable).set({
+  await tx.update(learningEventsTable).set({
     learningSummary: summary,
     adjustments: {
       edgeAdjustments, mistakeAdjustments, sampleBucket,
@@ -280,9 +293,9 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
     } as unknown as object,
   }).where(eq(learningEventsTable.id, eventId!));
 
-  // 8. Vault audit (append-only, best-effort).
+  // 8. Outcome, every memory mutation and its audit evidence commit together.
   const severity = isLoss ? "WARN" : "INFO";
-  await db.insert(vaultEventsTable).values({
+  await tx.insert(vaultEventsTable).values({
     kind: "LEARNING_EVENT_PROCESSED",
     severity,
     source: "SYSTEM",
@@ -297,8 +310,6 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
     reasons: [],
     blockers: [],
     generatedAtIso: new Date().toISOString(),
-  }).catch((err) => {
-    log.warn({ err: String(err) }, "vault write failed (non-fatal)");
   });
 
   log.info({
@@ -306,7 +317,7 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
     edgesUpdated: edgeAdjustments.length, mistakesUpdated: mistakeAdjustments.length, sampleBucket,
   }, "learning event processed");
 
-  const warnings = verified ? [] : ["No debrief of yours backs this outcome: it taught your private memory only, not shared scopes or the platform cohort"];
+  const warnings = verified ? [] : ["No stored verified outcome backs this payload: it taught your private memory only, not shared scopes or the platform cohort"];
   return { ...baseRes, status: "processed", eventId, result, edgeAdjustments, mistakeAdjustments, warnings };
 }
 

@@ -22,7 +22,8 @@ export const mistakePatternsTable = pgTable("mistake_patterns", {
   scopeType: text("scope_type").notNull().default("platform"),
   scopeKey: text("scope_key").notNull().default(""),
   scopeOwner: integer("scope_owner").notNull().default(0),
-  // Distinct traders behind a platform row; null = legacy row of unknown origin.
+  // Platform: distinct verified traders (null = legacy unknown origin).
+  // User: 1 marks a verified contribution; null is unverified/legacy membership.
   contributors: integer("contributors"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -15,7 +15,7 @@ import { createFakeDb } from "../../routes/__qa__/_fakeRouteDb.js";
 
 const realDb = await import("@workspace/db");
 let fake = createFakeDb({});
-const dbProxy = new Proxy({}, { get: (_t, p) => (fake.db as Record<string | symbol, unknown>)[p] });
+const dbProxy = new Proxy({}, { get: (_t, p) => p === "transaction" ? (fn: (tx: unknown) => unknown) => fn(fake.db) : (fake.db as Record<string | symbol, unknown>)[p] });
 mock.module("@workspace/db", { namedExports: { ...realDb, db: dbProxy } });
 
 const { runAutoDebrief } = await import("../autoDebriefService.js");

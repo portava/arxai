@@ -86,6 +86,22 @@ console.log("scrubString — free text:");
   check("non-secret words preserved", s.includes("token") && s.includes("done"));
 }
 
+// Short opaque assignment values and repeated instances must not survive.
+{
+  const text = 'API_KEY="opaque one" API_KEY=secondSecret MT5_BRIDGE_TOKEN=bridgeSecret Authorization: Bearer bearerSecret sk-abcdefghijklmnopqrstuvwx sk-abcdefghijklmnopqrstuvwx';
+  const clean = scrubString(text);
+  for (const secret of ["opaque one", "secondSecret", "bridgeSecret", "bearerSecret", "sk-abcdefghijklmnopqrstuvwx"]) {
+    check(`free-text credential removed: ${secret.slice(0, 4)}`, !clean.includes(secret));
+  }
+  check("ordinary trading quantities preserved", scrubString("EURUSD BUY 1.25 lots, confidence 72%") === "EURUSD BUY 1.25 lots, confidence 72%");
+}
+
+// JSON encoded in free text must be scrubbed just like structured objects.
+for (const value of [JSON.stringify({ apiKey: "opaqueSecret", password: 'prefix"suffixSecret' }), "'password':'singleSecret'"]) {
+  const clean = scrubString(value);
+  check("quoted credential keys and escaped values are removed", !/opaqueSecret|prefix|suffixSecret|singleSecret/.test(clean));
+}
+
 // ── 3. Account masking ──────────────────────────────────────────────────────
 // eslint-disable-next-line no-console
 console.log("account masking:");

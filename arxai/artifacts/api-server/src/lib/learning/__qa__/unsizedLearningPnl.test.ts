@@ -38,6 +38,8 @@ function chain(rows: () => unknown[]) {
   return self;
 }
 const fakeDb = {
+  transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(fakeDb),
+  execute: async () => undefined,
   select: () => ({
     from: (table: Table) => chain(() => {
       const name = getTableName(table);

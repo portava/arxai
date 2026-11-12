@@ -379,25 +379,32 @@ export async function runAutoDebrief(
     note: "Build BB → Build CC handoff payload. Build BB has not altered scoring; Build CC will consume this.",
   };
 
-  // 8. INSERT — guarded by uniqueIndex on tradeId for race-condition idempotency.
+  // 8. Persist the debrief and its canonical learning identity atomically.
+  // A crash must not leave a ready payload with debrief_id=0.
   let inserted: typeof postTradeDebriefsTable.$inferSelect;
   try {
-    const insRows = await db.insert(postTradeDebriefsTable).values({
-      userId: trade.userId ?? null,
-      tradeId: trade.id,
-      decisionId: trade.decisionId ?? null,
-      // Map BREAKEVEN/CANCELLED into result column (text, no enum constraint).
-      result,
-      checklist: [], // empty — auto-debrief has no user answers
-      followedPlan: heuristics.didFollowDecision === true ? 1 : 0,
-      lessonLearned: heuristics.lesson,
-      aiFeedback: `[Auto-debrief] ${[...heuristics.whatWorked, ...heuristics.whatFailed].join(" ")} — ${heuristics.lesson}`,
-      recommendedDrill: heuristics.improvementNote,
-      createdBy: "SYSTEM_AUTO_DEBRIEF",
-      autoMeta,
-      learningPayload: learningPayloadDraft,
-    }).returning();
-    inserted = insRows[0]!;
+    inserted = await db.transaction(async (tx) => {
+      const insRows = await tx.insert(postTradeDebriefsTable).values({
+        userId: trade.userId ?? null,
+        tradeId: trade.id,
+        decisionId: trade.decisionId ?? null,
+        // Map BREAKEVEN/CANCELLED into result column (text, no enum constraint).
+        result,
+        checklist: [], // empty — auto-debrief has no user answers
+        followedPlan: heuristics.didFollowDecision === true ? 1 : 0,
+        lessonLearned: heuristics.lesson,
+        aiFeedback: `[Auto-debrief] ${[...heuristics.whatWorked, ...heuristics.whatFailed].join(" ")} — ${heuristics.lesson}`,
+        recommendedDrill: heuristics.improvementNote,
+        createdBy: "SYSTEM_AUTO_DEBRIEF",
+        autoMeta,
+        learningPayload: learningPayloadDraft,
+      }).returning();
+      const row = insRows[0]!;
+      await tx.update(postTradeDebriefsTable)
+        .set({ learningPayload: { ...learningPayloadDraft, debrief_id: row.id }, updatedAt: new Date() })
+        .where(eq(postTradeDebriefsTable.id, row.id));
+      return { ...row, learningPayload: { ...learningPayloadDraft, debrief_id: row.id } };
+    });
     log.info({ debriefId: inserted.id, result }, "auto-debrief created");
   } catch (err) {
     // Race-condition: another caller already inserted between our check and write.
@@ -418,11 +425,7 @@ export async function runAutoDebrief(
     return { status: "error", orderId, warnings, error: String(err).slice(0, 300) };
   }
 
-  // 9. Patch in real debrief_id on the learning payload.
-  const finalLearningPayload: Record<string, unknown> = { ...learningPayloadDraft, debrief_id: inserted.id };
-  await db.update(postTradeDebriefsTable)
-    .set({ learningPayload: finalLearningPayload, updatedAt: new Date() })
-    .where(eq(postTradeDebriefsTable.id, inserted.id));
+  const finalLearningPayload = inserted.learningPayload as Record<string, unknown>;
 
   // 9b. Build CC handoff — fire-and-forget, NON-FATAL.
   // The debrief is already persisted; CC failures must NOT roll it back or

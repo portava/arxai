@@ -1,3 +1,4 @@
+import { startScopedLearningRetryWorker } from "./lib/learning/retryWorker.js";
 import { startHeapWatch } from "./lib/perf/heapWatch.js";
 import { startResultSettlementWorker } from "./lib/live/resultSettlementWorker.js";
 import app from "./app";
@@ -154,6 +155,7 @@ ensureSafetyCoreInitialized()
       // dispatch freshness gate to be turned on at all (Ruling 10).
       // Opt-out via ARX_UNKNOWN_RECONCILER_ENABLED; disabling is logged loudly.
       startUnknownReconcilerWorker();
+      startScopedLearningRetryWorker();
       // Default OFF. Migration precedes release; this never sends broker work.
       void startResultSettlementWorker();
       // MT5 candle-feed staleness + connectivity watchdog — raises an admin

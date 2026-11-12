@@ -155,6 +155,22 @@ async function main() {
   const survivor = await db.select().from(userNotificationsTable).where(eq(userNotificationsTable.id, survivorId));
   record("dismissed notification row still EXISTS (soft delete)", survivor.length === 1 && survivor[0]?.status === "dismissed", `len=${survivor.length} status=${survivor[0]?.status}`);
 
+  // Concurrent producers must preserve every occurrence and isolate owners.
+  const concurrentPayload = {
+    notificationType: "system_test", severity: "info" as const,
+    title: "api_key=opaque-test-key", message: "password=opaque-test-password",
+    source: "system", entityType: "system:CONCURRENT", entityId: 0,
+    cooldownMs: 24 * 60 * 60_000,
+  };
+  await Promise.all(Array.from({ length: 20 }, () => createNotification(USER_A, concurrentPayload)));
+  await createNotification(USER_B, concurrentPayload);
+  const concurrentRows = await db.select().from(userNotificationsTable)
+    .where(eq(userNotificationsTable.entityType, concurrentPayload.entityType));
+  const owned = concurrentRows.filter((row) => row.userId === USER_A);
+  record("20 concurrent emissions produce one row with 20 occurrences", owned.length === 1 && owned[0]?.repeatCount === 20);
+  record("same condition remains separate for another owner", concurrentRows.length === 2 && concurrentRows.find((row) => row.userId === USER_B)?.repeatCount === 1);
+  record("notification text never persists opaque credentials", concurrentRows.every((row) => !JSON.stringify(row).includes("opaque-test-")));
+
   // ── PART F — route source: bulk/clear-read use UPDATE, never DELETE ──────
   console.log("\nPART F — route shape + no hard-delete in source");
   const routes = listRoutes(meNotificationsRouter as unknown as { stack: Layer[] });

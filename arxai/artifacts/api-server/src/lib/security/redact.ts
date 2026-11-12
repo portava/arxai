@@ -1,7 +1,7 @@
 // Build NN — reusable secret-redaction + account-masking utilities.
 // Hard rule: secrets never appear in any output, log, export, or notification.
 
-import { redactSecrets } from "@workspace/domain/security";
+import { redactSecrets, redactSecretString } from "@workspace/domain/security";
 
 const SECRET_KEYS_RE = /(api[_-]?key|api[_-]?secret|secret|password|token|credential|broker[_-]?api|database[_-]?url|session[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|bearer)/i;
 const ACCOUNT_KEYS_RE = /(account[_-]?id|account[_-]?number|broker[_-]?account|mt5[_-]?login)/i;
@@ -35,7 +35,7 @@ export function maskToken(t: unknown): string {
 export function scrubString(input: unknown): string {
   let s = typeof input === "string" ? input : String(input ?? "");
   for (const re of SECRET_VALUE_PATTERNS) s = s.replace(re, "[REDACTED]");
-  return s;
+  return redactSecretString(s);
 }
 
 export function scrub<T = unknown>(value: T): T {

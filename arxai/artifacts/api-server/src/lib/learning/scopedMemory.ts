@@ -15,8 +15,10 @@
 // Governor rule (ci guard learning-memory-single-owner keeps every read and
 // write in this file).
 
-import { and, desc, eq, gte, inArray, isNotNull, ne, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { db, mistakePatternsTable, strategyEdgesTable, type MistakePattern, type StrategyEdge } from "@workspace/db";
+
+export type MemoryTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const OWNED_SCOPE_TYPES = ["strategy", "account", "broker", "instrument", "portfolio"] as const;
 export type OwnedScopeType = (typeof OWNED_SCOPE_TYPES)[number];
@@ -85,13 +87,13 @@ function sizedSamplesOf(e: Pick<StrategyEdge, "sampleCount" | "winCount" | "loss
   return breakEvenCount === 0 && other === 0 && (winCount === 0 || lossCount === 0) ? 0 : null;
 }
 
-async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boolean): Promise<{ row: StrategyEdge; created: boolean }> {
+async function applyEdge(tx: MemoryTransaction, ref: ScopeRef, o: EdgeOutcome, contributors: number | null): Promise<{ row: StrategyEdge; created: boolean }> {
   const where = and(
     eq(strategyEdgesTable.scopeType, ref.scopeType), eq(strategyEdgesTable.scopeOwner, ref.scopeOwner),
     eq(strategyEdgesTable.scopeKey, ref.scopeKey), eq(strategyEdgesTable.symbol, o.symbol),
     eq(strategyEdgesTable.signalName, o.signalName), eq(strategyEdgesTable.action, o.action),
   );
-  const existing = (await db.select().from(strategyEdgesTable).where(where).limit(1))[0];
+  const existing = (await tx.select().from(strategyEdgesTable).where(where).limit(1))[0];
   const isWin = o.result === "WIN";
   const isLoss = o.result === "LOSS";
   const isBE = o.result === "BREAKEVEN" || o.result === "BREAK_EVEN";
@@ -99,10 +101,10 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
   const tradeId = platform ? null : o.tradeId;
 
   if (!existing) {
-    const [row] = await db.insert(strategyEdgesTable).values({
+    const [row] = await tx.insert(strategyEdgesTable).values({
       ...ref,
       userId: platform ? null : ref.scopeOwner,
-      contributors: platform ? 1 : null,
+      contributors,
       symbol: o.symbol, strategyName: o.signalName, signalName: o.signalName, action: o.action,
       sampleCount: 1, winCount: isWin ? 1 : 0, lossCount: isLoss ? 1 : 0, breakEvenCount: isBE ? 1 : 0,
       // NOT NULL columns with no count of unsized samples: an edge first seen
@@ -129,7 +131,7 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
     // only pull the average toward 0, never make it look larger than it is.
     avgPnl = netPnl / (sized == null ? sampleCount : sized + 1);
   }
-  const [row] = await db.update(strategyEdgesTable).set({
+  const [row] = await tx.update(strategyEdgesTable).set({
     sampleCount,
     winCount: existing.winCount + (isWin ? 1 : 0),
     lossCount: existing.lossCount + (isLoss ? 1 : 0),
@@ -139,7 +141,7 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
     riskAdjustment: clamp(existing.riskAdjustment + o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
     edgeScore: clamp(existing.edgeScore + o.deltaEdge, EDGE_MIN, EDGE_MAX),
     lastResult: o.result, lastTradeId: tradeId,
-    ...(platform && contributorJoined && existing.contributors != null ? { contributors: existing.contributors + 1 } : {}),
+    ...(contributors != null && (!platform || existing.contributors != null) ? { contributors } : {}),
     updatedAt: new Date(),
   }).where(eq(strategyEdgesTable.id, existing.id)).returning();
   return { row: row!, created: false };
@@ -151,54 +153,77 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
  * `share: false` (an outcome no real debrief backs) teaches the private
  * memory only, so nobody can feed other traders fabricated outcomes.
  */
-export async function recordEdgeOutcome(ownerUserId: number, o: EdgeOutcome, scopes?: OwnedScope[], share = true): Promise<StrategyEdge> {
-  const own = await applyEdge(USER(ownerUserId), o, false);
-  if (!share) return own.row;
-  for (const ref of cleanScopes(scopes, ownerUserId)) await applyEdge(ref, o, false);
-  await applyEdge(PLATFORM, o, own.created);
-  return own.row;
+export async function recordEdgeOutcome(ownerUserId: number, o: EdgeOutcome, scopes?: OwnedScope[], share = true, transaction?: MemoryTransaction): Promise<StrategyEdge> {
+  const write = async (tx: MemoryTransaction) => {
+    // The platform cohort is shared across owners. Serialize the entire fold,
+    // including first-row creation and contributor membership, in one transaction.
+    const key = JSON.stringify(["learning-edge", o.symbol, o.signalName, o.action]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const own = await applyEdge(tx, USER(ownerUserId), o, share ? 1 : null);
+    if (!share) return own.row;
+    for (const ref of cleanScopes(scopes, ownerUserId)) await applyEdge(tx, ref, o, null);
+    // Count verified membership independently of private-row creation. Older
+    // private rows have no membership marker and are conservatively excluded
+    // until their next verified outcome; never inflate an anonymity threshold.
+    const [members] = await tx.select({ count: sql<number>`count(*)::int` }).from(strategyEdgesTable).where(and(
+      eq(strategyEdgesTable.scopeType, "user"), eq(strategyEdgesTable.contributors, 1),
+      eq(strategyEdgesTable.symbol, o.symbol), eq(strategyEdgesTable.signalName, o.signalName), eq(strategyEdgesTable.action, o.action),
+    ));
+    await applyEdge(tx, PLATFORM, o, members!.count);
+    return own.row;
+  };
+  return transaction ? write(transaction) : db.transaction(write);
 }
 
 export interface MistakeOutcome { tag: string; symbol: string; action: string; isLoss: boolean; tradeId: number; guardrail: string }
 
-async function applyMistake(ref: ScopeRef, o: MistakeOutcome, contributorJoined: boolean): Promise<{ row: MistakePattern; created: boolean }> {
+async function applyMistake(tx: MemoryTransaction, ref: ScopeRef, o: MistakeOutcome, contributors: number | null): Promise<{ row: MistakePattern; created: boolean }> {
   const where = and(
     eq(mistakePatternsTable.scopeType, ref.scopeType), eq(mistakePatternsTable.scopeOwner, ref.scopeOwner),
     eq(mistakePatternsTable.scopeKey, ref.scopeKey), eq(mistakePatternsTable.tag, o.tag),
     eq(mistakePatternsTable.symbol, o.symbol), eq(mistakePatternsTable.action, o.action),
   );
-  const existing = (await db.select().from(mistakePatternsTable).where(where).limit(1))[0];
+  const existing = (await tx.select().from(mistakePatternsTable).where(where).limit(1))[0];
   const sevDelta = o.isLoss ? 8 : 2;
   const platform = ref.scopeType === "platform";
   const tradeId = platform ? null : o.tradeId;
   if (!existing) {
-    const [row] = await db.insert(mistakePatternsTable).values({
+    const [row] = await tx.insert(mistakePatternsTable).values({
       ...ref,
       userId: platform ? null : ref.scopeOwner,
-      contributors: platform ? 1 : null,
+      contributors,
       tag: o.tag, symbol: o.symbol, action: o.action, count: 1, lastTradeId: tradeId,
       severityScore: clamp(sevDelta, 0, SEVERITY_MAX), recommendedGuardrail: o.guardrail,
     }).returning();
     return { row: row!, created: true };
   }
-  const [row] = await db.update(mistakePatternsTable).set({
+  const [row] = await tx.update(mistakePatternsTable).set({
     count: existing.count + 1,
     severityScore: clamp(existing.severityScore + sevDelta, 0, SEVERITY_MAX),
     lastTradeId: tradeId,
     recommendedGuardrail: o.guardrail || existing.recommendedGuardrail,
-    ...(platform && contributorJoined && existing.contributors != null ? { contributors: existing.contributors + 1 } : {}),
+    ...(contributors != null && (!platform || existing.contributors != null) ? { contributors } : {}),
     updatedAt: new Date(),
   }).where(eq(mistakePatternsTable.id, existing.id)).returning();
   return { row: row!, created: false };
 }
 
 /** Teach one mistake tag to the trader's memory, their scoped memories and the platform aggregate (see `share` above). */
-export async function recordMistakeOutcome(ownerUserId: number, o: MistakeOutcome, scopes?: OwnedScope[], share = true): Promise<MistakePattern> {
-  const own = await applyMistake(USER(ownerUserId), o, false);
-  if (!share) return own.row;
-  for (const ref of cleanScopes(scopes, ownerUserId)) await applyMistake(ref, o, false);
-  await applyMistake(PLATFORM, o, own.created);
-  return own.row;
+export async function recordMistakeOutcome(ownerUserId: number, o: MistakeOutcome, scopes?: OwnedScope[], share = true, transaction?: MemoryTransaction): Promise<MistakePattern> {
+  const write = async (tx: MemoryTransaction) => {
+    const key = JSON.stringify(["learning-mistake", o.symbol, o.tag, o.action]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const own = await applyMistake(tx, USER(ownerUserId), o, share ? 1 : null);
+    if (!share) return own.row;
+    for (const ref of cleanScopes(scopes, ownerUserId)) await applyMistake(tx, ref, o, null);
+    const [members] = await tx.select({ count: sql<number>`count(*)::int` }).from(mistakePatternsTable).where(and(
+      eq(mistakePatternsTable.scopeType, "user"), eq(mistakePatternsTable.contributors, 1),
+      eq(mistakePatternsTable.tag, o.tag), eq(mistakePatternsTable.symbol, o.symbol), eq(mistakePatternsTable.action, o.action),
+    ));
+    await applyMistake(tx, PLATFORM, o, members!.count);
+    return own.row;
+  };
+  return transaction ? write(transaction) : db.transaction(write);
 }
 
 // ── Reads ─────────────────────────────────────────────────────────────────
