@@ -159,7 +159,7 @@ async function main() {
   const concurrentPayload = {
     notificationType: "system_test", severity: "info" as const,
     title: "api_key=opaque-test-key", message: "password=opaque-test-password",
-    source: "system", entityType: "system:CONCURRENT", entityId: 0,
+    source: "system" as const, entityType: "system:CONCURRENT", entityId: 0,
     cooldownMs: 24 * 60 * 60_000,
   };
   await Promise.all(Array.from({ length: 20 }, () => createNotification(USER_A, concurrentPayload)));
