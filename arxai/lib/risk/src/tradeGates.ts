@@ -15,7 +15,7 @@
 // Measured on real markets: scripts/src/research/riskToolsResearch.ts and
 // docs/RISK_TOOLS_RESULTS.md. Pure: no I/O, no clock.
 
-export type GateReason = "OK" | "COST_TOO_HIGH" | "NO_RISK_DISTANCE" | "QUIET_MARKET" | "NO_FORECAST";
+export type GateReason = "OK" | "COST_TOO_HIGH" | "NO_RISK_DISTANCE" | "QUIET_MARKET" | "NO_FORECAST" | "INVALID_COST";
 
 export interface GateResult {
   allow: boolean;
@@ -31,7 +31,8 @@ export interface GateResult {
  */
 export function roundTripCostR(entry: number, stop: number, halfSpreadFrac: number): number {
   const risk = Math.abs(entry - stop);
-  if (!(risk > 0) || !(entry > 0)) return Number.POSITIVE_INFINITY;
+  if (![entry, stop, halfSpreadFrac, risk].every(Number.isFinite) ||
+      !(risk > 0) || !(entry > 0) || halfSpreadFrac < 0) return Number.POSITIVE_INFINITY;
   return (2 * halfSpreadFrac * entry) / risk;
 }
 
@@ -40,6 +41,9 @@ export const DEFAULT_MAX_COST_R = 0.1;
 
 export function costGate(costR: number, maxCostR: number = DEFAULT_MAX_COST_R): GateResult {
   if (!Number.isFinite(costR)) return { allow: false, reason: "NO_RISK_DISTANCE", detail: "the stop is at the entry: no risk distance to measure cost against" };
+  if (costR < 0 || !Number.isFinite(maxCostR) || maxCostR < 0) {
+    return { allow: false, reason: "INVALID_COST", detail: "cost and its limit must be finite, non-negative risk fractions" };
+  }
   if (costR > maxCostR) {
     return { allow: false, reason: "COST_TOO_HIGH", detail: `the spread costs ${(costR * 100).toFixed(0)}% of this trade's risk (limit ${(maxCostR * 100).toFixed(0)}%): widen the stop and shrink the size, or skip it` };
   }
@@ -53,7 +57,7 @@ export function costGate(costR: number, maxCostR: number = DEFAULT_MAX_COST_R): 
  * quiet one, but it is not a reason to trade either.
  */
 export function quietGate(forecastVariance: number, quietThreshold: number): GateResult {
-  if (!(forecastVariance > 0) || !(quietThreshold > 0)) return { allow: false, reason: "NO_FORECAST", detail: "no volatility forecast for this market and time" };
+  if (!Number.isFinite(forecastVariance) || !Number.isFinite(quietThreshold) || !(forecastVariance > 0) || !(quietThreshold > 0)) return { allow: false, reason: "NO_FORECAST", detail: "no volatility forecast for this market and time" };
   if (forecastVariance < quietThreshold) {
     return { allow: false, reason: "QUIET_MARKET", detail: "the volatility forecast puts the next hours in this market's quietest fifth: too little movement to pay for the spread" };
   }

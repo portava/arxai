@@ -55,6 +55,25 @@ t("quiet gate refuses below the threshold and when there is no forecast", () => 
   assert.equal(quietGate(0, 1).allow, false);
 });
 
+t("invalid numerical inputs cannot turn risk research gates into approvals", () => {
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    assert.equal(roundTripCostR(1, bad, 0.01), Infinity);
+    assert.equal(roundTripCostR(bad, 0.9, 0.01), Infinity);
+    assert.equal(roundTripCostR(1, 0.9, bad), Infinity);
+    assert.equal(costGate(1, bad).allow, false);
+    assert.equal(quietGate(bad, 1).allow, false);
+    assert.equal(quietGate(1, bad).allow, false);
+  }
+  assert.equal(roundTripCostR(1, 0.9, -0.01), Infinity);
+  assert.equal(roundTripCostR(1e308, -1e308, 0.01), Infinity);
+  assert.equal(costGate(-1).reason, "INVALID_COST");
+  assert.equal(costGate(0, -1).allow, false);
+  // A measured zero spread and a zero cost allowance are valid boundaries.
+  assert.equal(roundTripCostR(1, 0.9, 0), 0);
+  assert.equal(costGate(0, 0).allow, true);
+  assert.equal(quietGate(1, 1).allow, true);
+});
+
 t("sigma from a variance feeds volTargetBaseFrac; a bad variance sizes to exactly 0", () => {
   assert.equal(sigmaExpectedFromVariance(4e-6), 2e-3);
   assert.equal(volTargetBaseFrac({ targetRiskFrac: 0.01, sigmaTarget: 1e-3, sigmaExpected: sigmaExpectedFromVariance(Number.NaN) }).baseFrac, 0);
