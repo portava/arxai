@@ -1,4 +1,4 @@
-import { test, mock, beforeEach } from "node:test";
+import { test, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { marketFixture, NOW } from "./marketEvidenceFixtures.js";
 import { bindScannerSource } from "../../scannerInputIntegrity.js";
@@ -51,6 +51,10 @@ mock.module("../../scalp/scalpEngine.js", { namedExports: { ...scalpEngine, eval
 const { buildEleanorMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const { evaluateScalpForSymbol } = await import("../../scalp/scalpService.js");
 const { getChartCandles } = await import("../../data/chart/chartDataService.js");
+// Fixture timestamps and the production reader share one deterministic clock;
+// module import time and machine load must not turn fresh fixtures stale.
+beforeEach(() => mock.timers.enable({ apis: ["Date"], now: NOW }));
+afterEach(() => mock.timers.reset());
 beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); wrongRowSource = wrongRowBar = false; candleCalls = quoteCalls = 0; captured = undefined; memories.clear(); failWrite = false; newsCtx = null; });
 
 test("real Eleanor service keeps closed-bar and user evidence, drops forming-price shocks", async () => {

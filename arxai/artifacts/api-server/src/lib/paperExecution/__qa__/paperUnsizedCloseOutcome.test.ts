@@ -37,6 +37,7 @@ function chain(resolve: () => unknown[]) {
 const counts = new Map<string, number>();
 let nextId = 5000;
 const fakeDb = {
+  transaction: async (fn: (tx: unknown) => unknown) => fn(fakeDb),
   select: (_cols?: unknown) => ({
     from: (table: Table) => {
       const name = getTableName(table);

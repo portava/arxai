@@ -11,7 +11,7 @@
 //
 // Run: pnpm --filter @workspace/api-server run test:truth-component-evidence
 
-import { test, mock, beforeEach } from "node:test";
+import { test, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { marketFixture, NOW } from "./marketEvidenceFixtures.js";
 import { bindScannerSource } from "../../scannerInputIntegrity.js";
@@ -50,6 +50,10 @@ mock.module("../../scalp/scalpServiceInputs.js", { namedExports: { ...loaders, l
 const { buildEleanorMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const { explainMarketRead } = await import("@workspace/domain/signal-intelligence");
 
+// Fixture timestamps and the production reader share one deterministic clock;
+// module import time and machine load must not turn fresh fixtures stale.
+beforeEach(() => mock.timers.enable({ apis: ["Date"], now: NOW }));
+afterEach(() => mock.timers.reset());
 beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); oppOverride = null; });
 
 async function read() {
