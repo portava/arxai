@@ -19,6 +19,7 @@
 //
 // Exit code 0 on PASS, 1 on FAIL.
 
+import { readProbeBody } from "./staging/probe.js";
 import { randomBytes, createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join as pathJoin } from "node:path";
@@ -42,6 +43,7 @@ import {
   mt5ConnectionTable,
   userReportsTable,
   arxLiveCommandsTable,
+  capitalMovementRequestsTable, chartAnnotationsTable, eleanorWatchInstructionsTable,
 } from "@workspace/db/schema";
 import { eq, inArray, or } from "drizzle-orm";
 
@@ -98,6 +100,9 @@ type SeededUser = {
     tradingSessionId?: number;
     mt5ConnectionId?: number;
     reportId?: number;
+    capitalRequestId?: number;
+    annotationId?: number;
+    watchId?: number;
     liveCommandId?: number;
     liveCommandIdString?: string; // arx_live_commands.command_id (text)
   };
@@ -266,6 +271,12 @@ async function seedUser(user: SeededUser): Promise<void> {
   }).returning();
   user.rowIds.liveCommandId = lc!.id;
   user.rowIds.liveCommandIdString = cmdIdString;
+  const [capital] = await db.insert(capitalMovementRequestsTable).values({ userId: user.id, movementType: "DEPOSIT", status: "SUBMITTED", grossAmount: 1, speedTierKey: "STANDARD", requestNote: `${user.marker}_capital` }).returning();
+  user.rowIds.capitalRequestId = capital!.id;
+  const [annotation] = await db.insert(chartAnnotationsTable).values({ userId: user.id, symbol: "EURUSD", kind: "SUPPORT", price: 1.1, note: `${user.marker}_annotation` }).returning();
+  user.rowIds.annotationId = annotation!.id;
+  const [watch] = await db.insert(eleanorWatchInstructionsTable).values({ userId: user.id, kind: "MONITOR_TRADE", source: "QA_TEST", status: "DISMISSED", rawUserCommand: `${user.marker}_watch` }).returning();
+  user.rowIds.watchId = watch!.id;
 }
 
 function label2Sign(user: SeededUser): 1 | -1 {
@@ -290,8 +301,8 @@ async function seedUnattributedOrphan(): Promise<number> {
 async function fetchAs(user: SeededUser | null, path: string): Promise<{ status: number; bodyText: string; json: unknown | null }> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (user) headers["cookie"] = user.cookie;
-  const r = await fetch(`${BASE}${path}`, { headers });
-  const txt = await r.text();
+  const r = await fetch(`${BASE}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
+  const txt = await readProbeBody(r);
   let json: unknown | null = null;
   try { json = JSON.parse(txt); } catch { /* not json */ }
   return { status: r.status, bodyText: txt, json };
@@ -308,6 +319,7 @@ async function mutateAs(
 ): Promise<{ status: number; bodyText: string }> {
   const r = await fetch(`${BASE}${path}`, {
     method,
+    signal: AbortSignal.timeout(15_000),
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -358,7 +370,10 @@ async function snapshotBOwnedRows(b: SeededUser): Promise<BSnapshot> {
     { key: "tradingSession",   table: "trading_sessions",            id: b.rowIds.tradingSessionId,   markerCol: "title" },
     { key: "mt5Connection",    table: "mt5_connection",              id: b.rowIds.mt5ConnectionId,    markerCol: "connection_name" },
     { key: "report",           table: "user_reports",                id: b.rowIds.reportId,           markerCol: "title" },
-    { key: "liveCommand",      table: "arx_live_commands",           id: b.rowIds.liveCommandId,      markerCol: "rejection_reason" },
+    { key: "capital", table: "capital_movement_requests", id: b.rowIds.capitalRequestId, markerCol: "concat(request_note, '|', status, '|', gross_amount)" },
+    { key: "annotation", table: "chart_annotations", id: b.rowIds.annotationId, markerCol: "concat(note, '|', status, '|', price)" },
+    { key: "watch", table: "eleanor_watch_instructions", id: b.rowIds.watchId, markerCol: "concat(raw_user_command, '|', status, '|', risk_params)" },
+    { key: "liveCommand",      table: "arx_live_commands",           id: b.rowIds.liveCommandId,      markerCol: "concat(rejection_reason, '|', status, '|', requested_volume, '|', stop_loss, '|', take_profit)" },
   ];
   for (const r of rows) {
     if (r.id == null) { out[r.key] = { present: false, userId: null, marker: null }; continue; }
@@ -440,6 +455,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  try {
   // Step 3 — anonymous probe: every endpoint must reject with 401.
   let anonOk = 0;
   for (const ep of PROBE_ENDPOINTS) {
@@ -545,6 +561,10 @@ async function main(): Promise<void> {
       ["/me/activity/",                    userB.rowIds.notificationId,    "seeded"],
       ["/me/alerts/",                      userB.rowIds.alertId,            "seeded"],
       ["/me/assistant/conversations/",     userB.rowIds.convoId,            "seeded"],
+      ["/me/assistant/watches/", userB.rowIds.watchId, "seeded"],
+      ["/me/capital/requests/", userB.rowIds.capitalRequestId, "seeded"],
+      ["/me/chart/annotations/", userB.rowIds.annotationId, "seeded"],
+      ["/me/live/pending-orders/", userB.rowIds.liveCommandId, "seeded"],
       ["/me/demo-commands/",               userB.rowIds.mt5CommandId,       "seeded"],
       ["/me/live/command-status/",         undefined,                       "unseeded-known"], // :commandId (string-keyed; sentinel probe confirms 404 not cross-user data)
       ["/me/live/commands/",               userB.rowIds.liveCommandId,      "seeded"],
@@ -581,6 +601,7 @@ async function main(): Promise<void> {
   for (const route of idorRoutes) {
     // Substitute each :param in the path. Prefer the seeded B id, otherwise sentinel.
     const ep = route.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name: string) => {
+      if (name === "commandId" && route.startsWith("/me/live/")) return userB.rowIds.liveCommandIdString!;
       if (name === "id" || name === "ruleId" || name === "commandId" || name === "ticket" || name === "positionTicket") {
         const seeded = idByRoutePrefix(route);
         if (seeded.id != null) return String(seeded.id);
@@ -632,6 +653,7 @@ async function main(): Promise<void> {
   const bSnapshot = await snapshotBOwnedRows(userB);
   for (const { method, path: rp } of mutationRoutes) {
     const ep = rp.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name: string) => {
+      if (name === "commandId" && rp.startsWith("/me/live/")) return userB.rowIds.liveCommandIdString!;
       if (name === "id" || name === "ruleId" || name === "commandId" || name === "ticket" || name === "positionTicket") {
         const seeded = idByRoutePrefix(rp);
         if (seeded.id != null) return String(seeded.id);
@@ -743,7 +765,11 @@ async function main(): Promise<void> {
   record("09_cleanup_succeeded", cleanupOk,
     cleanupOk ? "all seeded rows + sessions + users deleted" : "cleanup raised — see stderr");
 
-  finishAndExit(startLive);
+  await finishAndExit(startLive);
+  } catch (error) {
+    await cleanupAll(userA, userB, orphanId);
+    throw error;
+  }
 }
 
 // Statically discover every parameterized GET /me/*/:param route by
@@ -812,6 +838,9 @@ async function cleanupAll(userA: SeededUser, userB: SeededUser, orphanId: number
     // Terminal-state REJECTED rows seeded for /me/live/commands/:commandId
     // IDOR probing. Deleted FIRST so the strict-zero arx_live_commands
     // invariant (start=end=0) re-holds regardless of FK discovery.
+    await db.delete(capitalMovementRequestsTable).where(inArray(capitalMovementRequestsTable.userId, userIds));
+    await db.delete(chartAnnotationsTable).where(inArray(chartAnnotationsTable.userId, userIds));
+    await db.delete(eleanorWatchInstructionsTable).where(inArray(eleanorWatchInstructionsTable.userId, userIds));
     await db.delete(arxLiveCommandsTable).where(inArray(arxLiveCommandsTable.userId, userIds));
     await db.delete(sharedTradeAttributionTable).where(inArray(sharedTradeAttributionTable.userId, userIds));
     await db.delete(virtualTradingAccountsTable).where(inArray(virtualTradingAccountsTable.userId, userIds));

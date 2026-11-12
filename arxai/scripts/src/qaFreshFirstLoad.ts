@@ -18,7 +18,7 @@ import { pool } from "@workspace/db";
 const ROOT = resolve(import.meta.dirname, "..", "..");
 const at = (p: string) => resolve(ROOT, p);
 
-const SERVER = "http://localhost:80";
+const SERVER = process.env.QA_API_BASE ?? "http://localhost:80";
 const RESULTS: Array<{ id: string; name: string; ok: boolean; detail?: string }> = [];
 
 function record(id: string, name: string, ok: boolean, detail?: string): void {
@@ -68,8 +68,8 @@ async function main(): Promise<void> {
   // 4. Positions + Orders pages render polished EmptyState (not plain <p>)
   const positions = read("artifacts/trading-dashboard/src/pages/positions.tsx");
   const orders = read("artifacts/trading-dashboard/src/pages/orders.tsx");
-  const positionsHasEmpty = positions.includes("<EmptyState") && positions.includes("No open positions");
-  const ordersHasEmpty = orders.includes("<EmptyState") && orders.includes("No pending orders");
+  const positionsHasEmpty = positions.includes("<EmptyState") && positions.includes("No open simulator positions.");
+  const ordersHasEmpty = orders.includes("<EmptyState") && orders.includes("No simulator orders on your account.");
   const positionsNoPlain = !positions.includes(">No positions in this view.<");
   const ordersNoPlain = !orders.includes(">No orders.<");
   record("04-positions-empty-state", "positions.tsx uses <EmptyState> for empty list", positionsHasEmpty && positionsNoPlain);
@@ -77,8 +77,7 @@ async function main(): Promise<void> {
 
   // 6. Other core pages already had empty states — sanity check they still do
   const checks: Array<[string, string, string]> = [
-    ["06a-dashboard-empty", "artifacts/trading-dashboard/src/pages/dashboard.tsx", "EmptyState"],
-    ["06b-scanner-empty", "artifacts/trading-dashboard/src/pages/scanner.tsx", "EmptyState"],
+
     ["06c-notifications-empty", "artifacts/trading-dashboard/src/pages/notifications.tsx", "EmptyState"],
     ["06d-watchlists-empty", "artifacts/trading-dashboard/src/pages/watchlists.tsx", "EmptyState"],
     // my-account shows an account-shell summary, never a list → no list-empty pattern needed
@@ -88,6 +87,18 @@ async function main(): Promise<void> {
     const src = read(path);
     record(id, `${path.split("/").pop()} still ships ${needle}`, src.includes(needle));
   }
+
+  // These pages now compose their empty states through the current workspace
+  // and scanner routes. Require the actual mounted component plus its state.
+  const dashboard = read("artifacts/trading-dashboard/src/pages/dashboard.tsx");
+  const workspace = read("artifacts/trading-dashboard/src/components/dashboard/CommandWorkspace.tsx");
+  const cockpit = read("artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitCards.tsx");
+  record("06a-dashboard-empty", "Dashboard mounts the workspace's honest empty positions state",
+    dashboard.includes("<CommandWorkspaceProviders") && workspace.includes("<OpenPositionsCard") && cockpit.includes('className="arx-positions-empty"') && cockpit.includes("No open positions in the latest snapshot."));
+  const app = read("artifacts/trading-dashboard/src/App.tsx");
+  const scanner = read("artifacts/trading-dashboard/src/pages/market-scanner.tsx");
+  record("06b-scanner-empty", "Current market-scanner route renders its explicit empty state",
+    app.includes('path="/market-scanner" component={ScannerPageRoute}') && scanner.includes('data-testid="scanner-empty-state"') && scanner.includes("No scan run yet"));
 
   // 7. Unauthenticated /api/me/* endpoints never return real user data
   const meRoutes = ["/api/me", "/api/me/account-shell", "/api/me/one-click", "/api/readiness/me", "/api/me/notifications"];

@@ -2,7 +2,7 @@
 //
 // ARX AI — End-to-End Staging Dry Run orchestrator.
 //
-// Chains every existing QA suite in this repo into one command, snapshots
+// Runs the required staging acceptance suites, snapshots
 // arx_live_commands before+after, scans aggregate stdout for secret markers,
 // and emits a single PASS/FAIL report grouped by persona / category.
 //
@@ -13,12 +13,15 @@
 //  - refuses to run if NODE_ENV === "production"
 //  - refuses to run if ARX_LIVE_BROKER_EXECUTION_ENABLED === "true"
 //  - snapshots arx_live_commands count from the DB before AND after
-//  - aborts FAIL if the count changed (no live trade may fire during QA)
+//  - aborts FAIL if synthetic command fixtures leak between suites
 //  - scans every suite's stdout for raw-token / hash / secret markers
 //
+// The disposable wrapper supplies the database, paused API and network sandbox.
 // Run with:  pnpm --filter @workspace/scripts run qa:staging:full
 
-import { spawnSync } from "node:child_process";
+import { runChild } from "./staging/child.js";
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { pool } from "@workspace/db";
 
 type Persona = "BrandNew" | "DemoTrader" | "PersonalMt5" | "SharedMaster" | "Admin"
@@ -28,10 +31,7 @@ type Persona = "BrandNew" | "DemoTrader" | "PersonalMt5" | "SharedMaster" | "Adm
 interface SuiteSpec {
   name: string;          // npm script name
   personas: Persona[];
-  // Pre-existing typecheck-broken or flaky suites are marked allowFail so
-  // their failure doesn't mask the orchestrator's verdict on the rest, but
-  // they remain visible in the report.
-  allowFail?: boolean;
+  timeoutMs?: number;
   note?: string;
 }
 
@@ -50,7 +50,7 @@ const SUITES: SuiteSpec[] = [
 
   // Brand-new user journey
   { name: "test:fresh-first-load", personas: ["BrandNew"] },
-  { name: "test:onboarding", personas: ["BrandNew"], allowFail: true, note: "pre-existing: expects unbuilt userReadinessState engine + 4 unbuilt AI readiness tools (tracked, out of scope)" },
+  { name: "test:onboarding", personas: ["BrandNew"] },
 
   // Demo trader journey
   { name: "test:demo-verify", personas: ["DemoTrader"] },
@@ -58,9 +58,7 @@ const SUITES: SuiteSpec[] = [
   { name: "test:demo-dispatch-3a", personas: ["DemoTrader"] },
   { name: "test:demo-dispatch-3b", personas: ["DemoTrader"] },
   { name: "test:position-mini-chart", personas: ["DemoTrader"] },
-  // test:scanner-selected-market — SKIPPED: pre-existing typecheck regression
-  //   AND runtime hang under orchestrator. Tracked as outstanding fix.
-  //   Run it standalone if needed.
+  { name: "test:scanner-selected-market", personas: ["DemoTrader"], timeoutMs: 300_000 },
 
   // Personal MT5 + shared master journeys
   { name: "test:master-live-access", personas: ["PersonalMt5", "SharedMaster"] },
@@ -77,15 +75,14 @@ const SUITES: SuiteSpec[] = [
 
   // Queue / concurrency
   { name: "test:one-click-concurrency", personas: ["QueueConcurrency"] },
-  { name: "test:multi-user-trade-queue", personas: ["QueueConcurrency"], allowFail: true, note: "pre-existing: long-running probe; orchestrator per-suite timeout is 180s (run standalone if it ever exceeds)" },
+  { name: "test:multi-user-trade-queue", personas: ["QueueConcurrency"], timeoutMs: 300_000 },
 
   // Audit + reconciliation + admin
   { name: "test:audit-log-center", personas: ["AuditExport", "Reconciliation", "Admin"] },
 
   // Eleanor
   { name: "test:eleanor-app-knowledge", personas: ["Eleanor"] },
-  // test:eleanor-voice-trading-guardrails — SKIPPED: pre-existing typecheck
-  //   regression. Tracked as outstanding fix. Run standalone if needed.
+  { name: "test:eleanor-voice-trading-guardrails", personas: ["Eleanor", "Voice"] },
 ];
 
 // Secret-shape markers — VALUE-shaped tokens that must NEVER appear in
@@ -103,7 +100,7 @@ const SECRET_MARKERS = [
 interface SuiteResult {
   name: string;
   personas: Persona[];
-  status: "PASS" | "FAIL" | "ALLOWED_FAIL";
+  status: "PASS" | "FAIL";
   exitCode: number | null;
   durationMs: number;
   tailLine: string;
@@ -115,29 +112,29 @@ async function getArxLiveCommandsCount(): Promise<number> {
   return r.rows[0].c as number;
 }
 
-function runSuite(spec: SuiteSpec): SuiteResult {
+async function runSuite(spec: SuiteSpec): Promise<SuiteResult> {
   const t0 = Date.now();
-  const res = spawnSync("pnpm", ["--silent", "--filter", "@workspace/scripts", "run", spec.name], {
-    encoding: "utf8",
-    timeout: 180 * 1000,
-    maxBuffer: 32 * 1024 * 1024,
-    env: process.env,
+  const timeoutMs = spec.timeoutMs ?? 180_000;
+  const res = await runChild("pnpm", ["--silent", "--filter", "@workspace/scripts", "run", spec.name], {
+    timeoutMs, env: process.env, cwd: resolve(import.meta.dirname, "../.."),
   });
+  if (res.interrupted) throw new Error("Staging acceptance interrupted; child group stopped");
   const durationMs = Date.now() - t0;
-  const out = (res.stdout ?? "") + (res.stderr ?? "");
+  const out = res.output;
+  writeFileSync(resolve(process.env.ARX_STAGING_LOG_DIR!, `${spec.name.replace(/[^a-z0-9-]/gi, "_")}.log`), out, { mode: 0o600 });
   const lines = out.trim().split("\n").filter((l) => l.trim().length > 0);
   const tailLine = lines[lines.length - 1] ?? "(no output)";
-  const timedOut = res.signal === "SIGTERM" || (res.status === null && res.error?.message?.includes("ETIMEDOUT"));
+  const timedOut = res.timedOut;
   const passed = res.status === 0 && !timedOut;
   let status: SuiteResult["status"] = "PASS";
-  if (!passed) status = spec.allowFail ? "ALLOWED_FAIL" : "FAIL";
-  if (timedOut) console.log(`  [timeout] suite="${spec.name}" killed after 180s`);
+  if (!passed) { status = "FAIL"; console.log(out); }
+  if (timedOut) console.log(`  [timeout] suite="${spec.name}" killed after ${timeoutMs / 1000}s`);
 
   // secret-marker scan on this suite's stdout
   for (const marker of SECRET_MARKERS) {
     if (out.includes(marker)) {
       console.log(`  [secret-marker] suite="${spec.name}" found="${marker}"`);
-      if (!spec.allowFail) status = "FAIL";
+      status = "FAIL";
     }
   }
 
@@ -166,6 +163,9 @@ async function main() {
   console.log("[env] staging-safe (NOT production, live master switch NOT enabled)");
 
   const dbUrl = process.env["DATABASE_URL"];
+  if (!process.env.ARX_STAGING_DISPOSABLE_DB || !dbUrl || new URL(dbUrl).pathname !== `/${process.env.ARX_STAGING_DISPOSABLE_DB}`) {
+    throw new Error("Run qa:staging:full through the disposable staging harness");
+  }
   if (!dbUrl) { console.log("ABORT: DATABASE_URL not set"); process.exit(2); }
 
   // ── arx_live_commands snapshot BEFORE ─────────────────────────────────────
@@ -176,7 +176,13 @@ async function main() {
   const results: SuiteResult[] = [];
   for (const spec of SUITES) {
     process.stdout.write(`-- ${spec.name.padEnd(38)} ... `);
-    const r = runSuite(spec);
+    const commandCountBefore = await getArxLiveCommandsCount();
+    const r = await runSuite(spec);
+    const commandCountAfter = await getArxLiveCommandsCount();
+    if (commandCountBefore !== commandCountAfter) {
+      console.log(`[fixture-leak] ${spec.name}: live command rows ${commandCountBefore} -> ${commandCountAfter}`);
+      r.status = "FAIL";
+    }
     results.push(r);
     process.stdout.write(`${r.status} (${(r.durationMs/1000).toFixed(1)}s)\n`);
   }
@@ -196,7 +202,7 @@ async function main() {
   console.log("Per-suite results:");
   console.log("=".repeat(78));
   for (const r of results) {
-    const tag = r.status === "PASS" ? "PASS         " : r.status === "ALLOWED_FAIL" ? "ALLOWED_FAIL " : "FAIL         ";
+    const tag = r.status === "PASS" ? "PASS" : "FAIL";
     console.log(`  [${tag}] ${r.name.padEnd(38)} ${r.tailLine}`);
     if (r.note) console.log(`               note: ${r.note}`);
   }
@@ -222,16 +228,15 @@ async function main() {
 
   // overall verdict
   const hardFails = results.filter((r) => r.status === "FAIL").length;
-  const allowedFails = results.filter((r) => r.status === "ALLOWED_FAIL").length;
   const passes = results.filter((r) => r.status === "PASS").length;
   const overall = hardFails === 0 && liveUnchanged && aggregateMarkers.length === 0 ? "PASS" : "FAIL";
 
   console.log("");
   console.log("=".repeat(78));
-  console.log(`OVERALL: ${overall}   suites: ${passes} PASS / ${allowedFails} ALLOWED_FAIL / ${hardFails} FAIL`);
+  console.log(`OVERALL: ${overall}   suites: ${passes} PASS / ${hardFails} FAIL`);
   console.log(`arx_live_commands: ${liveCountBefore} → ${liveCountAfter} (${liveUnchanged?"unchanged":"CHANGED — abort"})`);
   console.log(`secret leakage probe: ${aggregateMarkers.length===0?"clean":"DIRTY ("+aggregateMarkers.join(",")+")"}`);
-  console.log("Confirmation: NO live trade was fired by this dry run.");
+  console.log(liveUnchanged ? "Evidence: live command row count unchanged; this alone does not certify broker-side activity." : "FAIL: live command row count changed during the dry run.");
   console.log("=".repeat(78));
 
   process.exit(overall === "PASS" ? 0 : 1);

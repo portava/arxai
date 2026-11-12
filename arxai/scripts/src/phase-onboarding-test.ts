@@ -5,7 +5,11 @@
 
 import { readFileSync, existsSync } from "node:fs";
 
-const SERVER = "http://localhost:80";
+import ts from "typescript";
+import { resolve } from "node:path";
+const ROOT = resolve(import.meta.dirname, "../..");
+
+const SERVER = process.env.QA_API_BASE ?? "http://localhost:80";
 const RESULTS: Array<{ id: number; name: string; ok: boolean; detail?: string }> = [];
 
 function record(id: number, name: string, ok: boolean, detail?: string): void {
@@ -15,6 +19,7 @@ function record(id: number, name: string, ok: boolean, detail?: string): void {
 }
 
 function readIfExists(p: string): string | null {
+  p = resolve(ROOT, p);
   try { return existsSync(p) ? readFileSync(p, "utf8") : null; } catch { return null; }
 }
 
@@ -104,7 +109,8 @@ async function main(): Promise<void> {
     missingAi.length === 0, missingAi.length === 0 ? `${aiTools.length}/4` : `missing: ${missingAi.join(",")}`);
 
   // 12. No secret-named fields returned by engine/routes/tool impls
-  const sources = [engine, routes, tools].join("\n");
+  const printer = ts.createPrinter({ removeComments: true });
+  const sources = [engine, routes, tools].map(source => printer.printFile(ts.createSourceFile("readiness.ts", source, ts.ScriptTarget.Latest, true))).join("\n");
   const leaks = FORBIDDEN_SECRET_NAMES.filter(s => {
     const pattern = new RegExp(`(return[\\s\\S]{0,500}|res\\.json[\\s\\S]{0,500}|envelope\\([\\s\\S]{0,500})\\b${s}\\b`, "i");
     return pattern.test(sources);
@@ -124,7 +130,7 @@ async function main(): Promise<void> {
 
   // 15. Test file itself exists (sanity)
   record(15, "Test file scripts/src/phase-onboarding-test.ts exists",
-    existsSync("scripts/src/phase-onboarding-test.ts"));
+    existsSync(resolve(ROOT, "scripts/src/phase-onboarding-test.ts")));
 
   // 16. Live readiness still requires ALL gates AND fail-closes non-eligible
   // identities. ready_for_live demands approved + armed (admin approval +

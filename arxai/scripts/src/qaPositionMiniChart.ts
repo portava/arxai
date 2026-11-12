@@ -83,7 +83,7 @@ probe("[6a] mini chart draws entry price line", /createPriceLine/.test(mcSrc) &&
 probe("[6b] mini chart draws stop loss price line", /createPriceLine/.test(mcSrc) && /["']SL["']/.test(mcSrc));
 probe("[6c] mini chart draws take profit price line", /createPriceLine/.test(mcSrc) && /["']TP["']/.test(mcSrc));
 probe("[6d] mini chart draws current price line", /createPriceLine/.test(mcSrc) && /["']Current["']/.test(mcSrc));
-probe("[6e] mini chart places a BUY/SELL marker", /setMarkers/.test(mcSrc) && /arrowUp/.test(mcSrc) && /arrowDown/.test(mcSrc));
+probe("[6e] mini chart places a BUY/SELL marker", /createSeriesMarkers\(series,/.test(mcSrc) && /arrowUp/.test(mcSrc) && /arrowDown/.test(mcSrc));
 probe("[6f] mini chart falls back cleanly when no candles", /position-mini-chart-empty/.test(mcSrc));
 
 // ── 7. PositionSideCard + PositionPickerPanel testids.

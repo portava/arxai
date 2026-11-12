@@ -12,6 +12,7 @@
 // - All admin endpoint probes use unauthenticated/non-admin sessions to
 //   prove the 403 guard, never with a real admin cookie that could
 //   mutate state.
+import { insertedTables } from "./staging/sourceContracts.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "@workspace/db";
@@ -36,6 +37,7 @@ async function main() {
   // eslint-disable-next-line no-console
   console.log(`[setup] arx_live_commands start count = ${startLive}`);
 
+  const activeIndex = (await pool.query<{ indexdef: string }>("SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='arx_live_commands' AND indexname='arx_live_commands_idem_active_uq'")).rows[0]?.indexdef ?? "";
   // ──────────────────────────────────────────────────────────────────────
   // 1. Per-user advisory locks exist (concurrency primitive)
   // ──────────────────────────────────────────────────────────────────────
@@ -62,7 +64,8 @@ async function main() {
       "idempotency input mixes userId+symbol+side+volume+sl+tp");
     const sch = read("lib/db/src/schema/arxLiveExecution.ts");
     record("02-partial-unique-index-active",
-      /arx_live_commands_idem_active_uq[\s\S]{0,200}\.on\(t\.userId,\s*t\.idempotencyKey\)[\s\S]{0,200}status in \('SENT_TO_MT5_LIVE','LIVE_FILLED'\)/.test(sch),
+      /CREATE UNIQUE INDEX/.test(activeIndex) && /\(user_id, idempotency_key\)/.test(activeIndex)
+        && ["SENT_TO_MT5_LIVE", "LIVE_FILLED", "LIVE_UNKNOWN", "LIVE_RECONCILIATION_REQUIRED"].every(status => activeIndex.includes(`'${status}'`)),
       "partial unique idx on (userId, idempotencyKey) where status in active states");
   }
 
@@ -81,8 +84,9 @@ async function main() {
     const pipe = read("artifacts/api-server/src/lib/live/liveCommandPipeline.ts");
     // pipeline must INSERT into the live table only; comments may mention
     // demo, what matters is `db.insert(mt5DemoCommandsTable)` never occurs.
-    const insertsLive = /db\.insert\(arxLiveCommandsTable\)/.test(pipe);
-    const insertsDemo = /db\.insert\(mt5DemoCommandsTable\)/.test(pipe);
+    const tables = insertedTables(pipe);
+    const insertsLive = tables.has("arxLiveCommandsTable");
+    const insertsDemo = tables.has("mt5DemoCommandsTable");
     record("03-pipeline-only-inserts-live-table",
       insertsLive && !insertsDemo,
       `inserts arxLiveCommandsTable=${insertsLive}, inserts mt5DemoCommandsTable=${insertsDemo} (must be true,false)`);
@@ -306,7 +310,7 @@ async function main() {
   {
     const sch = read("lib/db/src/schema/arxLiveExecution.ts");
     record("14-idem-key-allows-retry-after-failure",
-      /Terminal states[\s\S]{0,200}intentionally NOT covered|status in \('SENT_TO_MT5_LIVE','LIVE_FILLED'\)/.test(sch),
+      activeIndex.length > 0 && !/'(?:REJECTED|FAILED|LIVE_BLOCKED|CANCELLED|CLOSED)'/.test(activeIndex),
       "partial unique index covers only active states — terminal states allow same-key retry");
   }
 

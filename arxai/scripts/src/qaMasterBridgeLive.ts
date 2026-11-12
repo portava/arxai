@@ -8,6 +8,7 @@
 // Each probe verifies one acceptance bullet from the spec. The script
 // asserts that arx_live_commands COUNT is identical at start and end
 // (no auto-fire).
+import { masterGatePrecedesPhaseB } from "./staging/sourceContracts.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "@workspace/db";
@@ -231,10 +232,7 @@ async function main(): Promise<void> {
   const pipeline = read("artifacts/api-server/src/lib/live/liveCommandPipeline.ts");
   record(
     "17_pipeline_wires_master_live_gate_before_phase_b",
-    /loadAndEvaluateMasterLiveBridgeGate/.test(pipeline) &&
-      /SHARED_MASTER_MT5[\s\S]{0,2000}?loadAndEvaluateMasterLiveBridgeGate/.test(pipeline) &&
-      pipeline.indexOf("loadAndEvaluateMasterLiveBridgeGate(")
-        < pipeline.indexOf("evaluateLivePhaseBDispatchGate("),
+    masterGatePrecedesPhaseB(pipeline),
     "loadAndEvaluateMasterLiveBridgeGate is called inside SHARED_MASTER_MT5 branch BEFORE evaluateLivePhaseBDispatchGate",
   );
 

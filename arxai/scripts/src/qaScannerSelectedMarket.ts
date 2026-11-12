@@ -8,6 +8,7 @@
 //   5. Calendar wiring populates upcomingEvents when matching events exist.
 //   6. INVARIANT — running this QA does not create an arx_live_command row.
 
+import { marketSimulator } from "../../artifacts/api-server/src/lib/marketSimulator.js";
 import { sql } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
 import {
@@ -32,6 +33,7 @@ async function liveCount(): Promise<number> {
 }
 
 async function main(): Promise<void> {
+  marketSimulator.stop();
   const liveBefore = await liveCount();
 
   // 1. Normalization
@@ -84,7 +86,7 @@ async function main(): Promise<void> {
   // 6. Explanation user-facing
   add("explanation-userfacing",
     refreshed.ok === true
-      && /Educational only/.test(refreshed.explanation.disclaimer)
+      && /Decision support only.*confirm live readiness and risk before trading/.test(refreshed.explanation.disclaimer)
       && typeof refreshed.explanation.hedge === "string"
       && refreshed.explanation.hedge.length > 0,
     "explanation has hedge + disclaimer (no code-heavy labels)");
