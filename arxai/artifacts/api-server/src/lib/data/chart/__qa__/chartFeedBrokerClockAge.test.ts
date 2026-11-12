@@ -203,5 +203,5 @@ for (const offset of [350, GMT2, -GMT2]) test(`converted monthly bars retain bro
   const r = await getChartCandles("EURUSD", "MN1", 200);
   assert.equal(r.feedStatus.trailingIntervals, 1);
   assert.equal(r.candles.at(-1)?.closeTime, new Date(Date.UTC(2026,10,1)-offset).toISOString());
-  assert.equal(r.candles.at(-1)?.timeBasisEvidence.kind, "unavailable");
+  assert.equal(r.candles.at(-1)?.timeBasisEvidence?.kind, "unavailable");
 });

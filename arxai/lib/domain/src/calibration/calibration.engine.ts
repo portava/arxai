@@ -279,7 +279,7 @@ interface CvResult {
 /** Conservative diagnostic, not an independence guarantee: observations may
  * share markets/regimes. Check both individual and chronological block means;
  * t=4.303 is conservative for at least three blocks (two degrees of freedom). */
-function improvementLowerBound(d: number[], blockMeans: number[]): number {
+export function improvementLowerBound(d: number[], blockMeans: number[]): number {
   if (d.length < 2 || blockMeans.length < 3) return -Infinity;
   const mean = d.reduce((sum, v) => sum + v, 0) / d.length;
   const variance = d.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (d.length - 1);
