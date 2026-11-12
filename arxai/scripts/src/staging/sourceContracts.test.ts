@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { masterGatePrecedesPhaseB } from "./sourceContracts.js";
+import { masterGatePrecedesPhaseB, requireSuiteCommands } from "./sourceContracts.js";
+test("required staging commands cannot silently disappear, duplicate, or become empty", () => {
+  requireSuiteCommands(["test:required"], { "test:required": "node test.mjs" });
+  for (const scripts of [{}, { "test:required": "  " }, { "test:required": false }]) {
+    assert.throws(() => requireSuiteCommands(["test:required"], scripts), /Missing required/);
+  }
+  assert.throws(() => requireSuiteCommands([], {}), /nonempty/);
+  assert.throws(() => requireSuiteCommands(["a", "a"], { a: "node test.mjs" }), /unique/);
+});
 const body = (middle: string) => `export async function dispatchLiveCommand() { ${middle} }`;
 const gate = 'if (routingMode === "SHARED_MASTER_MT5") { await loadAndEvaluateMasterLiveBridgeGate(); }';
 test("master bridge gate ordering survives unrelated source growth but rejects executable bypasses", () => {

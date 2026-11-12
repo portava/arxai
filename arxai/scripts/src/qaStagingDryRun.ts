@@ -20,7 +20,8 @@
 // Run with:  pnpm --filter @workspace/scripts run qa:staging:full
 
 import { runChild } from "./staging/child.js";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { requireSuiteCommands } from "./staging/sourceContracts.js";
 import { resolve } from "node:path";
 import { pool } from "@workspace/db";
 
@@ -146,6 +147,7 @@ async function runSuite(spec: SuiteSpec): Promise<SuiteResult> {
 const AGGREGATE_STDOUT: string[] = [];
 
 async function main() {
+  requireSuiteCommands(SUITES.map(suite => suite.name), JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")).scripts);
   console.log("=".repeat(78));
   console.log("ARX AI — End-to-End Staging Dry Run (qa:staging:full)");
   console.log("=".repeat(78));

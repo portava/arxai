@@ -1,4 +1,13 @@
 import ts from "typescript";
+/** A missing package command must not turn a required suite into a no-op. */
+export function requireSuiteCommands(names: readonly string[], scripts: Record<string, unknown>): void {
+  if (names.length === 0 || new Set(names).size !== names.length) throw new Error("Required staging suites must be nonempty and unique");
+  for (const name of names) {
+    if (!Object.hasOwn(scripts, name) || typeof scripts[name] !== "string" || !(scripts[name] as string).trim()) {
+      throw new Error(`Missing required staging command: ${name}`);
+    }
+  }
+}
 /** Check executable calls, not comments or a fixed character window. */
 export function masterGatePrecedesPhaseB(source: string): boolean {
   const file = ts.createSourceFile("pipeline.ts", source, ts.ScriptTarget.Latest, true);
