@@ -320,7 +320,9 @@
     "test:chart-truth-evidence": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/renderEvidence.test.ts src/lib/data/chart/__qa__/candleTruthStaleReason.test.ts src/lib/data/chart/__qa__/chartGateStaleReason.test.ts src/lib/data/chart/__qa__/chartTruthEvidence.test.ts src/lib/data/chart/__qa__/brokerQuoteBinding.test.ts src/lib/data/chart/__qa__/marketFrozenQuoteMotion.test.ts src/lib/__qa__/marketReplayCandleBinding.test.ts src/lib/data/chart/__qa__/chartDecisionTruthCap.test.ts src/lib/data/chart/__qa__/chartLevelPricePrecision.test.ts src/lib/data/chart/__qa__/chartTruthUnmeasuredCopy.test.ts src/lib/data/chart/__qa__/chartMirrorSeamTrustLine.test.ts src/lib/data/chart/__qa__/marketSentenceTruth.test.ts src/lib/data/chart/__qa__/chartEnginePricePrecision.test.ts",
     "test:account-stream-scheduling": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test src/lib/live/__qa__/accountSnapshotScheduler.test.ts src/lib/live/__qa__/accountStreamScheduling.test.ts src/lib/live/__qa__/liveAccountEventBus.test.ts",
     "test:performance": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test src/lib/perf/__qa__/*.test.ts src/lib/ai/__qa__/requestDeadline.test.ts src/lib/auth/__qa__/sessionPerformance.test.ts src/lib/startup/__qa__/dashboard.test.ts",
-    "test:build-identity": "node --test tests/buildIdentity.test.mjs"
+    "test:build-identity": "node --test tests/buildIdentity.test.mjs",
+    "test:schema-compatibility": "node --import tsx --test src/scripts/__qa__/schemaCompatibility.test.ts",
+    "test:schema-compatibility-db": "node --import tsx --test src/scripts/__qa__/schemaCompatibility.db.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
