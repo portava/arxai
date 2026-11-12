@@ -26,6 +26,7 @@ import { ingestAgentOutcomes } from "../learning/outcomeIngestion.js";
 import {
   proposeWeightChange,
   approveWeightChange,
+  outcomeWeightKey,
 } from "../learning/weightService.js";
 import { countLearningChanges } from "../learning/learningAudit.js";
 
@@ -116,11 +117,19 @@ test("ingest folds REAL evidence into every supported entity dimension, audited 
           inArray(aaciLearningAuditTable.sourceRef, sourceRefs),
         ),
       );
-    assert.equal(auditAfter.length, 4, "idempotent re-ingest writes no extra audit rows");
+    assert.equal(auditAfter.length, 4, "trust audits remain exactly once on re-ingest");
+    const weightAudits = await db.select().from(aaciLearningAuditTable).where(and(
+      eq(aaciLearningAuditTable.changeType, "WEIGHT_UPDATE"), inArray(aaciLearningAuditTable.sourceRef, sourceRefs),
+    ));
+    assert.equal(weightAudits.length, 4, "one classified adaptive-weight proposal per evidence dimension");
   } finally {
     // Clean up in FK-safe order. Trust + audit rows are normally immutable
     // safety evidence; here they belong to a uniquely-tagged QA entity only.
     await db.delete(aaciTrustScoresTable).where(inArray(aaciTrustScoresTable.entityKey, entityKeys));
+    await db.delete(aaciAdaptiveWeightsTable).where(inArray(aaciAdaptiveWeightsTable.weightKey, [
+      outcomeWeightKey("agent", agentKey), outcomeWeightKey("symbol", symbol),
+      outcomeWeightKey("strategy", setupType), outcomeWeightKey("timeframe", timeframe),
+    ]));
     if (sourceRefs.length > 0) {
       await db.delete(aaciLearningAuditTable).where(inArray(aaciLearningAuditTable.sourceRef, sourceRefs));
     }

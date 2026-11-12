@@ -179,6 +179,7 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     learnedScopeKeys.push({ entityType: "agent", entityKey: input.actorId });
   }
 
+  const learningEvidence: NonNullable<AaciDecision["learningEvidence"]> = [];
   let learned = { learnedTrustScore: 50, driftScore: 70, excluded: false };
   if (learnedScopeKeys.length > 0) {
     const readings = await Promise.all(
@@ -186,11 +187,12 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
         getLearnedTrustForDecision({ entityType: k.entityType, entityKey: k.entityKey, userId: 0 }),
       ),
     );
-    learned = readings.reduce((acc, r) => ({
+    for (const reading of readings) if (reading.learningEvidence) learningEvidence.push(reading.learningEvidence);
+    learned = readings.reduce<typeof learned>((acc, r) => ({
       learnedTrustScore: Math.min(acc.learnedTrustScore, r.learnedTrustScore),
       driftScore: Math.min(acc.driftScore, r.driftScore),
       excluded: acc.excluded || r.excluded,
-    }));
+    }), learned);
   }
 
   const breakdown = buildScoreBreakdown({
@@ -239,6 +241,7 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     executionReadinessScore: breakdown.executionReadinessScore,
     driftScore: breakdown.driftScore,
     auditAlertReadinessScore: breakdown.auditAlertReadinessScore,
+    learningEvidence,
     learnedTrustScore: breakdown.learnedTrustScore,
     dataQualityScore: breakdown.dataQualityScore,
     uiConsistencyScore: breakdown.uiConsistencyScore,

@@ -104,7 +104,7 @@ export async function ingestAgentOutcomes(
           .where(eq(selfTradeDecisionsTable.id, exec.decisionId))
           .limit(1);
         if (dec[0]) {
-          decisionQuality = toQuality100(dec[0].confidence || dec[0].setupScore);
+          decisionQuality = toQuality100(dec[0].confidence ?? dec[0].setupScore);
           setupType = dec[0].setupType?.trim() || null;
           timeframe = dec[0].timeframe?.trim() || null;
         }
@@ -118,6 +118,8 @@ export async function ingestAgentOutcomes(
       // Strategy + timeframe trust come ONLY from real linked-decision evidence.
       if (setupType) entities.push({ entityType: "strategy", entityKey: setupType });
       if (timeframe) entities.push({ entityType: "timeframe", entityKey: timeframe });
+
+      entities.sort((a, b) => `${a.entityType}:${a.entityKey}`.localeCompare(`${b.entityType}:${b.entityKey}`));
 
       // Per-execution transaction: all entity updates + audits commit together.
       try {

@@ -13,6 +13,7 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   db,
   aaciTrustScoresTable,
+  aaciAdaptiveWeightsTable,
   aaciLearningAuditTable,
 } from "@workspace/db";
 import type { AaciTrustEntityType, AaciTrustScoreRow } from "@workspace/db";
@@ -25,8 +26,13 @@ import {
   effectiveLearnedTrust,
   trustMean,
   neutralTrust,
+  AACI_LEARNING_RATE_ETA,
+  clampWeight,
+  type AaciLearningEvidence,
 } from "@workspace/domain/aaci";
 import { writeLearningAudit, type DbOrTx, type Tx } from "./learningAudit.js";
+import { lockLearningEntity } from "./learningLocks.js";
+import { outcomeWeightKey, proposeWeightChangeInTransaction } from "./weightService.js";
 
 /** Pull the Bayesian state out of a persisted row. */
 export function rowToTrustState(row: AaciTrustScoreRow): TrustState {
@@ -84,19 +90,33 @@ export async function getEffectiveLearnedTrust(
  */
 export async function getLearnedTrustForDecision(
   key: TrustScopeKey,
-): Promise<{ learnedTrustScore: number; driftScore: number; excluded: boolean }> {
+): Promise<{ learnedTrustScore: number; driftScore: number; excluded: boolean; learningEvidence: AaciLearningEvidence | null }> {
+  const neutral = { learnedTrustScore: 50, driftScore: 70, excluded: false, learningEvidence: null };
   try {
-    const row = await getTrustRow(db, key);
-    if (!row) return { learnedTrustScore: 50, driftScore: 70, excluded: false };
+    // One statement observes the trust and weight from the same committed
+    // snapshot; a concurrent outcome cannot produce a torn pair of versions.
+    const rows = await db.select({ trust: aaciTrustScoresTable,
+      weightValue: aaciAdaptiveWeightsTable.value, weightVersion: aaciAdaptiveWeightsTable.version,
+    }).from(aaciTrustScoresTable).leftJoin(aaciAdaptiveWeightsTable, and(
+      eq(aaciAdaptiveWeightsTable.weightKey, outcomeWeightKey(key.entityType, key.entityKey)),
+      eq(aaciAdaptiveWeightsTable.userId, key.userId ?? 0), eq(aaciAdaptiveWeightsTable.isActive, true),
+    )).where(and(eq(aaciTrustScoresTable.entityType, key.entityType),
+      eq(aaciTrustScoresTable.entityKey, key.entityKey), eq(aaciTrustScoresTable.userId, key.userId ?? 0),
+    )).limit(1);
+    const found = rows[0];
+    if (!found) return neutral;
+    const row = found.trust;
     const eff = effectiveLearnedTrust(rowToTrustState(row), row.quarantined);
+    // Even an approved increase cannot amplify trust or change a hard gate.
+    const weight = Math.min(1, clampWeight(found.weightValue ?? 1));
+    const learnedTrustScore = Math.min(eff.score, Math.round(eff.score * weight));
     return {
-      learnedTrustScore: eff.score,
-      driftScore: row.driftScore ?? 70,
-      excluded: eff.excluded,
+      learnedTrustScore, driftScore: row.driftScore ?? 70, excluded: eff.excluded,
+      learningEvidence: { entityType: key.entityType, entityKey: key.entityKey, userId: key.userId ?? 0,
+        trustVersion: row.version, unweightedTrustScore: eff.score, adaptiveWeight: weight,
+        weightVersion: found.weightVersion, scoredTrust: learnedTrustScore },
     };
-  } catch {
-    return { learnedTrustScore: 50, driftScore: 70, excluded: false };
-  }
+  } catch { return neutral; }
 }
 
 /** Insert a neutral-prior row if none exists, returning the current row. */
@@ -162,6 +182,9 @@ export async function applyOutcomeToTrust(
 ): Promise<ApplyOutcomeResult> {
   const userId = input.userId ?? 0;
 
+  await lockLearningEntity(tx, "trust", userId, input.entityKey, input.entityType);
+
+  // Check under the same lock as the fold, including first-write/source races.
   // Idempotency: this (entity, scope, source) was already folded in.
   const dupe = await tx
     .select({ id: aaciLearningAuditTable.id })
@@ -217,12 +240,14 @@ export async function applyOutcomeToTrust(
     oldValue: {
       alpha: before.alpha,
       beta: before.beta,
+      version: row.version,
       mean: trustMean(before),
       quarantined: row.quarantined,
     },
     newValue: {
       alpha: after.alpha,
       beta: after.beta,
+      version: row.version + 1,
       mean: trustMean(after),
       quarantined: verdict.quarantined,
       rewarded: update.rewarded,
@@ -233,6 +258,20 @@ export async function applyOutcomeToTrust(
     sourceRef: input.sourceRef,
     actorUserId: input.actorUserId ?? null,
     actorRole: input.actorRole ?? null,
+  });
+
+  await proposeWeightChangeInTransaction(tx, {
+    weightKey: outcomeWeightKey(input.entityType, input.entityKey),
+    userId,
+    changeType: "WEIGHT_UPDATE",
+    evidence: row.evidenceCount + 1,
+    reward: update.reward / AACI_LEARNING_RATE_ETA,
+    penalty: update.penalty / AACI_LEARNING_RATE_ETA,
+    safetyViolation: input.safetyViolation,
+    reason: `Classified ${classification} advisory weight (${input.sourceRef}); increases require approval.`,
+    sourceRef: input.sourceRef,
+    actorUserId: input.actorUserId,
+    actorRole: input.actorRole,
   });
 
   // If quarantine state flipped, record it as its own lifecycle change too.

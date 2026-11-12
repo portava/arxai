@@ -297,6 +297,9 @@ function sendActionResult(
     case "NOT_APPLIED":
       res.status(409).json({ error: "Change is not in an applied state" });
       return;
+    case "STALE_VERSION":
+      res.status(409).json({ error: "The weight changed after this proposal or effect; review its current version before retrying" });
+      return;
     case "NO_TARGET":
       res.status(409).json({ error: "Change has no recorded target value" });
       return;

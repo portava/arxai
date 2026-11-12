@@ -191,3 +191,24 @@ test("regime reset decays learned evidence toward the neutral prior", () => {
   const full = regimeReset(learned, 1);
   assert.equal(trustMean(full), AACI_TRUST_NEUTRAL_MEAN);
 });
+
+
+test("safety violations dominate any reward and do not depend on a caller-supplied penalty", () => {
+  for (const reward of [0, 1, 100, 1e9, Infinity, NaN]) {
+    for (const penalty of [undefined, 0, 1, NaN]) {
+      assert.equal(computeWeightUpdate({ currentWeight: 1, reward, penalty, safetyViolation: true }), 1 - AACI_SAFETY_PENALTY_LAMBDA);
+    }
+  }
+  assert.equal(computeWeightUpdate({ currentWeight: AACI_WEIGHT_MIN, reward: 100, safetyViolation: true }), AACI_WEIGHT_MIN);
+  assert.equal(computeWeightUpdate({ currentWeight: 1, reward: 100 }), 1 + AACI_LEARNING_RATE_ETA);
+});
+
+
+test("unresolved outcomes remain neutral and invalid quality cannot earn skill credit", () => {
+  const unresolved = learnFromOutcome(neutralTrust(), { decisionQuality: 100, realizedPnl: null, safetyViolation: true });
+  assert.deepEqual(unresolved.next, neutralTrust());
+  assert.equal(unresolved.classification, "NEUTRAL");
+  for (const decisionQuality of [NaN, Infinity, -Infinity]) {
+    assert.equal(classifyDecisionOutcome({ decisionQuality, realizedPnl: 10 }), "BAD_DECISION_WIN");
+  }
+});

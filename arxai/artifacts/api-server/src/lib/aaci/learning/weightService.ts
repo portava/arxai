@@ -29,6 +29,13 @@ import {
   type DbOrTx,
 } from "./learningAudit.js";
 
+import { lockLearningEntity } from "./learningLocks.js";
+
+/** Exact vocabulary shared by outcome ingestion and the decision trust reader. */
+export function outcomeWeightKey(entityType: string, entityKey: string): string {
+  return `outcome:${JSON.stringify([entityType, entityKey])}`;
+}
+
 export interface WeightScopeKey {
   weightKey: string;
   userId?: number; // 0 = global/system scope (default)
@@ -48,7 +55,7 @@ export async function getActiveWeight(key: WeightScopeKey): Promise<number> {
         ),
       )
       .limit(1);
-    return rows[0]?.value ?? AACI_WEIGHT_NEUTRAL;
+    return clampWeight(rows[0]?.value ?? AACI_WEIGHT_NEUTRAL);
   } catch {
     return AACI_WEIGHT_NEUTRAL;
   }
@@ -75,6 +82,7 @@ async function ensureWeightRow(
   tx: Tx,
   key: WeightScopeKey,
 ): Promise<AaciAdaptiveWeightRow> {
+  await lockLearningEntity(tx, "weight", key.userId ?? 0, key.weightKey);
   const existing = await getWeightRow(tx, key);
   if (existing) return existing;
   const inserted = await tx
@@ -93,7 +101,7 @@ async function ensureWeightRow(
 }
 
 export interface ProposeWeightInput extends WeightScopeKey {
-  changeType: LearningChangeType;
+  changeType: LearningChangeType | "WEIGHT_UPDATE";
   /** Evidence count backing the change (gates auto-apply via min-evidence). */
   evidence: number;
   reward?: number;
@@ -101,6 +109,8 @@ export interface ProposeWeightInput extends WeightScopeKey {
   safetyViolation?: boolean;
   confidence?: number;
   reason: string;
+  /** Real outcome identity; the enclosing trust transaction ensures one fold. */
+  sourceRef?: string;
   actorUserId?: number | null;
   actorRole?: string | null;
 }
@@ -110,70 +120,76 @@ export type ProposeWeightResult =
   | { applied: false; recommended: true; proposedValue: number; auditId: number | null };
 
 /**
- * Propose a weight change. MINOR changes with enough evidence auto-apply
- * (clamped). MAJOR changes, or minor changes without enough evidence, are queued
+ * Propose a weight change. MINOR reductions with enough evidence auto-apply
+ * (clamped). All increases, MAJOR changes, or changes without enough evidence are queued
  * RECOMMEND_ONLY for admin approval (not applied). Audited either way.
  */
 export async function proposeWeightChange(
   input: ProposeWeightInput,
 ): Promise<ProposeWeightResult> {
+  return db.transaction(tx => proposeWeightChangeInTransaction(tx, input));
+}
+
+/** Outcome ingestion uses its existing transaction: trust, weight and audits are atomic. */
+export async function proposeWeightChangeInTransaction(tx: Tx, input: ProposeWeightInput): Promise<ProposeWeightResult> {
   const userId = input.userId ?? 0;
-  const permission = classifyChangePermission(input.changeType, input.evidence);
+  const permission = classifyChangePermission(input.changeType === "WEIGHT_UPDATE" ? "REDUCE_TRUST" : input.changeType, input.evidence);
 
-  return db.transaction(async (tx) => {
-    const row = await ensureWeightRow(tx, { weightKey: input.weightKey, userId });
-    const current = row.value;
-    const proposed = computeWeightUpdate({
-      currentWeight: current,
-      reward: input.reward,
-      penalty: input.penalty,
-      safetyViolation: input.safetyViolation,
-    });
+  const row = await ensureWeightRow(tx, { weightKey: input.weightKey, userId });
+  const current = row.value;
+  const proposed = computeWeightUpdate({
+    currentWeight: current,
+    reward: input.reward,
+    penalty: input.penalty,
+    safetyViolation: input.safetyViolation,
+  });
 
-    if (permission === "AUTO") {
-      const next = clampWeight(proposed);
-      const updated = await tx
-        .update(aaciAdaptiveWeightsTable)
-        .set({ value: next, version: row.version + 1, isActive: true, updatedAt: new Date() })
-        .where(eq(aaciAdaptiveWeightsTable.id, row.id))
-        .returning();
-      const auditId = await writeLearningAudit(tx, {
-        entityType: "module",
-        entityKey: input.weightKey,
-        userId,
-        changeType: "WEIGHT_UPDATE",
-        permissionLevel: "AUTO",
-        status: "APPLIED",
-        oldValue: { value: current, version: row.version },
-        newValue: { value: next, version: row.version + 1, via: input.changeType },
-        reason: input.reason,
-        evidenceCount: input.evidence,
-        confidence: input.confidence ?? 0,
-        actorUserId: input.actorUserId ?? null,
-        actorRole: input.actorRole ?? null,
-      });
-      return { applied: true, newValue: next, version: updated[0]?.version ?? row.version + 1, auditId };
-    }
-
-    // RECOMMEND_ONLY — record the proposal, do NOT apply it.
+  if (permission === "AUTO" && proposed <= current) {
+    const next = clampWeight(proposed);
+    const updated = await tx
+      .update(aaciAdaptiveWeightsTable)
+      .set({ value: next, version: row.version + 1, isActive: true, updatedAt: new Date() })
+      .where(eq(aaciAdaptiveWeightsTable.id, row.id))
+      .returning();
     const auditId = await writeLearningAudit(tx, {
       entityType: "module",
       entityKey: input.weightKey,
       userId,
-      changeType: input.changeType,
-      permissionLevel: "RECOMMEND_ONLY",
-      status: "RECOMMENDED",
+      changeType: "WEIGHT_UPDATE",
+      permissionLevel: "AUTO",
+      status: "APPLIED",
       oldValue: { value: current, version: row.version },
-      newValue: { value: clampWeight(proposed) },
+      newValue: { value: next, version: row.version + 1, via: input.changeType },
       reason: input.reason,
       evidenceCount: input.evidence,
       confidence: input.confidence ?? 0,
+      sourceRef: input.sourceRef,
       actorUserId: input.actorUserId ?? null,
       actorRole: input.actorRole ?? null,
     });
-    return { applied: false, recommended: true, proposedValue: clampWeight(proposed), auditId };
+    return { applied: true, newValue: next, version: updated[0]?.version ?? row.version + 1, auditId };
+  }
+
+  // RECOMMEND_ONLY — record the proposal, do NOT apply it.
+  const auditId = await writeLearningAudit(tx, {
+    entityType: "module",
+    entityKey: input.weightKey,
+    userId,
+    changeType: input.changeType,
+    permissionLevel: "RECOMMEND_ONLY",
+    status: "RECOMMENDED",
+    oldValue: { value: current, version: row.version },
+    newValue: { value: clampWeight(proposed) },
+    reason: input.reason,
+    evidenceCount: input.evidence,
+    confidence: input.confidence ?? 0,
+    sourceRef: input.sourceRef,
+    actorUserId: input.actorUserId ?? null,
+    actorRole: input.actorRole ?? null,
   });
+  return { applied: false, recommended: true, proposedValue: clampWeight(proposed), auditId };
 }
+
 
 export interface AdminActionInput {
   changeId: number;
@@ -184,7 +200,7 @@ export interface AdminActionInput {
 
 export type AdminActionResult =
   | { ok: true; status: "APPROVED" | "REJECTED" | "ROLLED_BACK"; appliedValue?: number }
-  | { ok: false; reason: "NOT_FOUND" | "NOT_PENDING" | "NOT_APPLIED" | "NO_TARGET" };
+  | { ok: false; reason: "NOT_FOUND" | "NOT_PENDING" | "NOT_APPLIED" | "NO_TARGET" | "STALE_VERSION" };
 
 /**
  * Approve a recommended weight change: apply its proposed value to the weight,
@@ -195,12 +211,22 @@ export async function approveWeightChange(
   input: AdminActionInput,
 ): Promise<AdminActionResult> {
   return db.transaction(async (tx) => {
-    const change = await getLearningChange(tx, input.changeId);
+    let change = await getLearningChange(tx, input.changeId);
+    if (!change) return { ok: false, reason: "NOT_FOUND" };
+    await lockLearningEntity(tx, "weight", change.userId, change.entityKey);
+    change = await getLearningChange(tx, input.changeId);
     if (!change) return { ok: false, reason: "NOT_FOUND" };
     if (change.status !== "RECOMMENDED") return { ok: false, reason: "NOT_PENDING" };
 
     const proposedValue = (change.newValue as { value?: number })?.value;
-    if (proposedValue == null) return { ok: false, reason: "NO_TARGET" };
+    if (typeof proposedValue !== "number" || !Number.isFinite(proposedValue)) return { ok: false, reason: "NO_TARGET" };
+
+    const row = await getWeightRow(tx, { weightKey: change.entityKey, userId: change.userId });
+    if (!row) return { ok: false, reason: "NO_TARGET" };
+    const expected = change.oldValue as { value?: number; version?: number };
+    if (expected?.version !== row.version || expected?.value !== row.value) {
+      return { ok: false, reason: "STALE_VERSION" };
+    }
 
     // CAS-claim the recommendation FIRST. On a lost race this updates 0 rows and
     // returns null; we then plain-return the conflict with NO side effects
@@ -214,10 +240,6 @@ export async function approveWeightChange(
     );
     if (!transitioned) return { ok: false, reason: "NOT_PENDING" };
 
-    const row = await ensureWeightRow(tx, {
-      weightKey: change.entityKey,
-      userId: change.userId,
-    });
     const next = clampWeight(proposedValue);
     await tx
       .update(aaciAdaptiveWeightsTable)
@@ -286,12 +308,22 @@ export async function rollbackWeightChange(
   input: AdminActionInput,
 ): Promise<AdminActionResult> {
   return db.transaction(async (tx) => {
-    const change = await getLearningChange(tx, input.changeId);
+    let change = await getLearningChange(tx, input.changeId);
+    if (!change) return { ok: false, reason: "NOT_FOUND" };
+    await lockLearningEntity(tx, "weight", change.userId, change.entityKey);
+    change = await getLearningChange(tx, input.changeId);
     if (!change) return { ok: false, reason: "NOT_FOUND" };
     if (change.status !== "APPLIED") return { ok: false, reason: "NOT_APPLIED" };
 
     const restoreValue = (change.oldValue as { value?: number })?.value;
-    if (restoreValue == null) return { ok: false, reason: "NO_TARGET" };
+    if (typeof restoreValue !== "number" || !Number.isFinite(restoreValue)) return { ok: false, reason: "NO_TARGET" };
+
+    const row = await getWeightRow(tx, { weightKey: change.entityKey, userId: change.userId });
+    if (!row) return { ok: false, reason: "NO_TARGET" };
+    const expected = change.newValue as { value?: number; version?: number };
+    if (expected?.version !== row.version || expected?.value !== row.value) {
+      return { ok: false, reason: "STALE_VERSION" };
+    }
 
     // CAS-claim the APPLIED change FIRST so a lost race writes no side effects;
     // the weight restore below only runs after a successful claim.
@@ -304,10 +336,6 @@ export async function rollbackWeightChange(
     );
     if (!transitioned) return { ok: false, reason: "NOT_APPLIED" };
 
-    const row = await ensureWeightRow(tx, {
-      weightKey: change.entityKey,
-      userId: change.userId,
-    });
     const restored = clampWeight(restoreValue);
     await tx
       .update(aaciAdaptiveWeightsTable)

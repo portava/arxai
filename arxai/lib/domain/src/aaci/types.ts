@@ -362,6 +362,9 @@ export interface AaciEdgeDecayResult {
 // All component sub-scores (0–100) and multiplicative validity factors (0–1)
 // that feed the master AACI formula.
 export interface AaciScoreBreakdown {
+  /** Exact persisted learning versions used for this advisory score. */
+  learningEvidence?: AaciLearningEvidence[];
+
   // Component sub-scores (0–100).
   dataFreshnessScore: number; // F
   graphCohesionScore: number; // G
@@ -404,6 +407,17 @@ export const AACI_RECOMMENDED_ACTIONS = [
 ] as const;
 export type AaciRecommendedAction = (typeof AACI_RECOMMENDED_ACTIONS)[number];
 
+export interface AaciLearningEvidence {
+  entityType: string;
+  entityKey: string;
+  userId: number;
+  trustVersion: number;
+  unweightedTrustScore: number;
+  adaptiveWeight: number;
+  weightVersion: number | null;
+  scoredTrust: number;
+}
+
 export interface AaciDecision {
   decisionId: string;
   timestamp: string;
@@ -417,6 +431,9 @@ export interface AaciDecision {
 
   hardGatePass: boolean;
   hardGateFailures: string[];
+
+  /** Exact persisted learning versions used for this advisory score. */
+  learningEvidence?: AaciLearningEvidence[];
 
   // Component sub-scores (0–100).
   dataFreshnessScore: number;

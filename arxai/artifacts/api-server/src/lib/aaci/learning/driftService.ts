@@ -22,6 +22,7 @@ import { detectDrift, regimeReset, type DriftResult } from "@workspace/domain/aa
 import { logger } from "../../logger.js";
 import { writeLearningAudit } from "./learningAudit.js";
 import { getTrustRow, rowToTrustState } from "./trustStore.js";
+import { lockLearningEntity } from "./learningLocks.js";
 
 /** Recent window size (in resolved trades) used for the drift comparison. */
 const RECENT_WINDOW = 20;
@@ -229,6 +230,7 @@ export async function applyRegimeReset(
 ): Promise<{ applied: boolean }> {
   const userId = input.userId ?? 0;
   return db.transaction(async (tx) => {
+    await lockLearningEntity(tx, "trust", userId, input.entityKey, input.entityType);
     const row = await getTrustRow(tx, {
       entityType: input.entityType,
       entityKey: input.entityKey,
@@ -254,8 +256,8 @@ export async function applyRegimeReset(
       changeType: "REGIME_RESET",
       permissionLevel: "AUTO",
       status: "APPLIED",
-      oldValue: { alpha: before.alpha, beta: before.beta },
-      newValue: { alpha: after.alpha, beta: after.beta, regimeTag: input.regimeTag ?? null },
+      oldValue: { alpha: before.alpha, beta: before.beta, version: row.version },
+      newValue: { alpha: after.alpha, beta: after.beta, version: row.version + 1, regimeTag: input.regimeTag ?? null },
       reason: input.reason,
       actorUserId: input.actorUserId ?? null,
       actorRole: input.actorRole ?? null,

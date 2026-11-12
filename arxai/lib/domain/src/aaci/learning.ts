@@ -145,8 +145,8 @@ export interface ClassifyOutcomeInput {
  */
 export function classifyDecisionOutcome(input: ClassifyOutcomeInput): DecisionOutcomeClass {
   if (input.realizedPnl == null || !Number.isFinite(input.realizedPnl)) return "NEUTRAL";
-  const threshold = input.qualityThreshold ?? 60;
-  const goodDecision = input.decisionQuality >= threshold && !input.safetyViolation;
+  const threshold = Number.isFinite(input.qualityThreshold) ? input.qualityThreshold! : 60;
+  const goodDecision = Number.isFinite(input.decisionQuality) && input.decisionQuality >= threshold && !input.safetyViolation;
   const win = input.realizedPnl > 0;
   const loss = input.realizedPnl < 0;
   if (!win && !loss) return "NEUTRAL"; // exactly flat → no signal
@@ -170,6 +170,7 @@ export function luckFilteredUpdate(
   cls: DecisionOutcomeClass,
   opts?: { safetyViolation?: boolean },
 ): TrustUpdate {
+  if (cls === "NEUTRAL") return { reward: 0, penalty: 0, rewarded: false, rationale: cls };
   if (opts?.safetyViolation) {
     return { reward: 0, penalty: AACI_SAFETY_PENALTY_LAMBDA, rewarded: false, rationale: cls };
   }
@@ -185,7 +186,6 @@ export function luckFilteredUpdate(
     case "BAD_DECISION_LOSS":
       // Poor process AND a loss → full learning-rate penalty.
       return { reward: 0, penalty: AACI_LEARNING_RATE_ETA, rewarded: false, rationale: cls };
-    case "NEUTRAL":
     default:
       return { reward: 0, penalty: 0, rewarded: false, rationale: cls };
   }
@@ -430,12 +430,13 @@ export interface WeightUpdateInput {
  * raise it.
  */
 export function computeWeightUpdate(input: WeightUpdateInput): number {
-  const up = Math.max(0, input.reward ?? 0) * AACI_LEARNING_RATE_ETA;
-  const penaltyStrength = input.safetyViolation
-    ? AACI_SAFETY_PENALTY_LAMBDA
-    : AACI_LEARNING_RATE_ETA;
-  const down = Math.max(0, input.penalty ?? 0) * penaltyStrength;
-  return clampWeight(input.currentWeight + up - down);
+  const current = clampWeight(input.currentWeight);
+  // One observation contributes at most one unit. A safety violation always
+  // applies the full safety penalty and never earns simultaneous profit credit.
+  if (input.safetyViolation) return clampWeight(current - AACI_SAFETY_PENALTY_LAMBDA);
+  const up = clamp01(input.reward ?? 0) * AACI_LEARNING_RATE_ETA;
+  const down = clamp01(input.penalty ?? 0) * AACI_LEARNING_RATE_ETA;
+  return clampWeight(current + up - down);
 }
 
 // ── Confidence (for audit / recommendation strength) ────────────────────────

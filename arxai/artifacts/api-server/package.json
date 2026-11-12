@@ -265,7 +265,7 @@
     "test:daily-report-scheduler": "node --import tsx --test src/lib/agentEcosystem/__qa__/dailyReportSchedulerWiring.test.ts",
     "test:aaci-execution": "node --import tsx --test --test-force-exit src/lib/aaci/__qa__/executionGate.test.ts",
     "test:aaci-learning": "node --import tsx --test --test-force-exit src/lib/aaci/__qa__/learning.test.ts",
-    "test:aaci-learning-integration": "node --import tsx --test --test-force-exit src/lib/aaci/__qa__/learning.integration.test.ts",
+    "test:aaci-learning-integration": "node --import tsx --test --test-force-exit src/lib/aaci/__qa__/learning.integration.test.ts src/lib/aaci/__qa__/learningConcurrency.integration.test.ts",
     "test:security-handshake-enforcement": "node --import tsx --test --test-force-exit src/lib/security/__qa__/handshakeEnforcement.test.ts",
     "test:command-integrity": "node --import tsx --test --test-force-exit src/lib/security/__qa__/commandIntegrity.test.ts",
     "test:chart-truth-fixtures": "node --import tsx --test src/lib/data/chart/__qa__/candleFixtures.test.ts",
