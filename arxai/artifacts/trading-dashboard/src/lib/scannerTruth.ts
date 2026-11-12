@@ -526,8 +526,6 @@ function utcDayClock(ms: number): string {
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
 }
-
-
 /** A bar time whose UTC mapping is unverified: same digits, never called UTC. */
 function barDayClock(ms: number, utcQualified: boolean): string {
   const utc = utcDayClock(ms);

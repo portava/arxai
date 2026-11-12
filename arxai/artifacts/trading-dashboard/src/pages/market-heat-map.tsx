@@ -939,7 +939,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
             <CardDescription className="text-xs">Economic calendar connected</CardDescription>
           ) : (
             <CardDescription className="text-xs text-amber-400/80">
-              No economic calendar connected — news heat is a schedule-based estimate only
+              Economic calendar unavailable — scheduled-event risk was not checked
             </CardDescription>
           )}
         </CardHeader>
@@ -977,8 +977,8 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
             </>
           ) : (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              No active news events detected for {data.symbol}.
+              {data.dataQuality.hasNewsData ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />}
+              {data.dataQuality.hasNewsData ? `No active events detected for ${data.symbol} on the connected calendar.` : `Scheduled-event risk for ${data.symbol} is unknown.`}
               {!data.dataQuality.hasNewsData && (
                 <span className="text-amber-400/80"> (No economic calendar connected)</span>
               )}
@@ -1000,7 +1000,7 @@ function NewsHeatTab({ data }: { data: MarketTimingRead | undefined }) {
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-400" />
               <span>
                 Real-time news heat requires a connected news/economic calendar provider.
-                Timing estimates are still available — they're labelled as "basic timing estimate."
+                Price/session estimates remain available with their data-quality label. Missing event data is not an all-clear.
               </span>
             </div>
           </CardContent>
@@ -1414,7 +1414,8 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
                   { label: "Candle data", ok: data.dataQuality.hasCandleData },
-                  { label: "Quote data", ok: data.dataQuality.hasQuoteData },
+                  { label: "Live price", ok: data.dataQuality.hasLivePriceData ?? data.dataQuality.hasQuoteData },
+                  { label: "Bid/ask spread", ok: data.dataQuality.hasQuoteData },
                   { label: "News data", ok: data.dataQuality.hasNewsData },
                   { label: "Broad flow", ok: data.dataQuality.hasBroadFlowData },
                 ].map(({ label, ok }) => (

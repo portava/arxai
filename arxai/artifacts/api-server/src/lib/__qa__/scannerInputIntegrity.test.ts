@@ -16,7 +16,7 @@ function bars(provider = "mt5_broker", count = 60): MarketCandlesResult {
 function quote(): MarketQuoteResult { return { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: "mt5_broker", attempts: [], userMessage: "", adminDetail: "", quote: { symbol: "EURUSD", timestamp: new Date(now).toISOString(), bid: 1.11, ask: 1.1102, spread: 0.0002 } }; }
 
 test("excludes forming and future bars; closed timestamps follow the actual provider convention", () => {
-  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data", "assistant_real:finnhub"]) {
+  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data", "assistant_real:polygon", "assistant_real:finnhub"]) {
     const result = bars(provider);
     const original = structuredClone(result);
     result.candles.push({ ...result.candles[59]!, time: new Date(closedOpen + interval + (timeBasis(provider) === "close" ? interval : 0)).toISOString(), close: 1.119 });

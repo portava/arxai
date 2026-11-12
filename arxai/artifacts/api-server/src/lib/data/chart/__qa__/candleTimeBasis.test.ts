@@ -24,3 +24,18 @@ test("Truth exposes an explicit historical clock limitation without rewriting OH
  assert.match(truth.truthResult.sourceDocumentation.timeBasisNote??"",/broker\/source-clock.*UTC mapping is unverified/);
  assert.ok(truth.verifiedCandles.every(c=>c.timeBasisEvidence?.kind==="unavailable"));
 });
+
+test("MT5 truth documents the actual terminal source and complete timeframe contract", () => {
+ for (const assetClass of ["forex", "synthetic"] as const) {
+  const result = runCandleTruth(raw, { ...opts, assetClass }).truthResult;
+  const docs = result.sourceDocumentation;
+  assert.match(docs.dataMode, /MetaTrader 5/);
+  assert.match(docs.updateMethod, /native OHLC/);
+  assert.doesNotMatch(JSON.stringify(docs), /DERIV_APP_ID|Deriv WebSocket/);
+  assert.equal(docs.supportedTimeframes.length, 21);
+  assert.deepEqual(result.allowedTimeframes, docs.supportedTimeframes);
+  for (const tf of ["M2", "M15", "H12", "W1", "MN1"]) assert.ok(docs.supportedTimeframes.includes(tf));
+  assert.ok(docs.knownLimitations.some(x => /do not guarantee/.test(x)));
+  assert.match(docs.timeBasisNote ?? "", /UTC mapping is unverified/);
+ }
+});

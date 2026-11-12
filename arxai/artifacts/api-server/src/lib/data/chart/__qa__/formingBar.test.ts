@@ -222,72 +222,21 @@ test("[B4] buildFeedStatus: closed-bar integrity failure wins over a fresh tip",
 // [C] Display seam — append / merge only on opt-in; analysis excluded
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("[C1] includeFormingTip APPENDS a tip for the new interval", async () => {
+for (const sameInterval of [false, true]) test(`[C${sameInterval ? 2 : 1}] MT5 sampled ticks cannot manufacture or overwrite native OHLC`, async () => {
   __resetMt5ProviderStore();
   __resetFormingBarStore();
-  // Newest closed bar is the PREVIOUS interval; the live tick is the CURRENT one.
-  const now = 6_000 * M5_MS + 30_000; // mid-current-interval
+  const now = 6000 * M5_MS + 30000;
   const currentOpen = Math.floor(now / M5_MS) * M5_MS;
-  const prevOpen = currentOpen - M5_MS;
-  updateCandlesFromMT5(SYM, contiguousM5(prevOpen, 40), TF);
+  const bars = contiguousM5(currentOpen - (sameInterval ? 0 : M5_MS), 40);
+  updateCandlesFromMT5(SYM, bars, TF);
   foldFormingTick(SYM, 1234.5, now, now, "mt5_broker");
-
   await withFixedNow(now, async () => {
     const withTip = await getChartCandles(SYM, TF, 200, true);
+    const closedOnly = await getChartCandles(SYM, TF, 200);
     assert.equal(withTip.source, "mt5_broker");
-    const last = withTip.candles[withTip.candles.length - 1]!;
-    assert.equal(last.isForming, true, "appended tip is flagged isForming");
-    assert.equal(last.isComplete, false);
-    assert.equal(last.isFinal, false);
-    assert.equal(last.close, 1234.5, "tip close is the live tick");
-    assert.equal(Date.parse(last.openTime), currentOpen, "tip opens at the current interval");
-
-    // Analysis caller (default false) must NOT see the tip.
-    const closedOnly = await getChartCandles(SYM, TF, 200);
-    assert.equal(
-      closedOnly.candles.some((c) => c.isForming),
-      false,
-      "analysis path is strictly closed-bars-only",
-    );
-    assert.equal(
-      withTip.candles.length,
-      closedOnly.candles.length + 1,
-      "the tip is exactly one extra bar over the closed window",
-    );
-  });
-});
-
-test("[C2] includeFormingTip MERGES live extremes onto a same-interval newest bar", async () => {
-  __resetMt5ProviderStore();
-  __resetFormingBarStore();
-  const now = 7_000 * M5_MS + 45_000;
-  const currentOpen = Math.floor(now / M5_MS) * M5_MS;
-  // Newest closed bar OPENS at the current interval → merge path.
-  const bars = contiguousM5(currentOpen, 40);
-  const newest = bars[bars.length - 1]!;
-  updateCandlesFromMT5(SYM, bars, TF);
-  // Fold ticks that push a new high and a new close beyond the closed bar.
-  const higherHigh = newest.high + 5;
-  foldFormingTick(SYM, newest.close, now, now, "mt5_broker");
-  foldFormingTick(SYM, higherHigh, now + 1_000, now + 1_000, "mt5_broker");
-
-  await withFixedNow(now + 1_000, async () => {
-    const withTip = await getChartCandles(SYM, TF, 200, true);
-    const last = withTip.candles[withTip.candles.length - 1]!;
-    assert.equal(last.isForming, true);
-    assert.equal(last.open, newest.open, "merge keeps the closed bar's OPEN");
-    assert.equal(last.high, higherHigh, "merge takes the live HIGH");
-    assert.equal(last.close, higherHigh, "merge takes the live CLOSE");
-    assert.equal(Date.parse(last.openTime), currentOpen);
-
-    // Merge must NOT add a bar (it overwrites the newest closed bar in place).
-    const closedOnly = await getChartCandles(SYM, TF, 200);
-    assert.equal(
-      withTip.candles.length,
-      closedOnly.candles.length,
-      "merge does not create an orphan duplicate bar",
-    );
-    assert.equal(closedOnly.candles.some((c) => c.isForming), false);
+    assert.deepEqual(withTip.candles, closedOnly.candles);
+    assert.equal(withTip.candles.some(c => c.isForming), false);
+    assert.equal(withTip.candles.at(-1)?.close, bars.at(-1)?.close);
   });
 });
 
@@ -458,4 +407,24 @@ test("[E6] __resetFormingBarStore clears the last-tick map", () => {
   assert.ok(getFeedFreshness(FROZEN_SYM, now), "tick recorded");
   __resetFormingBarStore();
   assert.equal(getFeedFreshness(FROZEN_SYM, now), null, "reset clears the last-tick map");
+});
+
+test("a fresh display tick cannot conceal delayed or stale closed history", () => {
+  for (const [gap, expected] of [[2, "delayed"], [3, "stale"], [10, "stale"]] as const) {
+    const base = {routerOk:true, hasSource:true, candleCount:200, trailingIntervals:gap};
+    const closed = buildFeedStatus(base);
+    const display = buildFeedStatus({...base, formingTipPresent:true, formingTickAgeMs:1});
+    assert.equal(display.quality, expected);
+    assert.equal(display.quality, closed.quality);
+    assert.equal(display.stale, closed.stale);
+    assert.equal(display.aiUsable, false);
+  }
+});
+test("a current closed interval and fresh tip remain usable", () => {
+  const result = buildFeedStatus({routerOk:true,hasSource:true,candleCount:200,trailingIntervals:1,formingTipPresent:true,formingTickAgeMs:1});
+  assert.equal(result.quality,"clean");assert.equal(result.aiUsable,true);
+});
+test("a silent tip worsens delayed history rather than reviving it", () => {
+  const result = buildFeedStatus({routerOk:true,hasSource:true,candleCount:200,trailingIntervals:2,formingTipPresent:true,formingTickAgeMs:60000});
+  assert.equal(result.quality,"stale");assert.equal(result.stale,true);assert.equal(result.aiUsable,false);
 });

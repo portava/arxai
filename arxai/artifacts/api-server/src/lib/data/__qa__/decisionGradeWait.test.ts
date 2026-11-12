@@ -94,8 +94,9 @@ test("WAIT, never borrow: absent broker feed refuses without touching fallback p
   // walks the full labeled fallback chain.
   const disp = await routeCandles("GBPUSD", "M1", 50);
   assert.equal(disp.ok, false);
-  assert.equal(disp.attempts.length, 2, "display chain still tries the fallback provider");
-  assert.ok(disp.attempts[1]?.provider.startsWith("assistant_real"));
+  assert.equal(disp.attempts.length, 3, "display tries Deriv before assistant fallback");
+  assert.match(disp.attempts[1]?.provider ?? "", /^deriv/);
+  assert.ok(disp.attempts[2]?.provider.startsWith("assistant_real"));
 });
 
 test("synthetic + mt5 execution venue: deriv is NOT in the decision chain (display keeps it)", async () => {

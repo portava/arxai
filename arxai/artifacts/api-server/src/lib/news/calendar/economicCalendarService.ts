@@ -1,9 +1,14 @@
+import { verifyCalendarValues } from "./calendarValueVerification.js";
+import { getMt5CalendarResult, mt5CalendarConfigured } from "./mt5CalendarProvider.js";
+import { FOREX_FACTORY_PROVIDER, FOREX_FACTORY_COVERAGE, isForexFactorySelected, fetchForexFactoryCalendar, forexFactoryRefreshNote, forexFactoryObservedAt, __resetForexFactoryForTests } from "./forexFactoryProvider.js";
 // Central economic-calendar service — the SINGLE source of truth every consumer
 // surface (Market Impact Radar, Global Market Heat, Eleanor, the Economic Calendar
 // page DB-sync, /news/calendar) derives from.
 //
 // HONESTY (inviolable):
-//   - No provider key            ⇒ status "missing"  ("Economic calendar provider missing")
+//   - Explicit paid-provider selection without its key ⇒ status "missing".
+//   - Unset selection ⇒ the public Forex Factory current-week schedule.
+//   - Its bounded cached observations keep their original timestamp and DELAYED label.
 //   - Provider configured, fetch fails ⇒ status "error" ("Economic calendar provider error")
 //   - Provider reachable, zero events  ⇒ status "empty" ("No relevant economic events")
 //   - Provider reachable, >0 events    ⇒ status "ok"
@@ -86,12 +91,14 @@ function resetCalendarState(): void {
   _lastStatus = "missing";
 }
 
-export function __resetEconomicCalendarStateForTests(): void { resetCalendarState(); }
+export function __resetEconomicCalendarStateForTests(): void { resetCalendarState(); __resetForexFactoryForTests(); }
 
 function defaultFetcher(): CalendarHttpFetcher {
   return async (url: string) => {
     const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    return { ok: r.ok, status: r.status, text: () => r.text() };
+    const retry = r.headers.get("retry-after");
+    const retryAfterMs = retry ? (/^\d+$/.test(retry) ? Number(retry)*1000 : Math.max(0,Date.parse(retry)-Date.now())) : 0;
+    return { ok: r.ok, status: r.status, retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : 0, text: () => r.text() };
   };
 }
 
@@ -102,6 +109,10 @@ function freshnessForAge(ageMs: number): CalendarEvent["freshness"] {
 }
 
 function messageFor(status: EconomicCalendarStatus, provider: string): string {
+  if ((status === "ok" || status === "empty") && provider === FOREX_FACTORY_PROVIDER) {
+    const error=forexFactoryRefreshNote();
+    return FOREX_FACTORY_COVERAGE + (error ? ` Latest refresh failed (${error}); showing the cached schedule from ${new Date(forexFactoryObservedAt()!).toISOString()}.` : "");
+  }
   switch (status) {
     case "missing":
       return "Economic calendar provider missing — no provider is configured.";
@@ -172,6 +183,11 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
       redact: (err) => redactFredError(err, fredCfg),
     };
   }
+  if (isForexFactorySelected()) return {
+    name: FOREX_FACTORY_PROVIDER, configurationKey: configurationKey(FOREX_FACTORY_PROVIDER, "public-weekly-v1"), apiKeyPresent: false,
+    fetch: (o) => fetchForexFactoryCalendar({ ...o, persistCache: _fetcher === null }),
+    redact: (err) => err instanceof Error ? err.message.slice(0, 280) : "Calendar export unavailable.",
+  };
   return null;
 }
 
@@ -182,6 +198,7 @@ function resolveActiveCalendarProvider(): ActiveCalendarProvider | null {
  */
 function selectedProviderLabel(): string {
   if (isFredSelected()) return FRED_PROVIDER;
+  if (isForexFactorySelected()) return FOREX_FACTORY_PROVIDER;
   return TRADING_ECONOMICS_PROVIDER;
 }
 
@@ -194,7 +211,7 @@ function selectedProviderApiKeyPresent(): boolean {
 export interface EconomicCalendarOptions {
   daysAhead?: number;
   nowMs?: number;
-  /** Bypass the in-memory cache (force a fresh fetch). */
+  /** Bypass the service cache; upstream retry/backoff limits still apply. */
   forceRefresh?: boolean;
 }
 
@@ -202,7 +219,7 @@ export interface EconomicCalendarOptions {
  * Fetch the full normalized calendar with honest status. Never throws — all
  * failures degrade to status "error" with a redacted message.
  */
-export async function getEconomicCalendarResult(
+async function getFallbackEconomicCalendarResult(
   opts: EconomicCalendarOptions = {},
 ): Promise<EconomicCalendarResult> {
   const nowMs = opts.nowMs ?? Date.now();
@@ -301,11 +318,15 @@ export async function getEconomicCalendarResult(
     // windows remain independently valid, but only the latest request publishes
     // shared cache/diagnostics so an older completion cannot overwrite them.
     if (generation !== _generation || pending.superseded || active.configurationKey !== resolveActiveCalendarProvider()?.configurationKey) throw new Error("Calendar request superseded");
+    const observedAt = provider === FOREX_FACTORY_PROVIDER ? (forexFactoryObservedAt() ?? fetchedAtMs) : fetchedAtMs;
+    if (!Number.isFinite(observedAt) || observedAt > nowMs) throw new Error("Calendar observation time unverified");
+    const refreshNote = provider === FOREX_FACTORY_PROVIDER ? forexFactoryRefreshNote() : null;
+    const freshness = provider === FOREX_FACTORY_PROVIDER && nowMs - observedAt > DELAYED_AFTER_MS ? "DELAYED" : freshnessForAge(nowMs - observedAt);
     const status: EconomicCalendarStatus = events.length > 0 ? "ok" : "empty";
     if (fetchSequence === _fetchSequence) {
-      _cache = { events, fetchedAtMs, daysAhead, windowStart };
-      _lastSuccessAt = fetchedAtMs;
-      _lastError = null;
+      _cache = { events, fetchedAtMs: observedAt, daysAhead, windowStart };
+      _lastSuccessAt = observedAt;
+      _lastError = refreshNote;
       _lastStatus = status;
     }
     return {
@@ -316,10 +337,10 @@ export async function getEconomicCalendarResult(
       events,
       diagnostics: {
         ...buildDiagnostics({ provider, configured: true, apiKeyPresent, status, events,
-          freshness: "LIVE", cacheAgeMs: 0 }),
+          freshness, cacheAgeMs: nowMs - observedAt }),
         lastFetchAt: new Date(fetchedAtMs).toISOString(),
-        lastSuccessAt: new Date(fetchedAtMs).toISOString(),
-        lastError: null,
+        lastSuccessAt: new Date(observedAt).toISOString(),
+        lastError: refreshNote,
       },
       message: messageFor(status, provider),
     };
@@ -361,15 +382,26 @@ export async function getEconomicCalendarResult(
   }
 }
 
+export async function getEconomicCalendarResult(opts: EconomicCalendarOptions = {}): Promise<EconomicCalendarResult> {
+  const selected = (process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim().toLowerCase();
+  if (selected === "mt5_calendar" || (!selected && mt5CalendarConfigured())) {
+    const mt5 = verifyCalendarValues(getMt5CalendarResult(opts));
+    if (selected === "mt5_calendar" || mt5.connected) return mt5;
+    const fallback = await getFallbackEconomicCalendarResult(opts);
+    return {...fallback,message:`${fallback.message} MT5 calendar unavailable: ${mt5.message}`};
+  }
+  return getFallbackEconomicCalendarResult(opts);
+}
+
 /** Operator diagnostics snapshot (never exposes the key). */
 export async function getEconomicCalendarDiagnostics(): Promise<EconomicCalendarDiagnostics> {
   const result = await getEconomicCalendarResult();
   return result.diagnostics;
 }
 
-/** Whether a real calendar provider is configured with a key (presence only). */
+/** Whether a real provider is available by configuration (public feeds need no key). */
 export function isEconomicCalendarConfigured(): boolean {
-  return resolveActiveCalendarProvider() !== null;
+  return mt5CalendarConfigured() || resolveActiveCalendarProvider() !== null;
 }
 
 /**
@@ -377,8 +409,10 @@ export function isEconomicCalendarConfigured(): boolean {
  * selected. Trading Economics is checked first (back-compat), then FRED.
  */
 export function selectedEconomicCalendarProvider(): string | null {
+  if ((process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim().toLowerCase() === "mt5_calendar" || (!(process.env.ECONOMIC_CALENDAR_PROVIDER ?? "").trim() && mt5CalendarConfigured())) return "mt5_calendar";
   if (isTradingEconomicsSelected()) return TRADING_ECONOMICS_PROVIDER;
   if (isFredSelected()) return FRED_PROVIDER;
+  if (isForexFactorySelected()) return FOREX_FACTORY_PROVIDER;
   return null;
 }
 

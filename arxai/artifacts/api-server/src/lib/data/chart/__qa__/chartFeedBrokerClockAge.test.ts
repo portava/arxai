@@ -26,7 +26,7 @@ const HOUR = 60 * MIN;
 const GMT2 = 2 * HOUR;
 const BRIDGE = { bridgeConnectionId: 61, userId: 6 };
 
-type Bar = { time: string; open: number; high: number; low: number; close: number; volume: number };
+type Bar = { time: string; open: number; high: number; low: number; close: number; volume: number; timeBasisEvidence?: import("../../candleTimeBasisEvidence.js").CandleTimeBasisEvidence };
 /** `n` bars of `intervalMs` whose newest REAL (UTC) open is `newestUtcOpen`, stamped on a GMT+2 broker clock. */
 function brokerBars(newestUtcOpen: number, intervalMs: number, n = 200): Bar[] {
   return Array.from({ length: n }, (_, i) => {
@@ -164,4 +164,44 @@ test("a negative 'offset' read from a stale first-sight tick never makes a stall
   assert.equal(r.feedStatus.aiUsable, false);
   const h = await getCandleHistory({ symbol: "EURUSD", timeframe: "1m", limit: 200 });
   assert.equal(h.status, "stale");
+});
+
+for (const offset of [1, 350, GMT2]) test(`monthly freshness uses broker calendar coordinates with positive offset ${offset}ms`, async () => {
+  const now = Date.UTC(2026, 10, 5, 18);
+  mock.timers.enable({ apis: ["Date"], now });
+  measureOffset(now, offset);
+  routedBars = Array.from({ length: 160 }, (_, i) => ({time: new Date(Date.UTC(2026, 9 - 159 + i, 1)).toISOString(), open: 1.1, high: 1.101, low: 1.099, close: 1.1, volume: 10}));
+  const r = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(r.feedStatus.trailingIntervals, 1);
+  assert.equal(r.feedStatus.quality, "clean");
+  assert.equal(r.feedStatus.isLive, true);
+  assert.equal(r.candles.at(-1)?.openTime, "2026-10-01T00:00:00.000Z");
+  assert.equal(r.candles.at(-1)?.closeTime, "2026-11-01T00:00:00.000Z");
+  routedBars = routedBars.slice(0, -1);
+  const stalled = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(stalled.feedStatus.trailingIntervals, 2);
+  assert.equal(stalled.aiUsable, false);
+  assert.equal(stalled.feedStatus.isLive, false);
+});
+
+test("negative inferred monthly offset cannot rejuvenate missing October history", async () => {
+  const now = Date.UTC(2026, 10, 5, 18);
+  mock.timers.enable({ apis: ["Date"], now });
+  measureOffset(now, -31 * 24 * HOUR);
+  routedBars = [{time:"2026-09-01T00:00:00.000Z",open:1.1,high:1.101,low:1.099,close:1.1,volume:10}];
+  const r = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(r.feedStatus.trailingIntervals, 2);
+  assert.equal(r.aiUsable, false);
+});
+
+for (const offset of [350, GMT2, -GMT2]) test(`converted monthly bars retain broker calendar and UTC close (${offset}ms)`, async () => {
+  const now = Date.UTC(2026, 10, 5, 18);
+  mock.timers.enable({ apis: ["Date"], now });
+  measureOffset(now, offset);
+  const { convertedBrokerCandleTimeBasis } = await import("../../candleTimeBasisEvidence.js");
+  routedBars = Array.from({ length: 160 }, (_, i) => ({time: new Date(Date.UTC(2026, 9 - 159 + i, 1) - offset).toISOString(), open: 1.1, high: 1.101, low: 1.099, close: 1.1, volume: 10, timeBasisEvidence: convertedBrokerCandleTimeBasis({offsetMs:offset,measuredAtMs:now})}));
+  const r = await getChartCandles("EURUSD", "MN1", 200);
+  assert.equal(r.feedStatus.trailingIntervals, 1);
+  assert.equal(r.candles.at(-1)?.closeTime, new Date(Date.UTC(2026,10,1)-offset).toISOString());
+  assert.equal(r.candles.at(-1)?.timeBasisEvidence.kind, "unavailable");
 });

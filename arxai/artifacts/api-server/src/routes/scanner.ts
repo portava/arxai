@@ -1,3 +1,7 @@
+import { getSymbolTruthSnapshot } from "../lib/truth/symbolTruthSnapshot.js";
+import { buildEleanorChartContext } from "../lib/data/chart/eleanorChartContext.js";
+import { capSelectedMarketByTruth } from "../lib/scannerSelected/selectedMarketTruthCap.js";
+import { isChartTimeframe } from "../lib/data/chart/timeframes.js";
 // Market Scanner / Opportunity / Session Plan / Decision Stream / Alerts HTTP.
 //
 // SAFETY: Scanner is read-only over the simulator. The always-on engine
@@ -344,7 +348,11 @@ router.get("/market-scanner/selected-market", requireUser, withScannerReadAdmiss
       symbolRaw: rawSymbol, symbol: normalized, timeframe,
       ok: snapshot.ok, cacheHit: snapshot.ok ? snapshot.cacheHit : false,
     }, "scanner.selected_market");
-    return res.json(snapshot);
+    const [truth, context] = snapshot.ok ? await Promise.all([
+      getSymbolTruthSnapshot(snapshot.symbol, snapshot.timeframe, req.authUser!.id).catch(() => null),
+      isChartTimeframe(snapshot.timeframe) ? buildEleanorChartContext(snapshot.symbol, snapshot.timeframe, 200, { userId: req.authUser!.id }).catch(() => null) : Promise.resolve(null),
+    ]) : [null, null];
+    return res.json(capSelectedMarketByTruth(snapshot, truth, context));
   } catch (err) {
     req.log.error({ err: String(err), symbolRaw: rawSymbol }, "scanner.selected_market failed");
     return res.status(500).json({

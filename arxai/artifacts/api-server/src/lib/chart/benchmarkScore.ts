@@ -513,7 +513,7 @@ export async function computeChartBrainBenchmark(opts?: {
     agentAgreement,
     notMeasured(
       "eleanor_explanation_quality",
-      "Not measured: Eleanor's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.",
+      `Not measured: ${DEFAULT_ASSISTANT_NAME}'s explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.`,
     ),
     ratioScore(
       "no_trade_discipline",

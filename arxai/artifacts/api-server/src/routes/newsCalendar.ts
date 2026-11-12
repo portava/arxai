@@ -249,6 +249,7 @@ router.get("/economic-calendar/events", async (req, res): Promise<void> => {
       lastErrorAt: enriched.liveness.lastErrorAt,
       lastErrorMessage: enriched.liveness.lastErrorMessage,
       freshnessStatus: enriched.liveness.freshnessStatus,
+      coverageNote: enriched.coverageNote,
       events: enriched.events,
     });
   } catch (err) {

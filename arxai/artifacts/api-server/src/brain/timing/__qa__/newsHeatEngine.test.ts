@@ -314,3 +314,13 @@ test("a date-only FRED release in its first seconds after midnight is still rele
   assert.equal(out.minutesSince, null);
   assert.equal(out.heatAdjustment, 15);
 });
+
+
+test("calendar severity wins over title keywords for Non-Farm Employment Change",async()=>{
+ const out=await computeNewsHeat("EURUSD",{classify:()=>"forex",analyzeNewsRiskFn:()=>newsRisk(),buildRadarFn:async()=>{
+  const r=await timedRadar(600,"UPCOMING","forex_factory")!("EURUSD");
+  r.radar.events[0]!.title="Non-Farm Employment Change";
+  return r;
+ }});
+ assert.equal(out.eventType,"high_impact");assert.equal(out.phase,"PRE_EVENT");assert.equal(out.heatAdjustment,15);
+});

@@ -63,6 +63,18 @@ export function handleChartTickStream(req: Request, res: Response): void {
   req.once("close", writer.close);
   const send = writer.send;
 
+  if (source === "mt5_broker") {
+    // Native MT5 snapshots arrive through /chart/candles with the exact
+    // history writer and preceding OHLC reconciled. This provider+symbol-only
+    // tick composer cannot reconstruct the native open/extrema, and must not
+    // overwrite those snapshots or borrow another writer's forming prices.
+    send({ type: "native_snapshot_mode", symbol: rawSymbol, source, timeframe, ts: Date.now() });
+    if (!writer.closed) heartbeat = setInterval(() => {
+      if (!writer.closed) send({ type: "heartbeat", symbol: rawSymbol, source, timeframe, ts: Date.now() });
+    }, 15_000);
+    return;
+  }
+
   // Whose ticks: the reader's own bridge (the request's feed scope) when it is
   // ticking this symbol, else the partition this stream already follows while
   // it keeps ticking, else the most recent one — the same own-bridge-first

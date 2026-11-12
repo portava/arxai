@@ -8,16 +8,24 @@ process.env.DATABASE_URL = "postgresql://offline@localhost/offline?host=%2Fpriva
 process.env.ARX_DERIV_PUBLIC_DATA_ENABLED = "true";
 delete process.env.DERIV_APP_ID;
 delete process.env.DERIV_API_TOKEN;
+const nonSynthetic = {
+  EURUSD: "frxEURUSD", GBPUSD: "frxGBPUSD", USDJPY: "frxUSDJPY", USDCHF: "frxUSDCHF", USDCAD: "frxUSDCAD",
+  AUDUSD: "frxAUDUSD", NZDUSD: "frxNZDUSD", EURJPY: "frxEURJPY", EURGBP: "frxEURGBP", EURAUD: "frxEURAUD",
+  EURCAD: "frxEURCAD", GBPJPY: "frxGBPJPY", GBPAUD: "frxGBPAUD", GBPCAD: "frxGBPCAD", AUDJPY: "frxAUDJPY",
+  XAUUSD: "frxXAUUSD", XAGUSD: "frxXAGUSD", BTCUSD: "cryBTCUSD", ETHUSD: "cryETHUSD", SPX500: "OTC_SPC", US30: "OTC_DJI", GER30: "OTC_GDAXI",
+};
 const sent: Record<string, any>[] = [];
 let now = Date.now();
 let tickEpoch = Math.floor(now / 1000);
+const failedTicks = new Set<string>();
 class Socket extends EventEmitter {
   constructor(readonly url: string) { super(); queueMicrotask(() => this.emit("open")); }
   send(raw: string) {
     const r = JSON.parse(raw); sent.push(r);
     const reply = (body: unknown) => this.emit("message", JSON.stringify({ req_id: r.req_id, ...body as object }));
-    if (r.active_symbols) reply({ active_symbols: [{ underlying_symbol: "R_75", underlying_symbol_name: "Volatility 75 Index", exchange_is_open: 1, is_trading_suspended: 0 }] });
-    if (r.ticks) reply({ tick: { symbol: r.ticks, epoch: tickEpoch, quote: 123 }, subscription: { id: "r75" } });
+    if (r.active_symbols) reply({ active_symbols: ["R_75", ...Object.values(nonSynthetic)].map(underlying_symbol => ({ underlying_symbol, underlying_symbol_name: underlying_symbol, exchange_is_open: 1, is_trading_suspended: 0 })) });
+    if (r.ticks && failedTicks.has(r.ticks)) { reply({ error: { code: "TickUnavailable", message: "No tick" } }); return; }
+    if (r.ticks) reply({ tick: { symbol: r.ticks, epoch: tickEpoch, quote: 123 }, subscription: { id: r.ticks } });
     if (r.ticks_history) reply({ echo_req: r, candles: Array.from({ length: 30 }, (_, i) => ({ epoch: Math.floor(now / 60_000) * 60 - (29 - i) * 60, open: 120, high: 125, low: 119, close: 123 })) });
     if (r.forget) reply({ forget: 1 });
     if (r.ping) reply({ ping: "pong" });
@@ -35,8 +43,8 @@ mock.module("../../candleCache.js", { namedExports: {
 } });
 
 const { getDerivFeedClient } = await import("../derivFeedClient.js");
-const { getDerivFeedStatus, getDerivSymbolFeedStatus } = await import("../derivProvider.js");
-const { routeCandles, routeQuote, getRouterDiagnostics } = await import("../../marketDataRouter.js");
+const { getDerivFeedStatus, getDerivSymbolFeedStatus, resolveDerivFeedSymbol, isDerivSyntheticSymbol } = await import("../derivProvider.js");
+const { routeCandles, routeCandlesForDecision, routeQuote, quotePinForSeries, getRouterDiagnostics } = await import("../../marketDataRouter.js");
 const { resolveBrokerConfirmedFeed, evaluateLiveEntryFeedGate } = await import("../../brokerConfirmedFeed.js");
 const { normalizeCandles } = await import("../../chart/candleNormalization.js");
 const { sourceSupportsDeepCursor } = await import("../../providerRoutingMap.js");
@@ -91,4 +99,83 @@ test("a legacy history continuation cannot write public candles under its prior 
   assert.equal(page.source, "deriv"); assert.equal(page.providerLimitReached, true);
   assert.match(page.providerMessage ?? "", /original Deriv data connection/);
   assert.equal(sent.filter(r => r.ticks_history).length, before); assert.equal(cacheWrites.length, 0);
+});
+
+for (const [symbol, native] of Object.entries(nonSynthetic)) {
+  test(`${symbol}: real public route serves exact instrument with independent tick freshness and honest price/volume basis`, async () => {
+    assert.equal(resolveDerivFeedSymbol(symbol)?.derivId, native);
+    assert.equal(isDerivSyntheticSymbol(symbol), false);
+    const candles = await routeCandles(symbol, "M1", 30);
+    assert.equal(candles.primaryProvider, "deriv_public");
+    assert.equal(getDerivSymbolFeedStatus(symbol).hasRecentTick, true, "chart-only read must establish its own tick stream before any quote consumer");
+    const quote = await routeQuote(symbol, quotePinForSeries(candles));
+    assert.equal(quote.primaryProvider, "deriv_public");
+    assert.equal(quote.quote?.last, 123);
+    assert.equal(getDerivSymbolFeedStatus(symbol).hasRecentTick, true);
+    assert.ok(sent.some(r => r.ticks_history === native));
+    assert.ok(sent.some(r => r.ticks === native));
+    const normalized = normalizeCandles(candles.candles, { symbol, displaySymbol: symbol, timeframe: "M1", source: candles.primaryProvider, now, priceBasisOverride: "MID" });
+    assert.equal(normalized.candles.length, 30);
+    for (const candle of normalized.candles) {
+      assert.equal(candle.priceBasis, "UNKNOWN");
+      assert.equal(candle.providerSymbol, native);
+      assert.equal(candle.volumeEvidence?.kind, "unavailable");
+      assert.equal(candle.qualityFlags.includes("ZERO_VOLUME_GHOST"), false);
+    }
+    const cached = normalizeCandles(candles.candles.map(c => ({ ...c, volume: 0 })), { symbol, displaySymbol: symbol, timeframe: "M1", source: candles.primaryProvider, now });
+    assert.ok(cached.candles.every(c => c.volumeEvidence?.kind === "unavailable" && !c.qualityFlags.includes("ZERO_VOLUME_GHOST")), "legacy cache placeholders must not become observed volume");
+    const before = sent.length;
+    const decision = await routeCandlesForDecision(symbol, "M1", { intendedVenue: "deriv" });
+    assert.equal(decision.verdict, "WAIT");
+    assert.equal(decision.reason, "DERIV_EXECUTION_VENUE_REQUIRES_SYNTHETIC");
+    assert.equal(sent.length, before);
+    const mt5 = await routeCandlesForDecision(symbol, "M1", { intendedVenue: "mt5" });
+    assert.equal(mt5.verdict, "WAIT");
+    assert.equal(sent.length, before, "MT5 decision must never borrow the public feed");
+    const feed = await resolveBrokerConfirmedFeed(symbol, "1m");
+    assert.equal(feed.feedSource, "deriv_public");
+    assert.equal(evaluateLiveEntryFeedGate({ verdict: feed.verdict, source: feed.feedSource, derivBacked: feed.derivBacked, intent: "ENTRY" }).allowed, false);
+  });
+}
+test("missing crosses and different baskets/indices are never silently substituted", async () => {
+  for (const symbol of ["CADJPY", "CHFJPY", "DXY", "WLDUSD", "WLDXAU"]) assert.equal(resolveDerivFeedSymbol(symbol), null);
+  const before = sent.length;
+  const client = getDerivFeedClient();
+  await assert.rejects(() => client.getCandles("frxCADJPY", 60, 30), /UNKNOWN_SYMBOL/);
+  await assert.rejects(() => client.getCandles("WLDUSD", 60, 30), /UNKNOWN_SYMBOL/);
+  assert.equal(sent.length, before);
+});
+
+test("Germany 40 uses the existing approved ARX legacy key, not a guessed index substitution", async () => {
+  const { resolveArxMarket } = await import("@workspace/domain/market");
+  assert.equal(resolveArxMarket("GER40")?.canonicalSymbol, "GER30");
+  assert.match(resolveArxMarket("GER30")?.displayName ?? "", /Germany 40/);
+  assert.equal(resolveDerivFeedSymbol("GER40")?.symbol, "GER30");
+  assert.equal(resolveDerivFeedSymbol("GER30")?.derivId, "OTC_GDAXI");
+});
+
+test("history cursor fetches do not create new live subscriptions", async () => {
+  const client = getDerivFeedClient();
+  await client.unsubscribeTicks("frxEURUSD");
+  const before = sent.filter(r => r.ticks === "frxEURUSD").length;
+  const { getDerivCandles } = await import("../derivProvider.js");
+  const history = await getDerivCandles("EURUSD", "M1", 30, Math.floor(now / 1000) - 3600);
+  assert.equal(history.ok, true);
+  assert.equal(sent.filter(r => r.ticks === "frxEURUSD").length, before);
+  const current = await getDerivCandles("EURUSD", "M1", 30);
+  assert.equal(current.ok, true);
+  assert.equal(sent.filter(r => r.ticks === "frxEURUSD").length, before + 1);
+});
+
+test("failed live subscription preserves real history without inventing tick freshness", async () => {
+  const client = getDerivFeedClient();
+  await client.unsubscribeTicks("frxEURUSD");
+  failedTicks.add("frxEURUSD");
+  try {
+    const { getDerivCandles } = await import("../derivProvider.js");
+    const result = await getDerivCandles("EURUSD", "M1", 30);
+    assert.equal(result.ok, true);
+    assert.equal(result.candles.length, 30);
+    assert.equal(getDerivSymbolFeedStatus("EURUSD").hasRecentTick, false);
+  } finally { failedTicks.delete("frxEURUSD"); }
 });

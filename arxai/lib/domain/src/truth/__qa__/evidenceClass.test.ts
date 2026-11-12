@@ -212,3 +212,13 @@ test("classification is pure and deterministic", () => {
   assert.deepEqual(classifyTruthEvidence(i), classifyTruthEvidence(i));
   assert.equal(JSON.stringify(i), snapshot, "input not mutated");
 });
+
+
+test("forming price with no price-bound tick time cannot inherit the preceding closed bar's observation stamp", () => {
+ const x=input();x.data.priceObservedAt=null;
+ const e=classifyTruthEvidence(x);
+ assert.deepEqual(e.price,{evidenceClass:"unavailable",reason:"NO_OBSERVATION_TIME",observedAt:null});
+ assert.equal(e.lastCandle.observedAt,CLOSE);assert.equal(e.lastTick.observedAt,TICK);
+ x.data.priceObservedAt=CLOSE;
+ assert.equal(classifyTruthEvidence(x).price.evidenceClass,"verified");
+});

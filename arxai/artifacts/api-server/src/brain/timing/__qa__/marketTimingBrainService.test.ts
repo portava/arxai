@@ -78,7 +78,7 @@ test("no candles and no quote → honest basic_timing_estimate", async () => {
 });
 
 test("real candles + quote + news + broad flow → dataQuality real", async () => {
-  const read = await computeTimingRead({ symbol: "EURUSD", persistSnapshot: false }, baseDeps());
+  const read = await computeTimingRead({ symbol: "EURUSD", persistSnapshot: false }, baseDeps({ computeNewsHeatFn: async () => ({ ...newsNone, calendarConnected: true }) }));
   assert.equal(read.dataQuality.label, "real");
   assert.equal(read.dataQuality.hasCandleData, true);
   assert.equal(read.dataQuality.hasQuoteData, true);
@@ -209,4 +209,26 @@ test("crypto at the weekend: the session read says crypto trades 24/7, not 'FX m
   } finally {
     mock.timers.reset();
   }
+});
+
+
+test("fresh same-feed last price is distinguished from a missing bid/ask spread", async()=>{
+ const q=quoteOk();q.quote={...q.quote!,bid:undefined,ask:undefined,spread:undefined,last:1.12};
+ const read=await computeTimingRead({symbol:"EURUSD",persistSnapshot:false},baseDeps({routeQuoteFn:async()=>q}));
+ assert.equal(read.dataQuality.hasQuoteData,false);
+ assert.equal(read.dataQuality.hasLivePriceData,true);
+ assert.match(read.dataQuality.note,/bid\/ask spread not supplied/);
+ assert.doesNotMatch(read.dataQuality.note,/live quote unavailable/);
+});
+test("stale last-only price is not presented as live",async()=>{
+ const q=quoteOk();q.quote={...q.quote!,bid:undefined,ask:undefined,spread:undefined,last:1.12,timestamp:"2020-01-01T00:00:00Z"};
+ const read=await computeTimingRead({symbol:"EURUSD",persistSnapshot:false},baseDeps({routeQuoteFn:async()=>q}));
+ assert.equal(read.dataQuality.hasLivePriceData,false);assert.equal(read.dataQuality.hasQuoteData,false);
+});
+
+
+test("missing calendar keeps data quality partial even with a bid/ask quote",async()=>{
+ const read=await computeTimingRead({symbol:"EURUSD",persistSnapshot:false},baseDeps());
+ assert.equal(read.dataQuality.hasQuoteData,true);assert.equal(read.dataQuality.hasNewsData,false);
+ assert.equal(read.dataQuality.label,"partial");
 });

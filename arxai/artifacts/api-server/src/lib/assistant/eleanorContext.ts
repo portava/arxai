@@ -675,11 +675,6 @@ export function composeEleanorBriefing(ctx: EleanorContext): EleanorBriefing {
       if (mf.feedScope === "platform_shared" && mf.notLiveReason == null) {
         lines.push(`These ${ctx.symbol.symbol} prices come from the platform's shared MetaTrader 5 feed, not your own bridge — your broker's quotes can differ slightly.`);
       }
-      // Another bridge's series is served when the trader's own bridge is not
-      // pushing this symbol: say whose feed it is, as the chart does.
-      if (mf.feedScope === "platform_shared" && mf.notLiveReason == null) {
-        lines.push(`These ${ctx.symbol.symbol} prices come from the platform's shared MetaTrader 5 feed, not your own bridge — your broker's quotes can differ slightly.`);
-      }
     }
   }
 

@@ -40,13 +40,21 @@ export function normalizePublicTick(raw: unknown, expected: string, now: number)
   return { symbol: expected, epoch: t.epoch, quote: t.quote };
 }
 
-export function normalizePublicCandles(raw: unknown, now: number): DerivCandle[] {
+export function normalizePublicCandles(raw: unknown, now: number, granularity?: DerivGranularity): DerivCandle[] {
   if (!Array.isArray(raw) || raw.length > 5000) throw ERROR("DERIV_PUBLIC_INVALID_CANDLES");
   const candles: DerivCandle[] = [];
   for (const value of raw) {
     const c = record(value);
     if (!c || typeof c.epoch !== "number" || !Number.isSafeInteger(c.epoch) || c.epoch <= 0 || c.epoch * 1000 > now || ["open","high","low","close"].some(k => typeof c[k] !== "number" || !Number.isFinite(c[k]) || (c[k] as number) <= 0) || (c.high as number) < Math.max(c.open as number,c.close as number,c.low as number) || (c.low as number) > Math.min(c.open as number,c.close as number,c.high as number) || candles.length > 0 && c.epoch <= candles[candles.length - 1]!.epoch) throw ERROR("DERIV_PUBLIC_INVALID_CANDLES");
     candles.push({ epoch: c.epoch, open: c.open as number, high: c.high as number, low: c.low as number, close: c.close as number });
+  }
+  if (granularity !== undefined) {
+    // ticks_history may begin at a rolling lookback boundary, returning one
+    // truncated first candle (e.g. 14:42:30 for an M5 request). Its OHLC does
+    // not describe a complete aligned bucket. Drop it; never shift its epoch
+    // or promote partial values to a full historical candle.
+    if (candles[0] && candles[0].epoch % granularity !== 0) candles.shift();
+    if (candles.some(c => c.epoch % granularity !== 0)) throw ERROR("DERIV_PUBLIC_INVALID_CANDLE_ALIGNMENT");
   }
   return candles;
 }
@@ -82,6 +90,7 @@ export class DerivPublicDataClient {
   private subscriptionPromises = new Map<string, Promise<DerivTick | null>>();
   private intentVersions = new Map<string, number>();
   private candlePromises = new Map<string, Promise<DerivCandle[]>>();
+  private candleCache = new Map<string, { requestedAt: number; candles: DerivCandle[] }>();
   private discovery: DerivDiscoverySnapshot | null = null;
   private discoveryPromise: Promise<void> | null = null;
   private lastCandle: number | null = null;
@@ -157,7 +166,7 @@ export class DerivPublicDataClient {
         this.connected = false; this.connectedAt = null; this.opening = null;
         this.disconnect = null; this.ws = null;
         this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.subscriptions.clear();
-        this.subscriptionPromises.clear(); this.candlePromises.clear(); this.lastCandle = null; this.historySymbols.clear();
+        this.subscriptionPromises.clear(); this.candlePromises.clear(); this.candleCache.clear(); this.lastCandle = null; this.historySymbols.clear();
         if (this.pingTimer) clearInterval(this.pingTimer);
         this.pingTimer = null;
         for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(ERROR("DERIV_PUBLIC_DISCONNECTED")); }
@@ -314,9 +323,23 @@ export class DerivPublicDataClient {
   }
   async getCandles(symbol: string, granularity: DerivGranularity, count: number, end?: number): Promise<DerivCandle[]> {
     if (!this.known.some(s => s.derivId === symbol)) throw ERROR("DERIV_PUBLIC_UNKNOWN_SYMBOL");
-    const payload = { ticks_history: symbol, style: "candles", granularity, count: Math.max(1, Math.min(5000, Math.trunc(count))), end: end ?? "latest" };
+    const requestedCount = Math.max(1, Math.min(5000, Math.trunc(count)));
+    // Panels request small windows of different lengths (probe, heat, chart,
+    // Eleanor). Share one bounded current window without multiplying requests.
+    // Historical pagination keeps its exact endpoint and requested count.
+    const payload = { ticks_history: symbol, style: "candles", granularity,
+      count: end === undefined ? Math.max(256, requestedCount) : requestedCount, end: end ?? "latest" };
     assertPublicDataRequest(payload);
-    const key = JSON.stringify(payload); const prior = this.candlePromises.get(key); if (prior) return prior;
+    const requestedAt = this.now();
+    const key = JSON.stringify(payload) + (end === undefined ? `:${Math.floor(requestedAt / (granularity * 1000))}` : "");
+    const copyWindow = (bars: DerivCandle[]) => bars.slice(-requestedCount).map(bar => ({ ...bar }));
+    const cached = this.candleCache.get(key);
+    if (end === undefined && cached && this.isConnected() && this.isSymbolAvailable(symbol) &&
+        requestedAt >= cached.requestedAt && requestedAt - cached.requestedAt < 3000 &&
+        Math.floor(requestedAt / (granularity * 1000)) === Math.floor(cached.requestedAt / (granularity * 1000))) {
+      return copyWindow(cached.candles);
+    }
+    const prior = this.candlePromises.get(key); if (prior) return copyWindow(await prior);
     if (this.candlePromises.size >= 32) throw ERROR("DERIV_PUBLIC_BUSY");
     const work = (async () => {
       await this.open(); const generation = this.generation; await this.discover();
@@ -331,13 +354,20 @@ export class DerivPublicDataClient {
       for (const field of ["style", "granularity", "count", "end"] as const) {
         if (echo && echo[field] !== undefined && echo[field] !== payload[field]) throw ERROR("DERIV_PUBLIC_HISTORY_REQUEST_MISMATCH");
       }
-      const candles = normalizePublicCandles(msg.candles, this.now());
+      const candles = normalizePublicCandles(msg.candles, this.now(), granularity);
       if (candles.length > payload.count || end !== undefined && candles.some(c => c.epoch > end)) throw ERROR("DERIV_PUBLIC_HISTORY_RANGE_MISMATCH");
-      if (candles.length) { this.lastCandle = Math.max(this.lastCandle ?? 0, candles[candles.length - 1]!.epoch); this.historySymbols.add(symbol); }
+      if (candles.length) {
+        this.lastCandle = Math.max(this.lastCandle ?? 0, candles[candles.length - 1]!.epoch); this.historySymbols.add(symbol);
+        if (end === undefined) {
+          this.candleCache.delete(key);
+          if (this.candleCache.size >= 128) this.candleCache.delete(this.candleCache.keys().next().value!);
+          this.candleCache.set(key, { requestedAt, candles: candles.map(bar => ({ ...bar })) });
+        }
+      }
       return candles;
     })();
     this.candlePromises.set(key, work);
-    try { return await work; } finally { if (this.candlePromises.get(key) === work) this.candlePromises.delete(key); }
+    try { return copyWindow(await work); } finally { if (this.candlePromises.get(key) === work) this.candlePromises.delete(key); }
   }
   async probe() {
     let activeSymbolsError: string | null = null, ticksHistoryError: string | null = null;

@@ -54,7 +54,7 @@ import {
 import type { NormalizedChartCandle } from "../data/chart/candleNormalization.js";
 import {
   isChartTimeframe,
-  timeframeMs,
+  barCloseMs,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
 import { buildMarketImpactRadar } from "../news/marketImpactRadar.js";
@@ -139,6 +139,9 @@ export interface TruthData {
   sourceLabel: string | null;
   /** Newest observed chart close (may be a provider forming bar), or null. */
   price: number | null;
+  /** Observation bound to this price, never a separate tick or preceding bar. */
+  priceObservedAt?: string | null;
+  priceBasis?: "forming_candle_close" | "closed_candle_close" | null;
   /**
    * DATA timestamp of the newest CLOSED candle (its close time, never later
    * than now), or null. Never a forming bar's scheduled future close.
@@ -580,11 +583,16 @@ export async function buildSymbolTruthSnapshot(
   // ── data block (single source of freshness + price) ────────────────────────
   const feedStatus = chart?.feedStatus ?? null;
   const candles = chart?.candles ?? [];
+  const priceBar = [...candles].reverse().find(c => Number.isFinite(c.close));
+  const priceIsClosed = priceBar?.isComplete === true && priceBar.isForming !== true && priceBar.isFinal !== false && Date.parse(priceBar.closeTime) <= Date.now();
   const data: TruthData = {
     state: deriveDataState(feedStatus),
     source: feedStatus?.source ?? chart?.source ?? null,
     sourceLabel: sourceLabelFor(feedStatus?.source ?? chart?.source ?? null),
     price: newestClose(candles),
+    priceBasis: !priceBar ? null : priceIsClosed ? "closed_candle_close" : "forming_candle_close",
+    // Provider OHLC exposes the forming close but no price-bound tick clock.
+    priceObservedAt: priceIsClosed ? priceBar!.closeTime : null,
     // Not feedStatus.lastCandleTime: that is the newest PROVIDER bar's
     // closeTime, which for a forming bar is a scheduled future instant.
     lastCandleAt: lastClosedCandleAt(candles, Date.now()),
@@ -720,7 +728,7 @@ export async function buildSymbolTruthSnapshot(
   const deadlines = Object.values(components).filter(c => c.present).map(c => Date.parse(c.generatedAt!) + COMPONENT_BUILD_TTL_MS);
   if (components.scanner.present) deadlines.push(Date.parse(scanner!.expiresAt));
   if (components.flame.present || components.scalp.present) deadlines.push(Date.parse(scalp!.expiresAt));
-  if (deadlines.length && expected) deadlines.push(Date.parse(expected.lastClosedCandleAt) + timeframeMs(timeframe));
+  if (deadlines.length && expected) deadlines.push(barCloseMs(Date.parse(expected.lastClosedCandleAt), timeframe));
   const snapshot: Omit<SymbolTruthSnapshot, "evidence"> = {
     symbol,
     displaySymbol: chart?.displaySymbol ?? symbol,

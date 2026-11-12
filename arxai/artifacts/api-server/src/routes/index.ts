@@ -9,6 +9,7 @@ import strategiesRouter from "./strategies";
 import performanceRouter from "./performance";
 import backtestsRouter from "./backtests";
 import mt5Router from "./mt5";
+import mt5CalendarRouter from "./mt5Calendar";
 import learningRouter from "./learning";
 import dataRouter from "./data";
 import chartRouter from "./chart";
@@ -198,6 +199,7 @@ router.use(strategiesRouter);
 router.use(performanceRouter);
 router.use(backtestsRouter);
 router.use(mt5Router);
+router.use(mt5CalendarRouter);
 router.use(mt5DemoBridgeRouter);
 router.use(mt5LiveRouter);
 // Task #371 — ARX Bridge v2 broker-truth EVENT ingest + admin trace.

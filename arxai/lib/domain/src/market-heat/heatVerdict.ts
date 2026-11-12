@@ -151,6 +151,8 @@ export interface CalendarSignal {
   highImpactActive: boolean;
   updatedAt: string | null;
   source: string;
+  freshness?: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
+  note?: string | null;
 }
 
 export interface HeatVerdictInput {
@@ -226,7 +228,7 @@ function calendarSourceOf(c: CalendarSignal): MarketHeatSource {
     ? "missing"
     : !c.connected
       ? "unavailable"
-      : "live";
+      : c.freshness === "DELAYED" ? "delayed" : c.freshness === "STALE" ? "stale" : "live";
   return {
     kind: "calendar",
     name: c.source || "none",
@@ -235,7 +237,7 @@ function calendarSourceOf(c: CalendarSignal): MarketHeatSource {
     connected: c.connected,
     updatedAt: c.connected ? c.updatedAt : null,
     recordCount: c.eventCount,
-    note: c.connected ? null : "Economic-calendar provider not connected.",
+    note: c.connected ? c.note ?? null : "Economic-calendar provider not connected.",
   };
 }
 
@@ -405,10 +407,10 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
   // Source status + confidence per the honesty ladder.
   const anyDelayed =
     (priceActive && price.freshness === "DELAYED") ||
-    (newsActive && news.freshness === "DELAYED");
+    (newsActive && news.freshness === "DELAYED") || (calActive && calendar.freshness === "DELAYED");
   const anyStale =
     (priceActive && price.freshness === "STALE") ||
-    (newsActive && news.freshness === "STALE");
+    (newsActive && news.freshness === "STALE") || (calActive && calendar.freshness === "STALE");
 
   let sourceStatus: MarketHeatSourceStatus;
   let confidence: MarketHeatConfidence;

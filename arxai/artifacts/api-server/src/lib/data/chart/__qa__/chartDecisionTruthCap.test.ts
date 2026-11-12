@@ -273,14 +273,14 @@ test("Chart Truth exactly 75 with no broker comparison is not verified, matching
 
   const v = chartReadVerification(g, feed, score);
   assert.equal(v.verified, false);
-  assert.ok(v.reasons.includes("the broker price comparison was not measured"), v.reasons.join("; "));
+  assert.ok(v.reasons.includes("the complete chart and broker comparison was not measured"), v.reasons.join("; "));
 
   const s = aGradeState(g);
   s.chartTruthScore = score;
   assert.equal(capDecisionStateByChartTruth(s.decisionState, v).actionability, "watch");
   const text = sentencesFor(s).bestNextAction.text;
   assert.doesNotMatch(text, /act with a defined stop|cleanest it gets/);
-  assert.match(text, /broker price comparison was not measured/);
+  assert.match(text, /complete chart and broker comparison was not measured/);
 });
 
 test("candles that are not real OHLC are not a verified read", async () => {

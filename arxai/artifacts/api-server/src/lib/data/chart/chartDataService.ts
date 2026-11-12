@@ -1,3 +1,4 @@
+import { candleCalendarOffsetMs } from "./candleNormalization.js";
 import { unavailableCandleTimeBasis } from "../candleTimeBasisEvidence.js";
 import { unavailableCandlePriceBasis } from "../candlePriceBasisEvidence.js";
 import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
@@ -22,7 +23,7 @@ import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 //
 // Quality precedence (highest wins):
 //   unavailable > invalid > partial > stale > delayed > clean
-//   aiUsable === (quality === "clean")
+//   aiUsable requires clean quality and a non-historical serving path
 //
 // "delayed" / "stale" are derived from OBSERVABLE data (how many timeframe
 // intervals the newest bar trails the current bar, plus — for synthetics — a
@@ -43,10 +44,11 @@ import {
 import { trailingIntervalGap } from "./candleNormalization.js";
 import { trailingIntervalsFromOpen } from "@workspace/domain/market";
 import { runCandleTruth, type TimeframeTruthResult } from "./candleTruthEngine.js";
+import { readNativeSeamForSeries, withNativeSeamEvidence } from "./nativeSeamObservation.js";
 import { getSymbolProfile } from "./symbolProfile.js";
 import { getSessionProfile, type WeeklyPresenceProfile } from "./sessionProfile.js";
 import type { NormalizedChartCandle } from "./candleNormalization.js";
-import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
+import { timeframeMs, barCloseMs, calendarAwareTrailingIntervals, type ChartTimeframe } from "./timeframes.js";
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
 import { mt5BarBrokerClockOffsetMs } from "../providers/mt5Provider.js";
 import {
@@ -289,6 +291,8 @@ async function buildChartFeed(
     result = await routeStoredCandleHistory(symbol, timeframe, limit, result, { bridgeConnectionId: pinnedBridge });
   }
   const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
+  const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
+  const historicalOnly = storedHistory || durableMirror;
   const source = result.primaryProvider;
   const providerDelayed = result.provenance?.delayed === true;
   const servingBridgeId = result.ok ? (result.provenance?.bridgeConnectionId ?? null) : null;
@@ -332,8 +336,8 @@ async function buildChartFeed(
   // Tick state is partitioned by writer: an MT5 series reads the ticks of the
   // bridge that wrote its bars, never another broker's.
   const tickPartition: FormingPartition = source === "mt5_broker" ? servingBridgeId : null;
-  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker", tickPartition) : null;
-  const tickSource = !storedHistory && isFormingTickSource(source) ? source : null;
+  const mt5TickFreshness = !historicalOnly && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker", tickPartition) : null;
+  const tickSource = !historicalOnly && isFormingTickSource(source) ? source : null;
   const tickFreshness = tickSource === "mt5_broker"
     ? mt5TickFreshness
     : tickSource
@@ -365,11 +369,13 @@ async function buildChartFeed(
       tradingObserved: tradingEvidence,
     });
     candles = tr.verifiedCandles;
-    truthResult = tr.truthResult;
-    if (providerDelayed || storedHistory) truthResult = {...truthResult, sourceDocumentation: {
+    truthResult = !historicalOnly && !providerDelayed && result.ok
+      ? withNativeSeamEvidence(tr.truthResult, result.candles, seriesAttributionFrom(result.provenance), now)
+      : tr.truthResult;
+    if (providerDelayed || historicalOnly) truthResult = {...truthResult, sourceDocumentation: {
       ...truthResult.sourceDocumentation,
-      dataMode: storedHistory ? "HISTORICAL — stored bars, not live" : "HISTORICAL — source delayed or real-time entitlement unverified",
-      freshnessNote: storedHistory ? "Stored history is display only, not current-market AI evidence." : "Provider history is delayed or not confirmed real-time. Recent candle timestamps do not prove a live feed.",
+      dataMode: historicalOnly ? "HISTORICAL — stored bars, not live" : "HISTORICAL — source delayed or real-time entitlement unverified",
+      freshnessNote: historicalOnly ? "Stored history is display only, not current-market AI evidence." : "Provider history is delayed or not confirmed real-time. Recent candle timestamps do not prove a live feed.",
     }};
   } else {
     candles = [];
@@ -404,7 +410,7 @@ async function buildChartFeed(
   // WS was not independently ticking that exact symbol. A genuinely
   // stale/historical feed is unaffected — trailing-interval staleness below
   // still demotes it honestly and keeps it entry-blocked.
-  const derivBacked = !storedHistory && synthetic && (source?.startsWith("deriv") ?? false);
+  const derivBacked = !storedHistory && (source === "deriv" || source === "deriv_public");
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
@@ -443,11 +449,17 @@ async function buildChartFeed(
   const newestOpenAgeMs = newestOpenRawMs != null && newestOpenUtcMs != null
     ? Math.min(newestOpenRawMs, newestOpenUtcMs)
     : null;
+  // A calendar month must be compared in the broker calendar coordinates.
+  // Subtracting even a +1ms measured offset from an Oct 1 open moves it into
+  // September and falsely adds a whole missing month. Move now into the same
+  // coordinates instead; negative inferred offsets still cannot make history younger.
   // Trailing gap of the newest provider candle, before any appended display
   // tip. A provider forming bar can have a scheduled future closeTime; that is
   // not the closed-bar observation carried separately in marketEvidence.
   const trailing = newestOpenOffsetMs != null && newestOpenAgeMs != null
-    ? trailingIntervalsFromOpen(newestOpenAgeMs, timeframeMs(timeframe), now)
+    ? timeframe === "MN1" && newestOpenRawMs != null
+      ? calendarAwareTrailingIntervals(newestOpenRawMs + candleCalendarOffsetMs(lastCandle?.timeBasisEvidence), timeframe, now + candleCalendarOffsetMs(lastCandle?.timeBasisEvidence) + Math.max(0, newestOpenOffsetMs))
+      : calendarAwareTrailingIntervals(newestOpenAgeMs, timeframe, now)
     : trailingIntervalGap(candles, timeframe, now);
   const newestOpenLeadMs = newestOpenUtcMs != null ? newestBarLeadMs(newestOpenUtcMs, now) : null;
   const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
@@ -490,9 +502,38 @@ async function buildChartFeed(
   // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && lastCandle && !storedHistory && isFormingTickSource(source)) {
+  if (includeFormingTip && !historicalOnly && !providerDelayed && lastCandle && source === "mt5_broker") {
+    const native = result.ok ? readNativeSeamForSeries(symbol, timeframe, result.candles, seriesAttributionFrom(result.provenance), now) : null;
+    if (native) {
+      const o = native.observation, b = o.forming;
+      // Use the actual native open and extrema. A composer started mid-bar
+      // cannot reconstruct prices that occurred before its first sampled tick.
+      candles = [...candles, { ...lastCandle,
+        openTime: new Date(b.openTimeEpochMs).toISOString(), closeTime: new Date(barCloseMs(b.openTimeEpochMs, timeframe)).toISOString(),
+        open: b.open, high: b.high, low: b.low, close: b.close,
+        volume: 0, tickVolume: null,
+        volumeEvidence: unavailableCandleVolume("The native forming snapshot does not include volume; zero is an unavailable-value placeholder, not measured activity."),
+        priceBasis: "UNKNOWN", priceBasisEvidence: unavailableCandlePriceBasis("The native forming snapshot carries OHLC but no separate price-basis declaration."),
+        timeBasisEvidence: unavailableCandleTimeBasis(source),
+        isComplete: false, isFinal: false, isForming: true, qualityFlags: ["FORMING_BAR"],
+        receivedAt: new Date(native.receivedAtEpochMs).toISOString(), observedAt: new Date(o.collectedAtEpochMs).toISOString(),
+        formingOrigin: "native_mt5_snapshot",
+      }];
+      formingTipPresent = true;
+      // Quote liveness and snapshot age are separate. observedAt above records
+      // the age of OHLC; a received snapshot never refreshes a stopped quote.
+      formingTickAgeMs = mt5TickFreshness ? now - mt5TickFreshness.lastTickWallMs : null;
+    }
+    // No native pair: keep closed history visible. Never invent an MT5 open,
+    // high or low from the first tick this process happened to receive.
+  } else if (includeFormingTip && !historicalOnly && source !== "mt5_broker" && lastCandle && isFormingTickSource(source)) {
     const forming = getFormingBar(symbol, timeframe, now, source, tickPartition);
-    if (forming) {
+    // Calendar-sized display buckets need the same boundary observed in the
+    // native history. A generic tick bucket cannot invent a broker week/month.
+    const calendarBucketMatches = forming && (timeframe !== "W1" && timeframe !== "MN1" ||
+      forming.openMs === Date.parse(lastCandle.openTime) ||
+      forming.openMs === barCloseMs(Date.parse(lastCandle.openTime), timeframe));
+    if (forming && calendarBucketMatches) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
       // Safety net for coarse timeframes: a tip that opens inside the newest
@@ -542,7 +583,7 @@ async function buildChartFeed(
   // The full quality verdict (unavailable > invalid > partial > stale >
   // delayed > clean) + the stale flag + aiUsable are computed by the ONE
   // shared evaluator so every analysis/chart surface classifies a feed
-  // identically. Cache-availability never sets aiUsable — only "clean" does.
+  // identically. Clean quality is required; historical fallback paths are additionally excluded below.
   const verdict = buildFeedStatus({
     routerOk: result.ok,
     hasSource: result.primaryProvider != null,
@@ -565,7 +606,7 @@ async function buildChartFeed(
   const quality = verdict.quality;
   let warning = verdict.warning;
   const stale = verdict.stale;
-  const aiUsable = !storedHistory && verdict.aiUsable;
+  const aiUsable = !historicalOnly && verdict.aiUsable;
 
   // isLive: reachable, current, and (for synthetics) confirmed ticking. When a
   // forming tip is present its tick freshness (folded into the verdict) governs
@@ -577,7 +618,6 @@ async function buildChartFeed(
   // no bridge/owner attribution and its entitlement delay is unknown. Its bars
   // are real stored broker bars (quality still describes them), but nothing
   // backs a "live" claim.
-  const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
   //
   // Scheduled weekend closure: on coarse timeframes the newest bar of a closed
   // market stays within one interval of the epoch-aligned "current" bar for
@@ -667,7 +707,7 @@ async function buildChartFeed(
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: storedHistory ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
+    marketEvidence: historicalOnly ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
     seriesAttribution: result.ok ? seriesAttributionFrom(result.provenance) : null };
 }
 

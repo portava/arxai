@@ -19,7 +19,7 @@ import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlig
 import { isMergeSeamMeasured } from "./chartTruthScore.js";
 import type { ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
-import { getMarketData } from "../../data/dataManager.js";
+import { closedCandlesOfState, evidenceOfState } from "./stateCandleWindow.js";
 import { hasRecentDerivTickFor } from "../providers/derivProvider.js";
 import { higherTimeframeOf } from "../../assistant/chartStructure.js";
 import type { Candle } from "../../data/types.js";
@@ -198,7 +198,7 @@ export function buildGatedTrustLine(
 ): string {
   let feedPart: string;
   if (!feed.available) {
-    feedPart = "feed unavailable";
+    return `${timeframe} candles unavailable · feed unavailable · read gated`;
   } else if ((feed.stale || !feed.aiUsable) && feed.notLiveReason === "market_closed") {
     // The chart says "Market closed ... Not a feed fault": the candles are not
     // syncing and the feed is not stale or delayed — the market is shut.
@@ -223,7 +223,7 @@ export function buildGatedTrustLine(
       : "";
     return `${timeframe} candles clean${reason} · read gated`;
   }
-  return `${timeframe} candles syncing · ${feedPart} · read gated`;
+  return `${timeframe} ${feed.quality === "empty" || feed.quality === "unavailable" ? "candles unavailable" : "candle read withheld"} · ${feedPart} · read gated`;
 }
 
 /**
@@ -438,7 +438,8 @@ export async function buildEleanorChartContext(
   const aaciChartHandshakeOverall = aaciHandshake.overall;
 
   const hasFormingCandle = state.currentCandle != null;
-  const closedBarsCount = state.candleStats.barsAnalyzed;
+  const candles = closedCandlesOfState(state);
+  const closedBarsCount = candles.length;
   const limitedHistory = closedBarsCount < MIN_BARS_FULL_READ && closedBarsCount > 0;
   const liveDelayed =
     state.truthState.quality === "delayed" && hasRecentDerivTickFor(state.symbol);
@@ -465,15 +466,18 @@ export async function buildEleanorChartContext(
     blockReason = sufficiency.humanReason;
   }
 
-  // Fetch candles from the same provider chain. The intelligence state was
-  // built from the same chain (3s-cached), so this is a single coherent
-  // source. Both primary and HTF are fetched here so the endpoint never needs
-  // a separate getMarketData call.
+  // Read the exact window that produced the state, frozen at its last closed
+  // bar. A second provider request can include a forming bar or switch source.
+  // HTF context is independently closed and cannot see beyond this read's stamp.
   const htf = higherTimeframeOf(timeframe);
-  const [candles, htfCandles] = await Promise.all([
-    getMarketData(symbol, timeframe, limit).catch(() => [] as Candle[]),
-    htf ? getMarketData(symbol, htf, 120).catch(() => [] as Candle[]) : Promise.resolve([] as Candle[]),
-  ]);
+  const htfState = htf ? await buildChartIntelligenceState(symbol, htf, 120).catch(() => null) : null;
+  const primaryIdentity = evidenceOfState(state)?.sourceIdentity;
+  const htfCandles = htfState && primaryIdentity && evidenceOfState(htfState)?.sourceIdentity === primaryIdentity
+    ? closedCandlesOfState(htfState, state.latestClosedCandle?.closeTime) : [];
+  if (closedBarsCount !== state.candleStats.barsAnalyzed) {
+    basis = "INSUFFICIENT";
+    blockReason = "The closed candle window could not be bound to this chart read.";
+  }
 
   return {
     symbol: state.symbol,

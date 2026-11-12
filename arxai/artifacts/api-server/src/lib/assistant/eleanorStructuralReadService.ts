@@ -568,8 +568,11 @@ export async function buildEleanorStructuralRead(
     const sufficiencyBlocks =
       eleanorCtx?.sufficiency.status === "insufficient" ||
       eleanorCtx?.sufficiency.status === "blocked";
+    const noFeed = !eleanorCtx || ["empty", "unavailable"].includes(eleanorCtx.state.truthState?.quality ?? "");
     const liveDelayedRead = eleanorCtx?.liveDelayed === true && !sufficiencyBlocks;
-    const blockedReason = liveDelayedRead
+    const blockedReason = noFeed && eleanorCtx != null
+      ? "No usable market feed is available for this timeframe; the chart read is unavailable."
+      : liveDelayedRead
       ? `${tf} chart: live tick is active but the latest candle is delayed — directional read withheld until the current bar confirms.`
       : eleanorCtx?.blockReason
         ?? eleanorCtx?.sufficiency.humanReason
@@ -583,6 +586,8 @@ export async function buildEleanorStructuralRead(
       ? "I couldn't verify the chart data for this timeframe, so I'm not reading its structure right now."
       : eleanorCtx.sufficiency.status === "blocked"
         ? "This market can't be analyzed here, so there is no structure read for it."
+        : noFeed
+          ? "No usable market feed is available for this timeframe. A connected source is required before I can read it."
         : liveDelayedRead
           ? "The feed is live but the latest candle is delayed. I'll give a full read once the current bar confirms."
           : eleanorCtx.basis === "PARTIAL"
@@ -599,12 +604,13 @@ export async function buildEleanorStructuralRead(
       chartRead: composeChartRead(
         {
           ...tradeHealthCopy,
+          ...(noFeed ? { tradeHealthLabel: "Feed unavailable", tradeHealthTrustLine: "No usable market feed; chart read unavailable." } : {}),
           headline,
           // HONESTY: never reuse eleanorCtx.trustLine here — the success-path trust
           // line is composed from raw gate flags and can read "Verified · Live
           // feed" even when this branch is gated. Derive from the ACTUAL feed state.
           trustLine: buildGatedTrustLine(tf, {
-            available: eleanorCtx != null,
+            available: !noFeed,
             stale: eleanorCtx?.state.stale ?? false,
             aiUsable: eleanorCtx?.state.aiUsable ?? false,
             basis: eleanorCtx?.basis ?? "INSUFFICIENT",

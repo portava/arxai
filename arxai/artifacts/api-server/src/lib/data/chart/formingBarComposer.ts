@@ -48,7 +48,7 @@ import { EventEmitter } from "node:events";
 import { CHART_TIMEFRAMES, type ChartTimeframe } from "./timeframes.js";
 import { brokerBucketOpenMs } from "./brokerBucket.js";
 import { normalizeSymbolKey } from "../providers/mt5Provider.js";
-import { resolveDerivSymbol } from "../providers/derivProvider.js";
+import { resolveDerivFeedSymbol } from "../providers/derivProvider.js";
 import { MARKET_FROZEN_BROKER_STALE_MS, MARKET_FROZEN_WALL_FRESH_MS } from "../freshness.js";
 
 /**
@@ -65,7 +65,7 @@ import { MARKET_FROZEN_BROKER_STALE_MS, MARKET_FROZEN_WALL_FRESH_MS } from "../f
 function formingKey(symbol: string): string {
   const raw = normalizeSymbolKey(symbol);
   if (!raw) return "";
-  return resolveDerivSymbol(raw)?.symbol ?? raw;
+  return resolveDerivFeedSymbol(raw)?.symbol ?? raw;
 }
 
 /** A single synthesized forming bar for one (symbol, timeframe) bucket. */

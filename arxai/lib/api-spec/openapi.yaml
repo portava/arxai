@@ -12978,6 +12978,7 @@ components:
         label: { type: string, enum: [real, basic_timing_estimate, partial, unavailable] }
         hasCandleData: { type: boolean }
         hasQuoteData: { type: boolean }
+        hasLivePriceData: { type: boolean, description: Fresh same-feed price including last-only feeds without a bid/ask spread }
         hasNewsData: { type: boolean }
         hasBroadFlowData: { type: boolean }
         note: { type: string }
@@ -15604,6 +15605,15 @@ components:
           description: Original chart source identity; absent on older servers, never inferred from provider name.
         sourceLabel: { type: string, nullable: true }
         price: { type: number, nullable: true }
+        priceObservedAt:
+          type: string
+          nullable: true
+          description: Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp.
+        priceBasis:
+          type: string
+          nullable: true
+          enum: [forming_candle_close, closed_candle_close]
+          description: The source observation represented by price, separate from the last closed candle and latest feed tick.
         lastCandleAt: { type: string, nullable: true }
         lastTickAt: { type: string, nullable: true }
         notLiveReason:

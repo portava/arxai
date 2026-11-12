@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "./data/marketDataRouter.js";
 import type { Candle } from "./data/types.js";
-import { normalizeCandles, sourceModeFromProvider, timeBasis } from "./data/chart/candleNormalization.js";
-import { normalizeChartTimeframe, timeframeMs } from "./data/chart/timeframes.js";
+import { normalizeCandles, sourceModeFromProvider, providerCandleTimeBasis } from "./data/chart/candleNormalization.js";
+import { normalizeChartTimeframe, timeframeMs, barIntervalDistance, calendarAwareTrailingIntervals } from "./data/chart/timeframes.js";
 import { classifyQuoteFreshness } from "./data/freshness.js";
 
 // Symbol properties survive object-spread decorators, while JSON.stringify
@@ -65,8 +65,14 @@ export function prepareScannerCandles(
   for (let i = 1; i < closed.length; i++) {
     const gap = Date.parse(closed[i]!.openTime) - Date.parse(closed[i - 1]!.openTime);
     // A denser series cannot be relabeled as this requested timeframe.
-    if (gap < interval * 0.95) return null;
-    if (gap > interval * 1.5) lastGap = i;
+    if (tf === "MN1") {
+      const months = barIntervalDistance(Date.parse(closed[i - 1]!.openTime), Date.parse(closed[i]!.openTime), tf);
+      if (months < 1) return null;
+      if (months > 1) lastGap = i;
+    } else {
+      if (gap < interval * 0.95) return null;
+      if (gap > interval * 1.5) lastGap = i;
+    }
   }
   // On continuously traded markets a missing bar breaks the analysis window.
   // Session instruments can have genuine overnight/weekend gaps; without an
@@ -80,15 +86,14 @@ export function prepareScannerCandles(
   // rawClosed keeps the provider's own stamp. Polygon and Twelve Data stamp
   // bars at the open (2026-11-01 clock audit); other assistant_real feeds
   // stamp the close. Read it from the normalizer so the two cannot drift.
-  const stampsClose = timeBasis(source) === "close";
   return {
-    rawClosed: closed.map((bar) => toCandle(bar, stampsClose ? bar.closeTime : bar.openTime)),
+    rawClosed: closed.map((bar) => toCandle(bar, providerCandleTimeBasis(source) === "close" ? bar.closeTime : bar.openTime)),
     openClosed: closed.map((bar) => toCandle(bar, bar.openTime)),
     // Anchor to the actual accepted provider bar, including session opens such
     // as :30. UTC flooring can falsely age an H1 bar before its next bar closes.
     // A newly closed bar trails by one interval under the shared freshness
     // policy. Forming/future/invalid tails never contribute to this measure.
-    trailingIntervals: closed.length ? Math.floor((now - Date.parse(closed[closed.length - 1]!.openTime)) / interval) : null,
+    trailingIntervals: closed.length ? tf === "MN1" ? calendarAwareTrailingIntervals(Date.parse(closed[closed.length - 1]!.openTime), tf, now) : Math.floor((now - Date.parse(closed[closed.length - 1]!.openTime)) / interval) : null,
   };
 }
 

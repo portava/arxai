@@ -26,7 +26,7 @@
 //   - Touches no execution path, no arx_live_* table, no safety gate.
 
 import { getDerivWsClient, type DerivTickListener } from "../providers/derivWsClient.js";
-import { resolveDerivSymbol } from "../providers/derivProvider.js";
+import { resolveDerivFeedSymbol } from "../providers/derivProvider.js";
 import { foldFormingTick } from "./formingBarComposer.js";
 
 let unsubscribe: (() => void) | null = null;
@@ -48,7 +48,7 @@ export function startDerivFormingBridge(
     // The composer collapses Deriv aliases onto the canonical ARX code, so the
     // WS id is a valid address; resolve first purely to reject ids we do not
     // recognise rather than filing a tick under a symbol we cannot name.
-    const mapped = resolveDerivSymbol(tick.symbol);
+    const mapped = resolveDerivFeedSymbol(tick.symbol);
     if (!mapped) return;
     if (!Number.isFinite(tick.quote) || tick.quote <= 0) return;
     // Deriv `epoch` is unix SECONDS; the composer buckets in ms.

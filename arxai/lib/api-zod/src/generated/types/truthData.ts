@@ -20,6 +20,9 @@ export interface TruthData {
   sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
+  /** Observation time bound to this price; null when no price-bound timestamp is available. */
+  priceObservedAt?: string | null;
+  priceBasis?: "forming_candle_close" | "closed_candle_close" | null;
   lastCandleAt: string | null;
   lastTickAt: string | null;
   /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */

@@ -402,12 +402,11 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   } = inputs;
 
   const freshness = classifyCandleFreshness(trailingIntervals, { syntheticAwaitingTick });
-  // Task #496 — when a live forming tip is present, its tick age (not the
-  // trailing-interval gap) governs the freshness verdict. The tip pins the
-  // newest bar to the current interval, so the trailing gap would read 0/clean
-  // even after ticks went silent; the forming verdict freezes it to stale.
+  // Evaluate historical intervals and display ticks independently. A fresh
+  // tip cannot fill missing closed bars; a silent tip cannot look current
+  // merely because its bucket still belongs to the current interval.
   const formingVerdict = formingTipPresent ? classifyFormingFreshness(formingTickAgeMs) : null;
-  const stale = formingTipPresent ? formingVerdict?.stale === true : freshness?.stale === true;
+  const stale = freshness?.stale === true || formingVerdict?.stale === true;
 
   let quality: FeedQuality;
   let warning: string | null = null;
@@ -430,9 +429,18 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     // series stamped ahead of receipt. Unverifiable recency is never "clean".
     quality = "invalid";
     warning = "Candle timestamps could not be confirmed (newest bar is missing a usable time or is stamped in the future). Not safe for analysis.";
+  } else if (freshness?.freshness === "stale" || freshness?.freshness === "delayed") {
+    // A fresh display tip cannot supply missing closed intervals. Preserve
+    // the historical series' age floor so display and analysis agree.
+    quality = formingVerdict?.stale === true ? "stale" : freshness.freshness;
+    warning = freshness.freshness === "stale"
+      ? `Feed is stale — newest bar trails the current bar by ${trailingIntervals} intervals.`
+      : syntheticAwaitingTick
+        ? "Feed is awaiting a confirmed live tick — history loaded but not yet real-time."
+        : "Feed is delayed — newest bar is not the current bar.";
   } else if (formingTipPresent) {
-    // Forming-tip path takes over the freshness verdict (integrity checks above
-    // still run on the closed bars first).
+    // A silent display tip can worsen a current historical series; it cannot
+    // improve an old one (handled above).
     if (formingVerdict?.freshness === "stale") {
       quality = "stale";
       warning = "Live tick stream silent — forming bar frozen.";
@@ -440,14 +448,6 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
       quality = "clean";
       warning = null;
     }
-  } else if (freshness?.freshness === "stale") {
-    quality = "stale";
-    warning = `Feed is stale — newest bar trails the current bar by ${trailingIntervals} intervals.`;
-  } else if (freshness?.freshness === "delayed") {
-    quality = "delayed";
-    warning = syntheticAwaitingTick
-      ? "Feed is awaiting a confirmed live tick — history loaded but not yet real-time."
-      : "Feed is delayed — newest bar is not the current bar.";
   } else {
     quality = "clean";
     warning = null;

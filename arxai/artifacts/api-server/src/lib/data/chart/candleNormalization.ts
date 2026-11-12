@@ -53,9 +53,16 @@ import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candl
 // In all cases closeTime - openTime === one timeframe interval.
 
 import type { Candle } from "../types.js";
-import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
-import { trailingIntervalsFromOpen } from "@workspace/domain/market";
+import { timeframeMs, barCloseMs, advanceBarOpen, barIntervalDistance, calendarAwareTrailingIntervals, type ChartTimeframe } from "./timeframes.js";
 import { isSlotExpected, type WeeklyPresenceProfile } from "./sessionProfile.js";
+
+/** Calendar math on converted MT5 bars must use their original broker grid.
+ * This restores coordinates only; it does not upgrade historical UTC evidence. */
+export function candleCalendarOffsetMs(evidence: CandleTimeBasisEvidence | undefined): number {
+  return evidence?.convertedAtIngest === true && evidence.basis === "UTC" &&
+    typeof evidence.brokerClockOffsetMs === "number" && Number.isFinite(evidence.brokerClockOffsetMs)
+    ? evidence.brokerClockOffsetMs : 0;
+}
 
 /** Isolated one-off single-slot closures tolerated before counting as missing. */
 const ISOLATED_CLOSURE_TOLERANCE = 2;
@@ -63,6 +70,8 @@ const ISOLATED_CLOSURE_TOLERANCE = 2;
 // ── Public type exports ──────────────────────────────────────────────────────
 
 export type SourceMode = "live" | "demo" | "mock" | "dev" | "unknown";
+
+import { isDerivSyntheticSymbol, resolveDerivFeedSymbol } from "../providers/derivProvider.js";
 
 export type PriceBasis = "BID" | "MID" | "LAST" | "SYNTHETIC" | "UNKNOWN";
 
@@ -119,6 +128,9 @@ export interface NormalizedChartCandle {
   // exclude isForming bars (closed-bars-only). Never persisted.
   isForming: boolean;
   receivedAt: string;   // ISO 8601 — when this batch was fetched from the provider
+  /** Actual source observation time for a native forming snapshot, not receive time. */
+  observedAt?: string;
+  formingOrigin?: "native_mt5_snapshot";
 
   // ── Quality ────────────────────────────────────────────────────────────
   qualityFlags: QualityFlag[]; // advisory flags; never causes bar to be dropped
@@ -197,10 +209,10 @@ export function sourceModeFromProvider(source: string | null): SourceMode {
 }
 
 /** Derive the PriceBasis from a provider id string. */
-export function priceBasisFromProvider(source: string | null): PriceBasis {
+export function priceBasisFromProvider(source: string | null, symbol?: string): PriceBasis {
   if (!source) return "UNKNOWN";
   if (source === "mt5_broker") return "UNKNOWN"; // CopyRates may be BID or LAST; the producer must declare it
-  if (source === "deriv" || source === "deriv_public") return "SYNTHETIC";
+  if (source === "deriv" || source === "deriv_public") return symbol && isDerivSyntheticSymbol(symbol) ? "SYNTHETIC" : "UNKNOWN";
   // TwelveData, Polygon: forex/metals → MID; indices/stocks/crypto → LAST
   // We don't have asset-class context here — caller should override if known.
   if (source.startsWith("assistant_real:")) return "MID";
@@ -216,15 +228,13 @@ function providerSymbolFrom(source: string | null, symbol: string): string | nul
   // the actual mapping before the provider call, so by the time we see the
   // candles, the source already fetched the right symbol.
   if (source.startsWith("assistant_real:")) return null; // not tracked at this layer
-  if (source === "deriv" || source === "deriv_public") return null; // derivProvider resolves internally
-  if (source === "mt5_broker") return symbol; // broker symbol = ARX symbol for MT5
+  if (source === "deriv" || source === "deriv_public") return resolveDerivFeedSymbol(symbol)?.derivId ?? null;
+  if (source === "mt5_broker") return null; // use each raw bar's observed native identity below
   return null;
 }
 
-/** Whether the raw router `time` should be read as the bar open or close.
- * Exported so consumers that hand bars back in the provider's own clock (the
- * scanner's rawClosed) use the same convention instead of a copy of it. */
-export function timeBasis(source: string | null): "open" | "close" {
+/** Whether the raw router `time` should be read as the bar open or close. */
+export function providerCandleTimeBasis(source: string | null): "open" | "close" {
   if (!source) return "open";
   if (source === "assistant_real:polygon" || source === "assistant_real:twelve_data") return "open";
   if (source.startsWith("assistant_real")) return "close";
@@ -418,14 +428,15 @@ export function normalizeCandles(
   const now = opts.now ?? Date.now();
   const receivedAt = opts.receivedAt ?? new Date(now).toISOString();
   const intervalMs = timeframeMs(timeframe);
-  const basis = timeBasis(source);
+  const basis = providerCandleTimeBasis(source);
   const sourceLabel = source ?? "unknown";
 
   const sourceMode = sourceModeFromProvider(source);
-  const isSyntheticSource = (source === "deriv" || source === "deriv_public");
-  const compatibilityPriceBasis = isSyntheticSource ? "SYNTHETIC" : opts.priceBasisOverride ?? priceBasisFromProvider(source);
+  const isDerivSource = source === "deriv" || source === "deriv_public";
+  const isSyntheticSource = isDerivSource && isDerivSyntheticSymbol(symbol);
+  const compatibilityPriceBasis = isDerivSource ? priceBasisFromProvider(source, symbol) : opts.priceBasisOverride ?? priceBasisFromProvider(source, symbol);
   const providerSym = providerSymbolFrom(source, symbol);
-  const brokerSym = source === "mt5_broker" ? symbol : null;
+
   const isMockSource = sourceMode === "mock";
 
   let invalidOhlcCount = 0;
@@ -448,14 +459,16 @@ export function normalizeCandles(
       invalidOhlcCount++; // counted but never emitted — ISO contract must be upheld
       continue;
     }
-    const openMs = basis === "open" ? t : t - intervalMs;
-    const closeMs = openMs + intervalMs;
+    const calendarOffset = candleCalendarOffsetMs(c.timeBasisEvidence);
+    const openMs = basis === "open" ? t : advanceBarOpen(t + calendarOffset, timeframe, -1) - calendarOffset;
+    const closeMs = barCloseMs(openMs + calendarOffset, timeframe) - calendarOffset;
     if (!isValidOhlc(c)) invalidOhlcCount++;
     intermediate.push({
       rawIndex: i,
       open: c.open, high: c.high, low: c.low, close: c.close,
       volume: typeof c.volume === "number" && Number.isFinite(c.volume) ? c.volume : 0,
-      volumeReportedAsZero: c.volume === 0,
+      // Deriv supplies no volume. A cached legacy zero is a placeholder.
+      volumeReportedAsZero: c.volume === 0 && !isDerivSource,
       volumeEvidence: resolveCandleVolumeEvidence(c.volumeEvidence, source, {candle:c,symbol,timeframe}),
       priceBasisEvidence: resolveCandlePriceBasisEvidence(c.priceBasisEvidence, source, {candle:c,symbol,timeframe}),
       timeBasisEvidence: resolveCandleTimeBasisEvidence(c.timeBasisEvidence, source, {candle:c,symbol,timeframe}),
@@ -526,13 +539,14 @@ export function normalizeCandles(
     for (let i = 1; i < deduped.length; i++) {
       const prevOpen = Date.parse(deduped[i - 1]!.openTime);
       const currOpen = Date.parse(deduped[i]!.openTime);
-      const steps = Math.round((currOpen - prevOpen) / intervalMs);
+      const calendarOffset = candleCalendarOffsetMs(deduped[i - 1]!.timeBasisEvidence);
+      const steps = barIntervalDistance(prevOpen + calendarOffset, currOpen + candleCalendarOffsetMs(deduped[i]!.timeBasisEvidence), timeframe);
       if (steps > 2) stalePrevTfSet.add(i);
       if (steps <= 1) continue;
       // Walk each skipped slot strictly between prev and curr.
       let run = 0;
       for (let s = 1; s < steps; s++) {
-        const slotOpen = prevOpen + s * intervalMs;
+        const slotOpen = advanceBarOpen(prevOpen + calendarOffset, timeframe, s) - calendarOffset;
         if (isSlotExpected(sessionProfile, slotOpen)) {
           run++;
         } else {
@@ -564,7 +578,8 @@ export function normalizeCandles(
     for (let i = 1; i < deduped.length; i++) {
       const prevOpen = Date.parse(deduped[i - 1]!.openTime);
       const currOpen = Date.parse(deduped[i]!.openTime);
-      const steps = Math.round((currOpen - prevOpen) / intervalMs);
+      const calendarOffset = candleCalendarOffsetMs(deduped[i - 1]!.timeBasisEvidence);
+      const steps = barIntervalDistance(prevOpen + calendarOffset, currOpen + candleCalendarOffsetMs(deduped[i]!.timeBasisEvidence), timeframe);
       if (steps > 2) stalePrevTfSet.add(i);
     }
   } else {
@@ -572,7 +587,8 @@ export function normalizeCandles(
     for (let i = 1; i < deduped.length; i++) {
       const prevOpen = Date.parse(deduped[i - 1]!.openTime);
       const currOpen = Date.parse(deduped[i]!.openTime);
-      const steps = Math.round((currOpen - prevOpen) / intervalMs);
+      const calendarOffset = candleCalendarOffsetMs(deduped[i - 1]!.timeBasisEvidence);
+      const steps = barIntervalDistance(prevOpen + calendarOffset, currOpen + candleCalendarOffsetMs(deduped[i]!.timeBasisEvidence), timeframe);
       if (steps > 1) missingCandleCount += steps - 1;
       if (steps > 2) stalePrevTfSet.add(i);
     }
@@ -650,7 +666,8 @@ export function normalizeCandles(
     if (stalePrevTfSet.has(idx)) flags.push("STALE_FROM_PREV_TF");
 
     const openMs = Date.parse(c.openTime); // always valid — tsInvalid dropped in step 1
-    const closeMs = openMs + intervalMs;
+    const calendarOffset = candleCalendarOffsetMs(c.timeBasisEvidence);
+    const closeMs = barCloseMs(openMs + calendarOffset, timeframe) - calendarOffset;
 
     return {
       symbol,
@@ -670,8 +687,8 @@ export function normalizeCandles(
       priceBasis: source === "mt5_broker" || source === "assistant_real:polygon" ? c.priceBasisEvidence.basis ?? "UNKNOWN" : compatibilityPriceBasis,
       priceBasisEvidence: c.priceBasisEvidence,
       timeBasisEvidence: c.timeBasisEvidence,
-      providerSymbol: providerSym,
-      brokerSymbol: brokerSym,
+      providerSymbol: source === "mt5_broker" ? raw[c.rawIndex]?.brokerSymbol ?? null : providerSym,
+      brokerSymbol: source === "mt5_broker" ? raw[c.rawIndex]?.brokerSymbol ?? null : null,
       isComplete: c.isComplete,
       isFinal: c.isComplete,
       // Provider bars are never the synthesized live tip; the forming-bar
@@ -717,7 +734,8 @@ export function trailingIntervalGap(
   const intervalMs = timeframeMs(timeframe);
   const lastOpen = Date.parse(candles[candles.length - 1]!.openTime);
   // The shared domain rule (same math the dashboard scanner truth uses).
-  return trailingIntervalsFromOpen(lastOpen, intervalMs, now);
+  const calendarOffset = candleCalendarOffsetMs(candles[candles.length - 1]!.timeBasisEvidence);
+  return calendarAwareTrailingIntervals(lastOpen + calendarOffset, timeframe, now + calendarOffset);
 }
 
 /**
@@ -730,7 +748,7 @@ export function trailingIntervalGap(
  * elsewhere. Returns null when no candle has a parseable timestamp.
  *
  * Equivalence to the chart path: `normalizeCandles` sorts ascending and derives
- * each `openTime` from the raw `time` via `timeBasis(source)`, then
+ * each `openTime` from the raw `time` via `providerCandleTimeBasis(source)`, then
  * `trailingIntervalGap` reads the LAST (latest) bar. Taking the MAX open-ms over
  * the raw bars here yields the same latest-bar open, so the gap matches by
  * construction. (The forming-tip display path is intentionally NOT applied — the
@@ -745,14 +763,19 @@ export function rawTrailingIntervalGap(
 ): number | null {
   if (raw.length === 0) return null;
   const intervalMs = timeframeMs(timeframe);
-  const basis = timeBasis(source);
+  const basis = providerCandleTimeBasis(source);
   let latestOpenMs: number | null = null;
+  let latestCalendarOffset = 0;
   for (const c of raw) {
     const t = Date.parse(c.time);
     if (!Number.isFinite(t)) continue;
-    const openMs = basis === "open" ? t : t - intervalMs;
-    if (latestOpenMs == null || openMs > latestOpenMs) latestOpenMs = openMs;
+    const calendarOffset = candleCalendarOffsetMs(c.timeBasisEvidence);
+    const openMs = basis === "open" ? t : advanceBarOpen(t + calendarOffset, timeframe, -1) - calendarOffset;
+    if (latestOpenMs == null || openMs > latestOpenMs) { latestOpenMs = openMs; latestCalendarOffset = calendarOffset; }
   }
   if (latestOpenMs == null) return null;
-  return trailingIntervalsFromOpen(latestOpenMs, intervalMs, now);
+  return calendarAwareTrailingIntervals(latestOpenMs + latestCalendarOffset, timeframe, now + latestCalendarOffset);
 }
+
+/** Shared legacy name retained for scanner consumers. */
+export const timeBasis = providerCandleTimeBasis;

@@ -174,7 +174,7 @@ describe("News Heat — provider copy", () => {
   it("without a calendar the copy says so and does not call the read live", () => {
     const dq = { ...makeRead().dataQuality, hasNewsData: false };
     render(<NewsHeatTab data={makeRead({ dataQuality: dq })} />);
-    expect(screen.getByText(/No economic calendar connected — news heat is a schedule-based estimate only/)).toBeTruthy();
+    expect(screen.getByText(/Economic calendar unavailable — scheduled-event risk was not checked/)).toBeTruthy();
     expect(screen.queryByText(/Live news data/)).toBeNull();
   });
 });
@@ -269,4 +269,12 @@ describe("Page header clock — calculation time is not data time", () => {
     render(<TimingReadClock generatedAt="garbage" />);
     expect(screen.getByTestId("timing-read-clock").textContent).toMatch(/calculation time unknown/);
   });
+});
+
+
+it("missing calendar is unknown, never a green no-events claim",()=>{
+ const data=makeRead();data.dataQuality.hasNewsData=false;
+ render(<NewsHeatTab data={data} />);
+ expect(screen.getByText(/Scheduled-event risk for EURUSD is unknown/)).toBeTruthy();
+ expect(screen.queryByText(/No active news events detected/)).toBeNull();
 });

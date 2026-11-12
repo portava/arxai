@@ -31,14 +31,15 @@ const database = await import("@workspace/db");
 mock.module("@workspace/db", { namedExports: { ...database, db: createFakeDb({}).db } });
 
 let armed = false;
+let platformMode: "LIVE" | "OFF" = "LIVE";
 const switches = await import("../../lib/safety/platformSwitches.js");
 mock.module("../../lib/safety/platformSwitches.js", {
   namedExports: {
     ...switches,
     loadPlatformSettings: async () => ({
-      // Platform mode LIVE: the scenario is the master switch, and the default
-      // row is fail-closed OFF (whose next step is the platform mode instead).
-      switches: switches.switchesFromRows([{ ...switches.DEFAULT_SWITCH_ROW, platformMode: "LIVE", liveBrokerExecutionArmed: armed }]),
+      // The arm-specific case requires LIVE mode explicitly. The install
+      // default remains OFF and is covered separately below.
+      switches: switches.switchesFromRows([{ ...switches.DEFAULT_SWITCH_ROW, platformMode, liveBrokerExecutionArmed: armed }]),
       config: null,
     }),
   },
@@ -71,7 +72,15 @@ const gate = (d: { gates: Gate[] }, id: string): Gate => {
   return g;
 };
 
-beforeEach(() => { armed = false; detected = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null }; });
+beforeEach(() => { armed = false; platformMode = "LIVE"; detected = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null }; });
+
+test("the OFF install default reports the mode prerequisite before operator arming", async () => {
+  assert.equal(switches.DEFAULT_SWITCH_ROW.platformMode, "OFF");
+  platformMode = "OFF";
+  const d = await diagnostic();
+  assert.match(d.nextPlatformStep, /Switch global platform mode to LIVE/);
+  assert.notEqual(gate(d, "server_master_switch").status, "pass");
+});
 
 test("env on, operator not armed: master switch and placement layer are not 'pass' and name the gate's refusal", async () => {
   const d = await diagnostic();

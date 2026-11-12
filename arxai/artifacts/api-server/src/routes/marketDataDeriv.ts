@@ -7,10 +7,11 @@
 import { Router, type Request, type Response } from "express";
 import {
   DERIV_SYNTHETIC_SYMBOLS,
+  DERIV_PUBLIC_FEED_SYMBOLS,
   getDerivCandles,
   getDerivFeedStatus,
   getDerivTick,
-  resolveDerivSymbol,
+  resolveDerivFeedSymbol,
 } from "../lib/data/providers/derivProvider.js";
 
 const router = Router();
@@ -29,7 +30,7 @@ router.get("/market-data/deriv/status", async (req, res) => {
 router.get("/market-data/deriv/symbols", async (req, res) => {
   if (!requireUserSession(req, res)) return;
   res.json({
-    symbols: DERIV_SYNTHETIC_SYMBOLS.map((s) => ({
+    symbols: (getDerivFeedStatus().mode === "public" ? DERIV_PUBLIC_FEED_SYMBOLS : DERIV_SYNTHETIC_SYMBOLS).map((s) => ({
       symbol: s.symbol,
       displayName: s.displayName,
       derivId: s.derivId,
@@ -52,7 +53,7 @@ router.get("/market-data/deriv/candles", async (req, res) => {
   const timeframe = String(req.query.granularity ?? req.query.timeframe ?? "M15").trim();
   const count = Math.max(1, Math.min(500, Number.parseInt(String(req.query.count ?? "100"), 10) || 100));
   if (!symbol) { res.status(400).json({ ok: false, reason: "SYMBOL_REQUIRED", candles: [] }); return; }
-  if (!resolveDerivSymbol(symbol)) {
+  if (!resolveDerivFeedSymbol(symbol)) {
     res.status(404).json({ ok: false, reason: "Symbol unavailable from Deriv feed.", candles: [], symbol });
     return;
   }

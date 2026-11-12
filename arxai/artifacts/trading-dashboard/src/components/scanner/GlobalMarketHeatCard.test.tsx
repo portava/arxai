@@ -172,6 +172,31 @@ function findCountryNode(displayNamePrefix: string): SVGGElement {
 }
 
 describe("GlobalMarketHeatCard world-map view", () => {
+  it("keeps headline risk distinct from an unavailable calendar in compact view", () => {
+    const data = buildData();
+    data.newsRisk = { ...data.newsRisk, connected: true, level: "low", highImpactCount: 0 };
+    data.upcomingEvents = [{ id: "old", title: "Cached calendar release", currency: "USD", impact: "high" } as MarketHeatResponse["upcomingEvents"][number]];
+    mockUseGetMarketHeat.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+    render(<GlobalMarketHeatCard compactWorkspace />);
+    const line = screen.getByTestId("market-heat-compact").querySelector(".arx-heat-summary-line")!;
+    expect(line.textContent).toContain("News headlines Low");
+    expect(line.textContent).toContain("0 high-impact headlines");
+    expect(line.textContent).toContain("Calendar unavailable — event risk not assessed.");
+    expect(line.textContent).not.toContain("upcoming calendar event");
+    expect(screen.queryByText("Cached calendar release")).toBeNull();
+  });
+
+  it("reports an empty connected calendar separately from disconnected headlines", () => {
+    const data = buildData();
+    data.providerStatus.calendar = source(true);
+    mockUseGetMarketHeat.mockReturnValue({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
+    render(<GlobalMarketHeatCard compactWorkspace />);
+    const line = screen.getByTestId("market-heat-compact").querySelector(".arx-heat-summary-line")!;
+    expect(line.textContent).toContain("News headlines unavailable");
+    expect(line.textContent).toContain("No high-impact events returned by the calendar");
+    expect(line.textContent).not.toContain("0 high-impact headlines");
+  });
+
   it("shows a compact data-backed heat summary and preserves detailed map access", () => {
     render(<GlobalMarketHeatCard compactWorkspace/>);
     const compact = within(screen.getByTestId("market-heat-compact"));
@@ -526,4 +551,17 @@ describe("provider row chips (price)", () => {
     render(<GlobalMarketHeatCard />);
     expect(screen.getByTestId("heat-provider-chip-price").className).toContain("text-success");
   });
+});
+
+
+it("compact global heat qualifies a partial calm reading and exposes its actual coverage", () => {
+  const data=buildData();
+  data.global.sourceStatus="partial";data.global.intensity="calm";
+  data.global.priceSource={...data.global.priceSource,connected:false,status:"unavailable"};
+  data.global.newsSource={...data.global.newsSource,connected:true,status:"live"};
+  data.global.calendarSource={...data.global.calendarSource,connected:false,status:"missing"};
+  mockUseGetMarketHeat.mockReturnValue({data,isLoading:false,isFetching:false,isError:false,refetch:vi.fn()});
+  render(<GlobalMarketHeatCard compactWorkspace/>);
+  expect(screen.getByTestId("market-heat-compact").querySelector(".arx-heat-global")?.textContent).toContain("Calm (partial)");
+  expect(screen.getByTestId("compact-heat-coverage").textContent).toMatch(/headlines only/i);
 });

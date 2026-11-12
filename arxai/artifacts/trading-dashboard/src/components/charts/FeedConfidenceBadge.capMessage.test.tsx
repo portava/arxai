@@ -44,6 +44,14 @@ describe("capConfidence — a capped verdict never keeps a live claim in its mes
     const capped = capConfidence(feedConfidence(cleanLiveFeed()), null);
     expect(capped.message).not.toMatch(/live feed active/i);
   });
+  it.each(["unavailable", "stale", "invalid", "empty", "partial", "delayed"] as const)("pending AI preserves the observed %s feed limitation", (quality) => {
+    const raw = feedConfidence(cleanLiveFeed({ quality, isLive: false, aiUsable: false, message: `Observed ${quality} feed` }));
+    const capped = capConfidence(raw, null);
+    expect(capped.statusLabel).toBe(raw.statusLabel);
+    expect(capped.severity).toBe(raw.severity);
+    expect(capped.message).toBe(raw.message);
+    expect(capped.aiUsable).toBe(false);
+  });
   it("resolved true / omitted: the server message is kept", () => {
     const raw = feedConfidence(cleanLiveFeed());
     expect(capConfidence(raw, true).message).toBe(LIVE_MSG);

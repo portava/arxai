@@ -1,3 +1,4 @@
+import { trailingIntervalsFromOpen } from "@workspace/domain/market";
 // ARX Native Chart — Level 1: timeframe contract.
 //
 // The chart endpoints accept ONLY the canonical ARX timeframe codes below.
@@ -84,4 +85,26 @@ export function timeframeSeconds(tf: ChartTimeframe): number {
 /** Bar interval in milliseconds for a canonical timeframe. */
 export function timeframeMs(tf: ChartTimeframe): number {
   return TIMEFRAME_SECONDS[tf] * 1000;
+}
+
+/** Calendar-month boundaries, in the input bar's coordinate system. This
+ * fixes interval geometry; it does not attest historical broker UTC mapping. */
+export function advanceBarOpen(openMs: number, tf: ChartTimeframe, count = 1): number {
+  if (!Number.isFinite(openMs) || !Number.isInteger(count)) return NaN;
+  if (tf !== "MN1") return openMs + count * timeframeMs(tf);
+  const d = new Date(openMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + count, 1);
+}
+export function barCloseMs(openMs: number, tf: ChartTimeframe): number {
+  return advanceBarOpen(openMs, tf);
+}
+export function barIntervalDistance(fromMs: number, toMs: number, tf: ChartTimeframe): number {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return NaN;
+  if (tf !== "MN1") return Math.round((toMs - fromMs) / timeframeMs(tf));
+  const a = new Date(fromMs), b = new Date(toMs);
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth();
+}
+export function calendarAwareTrailingIntervals(openMs: number, tf: ChartTimeframe, nowMs: number): number | null {
+  if (!Number.isFinite(openMs) || !Number.isFinite(nowMs)) return null;
+  return tf === "MN1" ? barIntervalDistance(openMs, nowMs, tf) : tf === "W1" ? Math.floor((nowMs - openMs) / timeframeMs(tf)) : trailingIntervalsFromOpen(openMs, timeframeMs(tf), nowMs);
 }

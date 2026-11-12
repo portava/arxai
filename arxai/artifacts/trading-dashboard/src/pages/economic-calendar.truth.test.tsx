@@ -28,7 +28,7 @@ interface LiveEvt {
   id: string; title: string; currency: string; impact: string; impactTier?: string;
   eventTimeIso: string; eventTimeUtc: string; affectedMarkets: string[]; affectedSymbols: string[];
   country: string; source: string; forecast: string | null; previous: string | null;
-  actual: string | null; riskNote: string | null;
+  actual: string | null; riskNote: string | null; unit?: string | null;
 }
 function liveEvt(over: Partial<LiveEvt> & { id: string; title: string; when: string }): LiveEvt {
   const { when, ...rest } = over;
@@ -294,4 +294,12 @@ describe("Affected Market Heat rows carry the read's data-quality marker", () =>
     // The strip says these are timing reads as of their calculation time.
     expect(strip.textContent).toMatch(/calculated/i);
   });
+});
+
+it("shows the withheld-value reason and units on the actual event row",async()=>{
+ stubServer({live:[liveEvt({id:'boe',title:'BoE Interest Rate Decision',when:at(0,8),actual:null,previous:null,unit:'%',riskNote:'Released values withheld: provider conflicts with the primary release.'})]});
+ renderPage();await screen.findAllByTestId('eco-event-row');
+ fireEvent.click(within(row('BoE Interest Rate Decision')).getByText('BoE Interest Rate Decision'));
+ expect(within(row('BoE Interest Rate Decision')).getByTestId('calendar-provider-note').textContent).toContain('Released values withheld');
+ expect(within(row('BoE Interest Rate Decision')).getByText('Values in %')).toBeTruthy();
 });

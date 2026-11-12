@@ -147,7 +147,11 @@ describe("TruthEvidenceClasses — forming-bar close is not a data time", () => 
       verdict: { bias: "BULLISH" },
     });
     render(<TruthEvidenceClasses evidence={ev} nowMs={WALL} />);
-    for (const k of ["price", "lastCandle", "scanner"]) {
+    const price = screen.getByTestId("truth-evidence-classes-price");
+    expect(price.dataset.evidenceClass).toBe("unavailable");
+    expect(price.textContent).toContain("There is no observation time");
+    expect(price.textContent).not.toContain("10:15:00 UTC");
+    for (const k of ["lastCandle", "scanner"]) {
       const text = screen.getByTestId(`truth-evidence-classes-${k}`).textContent ?? "";
       expect(text).not.toContain("Data time 10:15:00 UTC");
       expect(text).toContain("still forming; it closes at 10:15:00 UTC");

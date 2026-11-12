@@ -126,3 +126,16 @@ test("computeHeatVerdict passes the basis through; a missing basis reads bar_ope
   assert.equal(computeHeatVerdict({ ...base, price }).priceTimeBasis, "bar_open");
   assert.equal(computeHeatVerdict({ ...base, price: { ...price, available: false, updatedAt: null } }).priceTimeBasis, null);
 });
+
+
+test("live fetch evaluates tick freshness after the awaited candle request",async()=>{
+ const later=NOW+12000;
+ const original=Date.now;let clock=NOW;Date.now=()=>clock;
+ try {
+  const r=await readPriceProvider("V75","M15",undefined,{
+   candleRouter:(async()=>{clock=later;return router("deriv_public",Date.parse("2026-10-27T16:00:00Z"))("V75","M15",120);}) as typeof routeCandles,
+   tickReader:()=>({lastTickAt:new Date(later-1000).toISOString()}),
+  });
+  assert.equal(r.priceTimeBasis,"tick");assert.equal(r.freshness,"LIVE");
+ } finally {Date.now=original;}
+});

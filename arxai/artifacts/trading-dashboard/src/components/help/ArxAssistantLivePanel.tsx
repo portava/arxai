@@ -2200,4 +2200,3 @@ function MessageBubble({ m, onEleanorDecision }: { m: ChatMessage; onEleanorDeci
     </div>
   );
 }
-

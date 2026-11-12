@@ -64,7 +64,7 @@ import {
   type SourceMode,
   type PriceBasis,
 } from "./candleNormalization.js";
-import { timeframeMs, timeframeSeconds, type ChartTimeframe } from "./timeframes.js";
+import { CHART_TIMEFRAMES, timeframeMs, timeframeSeconds, type ChartTimeframe } from "./timeframes.js";
 import type { WeeklyPresenceProfile } from "./sessionProfile.js";
 import { classifyCandleFreshness, scheduledWeekendClosure, STALE_TRAILING_INTERVALS } from "../freshness.js";
 import {
@@ -86,7 +86,8 @@ const MIN_CANDLE_HISTORY_COUNT_D1 = 50;
 export type TruthAssessment = "CLEAN" | "PARTIAL" | "STALE" | "DEGRADED" | "UNAVAILABLE";
 
 export interface MergeSeamReport {
-  // Was a forming (still-open) bar detected at the end of the array?
+  // Was a forming bar observed in the array OR in a separately reconciled
+  // native shift-1/shift-0 pair? Native forming prices never enter analysis.
   formingBarDetected: boolean;
   // How many bars away from the tip are still forming?
   formingBarCount: number;
@@ -96,6 +97,12 @@ export interface MergeSeamReport {
   overlapAtSeam: boolean;
   // Gap size in number of missing intervals (0 = no gap)
   seamGapIntervals: number;
+  nativeObservation?: {
+    kind: "mt5_shift1_shift0";
+    collectedAtEpochMs: number; receivedAtEpochMs: number;
+    lastClosedOpenEpochMs: number; formingOpenEpochMs: number;
+    brokerSymbol: string;
+  };
 }
 
 export interface TimeframeTruthResult {
@@ -493,6 +500,24 @@ export function runCandleTruth(
   const sourceDocumentation = {...getSourceDocumentation(assetClass), timeBasisNote: qualifiedClock
     ? `Original UTC coordinates from ${candles[0]!.timeBasisEvidence!.authority}; historical observations, not live entitlement or complete requested-history coverage.`
     : unavailableCandleTimeBasis(source).reason!};
+  if (source === "deriv" || source === "deriv_public") {
+    sourceDocumentation.dataMode = source === "deriv_public" ? "Deriv public market data — unauthenticated, separate from account execution" : "Deriv WebSocket market data";
+    sourceDocumentation.updateMethod = "WebSocket ticks and on-demand provider OHLC";
+    sourceDocumentation.freshnessNote = "Freshness is verified for this symbol; a connected socket alone does not establish live prices.";
+    sourceDocumentation.knownLimitations = ["Only explicitly mapped instruments present in current discovery are served", "Market hours and per-symbol tick freshness apply", "No candle volume or broker execution-price attestation"];
+  }
+  if (source === "mt5_broker") {
+    sourceDocumentation.dataMode = "MetaTrader 5 broker market data";
+    sourceDocumentation.updateMethod = "Read-only terminal observations: broker bid/ask ticks and native OHLC history";
+    sourceDocumentation.freshnessNote = "Tick freshness and closed-history coverage are checked separately for this symbol and timeframe.";
+    sourceDocumentation.supportedTimeframes = [...CHART_TIMEFRAMES];
+    sourceDocumentation.knownLimitations = [
+      "Requires a connected read-only terminal collector and bridge",
+      "Supported timeframe codes do not guarantee available or sufficient broker history",
+      "A broker quote is an observation, not an executed-fill guarantee",
+      "Historical UTC mapping requires independent time-basis evidence",
+    ];
+  }
   sourceDocumentation.priceBasisNote = source === "mt5_broker"
     ? priceBasis === "UNKNOWN"
       ? "UNKNOWN — original MT5 price-basis declaration is missing, inconsistent or mixed; no BID/MID/LAST basis is inferred."
@@ -545,7 +570,7 @@ export function runCandleTruth(
 
     pricePrecision: profile.pricePrecision,
     pipSize: profile.pipSize,
-    allowedTimeframes: profile.allowedTimeframes,
+    allowedTimeframes: source === "mt5_broker" ? [...CHART_TIMEFRAMES] : profile.allowedTimeframes,
     sessionAlwaysOpen: profile.session.alwaysOpen,
     sessionNote: profile.session.note,
 

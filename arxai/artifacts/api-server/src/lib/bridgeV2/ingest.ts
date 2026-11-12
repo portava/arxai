@@ -315,6 +315,8 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
   const p = (payload ?? {}) as Record<string, unknown>;
+  const brokerSymbol = typeof p.brokerSymbol === "string" && p.brokerSymbol.length > 0 && p.brokerSymbol.length <= 128
+    && p.brokerSymbol.trim() === p.brokerSymbol && !/[\x00-\x1f\x7f]/.test(p.brokerSymbol) ? p.brokerSymbol : null;
   try {
     if (messageType === "CANDLE") {
       // Both v2 and batch routes obtain this exact mt5_connection.id from
@@ -336,6 +338,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       // consumers fail closed rather than guess.
       const openUtc = brokerStampToUtcMs(bridgeConnectionId, openTimeEpochMs);
       const candle: Candle = {
+        brokerSymbol,
         time: new Date(openUtc ? openUtc.utcMs : openTimeEpochMs).toISOString(),
         timeBasisEvidence: openUtc ? convertedBrokerCandleTimeBasis(openUtc.offset) : brokerServerCandleTimeBasis(null),
         open: Number(p.open),
@@ -383,7 +386,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
         ? input.eaCreatedAtEpochMs
         : null;
     if (eaCreatedAtEpochMs == null) return;
-    recordMt5Tick(symbol, { bid, ask, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
+    recordMt5Tick(symbol, { bid, ask, brokerSymbol, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
     // One broker-clock offset sample per tick: the tick's broker time against
     // the EA's UTC clock in the same post (brokerClockOffset.ts rejects samples
     // far from the 30-minute grid, e.g. a re-posted old tick on a quiet market).

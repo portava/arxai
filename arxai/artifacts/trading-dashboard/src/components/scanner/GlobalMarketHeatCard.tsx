@@ -297,7 +297,7 @@ function NewsRiskSection({ risk }: { risk: MarketHeatNewsRisk }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-txt-muted">
-        <Newspaper className="h-3 w-3" /> Today's news risk
+        <Newspaper className="h-3 w-3" /> Today's news headline risk
       </div>
       <div className="rounded-lg border border-border/60 bg-surface-1/40 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +309,7 @@ function NewsRiskSection({ risk }: { risk: MarketHeatNewsRisk }) {
           )}
           {risk.connected && risk.highImpactCount > 0 && (
             <span className="inline-flex items-center rounded-full border border-danger/40 px-1.5 py-0.5 text-[10px] text-danger">
-              {risk.highImpactCount} high-impact
+              {risk.highImpactCount} high-impact headlines
             </span>
           )}
         </div>
@@ -343,11 +343,11 @@ function UpcomingEventsSection({
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-txt-muted">
         <CalendarClock className="h-3 w-3" /> Upcoming high-impact events
       </div>
-      {events.length === 0 ? (
+      {!calendarConnected || events.length === 0 ? (
         <div className="rounded-lg border border-border/60 bg-surface-1/40 px-3 py-2 text-xs text-txt-muted">
           {calendarConnected
             ? "No upcoming high-impact events on the connected calendar."
-            : "Economic-calendar provider not connected — upcoming events are unavailable (not 'no events')."}
+            : "Calendar unavailable — event risk not assessed."}
         </div>
       ) : (
         <div className="space-y-1">
@@ -707,7 +707,7 @@ export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWork
   );
 
   if (compactWorkspace) {
-    const globalTone = data ? tone(data.global.intensity) : INTENSITY_TONE.unavailable!;
+    const globalTone = data ? mapTone(data.global) : INTENSITY_TONE.unavailable!;
     const heatUnavailable = !data || isError || data.global.intensity === "unavailable";
     return <div className="arx-heat-compact" data-testid="market-heat-compact" aria-label="Market heat summary">
       {isLoading ? <p role="status">Market heat is loading…</p> : isError || !data ? (
@@ -719,14 +719,15 @@ export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWork
           <span className="text-slate-400">{heatUnavailable ? SOURCE_STATUS_LABEL[data.global.sourceStatus]?.text ?? "Unavailable" : DIRECTION_LABEL[data.global.direction] ?? data.global.direction}</span>
           <button type="button" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh market heat" title="Refresh market heat"><RefreshCw size={13} className={isFetching ? "animate-spin" : ""}/></button>
         </div>
+        {coverageLabel(data.global) && <p className="arx-heat-honesty" data-testid="compact-heat-coverage">{coverageLabel(data.global)}</p>}
         <div className="arx-heat-summary-line">
-          <span className={data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.text : "text-slate-400"}>News {data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.label ?? "Unavailable" : "unavailable"}</span>
-          <span>{data.newsRisk.connected ? `${data.newsRisk.highImpactCount} high impact` : "provider not connected"}</span>
-          <span>{data.upcomingEvents.length > 0 ? `${data.upcomingEvents.length} upcoming event${data.upcomingEvents.length === 1 ? "" : "s"}` : data.providerStatus.calendar.connected ? "No high-impact events returned" : "calendar unavailable"}</span>
+          <span className={data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.text : "text-slate-400"}>News headlines {data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.label ?? "Unavailable" : "unavailable"}</span>
+          <span>{data.newsRisk.connected ? `${data.newsRisk.highImpactCount} high-impact headlines` : "headline provider not connected"}</span>
+          <span>{!data.providerStatus.calendar.connected ? "Calendar unavailable — event risk not assessed." : data.upcomingEvents.length > 0 ? `${data.upcomingEvents.length} upcoming calendar event${data.upcomingEvents.length === 1 ? "" : "s"}` : "No high-impact events returned by the calendar"}</span>
         </div>
         {topHot.length > 0 ? <div className="arx-heat-hot-row" aria-label="Highest reported heat">
           {topHot.slice(0, 2).map(item => <button type="button" key={item.id} onClick={() => setSelectedKey(item.id)} title={`${item.displayName}: ${item.intensity}, ${item.direction}`}>
-            {item.displayName}<span>{tone(item.intensity).label}</span>
+            {item.displayName}<span>{mapTone(item).label}</span>
           </button>)}
         </div> : <p className="arx-heat-honesty">Macro heat unavailable; missing provider data is not an all-clear.</p>}
         <details className="arx-heat-details">

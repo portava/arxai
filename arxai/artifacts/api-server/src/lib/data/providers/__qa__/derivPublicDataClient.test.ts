@@ -36,7 +36,7 @@ function fixture(options: { enabled?: boolean; requestMs?: number; pingMs?: numb
         if (options.reply?.(socket, request)) return;
         if (request.active_symbols) socket.respond(request, { active_symbols: known.map(s => ({ underlying_symbol: s.derivId, underlying_symbol_name: s.displayName, exchange_is_open: 1, is_trading_suspended: 0, market: "synthetic_index" })) });
         if (request.ticks) socket.respond(request, { tick: { symbol: request.ticks, quote: 123, epoch: Math.floor(now / 1000) }, subscription: { id: `sub-${request.ticks}` } });
-        if (request.ticks_history) socket.respond(request, { echo_req: request, candles: [{ epoch: Math.floor(now / 60_000) * 60, open: 120, high: 125, low: 119, close: 123 }] });
+        if (request.ticks_history) socket.respond(request, { echo_req: request, candles: [{ epoch: Math.floor((typeof request.end === "number" ? request.end : now / 1000) / request.granularity) * request.granularity, open: 120, high: 125, low: 119, close: 123 }] });
         if (request.ping) socket.respond(request, { ping: "pong" });
         if (request.forget) socket.respond(request, { forget: 1 });
       };
@@ -265,4 +265,57 @@ test("history refuses bars past requested end and over-count responses while acc
   assert.equal(f.client.hasSymbolHistory("R_75"), false);
   assert.deepEqual(await f.client.getCandles("R_75", 60, 2, epoch), candles);
   assert.equal(f.client.hasSymbolHistory("R_75"), true);
+});
+// Reproduces parallel chart/feed/heat/Eleanor demand without touching a network.
+test("different small current windows share a request and caller mutations stay isolated", async t => {
+  const f=fixture({ reply:(s,r)=>{ if(!r.ticks_history)return false; s.respond(r,{echo_req:r,candles:Array.from({length:r.count},(_,i)=>({epoch:epoch-(r.count-i)*60,open:120,high:125,low:119,close:123}))});return true; }});
+  t.after(()=>f.client.stop());
+  const windows=await Promise.all([2,20,120,200].map(count=>f.client.getCandles("R_75",60,count)));
+  assert.deepEqual(windows.map(w=>w.length),[2,20,120,200]);
+  assert.equal(f.sockets[0]!.sent.filter(r=>r.ticks_history).length,1);
+  windows[0]![1]!.close=999;
+  assert.equal(windows[3]!.at(-1)!.close,123);
+  assert.equal((await f.client.getCandles("R_75",60,20)).at(-1)!.close,123);
+  assert.equal(f.sockets[0]!.sent.filter(r=>r.ticks_history).length,1);
+});
+test("current window cache expires after three seconds and never crosses a candle boundary", async t => {
+  const f=fixture();t.after(()=>f.client.stop());
+  await f.client.getCandles("R_75",60,20); f.setNow(f.now()+2999);
+  await f.client.getCandles("R_75",60,120); assert.equal(f.sockets[0]!.sent.filter(r=>r.ticks_history).length,1);
+  f.setNow(f.now()+1); await f.client.getCandles("R_75",60,20);assert.equal(f.sockets[0]!.sent.filter(r=>r.ticks_history).length,2);
+  f.setNow((epoch+60)*1000-100);await f.client.getCandles("R_75",60,20);
+  f.setNow(f.now()+200);await f.client.getCandles("R_75",60,20);assert.equal(f.sockets[0]!.sent.filter(r=>r.ticks_history).length,4);
+});
+test("cache cannot transfer across symbols, intervals, historical ends or a reversed clock", async t => {
+  const f=fixture();t.after(()=>f.client.stop());
+  await f.client.getCandles("R_75",60,20);await f.client.getCandles("1HZ75V",60,20);await f.client.getCandles("R_75",300,20);
+  await f.client.getCandles("R_75",60,20,epoch-300);await f.client.getCandles("R_75",60,20,epoch-300);
+  f.setNow(f.now()-1);await f.client.getCandles("R_75",60,20);
+  const sent=f.sockets[0]!.sent.filter(r=>r.ticks_history);assert.equal(sent.length,6);
+  assert.deepEqual(sent.filter(r=>r.end!=="latest").map(r=>r.count),[20,20]);
+});
+test("disconnect invalidates the current-window cache before reconnect", async t => {
+  const f=fixture({reconnectMs:1});t.after(()=>f.client.stop());
+  await f.client.getCandles("R_75",60,20);f.sockets[0]!.terminate();
+  await new Promise(r=>setTimeout(r,15));await settle();
+  await f.client.getCandles("R_75",60,20);assert.equal(f.sockets[1]!.sent.filter(r=>r.ticks_history).length,1);
+});
+
+test("partial leading index buckets are omitted without shifting or altering complete OHLC", async t => {
+  const full = { epoch: epoch - 300, open: 100, high: 110, low: 90, close: 105 };
+  const partial = { ...full, epoch: epoch - 450, open: 101, close: 103 };
+  assert.deepEqual(normalizePublicCandles([partial, full], epoch * 1000, 300), [full]);
+  assert.deepEqual(normalizePublicCandles([partial], epoch * 1000, 300), []);
+  const f = fixture({ reply: (socket, request) => {
+    if (!request.ticks_history) return false;
+    socket.respond(request, { echo_req: request, candles: [partial, full] }); return true;
+  }});
+  t.after(() => f.client.stop());
+  const received = await f.client.getCandles("R_75", 300, 30);
+  assert.deepEqual(received, [full]);
+  assert.equal(f.client.hasSymbolHistory("R_75"), true);
+});
+test("misaligned interior buckets are refused rather than silently repaired", () => {
+  const full = { epoch: epoch - 600, open: 100, high: 110, low: 90, close: 105 };
+  assert.throws(() => normalizePublicCandles([full, { ...full, epoch: epoch - 450 }], epoch * 1000, 300), /INVALID_CANDLE_ALIGNMENT/);
 });

@@ -32,7 +32,7 @@ export interface SnapshotOk {
   highlights: {
     bias: Bias;
     confidenceLabel: string;
-    confidenceScore: number;
+    confidenceScore: number | null;
     volatilityLabel: string;
     trendState: string;
     // Levels are withheld (null) when the stale-level guard fires or the feed

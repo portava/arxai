@@ -185,7 +185,7 @@ export function chartSeriesAttribution(target: object | null | undefined): Chart
 // ── Observation builders (no synthesis: unknown facts stay null) ─────────────
 
 export function observationFromMt5Quote(read: {
-  quote: { bid?: number; ask?: number; timestamp: string };
+  quote: { bid?: number; ask?: number; timestamp: string; brokerSymbol?: string | null };
   bridgeConnectionId: number | null;
   userId: number | null;
   tickTimeObserved: boolean;
@@ -196,10 +196,10 @@ export function observationFromMt5Quote(read: {
     providerId: "mt5_broker",
     bridgeConnectionId: read.bridgeConnectionId,
     userId: read.userId,
-    // The live push path does not observe account environment or the
-    // broker-native symbol.
+    // Account environment is not observed here. Preserve the exact native
+    // instrument when the authenticated tick producer supplied it.
     environment: null,
-    brokerSymbol: null,
+    brokerSymbol: read.quote.brokerSymbol ?? null,
     tickAt: read.tickTimeObserved ? read.quote.timestamp : null,
     bid: read.quote.bid ?? null,
     ask: read.quote.ask ?? null,

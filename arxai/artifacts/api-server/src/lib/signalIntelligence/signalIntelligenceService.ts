@@ -281,7 +281,6 @@ export async function buildEleanorMarketEdgeForUser(
   const price = matchedMarketQuote(candleResult, quoteResult, symbol, now)?.mid ?? null;
   let dataSource = marketRead?.trailingIntervals != null && marketRead.trailingIntervals <= 1 ? "LIVE_FEED" : "AWAITING_FEED";
   const derivBacked =
-    (assetClass === "synthetic" || resolveDerivSymbol(symbol) !== null) &&
     (candleResult.primaryProvider === "deriv" ||
       candleResult.primaryProvider?.startsWith("deriv") === true);
   if (marketRead && derivBacked) {

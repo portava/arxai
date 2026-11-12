@@ -169,6 +169,8 @@ export async function evaluateLiveArmingGate(
   // Shared heartbeat policy: a heartbeat dated after the server's clock has no
   // verifiable age (null, so check #3 fails), never clamped to a fresh 0s.
   const hbAge = heartbeatAgeSecondsFrom(bridge?.lastHeartbeat ?? null, Date.now());
+  const hbObservedAt = bridge?.lastHeartbeat ? new Date(bridge.lastHeartbeat) : null;
+  const hbObservedIso = hbObservedAt && Number.isFinite(hbObservedAt.getTime()) ? hbObservedAt.toISOString() : null;
   const caps = (bridge?.capabilities ?? {}) as {
     eaInputs?: {
       readOnlyMode?: unknown;
@@ -200,7 +202,9 @@ export async function evaluateLiveArmingGate(
     hbFresh,
     hbAge === null
       ? (bridge?.lastHeartbeat
-        ? `Last heartbeat is dated ${new Date(bridge.lastHeartbeat).toISOString()}, after the server's clock, so its age cannot be verified (counts as stale).`
+        ? (hbObservedIso
+          ? `Last heartbeat is dated ${hbObservedIso}, after the server's clock, so its age cannot be verified (counts as stale).`
+          : "Last heartbeat has an invalid timestamp, so its age cannot be verified (counts as stale).")
         : "No heartbeat received yet.") :
       hbFresh ? null : `Last heartbeat ${hbAge}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
 

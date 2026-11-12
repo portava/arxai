@@ -30,12 +30,37 @@ import { loadBridgeV2ConfigForEa } from "../lib/bridgeV2/egress.js";
 import { claimBridgeV2CommandsForEa } from "../lib/bridgeV2/commandClaim.js";
 import { buildBridgeV2AdminStatus } from "../lib/bridgeV2/status.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { recordNativeSeamObservation } from "../lib/data/chart/nativeSeamObservation.js";
 
 const router = Router();
 
 type ConnReq = Request & {
   mt5Connection?: BrokerConnectionRecord;
 };
+
+// Separate native quality observations. No candle writes, no trade commands,
+// and identity always comes from per-user bridge authentication.
+router.post("/bridge/v2/native-seams", bridgeAuthPerUserOnly, (req: ConnReq, res: Response): void => {
+  const conn = req.mt5Connection;
+  if (!conn || conn.userId == null || conn.id == null) {
+    res.status(401).json({ ok: false, error: "BRIDGE_NOT_ATTRIBUTED" });
+    return;
+  }
+  const observations: unknown = req.body?.observations;
+  if (!Array.isArray(observations) || observations.length < 1 || observations.length > 50) {
+    res.status(400).json({ ok: false, error: "BATCH_SIZE_INVALID", detail: "1..50 observations per request" });
+    return;
+  }
+  const now = Date.now();
+  const results = observations.map((raw, index) => {
+    const result = recordNativeSeamObservation(raw, { bridgeConnectionId: conn.id!, userId: conn.userId! }, now);
+    const identity = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    return { index, symbol: identity.symbol ?? null, brokerSymbol: identity.brokerSymbol ?? null,
+      timeframe: identity.timeframe ?? null, ...result };
+  });
+  const accepted = results.filter(r => r.accepted).length;
+  res.json({ ok: true, received: observations.length, accepted, rejected: observations.length - accepted, results });
+});
 
 // ─── POST /api/bridge/v2/ingest ─────────────────────────────────────────────
 // Body: a single message object OR { messages: [...] } (max 50). Each is run

@@ -57,6 +57,7 @@ interface LiveCalendarEvent {
   forecast: string | null;
   previous: string | null;
   actual: string | null;
+  unit?: string | null;
   riskNote: string | null;
   timePrecision?: "exact" | "date";
   fetchedAt?: string;
@@ -76,6 +77,7 @@ interface DisplayEvent {
   forecast: string | null;
   previous: string | null;
   actual: string | null;
+  unit?: string | null;
   eventTime: string;
   affectedSymbols: string[] | null;
   volatilityFlag: number;
@@ -121,6 +123,7 @@ function fromLive(e: LiveCalendarEvent): DisplayEvent {
     forecast: e.forecast,
     previous: e.previous,
     actual: e.actual,
+    unit: e.unit,
     eventTime: e.eventTimeUtc ?? e.eventTimeIso,
     affectedSymbols: e.affectedSymbols.length > 0 ? e.affectedSymbols : (e.affectedMarkets.length > 0 ? e.affectedMarkets : null),
     volatilityFlag: 0,
@@ -353,6 +356,8 @@ function EventTimingHeat({ affectedSymbols }: { affectedSymbols: string[] }) {
 // hardcoded in the UI. A new provider only needs an entry here.
 const PROVIDER_LABELS: Record<string, string> = {
   fred: "FRED",
+  forex_factory: "Forex Factory weekly schedule",
+  mt5_calendar: "MetaTrader 5 economic calendar",
   trading_economics: "Trading Economics",
 };
 function providerLabel(provider: string | undefined | null): string {
@@ -372,6 +377,7 @@ interface LiveCalendarResponse {
   lastErrorMessage: string | null;
   freshnessStatus: "fresh" | "stale" | "unavailable";
   events: LiveCalendarEvent[];
+  coverageNote?: string;
 }
 
 export default function EconomicCalendarPage() {
@@ -612,6 +618,17 @@ export default function EconomicCalendarPage() {
         )
       )}
 
+      {isConnected && providerStatus.data?.provider === "forex_factory" && (
+        <div data-testid="calendar-weekly-coverage" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
+          {providerStatus.data.coverageNote ?? "Current source week only. Future weeks, released actuals and revisions are not supplied by this feed. Forecast and previous values come from the source; absent values remain unreported."}
+          <a href="https://www.forexfactory.com/calendar/" target="_blank" rel="noreferrer" className="ml-1 underline">Source calendar</a>
+        </div>
+      )}
+
+      {isConnected && providerStatus.data?.provider === "mt5_calendar" && providerStatus.data.coverageNote && (
+        <div data-testid="calendar-mt5-coverage" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">{providerStatus.data.coverageNote}</div>
+      )}
+
       {providerStatus.isError && (
         <div data-testid="calendar-status-unknown" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-300">
           <span className="font-semibold">Could not read the calendar provider status</span>
@@ -783,6 +800,7 @@ export default function EconomicCalendarPage() {
                         </div>
                         <div className="mt-0.5 text-sm font-semibold text-foreground">{e.eventName}</div>
                         <EventProvenanceLine source={e.source} fetchedAt={e.fetchedAt} freshness={e.freshness} />
+                        {e.unit && <div className="text-[11px] text-txt-muted">Values in {e.unit}</div>}
                         {e.affectedSymbols && e.affectedSymbols.length > 0 && (
                           <div className="mt-0.5 text-[11px] text-txt-muted">
                             Affects: <span className="text-primary">{e.affectedSymbols.join(", ")}</span>
@@ -802,6 +820,7 @@ export default function EconomicCalendarPage() {
                     </button>
                     {isOpen && (
                       <div className="mt-3 border-t border-border pt-3">
+                        {e.riskNote && <p data-testid="calendar-provider-note" className="mb-3 break-words text-xs text-amber-300">{e.riskNote}</p>}
                         <div className="grid grid-cols-3 gap-2 text-xs sm:hidden">
                           <div><div className="text-txt-muted">Prev</div><div>{e.previous ?? "—"}</div></div>
                           <div><div className="text-txt-muted">Forecast</div><div>{e.forecast ?? "—"}</div></div>

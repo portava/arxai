@@ -1658,7 +1658,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     if (a.dataSource === "LIVE_FEED" && a.rulesFailed.includes("data_available")) {
       ds = "AWAITING_FEED";
     } else if (a.dataSource === "LIVE_FEED") {
-      if (isSynthetic && (a.feedProvider === "deriv" || a.feedProvider?.startsWith("deriv"))) {
+      if ((a.feedProvider === "deriv" || a.feedProvider === "deriv_public")) {
         // Phase 22X — per-symbol readiness. Use the cached tick for
         // THIS specific Deriv symbol so one ticking symbol cannot
         // promote unrelated rows. Rows without a recent per-symbol
@@ -1673,7 +1673,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     }
     if (ds === "LIVE_FEED" && routedTrailingIntervals != null) {
       const derivBacked =
-        isSynthetic && (a.feedProvider === "deriv" || a.feedProvider?.startsWith("deriv"));
+        (a.feedProvider === "deriv" || a.feedProvider === "deriv_public");
       const feedVerdict = resolveSymbolFeedVerdict({
         hasRecentTick: derivBacked ? hasRecentDerivTickFor(sym) : true,
         trailingIntervals: routedTrailingIntervals,

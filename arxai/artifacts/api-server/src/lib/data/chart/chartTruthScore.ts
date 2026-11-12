@@ -200,7 +200,7 @@ export function computeChartTruthScore(
     sourceDetail = `ohlcSourceType=${truthResult.ohlcSourceType} — provider does not deliver true OHLC bars.`;
   } else if (truthResult.sourceMode === "live") {
     sourceRaw = 100;
-    sourceDetail = `Live source: ${truthResult.source ?? "unknown"} (${truthResult.ohlcSourceType}).`;
+    sourceDetail = `Real OHLC provider: ${truthResult.source ?? "unknown"} (${truthResult.ohlcSourceType}); current feed liveness is assessed separately.`;
   } else if (truthResult.sourceMode === "demo") {
     sourceRaw = 85;
     sourceDetail = "Demo/paper mode — price is real but account context is demo.";

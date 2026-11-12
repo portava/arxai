@@ -68,6 +68,7 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
   let minutesUntil: number | null = null;
   let minutesSince: number | null = null;
   let heatAdjustment = 0;
+  let observedSeverity: string | null = null;
 
   try {
     const { radar } = await buildRadarFn(symbol);
@@ -80,6 +81,7 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
       ? radar.events.find((e) => e.affectsSymbol === true)
       : undefined;
     if (topEvent) {
+      observedSeverity = topEvent.severity;
       radarEventName = topEvent.title;
       const secsRemaining = topEvent.countdownSeconds;
       // The radar's state is the authority on whether the release has
@@ -140,7 +142,10 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
 
   // Determine event type
   let eventType: NewsOverlay["eventType"] = "none";
-  if (radarEventName) {
+  if (observedSeverity === "HIGH" || observedSeverity === "CRITICAL") eventType = "high_impact";
+  else if (observedSeverity === "MEDIUM") eventType = "medium_impact";
+  else if (observedSeverity === "LOW") eventType = "low_impact";
+  else if (radarEventName) {
     const lower = radarEventName.toLowerCase();
     if (lower.includes("fomc") || lower.includes("rate") || lower.includes("cpi") || lower.includes("nfp") || lower.includes("payroll")) {
       eventType = "high_impact";

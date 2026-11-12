@@ -157,6 +157,18 @@ test("arming check #3: the same bridge with a 2 s old heartbeat still passes", a
   assert.equal(r.checks.find((c) => c.key === "HEARTBEAT_FRESH")?.passed, true);
 });
 
+test("arming check #3: an invalid heartbeat is refused without a formatting exception", async () => {
+  bridgeRow = liveBridge(new Date(Number.NaN));
+  const r = await evaluateLiveArmingGate({
+    userId: 4242, isAdmin: true, confirmationPhrase: "", riskAcknowledged: false, accountNumberConfirmed: "",
+    maxLotConfirmed: 0, dailyLossLimitConfirmed: 0, killSwitchAcknowledged: false,
+  });
+  const check = r.checks.find(c => c.key === "HEARTBEAT_FRESH");
+  assert.equal(check?.passed, false);
+  assert.match(check?.reason ?? "", /invalid timestamp/);
+  assert.equal(r.evidence.heartbeatAgeSeconds, null);
+});
+
 test("preflight: a future-dated master bridge heartbeat has no age and fails gate 7", async () => {
   bridgeRow = liveBridge(future());
   const stateRes = await fetch(`${base}/api/admin/live-test-readiness/state`);

@@ -45,7 +45,7 @@ export function calendarReadState(result: EconomicCalendarResult, nowMs: number)
   const lastError = typeof result.diagnostics?.lastError === "string" ? result.diagnostics.lastError.trim() : "";
   const why = lastError ? ` (${lastError.slice(0, 200)})` : "";
   const note = read
-    ? null
+    ? (result.provider === "forex_factory" ? result.message : null)
     : !result.configured || result.status === "missing"
       ? `No economic calendar provider is configured, so scheduled events were not checked. ${notAllClear}`
       : `${providerLabel(result.provider)} could not be read${why}, so scheduled events were not checked. ${notAllClear}`;

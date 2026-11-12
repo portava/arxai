@@ -1,4 +1,4 @@
-// What the synthetic-index (Deriv) feed is doing, from GET
+// What the Deriv market-data feed is doing, from GET
 // /api/market-data/deriv/status — the server's own readiness fields, never the
 // socket flag alone. An open socket with no recent tick is not a live feed,
 // and a connection whose last attempt errored is failing, not "connecting".
@@ -40,18 +40,18 @@ export function derivFeedStateFromStatus(d: DerivStatusPayload | undefined): Der
 export function derivFeedNoteText(s: DerivFeedState): string {
   switch (s.kind) {
     case "unknown":
-      return "The synthetic-index feed status could not be loaded — whether these markets have live prices is unknown.";
+      return "The Deriv market feed status could not be loaded — whether these markets have live prices is unknown.";
     case "unconfigured":
-      return "Synthetic-index live feed isn't active yet — these markets are visible for selection but won't show live prices until the feed is set up.";
+      return "Deriv market live feed isn't active yet — these markets are visible for selection but won't show live prices until the feed is set up.";
     case "connecting":
-      return "Connecting to live feed for synthetic indices…";
+      return "Connecting to Deriv market feed…";
     case "failed":
-      return "The synthetic-index feed connection is failing — these markets won't show live prices until it reconnects.";
+      return "The Deriv market feed connection is failing — these markets won't show live prices until it reconnects.";
     case "awaiting_ticks":
-      return "Synthetic-index feed is connected but has no recent live tick — prices may not be current.";
+      return "Deriv market feed is connected but has no recent live tick — prices may not be current.";
     case "live":
       return s.lastTickAgeMs != null
-        ? `Synthetic-index feed is receiving live ticks (last tick ${Math.round(s.lastTickAgeMs / 1000)}s old at the last status check).`
-        : "Synthetic-index feed is receiving live ticks.";
+        ? `Deriv market feed is receiving live ticks (last tick ${Math.round(s.lastTickAgeMs / 1000)}s old at the last status check).`
+        : "Deriv market feed is receiving live ticks.";
   }
 }

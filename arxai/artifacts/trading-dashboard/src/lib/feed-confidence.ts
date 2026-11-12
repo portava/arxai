@@ -134,7 +134,7 @@ export function feedConfidence(
 //   - resolved === true  → keep the raw verdict (confirmed).
 //   - resolved === false → never Clean/AI: severity capped to at most "caution",
 //     a "clean" label becomes "Unconfirmed", aiUsable forced false.
-//   - resolved === null  → unknown verdict: neutral "Checking…" state.
+//   - resolved === null  → withhold clean/AI claims while checking; keep known feed faults.
 //   - resolved omitted   → no cap (legacy raw-feed behaviour).
 export function capConfidence(
   conf: FeedConfidence,
@@ -147,6 +147,10 @@ export function capConfidence(
   // replaced with what is actually known. A non-clean raw message (stale /
   // delayed / partial) is already an honest limitation and is kept.
   if (resolved === null) {
+    // A pending AI assessment cannot erase a feed fault already observed.
+    if (conf.severity !== "clean" && conf.statusLabel !== "Unknown") {
+      return { ...conf, aiUsable: false };
+    }
     return {
       ...conf,
       // A known limitation (delayed / stale / partial) stays stated while the
@@ -235,9 +239,16 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
         "Candles from the MT5 broker data path, the primary broker-data source: either a bridge's live push or the server's stored copy of earlier pushes. Check feed status for whether they are live; actual execution prices can differ.",
     };
   }
-  if (source === "deriv" || source === "deriv_public") {
+  if (source === "deriv_public") {
     return {
-      label: source === "deriv_public" ? "Deriv public data" : "Deriv",
+      label: "Deriv public data",
+      tier: "thirdParty",
+      trustNote: "Deriv public quotes and candles for the selected instrument. Check this market's feed status for freshness; this source does not verify your broker's prices or order fills.",
+    };
+  }
+  if (source === "deriv") {
+    return {
+      label: "Deriv",
       tier: "synthetic",
       trustNote:
         "Deriv synthetic instruments (algorithmic volatility indices). Check feed status for freshness; this source does not verify your broker's prices or order fills.",

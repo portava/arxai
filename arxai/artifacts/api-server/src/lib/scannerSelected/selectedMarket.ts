@@ -107,8 +107,8 @@ const REAL_DEPS: SelectedMarketDeps = {
 
 export interface SelectedMarketHighlights {
   bias: "BUY" | "SELL" | "NEUTRAL" | "WAIT";
-  confidenceLabel: "Very Low" | "Low" | "Medium" | "High";
-  confidenceScore: number;
+  confidenceLabel: "Very Low" | "Low" | "Medium" | "High" | "Unmeasured";
+  confidenceScore: number | null;
   /**
    * Measured volatility: the newest 14-bar ATR against the mean true range of
    * the older closed bars. "Unmeasured" when there are too few closed bars to
@@ -195,7 +195,8 @@ export interface SelectedMarketResult {
    * candles. Widened from the legacy "SIMULATOR" literal; this path never emits
    * SIMULATOR (Task #518).
    */
-  dataSource: AnalysisDataSource;
+  dataSource: AnalysisDataSource | "AWAITING_FEED" | "STALE_FEED" | "UNCONFIRMED_FEED";
+  marketEvidence?: import("@workspace/domain/truth").TruthReadEvidence | null;
   /** Clean-English source label (e.g. "MT5 broker feed"); null when unknown. */
   dataSourceLabel: string | null;
   /** Honest freshness state derived from the feed status. */
@@ -844,7 +845,8 @@ async function buildSelectedMarketSnapshot(
       },
       upcomingEvents: events,
       newsRisk,
-      dataSource: a.dataSource,
+      dataSource: "AWAITING_FEED",
+      marketEvidence: chart.marketEvidence ?? null,
       dataSourceLabel,
       dataState: "UNAVAILABLE",
       dataAsOf,
@@ -908,7 +910,8 @@ async function buildSelectedMarketSnapshot(
     explanation,
     upcomingEvents: events,
     newsRisk,
-    dataSource: a.dataSource,
+    dataSource: dataState === "LIVE_CONFIRMED" ? "LIVE_FEED" : dataState === "STALE" ? "STALE_FEED" : dataState === "UNAVAILABLE" ? "AWAITING_FEED" : "UNCONFIRMED_FEED",
+    marketEvidence: chart.marketEvidence ?? null,
     dataSourceLabel,
     dataState,
     dataAsOf,

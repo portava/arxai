@@ -49,6 +49,9 @@ export interface CalendarProviderRead {
   eventCount: number;
   highImpactActive: boolean;
   provider: string;
+  freshness?: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
+  apiKeyPresent?: boolean;
+  lastError?: string | null;
   /** Real upcoming events — empty (never fabricated) when not connected. */
   events: MarketHeatEvent[];
 }
@@ -57,7 +60,6 @@ export interface CalendarProviderRead {
 export async function readNewsProvider(): Promise<NewsProviderRead> {
   const status = getMarketStatus();
   const configured = status.configured;
-  const statusConnected = status.connected;
 
   // Live probe: never trust `status.connected` alone. A status that claims
   // connected but whose fetch fails / returns disconnected is NOT connected.
@@ -66,10 +68,12 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
   let probeFailed = false;
   let probeItems: NewsRiskItem[] = [];
   let probeFetchedAt: string | null = null;
-  if (statusConnected) {
+  let probeProvider: string = status.provider;
+  if (configured) {
     try {
       const news = await getMarketProvider().getMarketNews("markets", 12);
       probeConnected = news.connected;
+      probeProvider = news.provider;
       probeFetchedAt = news.connected ? providerResultFetchedAt(news) : null;
       probeItemCount = news.connected ? news.items.length : 0;
       probeItems = news.connected
@@ -89,8 +93,8 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
   // provider whose probe failed/returned disconnected or sits in ERROR state.
   const { connected, freshness, sourceStatus } = resolveNewsHonesty({
     configured,
-    statusConnected,
-    freshnessState: status.freshnessState,
+    statusConnected: probeConnected,
+    freshnessState: probeConnected ? "FRESH" : "ERROR",
     probeConnected,
     probeFailed,
   });
@@ -116,7 +120,7 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
   return {
     source: {
       kind: "news",
-      name: status.provider,
+      name: probeProvider,
       status: sourceStatus,
       configured,
       connected,
@@ -135,10 +139,10 @@ export async function readNewsProvider(): Promise<NewsProviderRead> {
     highImpactCount: severity.highImpactCount,
     topHeadlines,
     updatedAt,
-    provider: status.provider,
+    provider: probeProvider,
     freshness,
-    apiKeyPresent: configured,
-    lastError: status.lastError ?? null,
+    apiKeyPresent: probeProvider !== "gdelt" && configured,
+    lastError: connected ? null : (getMarketStatus().lastError ?? "News request did not return a valid payload."),
   };
 }
 
@@ -154,21 +158,25 @@ export async function readCalendarProvider(
   let errored = false;
   let events: MarketHeatEvent[] = [];
   let updatedAt: string | null = null;
+  let calendarFreshness: string | undefined;
+  let coverageNote: string | undefined;
   try {
     const snap = await getEconomicCalendar(symbol, nowMs);
     connected = snap.connected;
+    calendarFreshness = snap.freshness;
+    coverageNote = snap.coverageNote;
     // Last SUCCESSFUL fetch only — a failed attempt is not a check.
     updatedAt = snap.connected ? (snap.lastSuccessAt ?? null) : null;
     provider = snap.provider;
     errored = snap.status === "error";
-    eventCount = snap.events.length;
-    highImpactActive = snap.events.some((e) => e.impact === "high");
+    const upcoming = snap.events.filter(e => Date.parse(e.eventTimeIso) >= nowMs);
+    eventCount = upcoming.length;
+    highImpactActive = upcoming.some(e => e.impact === "high" && Date.parse(e.eventTimeIso)-nowMs <= 3600_000);
     // Real-or-empty: only surface events when the provider is connected.
     events = connected
-      ? snap.events
+      ? upcoming
           .slice()
           .sort((a, b) => Date.parse(a.eventTimeIso) - Date.parse(b.eventTimeIso))
-          .slice(0, 12)
           .map((e) => ({
             id: e.id,
             title: e.title,
@@ -195,7 +203,7 @@ export async function readCalendarProvider(
       ? "missing"
       : !connected
         ? "unavailable"
-        : "live";
+        : calendarFreshness === "DELAYED" ? "delayed" : calendarFreshness === "STALE" ? "stale" : "live";
 
   return {
     source: {
@@ -207,7 +215,7 @@ export async function readCalendarProvider(
       updatedAt,
       recordCount: eventCount,
       note: connected
-        ? null
+        ? coverageNote ?? null
         : errored
           ? "Economic-calendar provider error — events could not be retrieved."
           : "Economic-calendar provider not connected.",
@@ -216,6 +224,9 @@ export async function readCalendarProvider(
     configured,
     eventCount,
     highImpactActive,
+    freshness: connected ? (calendarFreshness === "DELAYED" ? "DELAYED" : calendarFreshness === "STALE" ? "STALE" : "LIVE") : "UNAVAILABLE",
+    apiKeyPresent: configured && !["forex_factory", "mt5_calendar"].includes(provider),
+    lastError: connected ? null : "Economic calendar unavailable",
     provider,
     events,
     updatedAt,
@@ -274,7 +285,7 @@ export function priceSourceDisplayName(provider: string | null | undefined, stor
 export async function readPriceProvider(
   symbol: string,
   timeframe: string,
-  nowMs: number = Date.now(),
+  nowMs: number | undefined = undefined,
   deps: { tickReader?: PriceTickReader; candleRouter?: typeof routeCandles } = {},
 ): Promise<PriceProviderRead> {
   let result;
@@ -308,6 +319,7 @@ export async function readPriceProvider(
     };
   }
 
+  nowMs ??= Date.now();
   const c = result.candles;
   const first = c[0]!.close;
   const last = c[c.length - 1]!.close;

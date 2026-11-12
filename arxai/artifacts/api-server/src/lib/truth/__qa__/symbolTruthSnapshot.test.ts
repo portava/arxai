@@ -539,6 +539,9 @@ test("lean: the only bullish voter is below its evidence rule → LEAN qualifier
   assert.equal(snap.verdict.biasQualifier, "LEAN");
   assert.equal(snap.components.scanner.label, "Bullish lean · Setup forming");
   assert.equal(snap.components.scanner.belowEvidenceFloor, true);
+  assert.equal(snap.verdict.bestAction, "WATCH_ONLY");
+  assert.equal(snap.levels.withheld, true);
+  assert.equal(snap.levels.entryFrom, null);
 });
 
 test("lean: evidence rule met → no qualifier, label unchanged", async () => {
@@ -568,6 +571,9 @@ test("lean: bearish mirror and a non-directional structure word", async () => {
   });
   assert.equal(bear.verdict.bias, "BEARISH");
   assert.equal(bear.verdict.biasQualifier, "LEAN");
+  assert.equal(bear.verdict.bestAction, "WATCH_ONLY");
+  assert.equal(bear.levels.withheld, true);
+  assert.equal(bear.levels.stopLoss, null);
   assert.match(bear.components.scanner.label, /^Bearish lean · /);
   const ranging = await build({
     scanner: scannerStub({ direction: "BUY", bias: "RANGING", meetsMinimum: false }),

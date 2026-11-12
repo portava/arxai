@@ -551,3 +551,23 @@ describe("EleanorMarketReadCard — the feed row never says 'Live feed' without 
     expect(screen.getByTestId("eleanor-market-read-reasoning").textContent).toContain("Live feed confirmed.");
   });
 });
+
+
+describe("compact Eleanor truth consistency", () => {
+  it("expires without reviving the old directional headline or claiming a live read", () => {
+    const response=resp();
+    response.signal.expiresAt=new Date(Date.now()-1000).toISOString();
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({data:response}));
+    render(<EleanorMarketReadCard compactWorkspace symbol="EURUSD" timeframe="M5"/>);
+    expect(screen.getByTestId("eleanor-market-read-freshness").textContent).toContain("Read expired");
+    expect(screen.getByTestId("eleanor-market-read-headline").textContent).toContain("Wait for a new confirmed setup");
+    expect(screen.getByTestId("eleanor-market-read-headline").textContent).not.toContain("Buyers");
+  });
+  it("compact freshness cannot outrank an unconfirmed canonical feed", () => {
+    mockUseScannerReadGate.mockReturnValue({truth:null,level:"STRUCTURAL_ONLY",isFull:false,downgraded:true,reason:"Feed not confirmed."} as any);
+    mockUseGetMeMarketEdge.mockReturnValue(hookState({data:resp()}));
+    render(<EleanorMarketReadCard compactWorkspace symbol="EURUSD" timeframe="M5"/>);
+    expect(screen.getByTestId("eleanor-market-read-freshness").textContent).toContain("Feed not confirmed");
+    expect(screen.getByTestId("eleanor-market-read-headline").textContent).not.toContain("Buyers");
+  });
+});

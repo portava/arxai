@@ -367,7 +367,7 @@ export function EleanorMarketReadCard({
   });
   const level = gate.level;
   const reason = withheldCause === "expired"
-    ? `This ${name} read has expired — refresh for a current read.`
+    ? `This ${name} setup has expired. Wait for a new confirmed setup.`
     : withheldCause === "invalidated"
       ? SETUP_INVALIDATED_REASON
       : gate.reason;
@@ -415,12 +415,11 @@ export function EleanorMarketReadCard({
   );
 
   if (compactWorkspace) {
-    const freshness = signal ? freshnessLabel(signal) : null;
     return <div className="arx-eleanor-compact" data-testid="eleanor-market-read" data-compact-read="true">
       <div className="arx-eleanor-compact-meta">
         <span className="arx-eleanor-market">{symbol} · {chartTimeframe}</span>
         {signal && <span className="arx-eleanor-freshness" data-testid="eleanor-market-read-freshness">
-          {freshness?.text ?? "Freshness unavailable"} · {ageLabel(dataUpdatedIso, nowTs)}
+          {feedRow.text || "Freshness unavailable"}
         </span>}
       </div>
       <ScannerReadGate symbol={symbol} timeframe={chartTimeframe} compact/>
@@ -431,7 +430,7 @@ export function EleanorMarketReadCard({
       ) : level == null ? (
         <p className="arx-eleanor-status" role="status" data-testid="eleanor-market-read-confirming">{reason ?? "Confirming market data before showing a read."}</p>
       ) : <>
-        <p className="arx-eleanor-headline" data-testid="eleanor-market-read-headline" title={explanation.headline}>{explanation.headline}</p>
+        <p className="arx-eleanor-headline" data-testid="eleanor-market-read-headline" title={downgraded ? reason ?? "Read withheld" : explanation.headline}>{downgraded ? reason ?? "Read withheld until current market data is confirmed." : explanation.headline}</p>
         {signal.late?.isLate && <p className="arx-eleanor-warning" data-testid="eleanor-market-read-late"><AlertTriangle size={12}/>{signal.late.reason ?? "Move may be late; chasing carries extra risk."}</p>}
         {isSynthetic && <p className="arx-eleanor-warning" role="note" data-testid="eleanor-market-read-synthetic-direction"><AlertTriangle size={12}/>{SYNTHETIC_DIRECTION_LABEL}</p>}
         <div className="arx-eleanor-decision-grid">

@@ -70,6 +70,8 @@ export const fredNewsProvider: NewsProvider = {
 // "none" provider.
 export function pickNewsProvider(): NewsProvider {
   switch (selectedEconomicCalendarProvider()) {
+    case "forex_factory":
+      return { ...tradingEconomicsNewsProvider, name: "forex_factory" };
     case "fred":
       return fredNewsProvider;
     case "trading_economics":
