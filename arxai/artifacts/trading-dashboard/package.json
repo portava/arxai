@@ -75,7 +75,8 @@
     "test:ai-client-20261104": "vitest run src/lib/aiClientSweep.test.ts src/components/help/aiClientSweep.panel.test.tsx src/components/help/aiClientSweep.surfaces.test.tsx",
     "test:chart-signals-20261104": "vitest run src/hooks/useChartSetupPreview.expiry.test.ts src/lib/ai-chart-commands.test.ts src/components/charts/chart-setup-signal-strip.test.tsx src/components/charts/ChartSetupPreviewPanel.scannerChip.test.tsx src/hooks/useAiChartOverlays.eleanorExpiry.test.ts src/components/charts/ChartAiOverlayPanel.scannerStatus.test.tsx src/components/charts/ChartDecisionReceiptsPanel.test.tsx",
     "test:smart-chart-analysis": "vitest run src/lib/chart-engine/smartChartAnalysis.test.ts src/lib/chart-engine/smartChartAnalysis.catalogue.test.ts",
-    "test:performance": "vitest run src/pages/admin-diagnostics.performance.test.tsx"
+    "test:performance": "vitest run src/pages/admin-diagnostics.performance.test.tsx",
+    "test:build-config": "node --test tests/buildConfig.test.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
