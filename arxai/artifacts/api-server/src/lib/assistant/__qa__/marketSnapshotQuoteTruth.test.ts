@@ -44,7 +44,9 @@ function q(over: Record<string, unknown>): Record<string, unknown> {
   return {
     symbol: "EURUSD", price: 1.1, bid: 1.0999, ask: 1.1001, change: null, changePct: null,
     high: null, low: null, open: null, previousClose: null,
-    asOf: new Date(NOW - 2_000).toISOString(), freshness: "REALTIME", source: "twelve_data", stale: false,
+    // Importing the tool graph can outlast the freshness budget under full CI.
+    // A fresh fixture must be timed when requested, not before module loading.
+    asOf: new Date(Date.now() - 2_000).toISOString(), freshness: "REALTIME", source: "twelve_data", stale: false,
     ...over,
   };
 }
