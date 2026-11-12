@@ -11,6 +11,7 @@
 
 import {
   CALIBRATION_METHOD,
+  CALIBRATION_EDGE_MIN_SAMPLE,
   fitCalibration,
   type CalibrationFit,
   type CalibrationSample,
@@ -58,6 +59,14 @@ export function agentTrustFromFit(
     basis = `no_prospective_validation:n=${f.n}; timed resolved outcomes required`;
   } else if (!f.edgeDetected || !f.holdout?.passed) {
     basis = `no_out_of_sample_skill:selectionLower95=${f.cv.improvementLower95}; holdoutLower95=${f.holdout?.improvementLower95 ?? "unmeasured"}`;
+  } else if (
+    !Number.isInteger(f.n) || f.n < CALIBRATION_EDGE_MIN_SAMPLE ||
+    !Number.isInteger(f.holdout.n) || f.holdout.n < CALIBRATION_EDGE_MIN_SAMPLE ||
+    f.model !== "isotonic" || f.holdout.selectedModel !== "isotonic" || !f.cv.edgeDetected ||
+    ![f.cv.improvementLower95, f.holdout.improvementLower95].every(value =>
+      typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1)
+  ) {
+    basis = "invalid_skill_evidence:influence_withheld";
   } else {
     const lower = Math.min(f.cv.improvementLower95, f.holdout.improvementLower95);
     influence = Math.min(1, Math.max(0, lower / AGENT_FULL_INFLUENCE_IMPROVEMENT));

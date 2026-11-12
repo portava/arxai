@@ -328,6 +328,27 @@ function explanationHasNoPaperDemo(lines: string[]): boolean {
   );
 }
 
+// Scanner safety remains effective without granting an unmeasured agent authority.
+for (const [risk, verdict] of [[69, "tradeable"], [70, "caution"], [84, "caution"], [85, "avoid"], [100, "avoid"]] as const) {
+  const p = buildSetupPreview(baseInput(uptrend(), { riskScore: risk,
+    scannerTimeframe: "M5", scannerTimeframeBasis: "exact", governanceOutcome: null }));
+  record(`exact scanner risk ${risk} independently yields ${verdict}`, p.verdict === verdict);
+  record(`scanner risk ${risk} never invents governance authority`, p.governanceOutcome === null);
+  if (verdict === "avoid") record(`risk ${risk} draws no actionable levels`, p.levels === null);
+}
+for (const over of [
+  { scannerTimeframe: "H1", scannerTimeframeBasis: "higher_timeframe_fallback" as const },
+  { scannerTimeframe: "H1", scannerTimeframeBasis: "exact" as const },
+  { scannerTimeframe: null, scannerTimeframeBasis: null },
+]) {
+  const p = buildSetupPreview(baseInput(uptrend(), { riskScore: 95, ...over }));
+  record(`unbound scanner risk cannot govern M5 (${over.scannerTimeframeBasis}/${over.scannerTimeframe})`, p.verdict === "tradeable");
+}
+for (const governanceOutcome of ["approved_with_caution", "escalated", "muted_low_confidence"] as const) {
+  const p = buildSetupPreview(baseInput(uptrend(), { governanceOutcome }));
+  record(`${governanceOutcome} cannot be presented as tradeable`, p.verdict === "caution");
+}
+
 // ── summary ───────────────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok);
 // eslint-disable-next-line no-console

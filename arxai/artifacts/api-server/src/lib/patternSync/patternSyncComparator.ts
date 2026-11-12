@@ -90,7 +90,7 @@ function entryQualityOf(row: {
   if (!row.h4.sufficient) return "unknown";
   if (row.h4.choppinessScore >= 65) return "choppy";
   if (row.alignment === "not_aligned") return "countertrend";
-  const extension = row.m15?.signature.extension ?? row.h4.signature.extension;
+  const extension = row.m15?.sufficient ? row.m15.signature.extension : row.h4.signature.extension;
   if (extension >= 0.9) return "late";
   if (row.h4.cleanSetupScore >= 60) return "clean";
   return "choppy";
@@ -140,10 +140,9 @@ export function comparePatternSync(
   // ── Shared bias = majority directional bias of the cohort. ───────────────
   const biasCounts: Record<PatternSyncBias, number> = { bullish: 0, bearish: 0, ranging: 0 };
   for (const i of sufficientInputs) biasCounts[i.h4.trendBias] += 1;
-  const sharedBias: PatternSyncBias =
-    biasCounts.bullish >= biasCounts.bearish && biasCounts.bullish >= biasCounts.ranging ? "bullish"
-    : biasCounts.bearish >= biasCounts.ranging ? "bearish"
-    : "ranging";
+  const majority = (Object.keys(biasCounts) as PatternSyncBias[])
+    .find(bias => biasCounts[bias] > sufficientInputs.length / 2);
+  const sharedBias: PatternSyncBias | null = majority ?? null;
 
   // ── Leader = strongest aligned chart: clean + continuation + confidence,
   //    penalised by fakeout. Prefer charts that match the shared bias. ───────
@@ -151,8 +150,8 @@ export function comparePatternSync(
     const r = i.h4;
     let s = r.cleanSetupScore * 0.35 + r.continuationScore * 0.35 + r.confidenceScore * 0.3;
     s -= r.fakeoutRiskScore * 0.25;
-    if (sharedBias !== "ranging" && r.trendBias === sharedBias) s += 12;
-    if (sharedBias !== "ranging" && r.trendBias !== sharedBias) s -= 20;
+    if (sharedBias && sharedBias !== "ranging" && r.trendBias === sharedBias) s += 12;
+    if (sharedBias && sharedBias !== "ranging" && r.trendBias !== sharedBias) s -= 20;
     return s;
   };
   const leaderInput = pickMax(sufficientInputs, leaderScore);
@@ -166,7 +165,7 @@ export function comparePatternSync(
     const alignment = alignmentOf(r.trendBias, m15Bias);
     const match = leader ? patternMatchScore(leader, r) : 0;
     const entryQuality = entryQualityOf({ alignment, h4: r, m15: i.m15 });
-    const extension = i.m15?.signature.extension ?? r.signature.extension;
+    const extension = i.m15?.sufficient ? i.m15.signature.extension : r.signature.extension;
     const lateEntryRisk = extension >= 0.85;
     const countertrendOpenTrade = r.tradeContext?.tradeDirectionAlignment === "countertrend";
     const nearKeyLevel =
@@ -179,7 +178,7 @@ export function comparePatternSync(
     else if (match >= 80) status = "Following";
     else if (match >= 60) status = "Following";
     else if (match >= 40) status = "Confirmation Needed";
-    else if (sharedBias !== "ranging" && r.trendBias === sharedBias) status = "Lagging";
+    else if (sharedBias && sharedBias !== "ranging" && r.trendBias === sharedBias) status = "Lagging";
     else status = "Not Synced";
 
     return {
@@ -291,14 +290,15 @@ function emptyRow(i: PatternSyncSymbolInput): PatternSyncComparedRow {
 function buildComparisonSummary(a: {
   leaderInput: PatternSyncSymbolInput | null;
   rows: PatternSyncComparedRow[];
-  sharedBias: PatternSyncBias;
+  sharedBias: PatternSyncBias | null;
   followerSymbols: string[];
   laggingSymbols: string[];
 }): string {
   if (!a.leaderInput) return "No clear Pattern Sync leader in the current comparison set.";
   const leader = a.leaderInput.h4;
   const parts: string[] = [];
-  parts.push(`${a.leaderInput.symbol} is the current ${a.sharedBias} market leader (${leader.detectedPatternType.replace(/_/g, " ")}, clean setup ${leader.cleanSetupScore}/100).`);
+  parts.push(`${a.leaderInput.symbol} is the current ${leader.trendBias} market leader (${leader.detectedPatternType.replace(/_/g, " ")}, clean setup ${leader.cleanSetupScore}/100).`);
+  if (!a.sharedBias) parts.push("The comparison set has no majority directional bias.");
   if (a.followerSymbols.length > 0) {
     parts.push(`Following the same pattern: ${a.followerSymbols.join(", ")}.`);
   }

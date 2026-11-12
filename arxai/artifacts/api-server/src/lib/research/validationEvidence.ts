@@ -87,7 +87,8 @@ function checkRun(run: ValidationRunLike): void {
   if (run.runnerVersion !== VALIDATION_RUNNER_VERSION) invalid();
   if (![run.datasetHash, run.paramsHash, run.resultHash].every((h) => typeof h === "string" && HEX64.test(h))) invalid();
   if (!Number.isInteger(run.fdr?.familySize) || run.fdr.familySize < 1 || !Array.isArray(run.survivors)) invalid();
-  if (run.survivors.some((s) => s.liveAllowed !== false || s.promotionCeiling !== "SHADOW")) invalid();
+  if (run.survivors.length > run.fdr.familySize) invalid();
+  if (run.survivors.some((s) => !s || typeof s !== "object" || s.liveAllowed !== false || s.promotionCeiling !== "SHADOW")) invalid();
   if (resultHashOf(run) !== run.resultHash) invalid();
 }
 
@@ -111,11 +112,12 @@ function verifiedManifest(row: Row): ValidationEvidenceManifest {
 
 function verifiedPayload(row: Row): Record<string, unknown> {
   const text = row.canonical_payload;
-  if (typeof text !== "string" || sha256(text) !== row.payload_hash) integrity();
+  if (typeof text !== "string" || sha256(text) !== row.payload_hash || Buffer.byteLength(text, "utf8") !== row.payload_bytes) integrity();
   let parsed: ValidationRunLike;
   try { parsed = JSON.parse(text) as ValidationRunLike; } catch { return integrity(); }
   if (stableStringify(parsed) !== text) integrity();
   try { checkRun(parsed); } catch { integrity(); }
+  if (parsed.runnerVersion !== row.runner_version || row.run_kind !== "real_data_validation") integrity();
   if (parsed.resultHash !== row.result_hash || parsed.datasetHash !== row.dataset_hash || parsed.paramsHash !== row.params_hash
     || parsed.survivors.length !== row.survivors || parsed.fdr.familySize !== row.trials) integrity();
   return parsed;
@@ -155,6 +157,7 @@ export class ValidationEvidenceStore {
       if (existing.rows[0]) {
         const row = existing.rows[0];
         if (row.canonical_payload !== payload) throw new ValidationEvidenceError("VALIDATION_EVIDENCE_CONFLICT");
+        verifiedPayload(row);
         return { disposition: "existing", manifest: verifiedManifest(row), manifestHash: row.manifest_hash };
       }
       const clock = await this.pool.query<{ now: Date }>("SELECT clock_timestamp() AS now");

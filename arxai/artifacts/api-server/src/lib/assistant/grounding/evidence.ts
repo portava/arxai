@@ -57,6 +57,8 @@ export interface ExecutionEvidence {
   ticket: string | null;
   /** Every id/ticket on the object (actionId, mt5 tickets, id, ...), as strings. */
   ids: string[];
+  /** Instrument scope inherited from the enclosing execution object. */
+  symbols: string[];
 }
 
 export interface EvidenceIndex {
@@ -200,7 +202,7 @@ function addTimes(s: string, tool: string, out: EvidenceTime[]): void {
   }
 }
 
-function executionOf(obj: Record<string, unknown>, tool: string, path: string): ExecutionEvidence | null {
+function executionOf(obj: Record<string, unknown>, tool: string, path: string, frame: Frame): ExecutionEvidence | null {
   // A calibration stamp's status ("measured") is not an order status.
   if (calibrationStampInfo(obj)) return null;
   const status = typeof obj.status === "string" ? obj.status : null;
@@ -214,7 +216,7 @@ function executionOf(obj: Record<string, unknown>, tool: string, path: string): 
   const ids = Object.entries(obj)
     .filter(([k, v]) => (typeof v === "number" || typeof v === "string") && /(^id$|Id$|ticket|Ticket)/.test(k))
     .map(([, v]) => String(v));
-  return { tool, path, status, executed, partial, ticket: t == null ? null : String(t), ids };
+  return { tool, path, status, executed, partial, ticket: t == null ? null : String(t), ids, symbols: frame.entitySymbols ?? [] };
 }
 
 const SYMBOL_KEYS = /^(symbol|displaySymbol|instrument|market|name|ticker|pair)$/;
@@ -251,7 +253,7 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
     }
     const obj = v as Record<string, unknown>;
     const f = frameFor(obj, frame);
-    const exec = executionOf(obj, tool, path);
+    const exec = executionOf(obj, tool, path, f);
     if (exec) idx.executions.push(exec);
     const stamp = calibrationStampInfo(obj);
     const sibling = !stamp && obj.calibration && typeof obj.calibration === "object" ? calibrationStampInfo(obj.calibration as Record<string, unknown>) : null;

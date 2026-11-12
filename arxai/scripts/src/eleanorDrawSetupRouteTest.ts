@@ -165,12 +165,10 @@ function buildCleanWindow(intervalMs = M5_MS): Array<{ time: string; open: numbe
 }
 
 // ── Task #389: prove a live scanner signal actually CHANGES the drawn setup ──
-// An isolated RISK registry fixture drives the real advisory and Court engines.
-// The ACTIVE RISK participant reads
-// safety = (1 - riskScore/100); a populated riskScore in the [70, 85) downgrade
-// band makes it request a DOWNGRADE through the real advisory → Traffic → Court
-// flow, which flips the drawn setup's verdict tradeable → caution. Everything is
-// ADVISORY/SHADOW only — it never gates demo/live execution.
+// The registry fixture has no measured out-of-sample skill, so it cannot confer
+// governance authority. Exact-timeframe scanner risk independently flips the
+// preview tradeable → caution while governanceOutcome honestly remains null.
+// This is a read-only preview policy; no execution gate or order is invoked.
 
 /**
  * A moderate bid/ask spread (0.0003 ≈ 27 spread-penalty points). Combined with
@@ -562,8 +560,8 @@ export async function run(): Promise<CiTestResultLike> {
     // Control and treatment share the chart series, symbol and BUY request; the
     // ONLY difference is the broker's quoted spread, which the scanner's
     // riskScore reads (riskScore = 20 + spreadPenalty, liveScanner.ts). A wide
-    // spread puts risk in the RISK agent's [70, 85) DOWNGRADE band, and the
-    // REAL advisory → Traffic → Court flow flips the verdict to caution.
+    // spread puts risk in the [70, 85) caution band. The deterministic preview
+    // safety policy acts even when no agent has earned measured authority.
     // The live scanner runs only while the assistant's market-data adapter is
     // connected; this connected stub serves NO candles of its own, so every
     // scanned bar comes from the router's MT5 series above.
@@ -618,9 +616,10 @@ export async function run(): Promise<CiTestResultLike> {
       `treatment: riskScore in the RISK DOWNGRADE band [70,85) (got ${String(treatmentPreview?.riskScore)})`,
     );
     assert(
-      treatmentPreview?.governanceOutcome === "downgraded",
-      `treatment: governanceOutcome "downgraded" (got ${String(treatmentPreview?.governanceOutcome)})`,
+      treatmentPreview?.governanceOutcome === null,
+      `treatment: unmeasured agent gets no fabricated governance authority (got ${String(treatmentPreview?.governanceOutcome)})`,
     );
+    assert(treatmentPreview?.explanation?.some((line: string) => line.includes("scanner reports elevated risk")), "treatment: deterministic scanner risk caution is explained");
     assert(treatmentPreview?.verdict === "caution", `treatment: verdict caution (got ${String(treatmentPreview?.verdict)})`);
     assert(
       controlPreview?.verdict === "tradeable" && treatmentPreview?.verdict === "caution",

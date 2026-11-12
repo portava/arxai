@@ -292,3 +292,26 @@ describe("Pattern Sync single-source lock (Task #758)", () => {
     );
   });
 });
+
+
+describe("comparison evidence boundaries", () => {
+  it("does not invent bullish consensus when opposite structures tie", () => {
+    const h4 = runPatternSyncEngine({ symbol: "BULL", timeframe: "H4", candles: bullishWithPullbacks() });
+    const bear = runPatternSyncEngine({ symbol: "BEAR", timeframe: "H4", candles: bearishWithPullbacks() });
+    const result = comparePatternSync([{ symbol: "BULL", h4 }, { symbol: "BEAR", h4: bear }]);
+    assert.equal(result.sharedBias, null);
+    assert.match(result.readableSummary, /no majority directional bias/);
+    const actualLeader = result.rows.find(row => row.symbol === result.leaderSymbol)!;
+    assert.ok(result.readableSummary.includes(`current ${actualLeader.trendBias} market leader`));
+  });
+  it("insufficient M15 cannot erase an H4 late-entry warning", () => {
+    const h4 = runPatternSyncEngine({ symbol: "V75", timeframe: "H4", candles: bullishWithPullbacks() });
+    const m15 = runPatternSyncEngine({ symbol: "V75", timeframe: "M15", candles: [] });
+    h4.signature.extension = 0.95;
+    h4.choppinessScore = 0;
+    const result = comparePatternSync([{ symbol: "V75", h4, m15 }]).rows[0]!;
+    assert.equal(result.h4m15Alignment, "unknown");
+    assert.equal(result.lateEntryRisk, true);
+    assert.equal(result.entryQuality, "late");
+  });
+});

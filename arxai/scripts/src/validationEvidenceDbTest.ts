@@ -124,6 +124,11 @@ export async function run(): Promise<CiTestResultLike> {
     await pool.query("UPDATE validation_evidence_v1 SET canonical_payload = replace(canonical_payload, '\"survivor\":false', '\"survivor\":true') WHERE id=$1", [a.manifest.id]);
     const corrupted = await store.read(a.manifest.id).then(() => "returned", (e) => (e instanceof ValidationEvidenceError ? e.code : String(e)));
     assert(corrupted === "VALIDATION_EVIDENCE_INTEGRITY", `a payload rewritten behind the triggers is an INTEGRITY failure on read (got ${corrupted})`);
+    // Byte metadata is not in the manifest, so both read and the idempotent
+    // record path must independently re-verify the canonical payload.
+    await pool.query("UPDATE validation_evidence_v1 SET canonical_payload=$1, payload_bytes=payload_bytes+1 WHERE id=$2", [row.canonical_payload, a.manifest.id]);
+    assert(await rejects(store.read(a.manifest.id), /VALIDATION_EVIDENCE_INTEGRITY/), "incorrect payload byte metadata fails read verification");
+    assert(await rejects(store.record({ run, datasetSource: "fixture:real-history-v1", codeCommit: COMMIT, codeDirty: false }), /VALIDATION_EVIDENCE_INTEGRITY/), "idempotent record re-verifies stored payload, not just its manifest");
   } finally {
     await pool.end();
     await admin.query(`DROP SCHEMA ${schema} CASCADE`);

@@ -231,3 +231,20 @@ describe("independent holdout and legacy fit invalidation", () => {
     assert.equal(agentTrustFromFit("legacy", legacy).influence, 0);
   });
 });
+
+
+it("malformed or inconsistent persisted validation cannot grant agent authority", () => {
+  const fit = fitCalibration(signal(12000, 7));
+  assert.ok(agentTrustFromFit("control", fit).influence > 0);
+  for (const lower of [NaN, Infinity, -Infinity, -0.1, 2]) {
+    const malformed = { ...fit, holdout: { ...fit.holdout!, improvementLower95: lower } };
+    const trust = agentTrustFromFit("malformed", malformed);
+    assert.equal(trust.influence, 0);
+    assert.equal(trust.trustScore, 50);
+  }
+  for (const malformed of [
+    { ...fit, holdout: { ...fit.holdout!, n: 1 } },
+    { ...fit, cv: { ...fit.cv!, edgeDetected: false } },
+    { ...fit, model: "base_rate" as const },
+  ]) assert.equal(agentTrustFromFit("inconsistent", malformed).influence, 0);
+});

@@ -255,6 +255,32 @@ const EXECUTION_AFFIRM = /\b(?:executed|filled|got filled|went through|placed|I(
 const EXECUTION_CONTEXT = /\b(?:order|trade|position|buy|sell|long|short|entry|ticket|lots?|I)\b/i;
 const EXECUTION_NEGATED = /\b(?:nothing|none|neither|nor|not|never|no|cannot|can't|won't|wouldn't|unable|without|until|unless|if|once|when|would|could|should|will|can|may|might|pending|awaiting|preview|draft|haven't|hasn't|wasn't|isn't|didn't|failed|rejected|cancel(?:led|ed)?|expired|yet|whether|need|needs|ready)\b|n't\b|'ll\b/i;
 
+/** Explicit identities, including FX pairs absent from this turn's evidence. */
+function namedSymbols(text: string, idx: EvidenceIndex): string[] {
+  const normal = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const found: Array<{ value: string; at: number }> = [];
+  for (const symbol of idx.symbols) {
+    const value = normal(symbol);
+    if (value.length < 3) continue;
+    const pattern = value.split("").join("[ /_-]*");
+    for (const match of text.matchAll(new RegExp(`(?<![a-z0-9])${pattern}(?![a-z0-9])`, "gi"))) {
+      found.push({ value, at: match.index! });
+    }
+  }
+  const currency = "USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|XAU|XAG|BTC|ETH";
+  for (const match of text.matchAll(new RegExp(`\\b(?:${currency})[ /_-]?(?:${currency})\\b`, "gi"))) {
+    found.push({ value: normal(match[0]), at: match.index! });
+  }
+  return [...new Set(found.sort((a, b) => a.at - b.at).map(hit => hit.value))];
+}
+
+/** Commas between digits are thousands separators, not clause boundaries. */
+function numericClause(text: string, start: number, end: number): { before: string; after: string } {
+  const before = text.slice(0, start).split(/[,;]\s+|\b(?:and|but|while|whereas)\b/i).at(-1)!;
+  const after = text.slice(end).split(/[,;]\s+|\b(?:and|but|while|whereas)\b/i)[0]!;
+  return { before, after };
+}
+
 export function checkClaims(answer: string, outputs: ToolOutput[], userText = ""): CheckResult {
   return checkWithIndex(answer, buildEvidenceIndex(outputs, userText));
 }
@@ -355,13 +381,16 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
       unitMs: unit ? unitMs(unit) : null,
       pips: !!unit && /^(pips?|points?|pts)$/i.test(unit),
     };
-    // Bind values to the most recently named instrument and ticket in this segment.
-    const prefix = raw.slice(0, localStart).toLowerCase();
-    const normalize = (x: string) => x.replace(/[^a-z0-9]/g, "");
-    const named = [...idx.symbols].filter(x => x.length >= 3 && normalize(prefix).includes(normalize(x)));
-    named.sort((a,b) => normalize(prefix).lastIndexOf(normalize(b)) - normalize(prefix).lastIndexOf(normalize(a)));
-    const ticket = [...prefix.matchAll(/(?:#|(?:ticket|position|order|action)\s*(?:#|id)?\s*)(\d{3,})/g)].at(-1)?.[1];
-    const entityMatches = (e: EvidenceNumber) => (!named.length || !!e.entities?.includes(normalize(named[0]))) && (!ticket || !!e.entities?.includes(ticket));
+    // Bind within the local clause in either grammatical order. A value-first
+    // statement must not borrow a different instrument's otherwise valid price.
+    const clause = numericClause(raw, localStart, localEnd);
+    const prefixSymbols = namedSymbols(clause.before, idx);
+    const symbol = prefixSymbols.at(-1) ?? namedSymbols(clause.after, idx)[0]
+      ?? namedSymbols(raw.slice(0, localStart), idx).at(-1);
+    const ticketPattern = /(?:#|(?:ticket|position|order|action)\s*(?:#|id)?\s*)(\d{3,})/gi;
+    const ticket = [...clause.before.matchAll(ticketPattern)].at(-1)?.[1]
+      ?? [...clause.after.matchAll(ticketPattern)][0]?.[1];
+    const entityMatches = (e: EvidenceNumber) => (!symbol || !!e.entities?.includes(symbol)) && (!ticket || !!e.entities?.includes(ticket));
     const candidates = idx.numbers.filter(e => e.source === "user" ? /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw) : entityMatches(e));
     const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({
@@ -463,8 +492,15 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     const clause = raw.slice(clauseStart, m.index + m[0].length);
     if (!EXECUTION_CONTEXT.test(clause) || EXECUTION_NEGATED.test(clause)) continue;
     const partialClaim = /partial(?:ly)?\s+$/i.test(before);
-    const tickets = claims.filter(c => c.kind === "ticket" && c.start >= seg.start + clauseStart && c.end <= seg.start + m.index).map(c => c.text);
-    const proof = idx.executions.filter(e => (e.executed || (partialClaim && e.partial)) && tickets.every(t => e.ids.includes(t)));
+    // Suffix identities belong to this execution too ("filled for GBPUSD",
+    // "filled, ticket 123"). Stop before the next independent proposition.
+    const suffix = raw.slice(m.index + m[0].length);
+    const nextClause = suffix.search(/;|\b(?:and|but|while|whereas)\b|,(?!\s*(?:ticket|order|position|action)\s*(?:#|id)?\s*\d)/i);
+    const clauseEnd = nextClause < 0 ? raw.length : m.index + m[0].length + nextClause;
+    const tickets = claims.filter(c => c.kind === "ticket" && c.start >= seg.start + clauseStart && c.end <= seg.start + clauseEnd).map(c => c.text);
+    const symbols = namedSymbols(raw.slice(clauseStart, clauseEnd), idx);
+    const proof = idx.executions.filter(e => (e.executed || (partialClaim && e.partial)) &&
+      tickets.every(t => e.ids.includes(t)) && symbols.every(symbol => e.symbols.includes(symbol)));
     const claim = pushClaim({ kind: "execution", text: m[0], grounded: proof.length > 0, groundedBy: proof.map(p => p.path), localStart: m.index, localEnd: m.index + m[0].length });
     if (proof.length === 0 && !reportedExecutionClauses.has(clauseStart)) {
       reportedExecutionClauses.add(clauseStart);

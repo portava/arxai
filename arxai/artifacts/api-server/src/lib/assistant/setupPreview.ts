@@ -328,6 +328,23 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
     };
   }
 
+  // Scanner risk is a deterministic safety signal, independent of whether an
+  // agent has earned measured influence. Only the chart's own timeframe may
+  // change its verdict; a higher-timeframe fallback remains labelled context.
+  const exactRisk = input.scannerTimeframeBasis === "exact" &&
+    input.scannerTimeframe === input.timeframe &&
+    typeof input.riskScore === "number" && Number.isFinite(input.riskScore)
+    ? input.riskScore : null;
+  if (exactRisk != null && exactRisk >= 85) {
+    const reason = "The scanner reports very high risk on this chart timeframe, so I won't draw this setup as tradeable.";
+    return {
+      ...base, side: resolveSide(input.requestedSide, input.read.bias),
+      setupType: "Very high scanner risk", levels: null, rewardToRisk: null,
+      confidence: { label: "Low", score: 0 }, verdict: "avoid", refusalReason: reason,
+      explanation: [reason], invalidationNote: "No setup drawn while scanner risk is very high.",
+    };
+  }
+
   // ── Gate 2: governance rejected → steer away (no confident preview) ───────
   if (input.governanceOutcome === "rejected") {
     const reason =
@@ -406,7 +423,11 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
     (side === "SELL" && input.read.bias === "Bullish");
   let verdict: SetupPreviewVerdict = "tradeable";
   const cautions = [...input.read.cautions];
-  if (input.governanceOutcome === "downgraded" || input.governanceOutcome === "needs_more_data") {
+  if (exactRisk != null && exactRisk >= 70) {
+    verdict = "caution";
+    cautions.push("The scanner reports elevated risk on this chart timeframe. Review spread and market conditions before considering this setup.");
+  }
+  if (input.governanceOutcome && !["approved", "neutral"].includes(input.governanceOutcome)) {
     verdict = "caution";
   }
   if (input.read.confidence === "Low" || counter) verdict = "caution";
