@@ -204,3 +204,22 @@ test("positive learned evidence cannot promote neutral AACI authority", async ()
   assert.equal(scored.learnedTrustScore, 50, "caution-only aggregation retains its neutral ceiling");
   assert.equal(scored.hardGatePass, false);
 });
+
+
+for (const realizedPnl of [0, null]) test(`explicit safety evidence with ${realizedPnl === null ? "unmeasured" : "flat"} P&L is penalized exactly once`, async () => {
+  const entityKey = key(`safety-${realizedPnl}`);
+  const input = { entityType: "symbol" as const, entityKey, decisionQuality: 100, realizedPnl, sourceRef: `${tag}-safety-${realizedPnl}` };
+  assert.deepEqual(await db.transaction(tx => applyOutcomeToTrust(tx, input)), { applied: false, reason: "NO_EVIDENCE" });
+  assert.equal((await db.transaction(tx => applyOutcomeToTrust(tx, { ...input, safetyViolation: true }))).applied, true);
+  assert.deepEqual(await db.transaction(tx => applyOutcomeToTrust(tx, { ...input, safetyViolation: true })), { applied: false, reason: "ALREADY_INGESTED" });
+  const row = (await getTrustRow(db, input))!;
+  assert.equal(row.alpha, 1);
+  assert.equal(row.beta, 1.15);
+  assert.equal(row.evidenceCount, 1);
+  const trail = await db.select().from(audits).where(eq(audits.entityKey, entityKey));
+  assert.equal(trail.length, 1);
+  assert.match(trail[0]!.reason, /Explicit safety violation; outcome NEUTRAL/);
+  const proposed = await db.select().from(audits).where(eq(audits.entityKey, outcomeWeightKey("symbol", entityKey)));
+  assert.equal(proposed.length, 1);
+  assert.equal((proposed[0]!.newValue as { value: number }).value, 0.85);
+});

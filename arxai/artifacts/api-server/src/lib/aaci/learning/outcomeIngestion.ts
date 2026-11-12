@@ -119,7 +119,10 @@ export async function ingestAgentOutcomes(
       if (setupType) entities.push({ entityType: "strategy", entityKey: setupType });
       if (timeframe) entities.push({ entityType: "timeframe", entityKey: timeframe });
 
-      entities.sort((a, b) => `${a.entityType}:${a.entityKey}`.localeCompare(`${b.entityType}:${b.entityKey}`));
+      entities.sort((a, b) => {
+        const left = `${a.entityType}:${a.entityKey}`, right = `${b.entityType}:${b.entityKey}`;
+        return left < right ? -1 : left > right ? 1 : 0;
+      });
 
       // Per-execution transaction: all entity updates + audits commit together.
       try {

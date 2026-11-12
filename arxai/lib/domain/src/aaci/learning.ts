@@ -170,7 +170,7 @@ export function luckFilteredUpdate(
   cls: DecisionOutcomeClass,
   opts?: { safetyViolation?: boolean },
 ): TrustUpdate {
-  if (cls === "NEUTRAL") return { reward: 0, penalty: 0, rewarded: false, rationale: cls };
+  // Explicit safety evidence is independent of monetary outcome (including flat/unmeasured P&L).
   if (opts?.safetyViolation) {
     return { reward: 0, penalty: AACI_SAFETY_PENALTY_LAMBDA, rewarded: false, rationale: cls };
   }

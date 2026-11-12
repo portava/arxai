@@ -205,10 +205,23 @@ test("safety violations dominate any reward and do not depend on a caller-suppli
 
 
 test("unresolved outcomes remain neutral and invalid quality cannot earn skill credit", () => {
-  const unresolved = learnFromOutcome(neutralTrust(), { decisionQuality: 100, realizedPnl: null, safetyViolation: true });
+  const unresolved = learnFromOutcome(neutralTrust(), { decisionQuality: 100, realizedPnl: null });
   assert.deepEqual(unresolved.next, neutralTrust());
   assert.equal(unresolved.classification, "NEUTRAL");
   for (const decisionQuality of [NaN, Infinity, -Infinity]) {
     assert.equal(classifyDecisionOutcome({ decisionQuality, realizedPnl: 10 }), "BAD_DECISION_WIN");
+  }
+});
+
+
+test("explicit safety evidence penalizes trust independently of flat or unmeasured P&L", () => {
+  for (const realizedPnl of [0, null]) {
+    const safe = learnFromOutcome(neutralTrust(), { decisionQuality: 100, realizedPnl });
+    assert.deepEqual(safe.next, neutralTrust());
+    const violation = learnFromOutcome(neutralTrust(), { decisionQuality: 100, realizedPnl, safetyViolation: true });
+    assert.equal(violation.classification, "NEUTRAL", "never fabricate a win or loss");
+    assert.equal(violation.update.reward, 0);
+    assert.equal(violation.update.penalty, AACI_SAFETY_PENALTY_LAMBDA);
+    assert.deepEqual(violation.next, { alpha: 1, beta: 1 + AACI_SAFETY_PENALTY_LAMBDA });
   }
 });

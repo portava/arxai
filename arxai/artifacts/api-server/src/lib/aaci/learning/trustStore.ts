@@ -174,7 +174,8 @@ export type ApplyOutcomeResult =
  * Fold ONE reconciled outcome into an entity's trust, idempotently. Must run
  * inside a db.transaction so the trust update + audit row commit atomically. A
  * repeat call with the same sourceRef is a no-op (ALREADY_INGESTED). A null /
- * flat P/L produces no update (NO_EVIDENCE) — elapsed time never moves trust.
+ * flat P/L alone produces no update (NO_EVIDENCE); explicit safety evidence can
+ * still penalize trust without claiming a resolved monetary outcome.
  */
 export async function applyOutcomeToTrust(
   tx: Tx,
@@ -205,7 +206,7 @@ export async function applyOutcomeToTrust(
     realizedPnl: input.realizedPnl,
     safetyViolation: input.safetyViolation,
   });
-  if (classification === "NEUTRAL") return { applied: false, reason: "NO_EVIDENCE" };
+  if (classification === "NEUTRAL" && !input.safetyViolation) return { applied: false, reason: "NO_EVIDENCE" };
 
   const row = await ensureTrustRow(tx, input);
   const before = rowToTrustState(row);
@@ -252,7 +253,7 @@ export async function applyOutcomeToTrust(
       quarantined: verdict.quarantined,
       rewarded: update.rewarded,
     },
-    reason: `Outcome ${classification} folded into trust (${input.sourceRef}).`,
+    reason: `${input.safetyViolation ? "Explicit safety violation; " : ""}outcome ${classification} folded into trust (${input.sourceRef}).`,
     evidenceCount: updated[0]?.evidenceCount ?? row.evidenceCount + 1,
     confidence: 0,
     sourceRef: input.sourceRef,
