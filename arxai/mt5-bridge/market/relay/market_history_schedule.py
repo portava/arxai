@@ -3,6 +3,19 @@ from datetime import datetime
 from pathlib import Path
 import math
 
+HISTORY_PENDING_LIMIT=3
+HISTORY_RETRY_SECONDS=3
+
+def history_dispatch_ready(path,stamp,pending,scheduled,retry_after,now):
+    if path in pending or len(pending)>=HISTORY_PENDING_LIMIT or scheduled.get(path)==stamp:return False
+    retry=retry_after.get(path)
+    # A newly collected snapshot is eligible immediately. A transient failure
+    # retries the same immutable snapshot only after a bounded cooldown; all
+    # identity/freshness validation is rerun by the worker before delivery.
+    return retry is None or retry[0]!=stamp or now>=retry[1]
+
+def retryable_history_status(status):return status==429 or 500<=status<=599
+
 def timestamp_ms(value):
     try:
         parsed=datetime.fromisoformat(value.replace('Z','+00:00'))

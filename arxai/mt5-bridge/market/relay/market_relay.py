@@ -97,7 +97,7 @@ def run():
     evidence=SERVICE/'accepted-evidence';evidence.mkdir(exist_ok=True)
     stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
-    token=calendar.load_token();relay_id=uuid.uuid4().hex[:12];sequences={};last_quote=None;history_marks={};pending=set();scheduled={};attempts={}
+    token=calendar.load_token();relay_id=uuid.uuid4().hex[:12];sequences={};last_quote=None;history_marks={};pending=set();scheduled={};attempts={};history_retry_after={}
     state={'mode':'read-only-market-data','pid':os.getpid(),'relayId':relay_id,'startedAt':calendar.now_iso(),'quoteBatchesAccepted':0,'quoteMessagesAccepted':0,'historySeries':{},'expectedHistorySeries':len(UNIVERSE)*len(SUPPORTED_TIMEFRAMES),'transportErrors':0}
     mutex=threading.Lock();fast_executors=[]
     def opener():return urllib.request.build_opener(urllib.request.ProxyHandler({}),calendar.NoRedirect())
@@ -117,8 +117,8 @@ def run():
             state['historySeries'][key]={'http':200,'accepted':True,'acceptedBars':mark[2],'rejectedBars':0,'sentBars':mark[2],'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':mark[0],'at':proof['acceptedAt'],'restoredSameApiBoot':True,'brokerLimited':mark[3]}
         state['restoredSameApiBootSeeds']=restored
     except Exception as exc:state['seedRestoreErrorType']=type(exc).__name__
-    def history_job(path):
-        key=path.stem
+    def history_job(path,stamp):
+        key=path.stem;retry=False
         try:
             if stop.is_set():return
             observation=json.loads(calendar.read_regular(path));now=int(time.time()*1000)
@@ -139,6 +139,7 @@ def run():
                 full=backfill or needs_full_history(mark,len(payload['bars']),payload.get('brokerLimited'),time.monotonic())
                 if not full:continue
                 status,result=deliver(opener(),token,CANDLE_ROUTE,payload)
+                retry=retry or retryable_history_status(status)
                 accepted=status==200 and result.get('ok') is True and result.get('acceptedBars')==len(payload['bars']) and result.get('rejectedBars')==0
                 with mutex:
                     state['historySeries'][series_key]={'http':status,'accepted':accepted,'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'sentBars':len(payload['bars']),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'at':calendar.now_iso()}
@@ -148,9 +149,15 @@ def run():
                         if full:calendar.atomic_write(evidence/(payload['symbol']+'-'+payload['timeframe']+'.json'),json.dumps({'acceptedAt':calendar.now_iso(),'http':status,'result':result,'payload':payload}).encode())
                 logger.info('history symbol=%s timeframe=%s http=%s accepted=%s bars=%s',payload['symbol'],payload['timeframe'],status,accepted,result.get('acceptedBars'))
         except Exception as exc:
+            retry=isinstance(exc,(OSError,TimeoutError,urllib.error.URLError))
             with mutex:state['lastHistoryError']={'file':key,'type':type(exc).__name__,'at':calendar.now_iso()}
         finally:
-            with mutex:pending.discard(path)
+            with mutex:
+                pending.discard(path)
+                if retry:
+                    if scheduled.get(path)==stamp:scheduled.pop(path,None)
+                    history_retry_after[path]=(stamp,time.monotonic()+HISTORY_RETRY_SECONDS)
+                else:history_retry_after.pop(path,None)
     def fast_lane():
         marks={};inflight=set();retry_after={};last_attempt={};fast_lock=threading.Lock()
         def forward(payload,key):
@@ -205,7 +212,28 @@ def run():
                 stop.wait(.25)
     fast_thread=threading.Thread(target=fast_lane,name='closed-bar-fast-lane',daemon=True);fast_thread.start()
     native_thread=threading.Thread(target=run_native_seam_lane,args=(stop,SERVICE,SPOOL,state,mutex,lambda payload:deliver(opener(),token,NATIVE_SEAM_ROUTE,payload)),name='native-seam-metadata',daemon=True);native_thread.start()
-    pool=concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    pool=concurrent.futures.ThreadPoolExecutor(max_workers=HISTORY_PENDING_LIMIT)
+    def history_lane():
+        # Dispatch immediately when a worker finishes. Quote HTTP latency must
+        # not gate the next three history jobs or age fresh files out of policy.
+        while not stop.is_set():
+            try:
+                paths=list(SPOOL.glob('history-extra-*.json'))+list(SPOOL.glob('backfill-extra-*.json'))
+                with mutex:paths=ordered_history_paths(paths,history_marks,attempts)
+                for path in paths:
+                    if stop.is_set():break
+                    with mutex:
+                        if len(pending)>=HISTORY_PENDING_LIMIT:break
+                    stamp=path.stat().st_mtime_ns;now=time.monotonic()
+                    with mutex:
+                        if not history_dispatch_ready(path,stamp,pending,scheduled,history_retry_after,now):continue
+                        pending.add(path);scheduled[path]=stamp;attempts[path]=now
+                    pool.submit(history_job,path,stamp)
+                with mutex:state['historyLanePending']=len(pending)
+            except Exception as exc:
+                with mutex:state['lastHistoryDispatchError']={'type':type(exc).__name__,'at':calendar.now_iso()}
+            stop.wait(.25)
+    history_thread=threading.Thread(target=history_lane,name='history-dispatch',daemon=True);history_thread.start()
     try:
         while not stop.is_set():
             try:
@@ -224,19 +252,13 @@ def run():
                     else:
                         with mutex:state.update(lastQuoteAccepted=False,lastQuoteRejected=rejected)
                     last_quote=identity
-                with mutex:paths=ordered_history_paths(list(SPOOL.glob('history-extra-*.json'))+list(SPOOL.glob('backfill-extra-*.json')),history_marks,attempts)
-                for path in paths:
-                    with mutex:
-                        stamp=path.stat().st_mtime_ns
-                        if path in pending or len(pending)>=3 or scheduled.get(path)==stamp:continue
-                        pending.add(path);scheduled[path]=stamp;attempts[path]=time.monotonic()
-                    pool.submit(history_job,path)
             except Exception as exc:
                 with mutex:state['transportErrors']+=1;state['lastErrorType']=type(exc).__name__
             with mutex:calendar.atomic_write(SERVICE/'relay-status.json',json.dumps(state,indent=2).encode())
             stop.wait(.5)
     finally:
         stop.set()
+        history_thread.join(timeout=5)
         for executor in fast_executors:executor.shutdown(wait=False,cancel_futures=True)
         pool.shutdown(wait=True,cancel_futures=True);fast_thread.join(timeout=25);native_thread.join(timeout=15);logger.info('service_stopped')
 if __name__=='__main__':run()

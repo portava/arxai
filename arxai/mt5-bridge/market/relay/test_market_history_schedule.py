@@ -2,6 +2,24 @@ import unittest
 from pathlib import Path
 from market_history_schedule import *
 class HistorySchedulingTests(unittest.TestCase):
+ def test_dispatch_retries_unchanged_snapshot_after_transient_cooldown(self):
+  p=Path('backfill-extra-EURUSD-M1.json');retry={p:(9,103.)}
+  self.assertFalse(history_dispatch_ready(p,9,set(),{},retry,102.9))
+  self.assertTrue(history_dispatch_ready(p,9,set(),{},retry,103.))
+  self.assertTrue(history_dispatch_ready(p,10,set(),{},retry,100.))
+ def test_dispatch_never_duplicates_inflight_or_successful_snapshot(self):
+  p=Path('backfill-extra-EURUSD-M1.json')
+  self.assertFalse(history_dispatch_ready(p,9,{p},{},{},100.))
+  self.assertFalse(history_dispatch_ready(p,9,set(),{p:9},{},100.))
+  self.assertTrue(history_dispatch_ready(p,10,set(),{p:9},{},100.))
+ def test_dispatch_bounds_pending_work_even_if_all_files_change(self):
+  pending=set();scheduled={};paths=[Path(str(i)) for i in range(903)]
+  for path in paths:
+   if history_dispatch_ready(path,1,pending,scheduled,{},100.):pending.add(path)
+  self.assertEqual(len(pending),3)
+ def test_only_transient_http_failures_retry_same_snapshot(self):
+  for status in [429,500,502,503,599]:self.assertTrue(retryable_history_status(status))
+  for status in [200,400,401,403,404,409,422]:self.assertFalse(retryable_history_status(status))
  def test_live_rewrites_cannot_starve_later_unseen_files(self):
   paths=[Path('history-extra-'+s+'-M15.json') for s in ['A','B','C','D','E','F','G','H','I']];attempts={};seen=[]
   for clock in range(3):

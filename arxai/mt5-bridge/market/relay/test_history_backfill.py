@@ -15,6 +15,14 @@ class BackfillTests(unittest.TestCase):
   self.assertEqual(p['historyPage']['requestedEndRawMs'],NOW-60000)
  def test_partial_native_hydration_is_not_a_boundary(self):
   with self.assertRaises(ContractError):full_history_payload(self.series(12),snapshot(),NOW)
+ def test_retry_cannot_reuse_stale_or_wrong_identity_observation(self):
+  source=snapshot();series=self.series()
+  original=full_history_payload(series,source,NOW)
+  with self.assertRaisesRegex(ContractError,'OBSERVATION_STALE_OR_FUTURE'):
+   full_history_payload(series,source,NOW+120001)
+  with self.assertRaisesRegex(ContractError,'IDENTITY_OR_READ_ONLY_GUARD_FAILED'):
+   full_history_payload(series,{**source,'account':'different'},NOW)
+  self.assertEqual(full_history_payload(series,source,NOW)['sentAt'],original['sentAt'])
  def test_false_boundary_and_wrong_cursor_rejected(self):
   for change in [dict(brokerHistoryBoundaryReached=True),dict(requestedEndServer=1)]:
    with self.assertRaises(ContractError):candle_payload({**self.series(),**change},snapshot(),NOW)
