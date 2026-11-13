@@ -849,7 +849,7 @@ function rollUpOverall(
 function overlayMessage(status: HandshakeOverallStatus): string {
   switch (status) {
     case "PASS":
-      return "Chart overlays match the live read and are safe to use as guidance.";
+      return "Chart overlays match the current chart read. Check the feed status before using them.";
     case "WARN":
       return "Chart overlays are usable but some checks need attention — see the details.";
     case "BLOCK":
