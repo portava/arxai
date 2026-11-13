@@ -34,6 +34,7 @@ const candle = (time: number) => ({ time, open: 1, high: 1, low: 1, close: 1 });
 const before = "2026-02-01T00:00:00.000Z";
 
 function page(over: Partial<{
+  ok: boolean;
   source: string | null;
   candles: Array<{ time: number; open: number; high: number; low: number; close: number }>;
   hasMoreHistory: boolean;
@@ -45,11 +46,16 @@ function page(over: Partial<{
   depthTargetDays: number;
   historyEvidence: { symbol: string; timeframe: string; source: string; sourceIdentity: string; scope?: "public_provider"; lastClosedCandleAt?: string } | null;
 }> = {}) {
+  const rows = over.candles ?? [];
+  const nextBefore = Object.prototype.hasOwnProperty.call(over, "nextBefore")
+    ? over.nextBefore
+    : rows.length > 0 ? new Date(rows[0]!.time).toISOString() : "2026-01-01T00:00:00.000Z";
   return {
+    ok: true,
     source: "assistant_real",
     candles: [],
     hasMoreHistory: true,
-    nextBefore: "2026-01-01T00:00:00.000Z",
+    nextBefore,
     providerLimitReached: false,
     limitationReason: null,
     providerMessage: null,
@@ -74,17 +80,17 @@ describe("useChartDeepHistory", () => {
     rerender({id:"b".repeat(64)});expect(result.current.analysisEvidence).toBeNull();expect(result.current.olderCandles).toEqual([]);
   });
 
-  it("conflicting page overlap permanently withholds analysis before display deduplication",async()=>{
+  it("rejects an overlapping page at the cursor before it can alter verified history",async()=>{
     const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
     const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
     fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}))
-      .mockResolvedValueOnce(page({source:"deriv_public",candles:[{...candle(time),high:2,close:2}],historyEvidence:evidence}))
-      .mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time-900_000)],historyEvidence:evidence}));
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[{...candle(time),high:2,close:2}],historyEvidence:evidence}));
     const {result}=renderHook(()=>useChartDeepHistory("V75","M15",true,"deriv_public",identity,true));
     await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
-    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
     expect(result.current.olderCandles).toEqual([candle(time)]);
-    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();expect(result.current.olderCandles).toHaveLength(2);
+    expect(result.current.archiveCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
   });
 
   it("checks each page's own closed boundary rather than borrowing a newer page's cutoff",async()=>{
@@ -146,32 +152,67 @@ describe("useChartDeepHistory", () => {
     expect(fetchChartHistory).not.toHaveBeenCalled();
   });
 
-  it("does not request unattested history for a strict chart with missing identity", () => {
-    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "mt5_broker", null, true));
-    act(() => result.current.loadOlder(before));
-    expect(fetchChartHistory).not.toHaveBeenCalled();
-    expect(result.current.providerCapped).toBe(true);
-    expect(result.current.limitationReason).toContain("identity can be verified");
+  it.each([["M15", 15 * 60_000], ["M1", 60_000]] as const)(
+    "pages two %s MT5 archive windows for display without adding them to analysis",
+    async (timeframe, intervalMs) => {
+      const firstPageOldest = Date.parse("2026-01-31T23:15:00.000Z");
+      fetchChartHistory
+        .mockResolvedValueOnce(page({
+          source: "mt5_broker",
+          candles: [candle(firstPageOldest), candle(firstPageOldest + intervalMs)],
+          hasMoreHistory: true,
+        }))
+        .mockResolvedValueOnce(page({
+          source: "mt5_broker",
+          candles: [candle(firstPageOldest - intervalMs * 2), candle(firstPageOldest - intervalMs)],
+          hasMoreHistory: false,
+        }));
+      const { result } = renderHook(() => useChartDeepHistory("V25_1S", timeframe, true, "mt5_broker", "opaque-current-source", true));
+
+      await act(async () => result.current.loadOlder(before));
+      expect(result.current.olderCandles).toHaveLength(2);
+      expect(result.current.archiveCandles).toHaveLength(2);
+      expect(result.current.analysisCandles).toEqual([]);
+      expect(result.current.analysisEvidence).toBeNull();
+      expect(result.current.olderCandles[0]!.time).toBe(firstPageOldest);
+      expect(fetchChartHistory.mock.calls[0]![0]).not.toHaveProperty("sourceIdentity");
+
+      await act(async () => result.current.loadOlder(before));
+      expect(fetchChartHistory).toHaveBeenCalledTimes(2);
+      expect(fetchChartHistory.mock.calls[1]![0].before).toBe(new Date(firstPageOldest).toISOString());
+      expect(result.current.olderCandles).toHaveLength(4);
+      expect(result.current.archiveCandles).toHaveLength(4);
+      expect(result.current.olderCandles[0]!.time).toBe(firstPageOldest - intervalMs * 2);
+      expect(result.current.analysisCandles).toEqual([]);
+      expect(result.current.analysisEvidence).toBeNull();
+      expect(result.current.hasMore).toBe(false);
+    },
+  );
   });
 
   it.each([null,
     { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "different-account-or-source" },
     { symbol: "V25", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected" },
     { symbol: "V75", timeframe: "M5", source: "deriv_public", sourceIdentity: "expected" },
-  ])("withholds same-provider rows without the expected historical evidence: %s", async historyEvidence => {
+  ])("keeps same-provider rows without matching historical evidence display-only: %s", async historyEvidence => {
     fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }));
     const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
     await act(async () => result.current.loadOlder(before));
-    expect(result.current.olderCandles).toEqual([]);
-    expect(result.current.providerCapped).toBe(true);
-    expect(result.current.hasMore).toBe(false);
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    expect(result.current.archiveCandles).toEqual([candle(100)]);
+    expect(result.current.analysisCandles).toEqual([]);
+    expect(result.current.analysisEvidence).toBeNull();
+    expect(result.current.providerCapped).toBe(false);
+    expect(result.current.hasMore).toBe(true);
     expect(fetchChartHistory.mock.calls[0]![0]).toMatchObject({ sourceIdentity: "expected" });
   });
 
   it("accepts matching producer evidence and preserves a denied account-history explanation", async () => {
-    const historyEvidence = { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected" };
+    const historyEvidence = { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected",
+      lastClosedCandleAt: new Date(900_100).toISOString(), scope: "public_provider" as const };
     fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }))
-      .mockResolvedValueOnce(page({ source: "deriv_public", candles: [], limitationReason: "Original account history is unverified", historyEvidence: null }));
+      .mockResolvedValueOnce(page({ source: "deriv_public", candles: [], hasMoreHistory: false, nextBefore: null,
+        limitationReason: "Original account history is unverified", historyEvidence: null }));
     const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
     await act(async () => result.current.loadOlder(before));
     expect(result.current.olderCandles).toEqual([candle(100)]);

@@ -207,11 +207,8 @@ export function useChartDeepHistory(
             : Number.isFinite(nextCursorMs) && Number.isFinite(pageOldestMs)
               && Math.abs(nextCursorMs - pageOldestMs!) <= 1
               && nextCursorMs < Date.parse(before);
-          if (page.hasMoreHistory && !cursorAdvanced) {
-            setHasMore(false);
-            setProviderCapped(true);
-            setLimitationReason("The history cursor did not advance; paging stopped to avoid repeating bars.");
-          }
+          const cursorFailure = page.hasMoreHistory && !cursorAdvanced;
+          if (cursorFailure) setLimitationReason("The history cursor did not advance; paging stopped to avoid repeating bars.");
           if (page.source) sourceRef.current = page.source;
           // Retain producer evidence, never stamp the newest feed's identity
           // onto an earlier page. Unattested pages remain display-only in a
@@ -234,9 +231,8 @@ export function useChartDeepHistory(
               if (evidenceMatches) analysisObservations.current.set(bar.time,value);
             }
             const verifiedPage = evidenceMatches && !analysisRefused.current && !disagreement
-              && !!interval && Number.isFinite(closedThrough)
-              || closedThrough>Date.now() || disagreement) {
-            if (verifiedPage) {
+              && !!interval && Number.isFinite(closedThrough) && closedThrough <= Date.now();
+            if (verifiedPage && observed) {
               setAnalysisEvidence(previous => previous && Date.parse(previous.lastClosedCandleAt) > Date.parse(observed.lastClosedCandleAt) ? previous : observed);
               setAnalysisCandles(previous => isCurrent() ? dedupeAscending(previous, page.candles) : previous);
             } else {
@@ -251,7 +247,7 @@ export function useChartDeepHistory(
             setLoadedAny(true);
           }
           setHasMore(page.hasMoreHistory && cursorAdvanced && page.nextBefore != null);
-          setProviderCapped(page.providerLimitReached);
+          setProviderCapped(cursorFailure || page.providerLimitReached);
           if (!page.hasMoreHistory || cursorAdvanced) setLimitationReason(page.limitationReason ?? page.providerMessage);
           if (page.coverageDays != null) setCoverageDays(page.coverageDays);
           if (page.depthTargetDays > 0) setDepthTargetDays(page.depthTargetDays);

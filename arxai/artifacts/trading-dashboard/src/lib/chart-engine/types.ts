@@ -204,6 +204,8 @@ export interface ChartEngineAdapter {
   setFeedState(state: ChartEngineFeedState): void;
   /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
   setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void;
+  /** Render unverified archived bars on a distinct display-only series. */
+  setArchiveCandles?(candles: ChartEngineCandle[]): void;
   /** Clear context-owned observations/geometry while retaining the renderer. */
   resetDataContext?(): void;
   /**

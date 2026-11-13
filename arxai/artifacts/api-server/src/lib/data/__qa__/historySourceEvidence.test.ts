@@ -11,6 +11,7 @@ let routeReads = 0;
 const routeLimits: number[] = [];
 let afterCacheRead: (() => void) | null = null;
 let pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)];
+const cacheRequests: Array<{ symbol: string; timeframe: string; source: string; before?: string | null; limit: number }> = [];
 let hasOlderInCache = true;
 let fetchProducer: string | null | undefined = undefined;
 let permitProviderFetch = false;
@@ -44,7 +45,8 @@ mock.module("../providers/derivProvider.js", { namedExports: {
   },
 } });
 mock.module("../candleCache.js", { namedExports: {
-  readCachedCandles: async () => {
+  readCachedCandles: async (args: { symbol: string; timeframe: string; source: string; before?: string | null; limit: number }) => {
+    cacheRequests.push(args);
     cacheReads++; afterCacheRead?.();
     return { candles: pageBars, count: pageBars.length, oldest: pageBars[0]?.time ?? null,
       newest: pageBars.at(-1)?.time ?? null, hasOlderInCache };
@@ -64,7 +66,7 @@ const { scannerSourceIdentity } = await import("../../scannerInputIntegrity.js")
 const request = () => ({ symbol: "V75", timeframe: "M1", source: "deriv_public", before, limit: 2,
   expectedSourceIdentity: scannerSourceIdentity(routed) });
 beforeEach(() => {
-  sourceMode = "deriv_public"; cacheReads = 0; routeReads = 0; routeLimits.length = 0; afterCacheRead = null;
+  sourceMode = "deriv_public"; cacheReads = 0; routeReads = 0; routeLimits.length = 0; afterCacheRead = null; cacheRequests.length = 0;
   hasOlderInCache = true; fetchProducer = undefined; permitProviderFetch = false; writtenSources.length = 0;
   pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)]; resetRouted();
 });
@@ -95,10 +97,35 @@ for (const source of ["mt5_broker", "deriv", "assistant_real:vendor"]) {
   });
 }
 
-test("provider-only legacy callers remain unattested rather than gaining fabricated evidence", async () => {
+test("MT5 cache history remains pageable for display without borrowing current account evidence", async () => {
   const { expectedSourceIdentity: _, ...input } = request();
   const result = await getCandleHistory({ ...input, source: "mt5_broker" });
-  assert.equal(result.ok, true); assert.equal(result.historyEvidence, undefined); assert.equal(routeReads, 0);
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "historical_only");
+  assert.equal(result.source, "mt5_broker");
+  assert.deepEqual(result.candles, pageBars);
+  assert.equal(result.returnedCount, pageBars.length);
+  assert.equal(result.hasMoreHistory, true);
+  assert.equal(result.nextBefore, pageBars[0]!.time);
+  assert.equal(result.historyEvidence, undefined);
+  assert.equal(routeReads, 0);
+  assert.deepEqual(writtenSources, []);
+  assert.deepEqual(cacheRequests, [{
+    symbol: "V75", timeframe: "M1", source: "mt5_broker", before, limit: 2,
+  }]);
+});
+
+test("MT5 cache exhaustion names the stored-history and bridge boundary", async () => {
+  pageBars = [bar(now - 10 * 60_000)];
+  hasOlderInCache = false;
+  const { expectedSourceIdentity: _, ...input } = request();
+  const result = await getCandleHistory({ ...input, source: "mt5_broker", limit: 500 });
+  assert.equal(result.ok, true);
+  assert.equal(result.providerLimitReached, true);
+  assert.equal(result.providerMessage,
+    "All available stored MT5 history loaded. More history requires older bars from the MT5 bridge.");
+  assert.equal(cacheRequests[0]?.source, "mt5_broker");
+  assert.equal(routeReads, 0);
 });
 
 for (const key of ["bridgeConnectionId", "userId", "brokerSymbol", "subProviderId", "environment"] as const) {

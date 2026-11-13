@@ -70,6 +70,7 @@ import { publishScannerTip } from "@/lib/scannerLiveTipStore";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
+import { ChartHistoryControls } from "@/components/charts/ChartHistoryControls";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
 import { scheduledWeekendClosureFor, nextWeekendClosureBoundaryMs } from "@/lib/scannerTruth";
@@ -704,15 +705,15 @@ export function ARXNativeChart({
   const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
   const getSupportResistanceProposal = useCallback(()=>{
-    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
+    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.analysisCandles,deepHistory.analysisEvidence,now);
     if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
     return proposeChartSupportResistance({...bound.context,bars:bound.bars,asOfMs:now},researchVisibleBars());
-  },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
+  },[data,resolvedSymbol,timeframe,deepHistory.analysisCandles,deepHistory.analysisEvidence,researchVisibleBars]);
   const getFibonacciProposal = useCallback(()=>{
-    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.olderCandles,deepHistory.analysisEvidence,now);
+    const now=Date.now(),bound=captureSmartChartBars(data,{symbol:resolvedSymbol,timeframe},deepHistory.analysisCandles,deepHistory.analysisEvidence,now);
     if(bound.status!=="ready")return {status:"unavailable" as const,proposal:null,reason:bound.reason??"Original source evidence unavailable."};
     return proposeChartFibonacci({...bound.context,bars:bound.bars,asOfMs:now},researchVisibleBars());
-  },[data,resolvedSymbol,timeframe,deepHistory.olderCandles,deepHistory.analysisEvidence,researchVisibleBars]);
+  },[data,resolvedSymbol,timeframe,deepHistory.analysisCandles,deepHistory.analysisEvidence,researchVisibleBars]);
   const assistantPaneKey=useMemo(()=>chartAssistantPaneContext(data,resolvedSymbol,timeframe,engineGeneration),[data,resolvedSymbol,timeframe,engineGeneration]);
   const assistantPane=useAssistantChartPane({contextKey:assistantPaneKey,symbol:resolvedSymbol,timeframe,source:data?.feedStatus?.source??"Unknown source",analysisOnly:workspaceId!=="primary",ready:hasCandles&&!query.isError&&!!adapterRef.current});
   useLayoutEffect(()=>{
@@ -1009,14 +1010,13 @@ export function ARXNativeChart({
     [candles],
   );
 
-  // Merge accumulated deep-history (older) bars IN FRONT of the live window. The
-  // history hook yields Candle.time in epoch-MS; the engine consumes epoch-SEC,
-  // so we down-convert and dedupe by second. The live window always wins on a
-  // time collision (it carries the freshest forming bar). Nothing is fabricated.
+  // Only producer-verified older pages join the analysis/chart series. Legacy
+  // pages remain on a separate muted Canvas series, so the visible archive is
+  // never reported as current-feed render or research evidence.
   const mergedEngineCandles = useMemo<ChartEngineCandle[]>(() => {
-    if (deepHistory.olderCandles.length === 0) return engineCandles;
+    if (deepHistory.analysisCandles.length === 0) return engineCandles;
     const byTime = new Map<number, ChartEngineCandle>();
-    for (const c of deepHistory.olderCandles) {
+    for (const c of deepHistory.analysisCandles) {
       const time = Math.floor(c.time / 1000);
       if (
         Number.isFinite(time) &&
@@ -1030,7 +1030,26 @@ export function ARXNativeChart({
     }
     for (const c of engineCandles) byTime.set(c.time, c); // live window wins
     return [...byTime.values()].sort((a, b) => a.time - b.time);
-  }, [deepHistory.olderCandles, engineCandles]);
+  }, [deepHistory.analysisCandles, engineCandles]);
+
+  const archiveEngineCandles = useMemo<ChartEngineCandle[]>(() => {
+    const mainTimes = new Set(mergedEngineCandles.map(c => c.time));
+    const byTime = new Map<number, ChartEngineCandle>();
+    for (const candle of deepHistory.archiveCandles) {
+      const time = Math.floor(candle.time / 1000);
+      if (!Number.isFinite(time) || mainTimes.has(time)
+        || ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)) continue;
+      byTime.set(time, { time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
+    }
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
+  }, [deepHistory.archiveCandles, mergedEngineCandles]);
+
+  const displayEngineCandles = useMemo(() => {
+    const byTime = new Map<number, ChartEngineCandle>();
+    for (const candle of mergedEngineCandles) byTime.set(candle.time, candle);
+    for (const candle of archiveEngineCandles) if (!byTime.has(candle.time)) byTime.set(candle.time, candle);
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
+  }, [archiveEngineCandles, mergedEngineCandles]);
 
   const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
   const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
@@ -1042,11 +1061,11 @@ export function ARXNativeChart({
   // registered on the engine always reads the latest value without re-binding.
   const oldestIsoRef = useRef<string | null>(null);
   useEffect(() => {
-    const oldest = mergedEngineCandles[0];
+    const oldest = displayEngineCandles[0];
     oldestIsoRef.current = oldest
       ? new Date(oldest.time * 1000).toISOString()
       : null;
-  }, [mergedEngineCandles]);
+  }, [displayEngineCandles]);
 
   // ONE display precision for this instrument (lib/instrumentPriceFormat): the
   // server-declared precision widened by the digits the loaded quotes carry —
@@ -1087,6 +1106,7 @@ export function ARXNativeChart({
     adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
     adapter.setDisplayPricePrecision?.(pricePrecision);
     adapter.setCandles(mergedEngineCandles);
+    adapter.setArchiveCandles?.(archiveEngineCandles);
     // setCandles just replaced any tick-stream tip on the axis with the poll's
     // newest close, so a published Scanner tip no longer matches the axis.
     withdrawLiveTip();
@@ -1096,7 +1116,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
+  }, [mergedEngineCandles, archiveEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
   // Measure what the engine drew against these source bars after it paints, and
   // keep that evidence fresh while the chart is open (renderEvidenceReporter.ts).
   // Nothing is scheduled until an engine holds bars (the deferred init owns the
@@ -1748,6 +1768,20 @@ export function ARXNativeChart({
         : formingCloseMs != null
           ? <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} requireServerClock />
           : <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Waiting for live candle</Badge>;
+  const historyControls = (
+    <ChartHistoryControls
+      loadedCount={displayEngineCandles.length}
+      oldestTimeMs={displayEngineCandles[0] ? displayEngineCandles[0]!.time * 1000 : null}
+      clockLabel={utcClockQualified ? "UTC" : "source clock · UTC unverified"}
+      archiveCount={archiveEngineCandles.length}
+      archiveLabel={historySource === "mt5_broker" ? "Archived MT5 bars" : "Archived bars"}
+      loading={deepHistory.loading}
+      hasMore={deepHistory.hasMore}
+      canLoad={hasCandles}
+      onLoadOlder={() => deepHistory.loadOlder(oldestIsoRef.current)}
+      onFitHistory={() => adapterRef.current?.fitHistory?.()}
+    />
+  );
   const openDrawingTools = () => {
     setAdvancedToolsMounted(true);
     setAdvancedToolsOpen(true);
@@ -1764,6 +1798,7 @@ export function ARXNativeChart({
       aria-label="Smart Chart quick tools"
       data-testid="arx-native-compact-tools"
     >
+      {historyControls}
       <Button
         size="sm"
         variant="outline"
@@ -1792,7 +1827,7 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
             <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
           </Button>
-          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
+          {historyControls}
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
           {!compactDesktopWorkspace && layersMenu}
@@ -1817,7 +1852,7 @@ export function ARXNativeChart({
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
     <StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} />
-    <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
     <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
       <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
       <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
@@ -1951,6 +1986,16 @@ export function ARXNativeChart({
                 loadedAny={deepHistory.loadedAny}
                 loadError={deepHistory.loadError}
               />
+            )}
+            {archiveEngineCandles.length > 0 && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                data-testid="chart-history-archive-header"
+                title="The older segment is kept separate from the current chart series. Its original account-era identity is unverified and it is excluded from verified analysis."
+              >
+                Archived · identity unverified · display only
+              </Badge>
             )}
           </div>
           {!mobileLayout && timeframeControls}

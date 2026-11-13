@@ -108,6 +108,17 @@ export function rebaseUserVisibleRange(
   };
 }
 
+/** Keep the same visible candles at the same screen positions when older
+ * archive points are inserted before the current logical time range. */
+export function shiftRangeForPrependedArchive(
+  range: { from: number; to: number },
+  addedBars: number,
+): { from: number; to: number } | null {
+  if (![range.from, range.to, addedBars].every(Number.isFinite)
+    || range.to < range.from || addedBars < 0) return null;
+  return { from: range.from + addedBars, to: range.to + addedBars };
+}
+
 const CAPABILITIES: ChartEngineCapabilities = {
   id: "arx-canvas",
   label: "ARX Canvas",
@@ -161,6 +172,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
   private chart: IChartApi | null = null;
   private series: PriceSeries | null = null;
+  private archiveSeries: ISeriesApi<"Candlestick"> | null = null;
+  private archiveCandles: ChartEngineCandle[] = [];
   private style: ChartStyle = "candles";
   // How this.style maps a canonical candle to a series point, resolved once per
   // style switch so the tick and full-write paths make one comparison per point
@@ -274,6 +287,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.container = el;
     this.didFit = false;
     this.candles = [];
+    this.archiveCandles = [];
     this.haBars = [];
     this.baselineValue = null;
     this.newestSeriesTime = null;
@@ -327,18 +341,24 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       wickUpColor: "#10b981",
       wickDownColor: "#ef4444",
     });
+    // Unverified history is intentionally a different, muted display series.
+    // It is not part of this.candles, studies, reader input or render evidence.
+    const archiveSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#64748b",
+      downColor: "#475569",
+      borderUpColor: "#64748b",
+      borderDownColor: "#475569",
+      wickUpColor: "#64748b",
+      wickDownColor: "#475569",
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
 
     // At most one legend update per animation frame; no React render per pixel.
     chart.subscribeCrosshairMove((event) => {
       const time = event.time;
       // Read canonical OHLC even when the visible series is a close-price line.
-      let lo = 0, hi = this.candles.length - 1;
-      this.hoveredCandle = null;
-      if (event.point && typeof time === "number") while (lo <= hi) {
-        const mid = (lo + hi) >>> 1, candle = this.candles[mid]!;
-        if (candle.time === time) { this.hoveredCandle = candle; break; }
-        if (candle.time < time) lo = mid + 1; else hi = mid - 1;
-      }
+      this.hoveredCandle = event.point && typeof time === "number" ? this.findDisplayCandle(time) : null;
       if (event.sourceEvent) {
         this.linkedCursor = undefined;
         this.pendingLinkedCursor = this.hoveredCandle?.time ?? null;
@@ -363,6 +383,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
     this.chart = chart;
     this.series = series;
+    this.archiveSeries = archiveSeries;
     let dragStart: { x: number; y: number } | null = null;
     const pointerDown = (event: PointerEvent) => {
       dragStart = { x: event.clientX, y: event.clientY };
@@ -494,6 +515,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.hoveredCandle = null;
     this.streamTip = null;
     this.candles = [];
+    this.archiveCandles = [];
     this.haBars = [];
     this.baselineValue = null;
     this.reachStartHandler = null;
@@ -504,6 +526,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     }
     this.chart = null;
     this.series = null;
+    this.archiveSeries = null;
     this.analysis = null;
     this.drawingHandler = null;
     this.overlaysRaw = [];
@@ -570,6 +593,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.ownsRange=false;
     this.didFit=false;
     this.setCandles([]);
+    this.setArchiveCandles([]);
     this.chart?.applyOptions({rightPriceScale:{autoScale:true}});
     this.chart?.clearCrosshairPosition();
   }
@@ -658,12 +682,47 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     }
 
     this.applyLivePriceAffordance();
-    if (this.hoveredCandle) this.hoveredCandle = sanitized.find((c) => c.time === this.hoveredCandle!.time) ?? null;
+    if (this.hoveredCandle) this.hoveredCandle = this.findDisplayCandle(this.hoveredCandle.time);
     this.queueLegendUpdate();
 
     if (this.linkedRange) this.setLinkedTimeRange(this.linkedRange);
     if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
     this.queueViewportUpdate();
+  }
+
+  setArchiveCandles(candles: ChartEngineCandle[]): void {
+    const series = this.archiveSeries;
+    const chart = this.chart;
+    if (!series || !chart) return;
+    const previousTimes = new Set([...this.candles, ...this.archiveCandles].map(c => c.time));
+    const previousOldest = Math.min(this.candles[0]?.time ?? Infinity, this.archiveCandles[0]?.time ?? Infinity);
+    const mainTimes = new Set(this.candles.map(c => c.time));
+    const sanitized = sanitizeCandlestickData(candles.map(c => ({ ...c, time: c.time as UTCTimestamp })))
+      .filter(c => !mainTimes.has(c.time));
+    const addedBefore = Number.isFinite(previousOldest)
+      ? sanitized.filter(c => c.time < previousOldest && !previousTimes.has(c.time)).length
+      : 0;
+    const savedRange = chart.timeScale().getVisibleLogicalRange();
+    this.archiveCandles = sanitized;
+    try {
+      series.setData(sanitized.map(c => ({
+        time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close,
+      })));
+      this.applyPricePrecision();
+      if (savedRange && addedBefore > 0) {
+        const rebased = shiftRangeForPrependedArchive(savedRange, addedBefore);
+        if (rebased) {
+          this.takeRangeOwnership();
+          chart.timeScale().setVisibleLogicalRange(rebased);
+        }
+      }
+    } catch {
+      // A disposed/replaced chart cannot accept a delayed archive response.
+      // The next source reset clears this display-only series.
+      this.archiveCandles = [];
+    }
+    if (this.hoveredCandle) this.hoveredCandle = this.findDisplayCandle(this.hoveredCandle.time);
+    this.queueLegendUpdate();
   }
 
 
@@ -985,10 +1044,16 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     if (time !== null && (!Number.isFinite(time) || time <= 0)) return;
     this.linkedCursor = time;
     this.pendingLinkedCursor = undefined;
-    this.hoveredCandle = time === null ? null : candleAtLinkedTime(this.candles, time, this.intervalSeconds);
-    if (this.chart && this.series && this.hoveredCandle) {
+    this.hoveredCandle = time === null
+      ? null
+      : candleAtLinkedTime(this.candles, time, this.intervalSeconds)
+        ?? candleAtLinkedTime(this.archiveCandles, time, this.intervalSeconds);
+    const targetSeries = this.hoveredCandle && this.archiveCandles.some(c => c.time === this.hoveredCandle!.time)
+      ? this.archiveSeries
+      : this.series;
+    if (this.chart && targetSeries && this.hoveredCandle) {
       // Each view uses its OWN candle close, not another instrument's price.
-      this.chart.setCrosshairPosition(this.hoveredCandle.close, this.hoveredCandle.time as UTCTimestamp, this.series);
+      this.chart.setCrosshairPosition(this.hoveredCandle.close, this.hoveredCandle.time as UTCTimestamp, targetSeries);
     } else this.chart?.clearCrosshairPosition();
     this.queueLegendUpdate();
   }
@@ -1449,11 +1514,27 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
 
   private applyPricePrecision(): void {
-    if (!this.candles.length || !this.series) return;
-    const precision = this.displayPrecision ?? candleDisplayPrecision(this.candles, this.symbol);
+    if (!this.series) return;
+    const bars = this.candles.length ? this.candles : this.archiveCandles;
+    if (!bars.length) return;
+    const precision = this.displayPrecision ?? candleDisplayPrecision(bars, this.symbol);
     if (precision === this.precision) return;
     this.precision = precision;
     this.series.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });
+    this.archiveSeries?.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });
+  }
+
+  private findDisplayCandle(time: number): ChartEngineCandle | null {
+    const find = (bars: ChartEngineCandle[]) => {
+      let lo = 0, hi = bars.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >>> 1, candle = bars[mid]!;
+        if (candle.time === time) return candle;
+        if (candle.time < time) lo = mid + 1; else hi = mid - 1;
+      }
+      return null;
+    };
+    return find(this.candles) ?? find(this.archiveCandles);
   }
 
   private applyDefaultVisibleRange(): void {

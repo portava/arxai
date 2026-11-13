@@ -440,8 +440,10 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
       // Forward-only / EA-push-only: we cannot fetch older server-side.
       providerLimitReached = true;
       providerMessage =
-        route.historyDepthSupport === "ea_push_only"
-          ? "Deeper history requires the MT5 EA to stream candle history (not yet active)."
+        source === "mt5_broker"
+          ? "All available stored MT5 history loaded. More history requires older bars from the MT5 bridge."
+          : route.historyDepthSupport === "ea_push_only"
+            ? "Deeper history requires the MT5 EA to stream candle history (not yet active)."
           : "Provider free tier has no older-than cursor; deeper history is unavailable from this source.";
     }
   }
