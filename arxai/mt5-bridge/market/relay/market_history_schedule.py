@@ -48,8 +48,33 @@ def ordered_history_paths(paths,marks,attempts):
     priority={'M15':0,'H4':1,'D1':2,'M30':3,'M1':4,'M5':5,'H1':6}
     def rank(path):
         key=history_key(path);tf=key.split('|')[1] if key else ''
-        return (1 if resolved_depth(marks.get(key)) else 0,attempts.get(path,float('-inf')),priority.get(tf,10),str(path))
+        # Depth is only a tie-breaker. A repeatedly failing unresolved series
+        # must not permanently outrank an older attempt on a seeded series.
+        return (attempts.get(path,float('-inf')),1 if resolved_depth(marks.get(key)) else 0,priority.get(tf,10),str(path))
     return sorted(paths,key=rank)
+
+def select_history_dispatch(paths,marks,attempts,pending):
+    """Choose already-eligible paths within the existing three-worker limit.
+
+    When both classes have work, give seeds and backfill at least one worker
+    as slots free. The remaining slot follows oldest attempt. An idle class
+    lends its slot; no extra executor or unbounded queue is introduced.
+    """
+    ordered=ordered_history_paths((p for p in paths if p not in pending),marks,attempts)
+    occupied=set(pending);selected=[]
+    def backfill(path):return Path(path).name.startswith('backfill-extra-')
+    while ordered and len(occupied)<HISTORY_PENDING_LIMIT:
+        waiting_backfill=next((p for p in ordered if backfill(p)),None)
+        waiting_seed=next((p for p in ordered if not backfill(p)),None)
+        has_backfill=any(backfill(p) for p in occupied)
+        has_seed=any(not backfill(p) for p in occupied)
+        if waiting_backfill is not None and not has_backfill:
+            chosen=waiting_backfill
+        elif waiting_seed is not None and not has_seed:
+            chosen=waiting_seed
+        else:chosen=ordered[0]
+        ordered.remove(chosen);selected.append(chosen);occupied.add(chosen)
+    return selected
 
 def needs_full_history(mark,depth,broker_limited,now):
     return mark is None or now-mark[1]>=300 or depth>mark[2] or (broker_limited is True and mark[3] is not True)

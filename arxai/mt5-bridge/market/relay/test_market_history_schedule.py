@@ -30,11 +30,39 @@ class HistorySchedulingTests(unittest.TestCase):
    selected=ordered_history_paths(paths,{},attempts)[:3]
    for path in selected:attempts[path]=clock;seen.append(path)
   self.assertEqual(len(set(seen)),9)
- def test_unresolved_depth_precedes_already_seeded_history(self):
+ def test_unresolved_depth_breaks_equal_age_tie_without_starving_older_work(self):
   a=Path('history-extra-CADJPY-M15.json');b=Path('history-extra-V75-MN1.json')
   marks={'CADJPY|M15':(1,1,200,False),'V75|MN1':(1,1,4,False)}
-  self.assertEqual(ordered_history_paths([a,b],marks,{b:100})[0],b)
+  self.assertEqual(ordered_history_paths([a,b],marks,{a:100,b:100})[0],b)
+  self.assertEqual(ordered_history_paths([a,b],marks,{a:0,b:100})[0],a)
   self.assertEqual(history_key(a),'CADJPY|M15')
+ def test_continuously_refreshed_unresolved_seeds_and_backfills_both_progress(self):
+  seeds=[Path('history-extra-S'+str(i)+'-M15.json') for i in range(903)]
+  backfills=[Path('backfill-extra-B'+str(i)+'-M1.json') for i in range(9)]
+  marks={history_key(p):(1,0,200,False) for p in backfills};attempts={p:100. for p in backfills};seen=[]
+  # New file versions every round: deduplication is not what ensures fairness.
+  for clock in range(9):
+   chosen=select_history_dispatch([*seeds,*backfills],marks,attempts,set())
+   self.assertEqual(len(chosen),HISTORY_PENDING_LIMIT)
+   self.assertTrue(any(p in seeds for p in chosen));self.assertTrue(any(p in backfills for p in chosen))
+   for p in chosen:attempts[p]=101.+clock
+   seen.extend(chosen)
+  self.assertTrue(set(backfills).issubset(seen),'All nine old backfills get service despite 903 unresolved seed paths')
+  self.assertGreaterEqual(len(set(seen)&set(seeds)),9)
+ def test_only_free_slot_goes_to_class_missing_from_current_workers(self):
+  seeds=[Path('history-extra-S'+str(i)+'-M1.json') for i in range(3)]
+  pages=[Path('backfill-extra-B'+str(i)+'-M1.json') for i in range(3)]
+  # Sorting must consider actual inflight work, not restart an interleaving
+  # list at its first class on every single-worker completion.
+  self.assertEqual(select_history_dispatch([seeds[2],pages[0]],{}, {seeds[2]:0,pages[0]:100},set(seeds[:2])),[pages[0]])
+  self.assertEqual(select_history_dispatch([seeds[0],pages[2]],{}, {seeds[0]:100,pages[2]:0},set(pages[:2])),[seeds[0]])
+ def test_idle_class_lends_capacity_and_pending_bound_and_dedup_still_hold(self):
+  for prefix in ['history-extra-','backfill-extra-']:
+   paths=[Path(prefix+str(i)+'-M1.json') for i in range(10)]
+   self.assertEqual(len(select_history_dispatch(paths,{},{},set())),3)
+   self.assertEqual(select_history_dispatch(paths,{},{},set(paths[:3])),[])
+   selected=select_history_dispatch(paths,{},{},set(paths[:2]))
+   self.assertEqual(len(selected),1);self.assertNotIn(selected[0],paths[:2])
  def test_older_history_growth_reseeds_immediately(self):
   self.assertTrue(needs_full_history((1,100,4,False),16,True,101))
   self.assertFalse(needs_full_history((1,100,200,False),200,False,101))

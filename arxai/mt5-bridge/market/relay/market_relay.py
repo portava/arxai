@@ -227,17 +227,15 @@ def run():
                 with mutex:
                     state['historyDispatchRecentFiles']=len(stamps)
                     state['historyDispatchSkippedOldFiles']=len(paths)-len(stamps)
-                    paths=ordered_history_paths(stamps,history_marks,attempts)
-                for path in paths:
-                    if stop.is_set():break
-                    with mutex:
-                        if len(pending)>=HISTORY_PENDING_LIMIT:break
-                    stamp=stamps[path];now=time.monotonic()
-                    with mutex:
-                        if not history_dispatch_ready(path,stamp,pending,scheduled,history_retry_after,now):continue
-                        pending.add(path);scheduled[path]=stamp;attempts[path]=now
-                    pool.submit(history_job,path,stamp)
-                with mutex:state['historyLanePending']=len(pending)
+                    now=time.monotonic()
+                    eligible=[p for p in stamps if history_dispatch_ready(p,stamps[p],pending,scheduled,history_retry_after,now)]
+                    chosen=select_history_dispatch(eligible,history_marks,attempts,pending)
+                    # Reserve all chosen slots atomically, including class mix;
+                    # worker completion cannot oversubscribe the bounded pool.
+                    for path in chosen:
+                        pending.add(path);scheduled[path]=stamps[path];attempts[path]=now
+                    state['historyLanePending']=len(pending)
+                for path in chosen:pool.submit(history_job,path,stamps[path])
             except Exception as exc:
                 with mutex:state['lastHistoryDispatchError']={'type':type(exc).__name__,'at':calendar.now_iso()}
             stop.wait(.25)
