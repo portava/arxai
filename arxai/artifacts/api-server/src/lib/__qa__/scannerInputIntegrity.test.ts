@@ -103,6 +103,22 @@ test("provenance must bind the requested timeframe and the quote's bridge", () =
   assert.equal(scannerQuoteFor(result, q, "EURUSD", now), null);
 });
 
+test("native account-era source identity remains readable and distinct across chart, scanner and Eleanor", () => {
+  const result = bars();
+  const base = "mt5_broker:EURUSD:M5";
+  result.provenance = { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 1, userId: 8, brokerSymbol: "EURUSD", environment: "demo", receivedAt: new Date(now).toISOString(), delayed: false, source: "DERIVED", sourceId: `${base}:${"a".repeat(64)}` };
+  assert.equal(prepareScannerCandles(result, "EURUSD", "M5", now)?.openClosed.length, 60);
+  const first = scannerSourceIdentity(result);
+  result.provenance.sourceId = `${base}:${"b".repeat(64)}`;
+  assert.notEqual(scannerSourceIdentity(result), first, "Account changes must invalidate earlier receipts");
+  for (const sourceId of [`${base}:arbitrary`, `${base}:${"a".repeat(63)}`, `mt5_broker:GBPUSD:M5:${"a".repeat(64)}`, `mt5_broker:EURUSD:H1:${"a".repeat(64)}`, `${base}:${"a".repeat(64)}:extra`]) {
+    assert.equal(prepareScannerCandles({ ...result, provenance: { ...result.provenance, sourceId } }, "EURUSD", "M5", now), null);
+  }
+  for (const invalid of [{bridgeConnectionId:null}, {userId:null}, {brokerSymbol:null}, {subProviderId:"durable_mirror"}]) {
+    assert.equal(prepareScannerCandles({ ...result, provenance: { ...result.provenance, ...invalid } }, "EURUSD", "M5", now), null);
+  }
+});
+
 
 test("private source binding survives spread decorators but cannot disclose identity in JSON", () => {
   const identity = scannerSourceIdentity(bars());

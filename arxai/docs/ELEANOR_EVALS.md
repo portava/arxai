@@ -37,7 +37,9 @@ wrote in their own message may be echoed back.
 - **Tickets / ids**: `#70011224`, `ticket 70011224`, `order 5123` must appear in
   the evidence.
 - **Times and dates**: `14:32 UTC`, `2026-11-09`, `Nov 9` must match a timestamp
-  in the evidence (UTC).
+  in the evidence. Explicit UTC claims require qualified UTC evidence. A
+  source-clock or zone-less timestamp cannot qualify a UTC claim; the literal
+  wall-clock value of an offset timestamp is distinct from its UTC conversion.
 - **Execution statements**: "filled / executed / placed / went through / I opened"
   need a result with an executed status: `executed` or `filled`, a fill with
   `executedAt`, or a trade row. If an id is named, it must belong to that result.
@@ -69,15 +71,18 @@ stamp by its shape (`status` measured/unmeasured, a `probability` key, numeric
 
 | Stamp | What may be quoted as a probability |
 |---|---|
-| `status: "measured"`, numeric `probability`, `edgeDetected: true` | `probability` and `label` (e.g. "Win prob 62% (N=143)"), and a sibling `calibratedProbability`. Its `n` is quotable as the N. |
+| Valid measured isotonic stamp with `edgeDetected: true` | The validated `probability`, and a sibling `calibratedProbability` only when its value matches. Its `n` is quotable as the N. Free-text labels do not establish calibration. |
 | `status: "measured"`, `model: "base_rate"` / `edgeDetected: false` | Only as a **base rate**: the sentence must frame it as one ("historically 55% of these calls worked (N=143)", "the base rate is 55%"). Stated as this setup's chance, or with an edge claim ("edge", "beats", "outperforms") it is removed. "No edge" is fine. |
-| any stamp's `baseRate` field | A base rate, under the same rule (even inside an edge stamp). |
+| a valid measured stamp's `baseRate` field | A base rate, under the same rule (even inside an edge stamp). |
 | `status: "unmeasured"` | Nothing. Say the probability is unmeasured, with its N. |
 
 `n`, `fitVersion` and the other stamp fields are counts, never probabilities.
 The raw `confidence` / `confidenceScore` / `score` next to a stamp stays a raw
 score: shown as a % or a chance it is removed, whatever the stamp says. A
-legacy `calibrated: true` field still marks a measured probability.
+legacy `calibrated: true` flag alone does not establish a measured probability.
+Stamp validation uses Scanner's `classifyMeasuredRank`, including finite
+probabilities in [0,1], a valid base rate, an integer sample count meeting the
+shared minimum, and consistent model/edge/base-rate fields.
 
 Eleanor's `getMarketScannerOpportunities`, `getFinalTradeRead` and
 `explainOpportunityRanking` outputs carry `calibratedProbability` and the full

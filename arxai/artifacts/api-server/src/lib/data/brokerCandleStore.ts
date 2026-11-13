@@ -29,7 +29,7 @@ import { mt5TickVolumeEvidence, type CandleVolumeEvidence } from "./candleVolume
 //     validated server-side via crafted, real-shaped payloads (see the test).
 
 import { z } from "zod/v4";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   db,
   brokerCandlesTable,
@@ -37,6 +37,7 @@ import {
   type NewBrokerCandle,
 } from "@workspace/db";
 import { brokerHistoryIdentity, advanceHistoryPage } from "./brokerHistoryPolicy.js";
+import { brokerHistoryCandle } from "./brokerHistoryCandle.js";
 import { barCloseMs } from "./chart/timeframes.js";
 import type { Candle } from "./types.js";
 import { brokerStampToUtcMs, recordBrokerClockSample } from "../brokerHub/brokerClockOffset.js";
@@ -616,10 +617,33 @@ export async function ingestBrokerCandles(
   // Older backfill never replaces the live window or the shared legacy cache.
   if (mirrorClosed.length > 0 && rejected === 0 && payload.historyPage?.kind !== "backfill") {
     publish = async () => {
-      const { mergeCandleFromMT5 } = await import("./providers/mt5Provider.js");
-      for (const c of mirrorClosed) mergeCandleFromMT5(symbol, c, timeframe, {
-        bridgeConnectionId: ctx.bridgeConnectionId, userId: ctx.userId, historyIdentity,
-      });
+      const { mergeCandleFromMT5, readMt5Candles, updateCandlesFromMT5 } = await import("./providers/mt5Provider.js");
+      const writer = { bridgeConnectionId: ctx.bridgeConnectionId, userId: ctx.userId, historyIdentity };
+      for (const c of mirrorClosed) mergeCandleFromMT5(symbol, c, timeframe, writer);
+      const current = readMt5Candles(symbol, timeframe, 1500, writer);
+      // After an API restart the first two-bar live push previously hid all
+      // durable history until a seed rotated around. Restore a bounded recent
+      // window from this exact owner/account-era/native-symbol partition.
+      // This branch requires a newly accepted live observation: a backfill
+      // upload alone never makes stored history current or resets its age.
+      if (current.historyIdentity === historyIdentity && current.candles.length > 0 && current.candles.length < 200) {
+        try {
+          const observedTip = new Date(current.candles.at(-1)!.time);
+          const rows = await db.select().from(brokerCandlesTable).where(and(scope,
+            eq(brokerCandlesTable.symbol, symbol), eq(brokerCandlesTable.isClosedBar, true),
+            lte(brokerCandlesTable.openTimeUtc, observedTip),
+          )).orderBy(desc(brokerCandlesTable.openTimeUtc)).limit(500);
+          const latest = readMt5Candles(symbol, timeframe, 1500, writer);
+          // A concurrent account change or expired live observation cannot be
+          // revived by this delayed read. Current observations win duplicates.
+          if (latest.historyIdentity === historyIdentity && latest.candles.length > 0 && rows.length > latest.candles.length) {
+            updateCandlesFromMT5(symbol, [...rows.reverse().map(brokerHistoryCandle), ...latest.candles], timeframe, writer);
+          }
+        } catch {
+          // The accepted live bars remain visible; the next live push retries
+          // restoration. A storage read error cannot invent missing history.
+        }
+      }
     };
   }
   const [prior] = await tx.select().from(brokerCandleBackfillStatusTable).where(and(

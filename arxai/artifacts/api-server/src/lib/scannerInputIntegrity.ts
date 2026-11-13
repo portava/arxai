@@ -44,8 +44,18 @@ export function prepareScannerCandles(
   if (!Number.isFinite(now) || !tf || !result.ok || !sameSymbol(result.symbol, symbol) || !source) return null;
   if (!["live", "demo"].includes(sourceModeFromProvider(source))) return null;
   const provenance = result.provenance;
+  const baseSourceId = `${source}:${symbol.trim().toUpperCase()}:${tf}`;
+  // The native-history router includes an opaque account/server-era digest.
+  // Keep that full identity in receipts while accepting its exact wire shape;
+  // discarding the suffix would let an account change reuse old evidence.
+  const nativeEraSource = source === "mt5_broker" && provenance?.subProviderId == null
+    && Number.isSafeInteger(provenance?.bridgeConnectionId) && (provenance?.bridgeConnectionId ?? 0) > 0
+    && Number.isSafeInteger(provenance?.userId) && (provenance?.userId ?? 0) > 0
+    && typeof provenance?.brokerSymbol === "string" && !!provenance.brokerSymbol.trim()
+    && typeof provenance?.sourceId === "string" && provenance.sourceId.startsWith(`${baseSourceId}:`)
+    && /^[a-f0-9]{64}$/.test(provenance.sourceId.slice(baseSourceId.length + 1));
   if (provenance && (provenance.providerId !== (source.startsWith("assistant_real:") ? "assistant_real" : source) || provenance.source !== "DERIVED" ||
-      provenance.sourceId !== `${source}:${symbol.trim().toUpperCase()}:${tf}`)) return null;
+      (provenance.sourceId !== baseSourceId && !nativeEraSource))) return null;
   const seen = new Map<string, Candle>();
   for (const candle of result.candles) {
     if (![candle.open, candle.high, candle.low, candle.close].every((value) => Number.isFinite(value) && value > 0)) return null;

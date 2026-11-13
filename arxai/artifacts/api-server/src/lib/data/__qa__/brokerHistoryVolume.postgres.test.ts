@@ -5,6 +5,9 @@ import { and, eq } from "drizzle-orm";
 import { ingestBrokerCandles } from "../brokerCandleStore.js";
 import { brokerHistoryCandle } from "../brokerHistoryCandle.js";
 import { __resetBrokerClockOffsets, getBrokerClockOffset, recordBrokerClockSample } from "../../brokerHub/brokerClockOffset.js";
+import { __resetMt5ProviderStore, readMt5Candles } from "../providers/mt5Provider.js";
+import { routeCandles } from "../marketDataRouter.js";
+import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 
 if (process.env.ARX_REQUIRE_INTEGRATION_DB !== "true" || !["127.0.0.1", "localhost"].includes(new URL(process.env.DATABASE_URL!).hostname))
   throw new Error("Volume integration tests require an explicitly disposable local database");
@@ -80,4 +83,34 @@ test("refused candle batches cannot change the bridge clock used by chart and sc
     assert.equal((await ingestBrokerCandles(valid, ctx, { now })).acceptedBars, 1);
     assert.equal(getBrokerClockOffset(id, now)?.offsetMs, 0, "A committed valid native observation supplies its measured clock");
   } finally { await clean(); __resetBrokerClockOffsets(); }
+});
+
+test("first live observation after restart restores only this account's native closed window and shared read evidence", async () => {
+  await clean(); __resetMt5ProviderStore();
+  try {
+    const now = Date.now(), tip = Math.floor(now / 60_000) * 60_000 - 60_000;
+    const make = (accountNumber: string, count: number, high = 2) => ({
+      symbol: "EURUSD", brokerSymbol: "EURUSD", timeframe: "M1", accountNumber,
+      serverName: ctx.serverName, sentAt: now, brokerServerTime: now, source: "mt5_ea", priceBasis: "bid" as const,
+      bars: Array.from({length: count}, (_, i) => ({openTime: tip - (count - 1 - i) * 60_000,
+        closeTime: tip - (count - 2 - i) * 60_000, open:1, high, low:.5, close:1.5, tickVolume:60, isClosed:true})),
+    });
+    const seed = make(ctx.accountNumber, 700);
+    assert.equal((await ingestBrokerCandles(seed, ctx, {now})).acceptedBars,700);
+    const wrong = make("different-account-era",700,9);
+    assert.equal((await ingestBrokerCandles(wrong,{...ctx,accountNumber:wrong.accountNumber},{now})).acceptedBars,700);
+    __resetMt5ProviderStore();
+    const one = make(ctx.accountNumber,1);
+    assert.equal((await ingestBrokerCandles(one,ctx,{now})).acceptedBars,1);
+    const restored = readMt5Candles("EURUSD","M1",1500,{bridgeConnectionId:id});
+    assert.equal(restored.candles.length,500,"A one-bar push must not hide the persisted analysis window");
+    assert.equal(restored.candles.at(-1)?.time,new Date(tip).toISOString());
+    assert.ok(restored.candles.every(bar=>bar.high===2 && bar.brokerSymbol==='EURUSD'));
+    assert.ok(restored.candles.every(bar=>bar.volumeEvidence?.kind==='tick_count' && bar.volumeEvidence.quantity===60));
+    const routed = await routeCandles("EURUSD","M1",500,{bridgeConnectionId:id});
+    const evidence = prepareMarketRead(routed,"EURUSD","M1",now);
+    assert.equal(evidence?.openClosed.length,500,"The actual router's era identity must reach scanner/chart/Eleanor");
+    assert.match(routed.provenance?.sourceId??'',/:[a-f0-9]{64}$/);
+    assert.ok(evidence?.evidence.sourceIdentity);
+  } finally {await clean();__resetMt5ProviderStore();__resetBrokerClockOffsets();}
 });
