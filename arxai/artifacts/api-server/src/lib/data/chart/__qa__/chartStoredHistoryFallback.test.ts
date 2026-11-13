@@ -158,7 +158,10 @@ test("missing/read-failed store returns original empty router result unchanged",
   failRead = true;
   assert.equal(await routeStoredCandleHistory("XAUUSD", "M30", 300, prior), prior);
 });
-test("a live router result is never replaced by stored history", async () => {
+test("a live router result is never replaced by stored history", async (t) => {
+  // Exercise an open weekday independently of when CI runs. Weekend closure
+  // is valid feed metadata, but it is unrelated to stored-history selection.
+  t.mock.method(Date, "now", () => Date.UTC(2026, 10, 10, 12));
   liveBars = bars(100, Date.now() - M30);
   const out = await getChartCandles("EURUSD", "M30", 300, false, { storedHistoryFallback: true });
   assert.equal(out.feedStatus.notLiveReason, null); assert.equal(reads.length, 0);

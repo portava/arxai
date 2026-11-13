@@ -79,7 +79,9 @@ test("weekend: a closed forex market is not a stale feed (message and warning)",
   assert.equal(out.feedStatus.stale, true, "staleness flag (a gate input) is unchanged");
   assert.doesNotMatch(out.feedStatus.message, /stale/i);
   assert.match(out.feedStatus.message, /market closed/i);
-  assert.match(out.feedStatus.message, /2026-10-30 21:55 UTC/);
+  assert.match(out.feedStatus.message, /scheduled weekend close \(2026-10-30 22:00 UTC\)/);
+  assert.match(out.feedStatus.message, /2026-10-30 21:55 source clock \(UTC unverified\)/);
+  assert.doesNotMatch(out.feedStatus.message, /2026-10-30 21:55 UTC/);
   assert.doesNotMatch(out.feedStatus.warning ?? "", /stale/i);
   assert.match(out.feedStatus.warning ?? "", /market closed/i);
   assert.doesNotMatch(out.warning ?? "", /stale/i, "the top-level response warning matches");
@@ -96,7 +98,8 @@ test("weekday, instrument with session closes: says what was observed and that t
   for (const text of [out.feedStatus.message, out.feedStatus.warning ?? ""]) {
     assert.doesNotMatch(text, /\bstale\b/i);
     assert.match(text, /may be closed or (the feed )?delayed/i);
-    assert.match(text, /2026-10-27 20:55 UTC/);
+    assert.match(text, /2026-10-27 20:55 source clock \(UTC unverified\)/);
+    assert.doesNotMatch(text, /2026-10-27 20:55 UTC/);
   }
 });
 
