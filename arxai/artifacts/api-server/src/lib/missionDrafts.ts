@@ -29,6 +29,7 @@ import {
   resolveDraftAction,
   resolveEffectiveDraftStatus,
   computeMissionImpact,
+  projectMissionImpact,
   type TradeDraftStatus,
   type TradeDraftAction,
   type EdgeScore,
@@ -79,7 +80,7 @@ export interface TradeDraftDto {
   edgeScore: number | null;
   edgeTier: string | null;
   edge: Record<string, unknown> | null;
-  missionImpact: Record<string, unknown> | null;
+  missionImpact: MissionImpact | null;
   reason: string | null;
   approvalReason: string | null;
   rejectionReason: string | null;
@@ -129,7 +130,7 @@ export function projectDraft(row: MissionTradeDraftRow, nowMs: number): TradeDra
     edgeScore: row.edgeScore ?? null,
     edgeTier: row.edgeTier ?? null,
     edge: (row.edgeJson as Record<string, unknown> | null) ?? null,
-    missionImpact: (row.missionImpactJson as Record<string, unknown> | null) ?? null,
+    missionImpact: projectMissionImpact(row.missionImpactJson),
     reason: row.reason ?? null,
     approvalReason: row.approvalReason ?? null,
     rejectionReason: row.rejectionReason ?? null,
@@ -157,8 +158,8 @@ function edgeOf(proposal: MissionProposalRow): EdgeScore | null {
 /**
  * Build the reviewable draft plan from a persisted proposal + its mission. Lot
  * is composed from the existing position-sizing engine (fixed-fraction risk,
- * never martingale); the edge + mission-impact reads are reused from the scan
- * (mission impact recomputed only when the proposal did not carry one).
+ * never martingale). Mission impact uses the final sized risk; stored scan
+ * previews can contain obsolete sizing and unsupported score-derived returns.
  */
 function buildDraftPlan(
   mission: MissionRow,
@@ -181,7 +182,7 @@ function buildDraftPlan(
   riskAmount: number | null;
   expectedR: number | null;
   edge: EdgeScore | null;
-  missionImpact: MissionImpact | Record<string, unknown> | null;
+  missionImpact: MissionImpact | null;
 } {
   const entry = (proposal.entryPlanJson as Record<string, unknown> | null) ?? {};
   const risk = (proposal.riskPlanJson as Record<string, unknown> | null) ?? {};
@@ -211,10 +212,10 @@ function buildDraftPlan(
     }
   }
 
-  // Reuse the scan's mission-impact preview; recompute only if it was absent.
-  let missionImpact: MissionImpact | Record<string, unknown> | null =
-    (proposal.missionImpactJson as Record<string, unknown> | null) ?? null;
-  if (!missionImpact && riskAmount != null && riskAmount > 0 && expectedR != null && expectedR > 0) {
+  // Recompute conditional outcomes from the final plan; no measured win
+  // probability is bound to the persisted proposal's target/stop/horizon.
+  let missionImpact: MissionImpact | null = null;
+  if (riskAmount != null && riskAmount > 0 && expectedR != null && expectedR > 0) {
     missionImpact = computeMissionImpact({
       math: {
         startingAmount: mission.startingAmount,
@@ -226,7 +227,6 @@ function buildDraftPlan(
       },
       riskAmount,
       expectedR,
-      winProbability: proposal.confidence > 0 ? proposal.confidence / 100 : null,
     });
   }
 

@@ -12322,8 +12322,9 @@ components:
     MissionImpact:
       type: object
       description: >
-        Best/expected/worst-case mission-impact preview for a setup. ESTIMATE
-        ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.
+        Conditional target/stop mission-impact preview for a setup. Expected
+        return and win probability are unavailable without measured evidence
+        bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.
       required:
         [current, win, loss, expected, riskAmount, takeProfitGain, expectedR,
          winProbability, summary, isEstimate]
@@ -12338,11 +12339,13 @@ components:
             requiredDailyPace: { type: number }
         win: { $ref: "#/components/schemas/MissionImpactScenario" }
         loss: { $ref: "#/components/schemas/MissionImpactScenario" }
-        expected: { $ref: "#/components/schemas/MissionImpactScenario" }
+        expected:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/MissionImpactScenario" }]
         riskAmount: { type: number }
         takeProfitGain: { type: number }
         expectedR: { type: number }
-        winProbability: { type: number }
+        winProbability: { type: number, nullable: true }
         summary: { type: string }
         isEstimate: { type: boolean }
 

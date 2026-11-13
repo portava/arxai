@@ -48,7 +48,7 @@ import {
   missionEventsTable,
   authUserSessionsTable,
 } from "@workspace/db";
-import { computeEdgeScore } from "@workspace/domain/profit-mission";
+import { computeEdgeScore, computeMissionImpact, type MissionImpact } from "@workspace/domain/profit-mission";
 import { createUserSession } from "../../lib/auth/userSessions.js";
 import profitMissionsRouter from "../profitMissions.js";
 
@@ -66,6 +66,7 @@ interface DraftDto {
   effectiveStatus: string;
   approvedAt: string | null;
   rejectedAt: string | null;
+  missionImpact: MissionImpact | null;
 }
 
 interface EventDto {
@@ -310,6 +311,42 @@ test("the owner sees their approved draft via GET /trade-drafts", async () => {
   const drafts = (await res.json()) as DraftDto[];
   assert.equal(drafts.some((d) => d.proposalId === "p-approve" && d.status === "approved"), true);
   assertNoSecretLeak(drafts, "trade-drafts");
+});
+
+test("legacy proposal and draft reads withhold score-derived expected return; new draft uses final risk", async () => {
+  await seedProposal(userAId, missionAId, "p-legacy-impact", 90);
+  const now = Date.now();
+  const conditional = computeMissionImpact({
+    math: { startingAmount: 1000, targetAmount: 1300, currentValue: 1000,
+      timeframeStartMs: now, timeframeEndMs: now + 7 * 86_400_000, nowMs: now },
+    riskAmount: 50, expectedR: 2,
+  });
+  const legacy = { ...conditional, winProbability: 0.9,
+    expected: { ...conditional.win, label: "expected", profitDelta: 85 },
+    summary: "Expected case at a 90% win-rate estimate: $85." };
+  await db.update(missionProposalsTable).set({ confidence: 90, missionImpactJson: legacy })
+    .where(eq(missionProposalsTable.proposalId, "p-legacy-impact"));
+  const proposalsRes = await req(`/api/profit-missions/${missionAId}/proposals`, cookieA);
+  assert.equal(proposalsRes.status, 200);
+  const proposals = await proposalsRes.json() as { proposalId: string; missionImpact: MissionImpact }[];
+  assert.deepEqual(proposals.find(p => p.proposalId === "p-legacy-impact")!.missionImpact, conditional);
+
+  const approve = await post(`/api/profit-missions/${missionAId}/proposals/p-legacy-impact/approve`, cookieA);
+  assert.equal(approve.status, 200);
+  const draft = await approve.json() as DraftDto;
+  assert.equal(draft.missionImpact!.expected, null);
+  assert.equal(draft.missionImpact!.winProbability, null);
+  assert.equal(draft.missionImpact!.riskAmount, 10, "balanced 1% of $1000, not obsolete stored $50");
+
+  await db.update(missionTradeDraftsTable).set({ missionImpactJson: legacy })
+    .where(eq(missionTradeDraftsTable.draftId, draft.draftId));
+  const list = await req(`/api/profit-missions/${missionAId}/trade-drafts`, cookieA);
+  assert.equal(list.status, 200);
+  const drafts = await list.json() as DraftDto[];
+  assert.deepEqual(drafts.find(d => d.draftId === draft.draftId)!.missionImpact, conditional);
+  const [stored] = await db.select().from(missionTradeDraftsTable)
+    .where(eq(missionTradeDraftsTable.draftId, draft.draftId));
+  assert.deepEqual(stored!.missionImpactJson, legacy, "read must not migrate or purge historical data");
 });
 
 // (4) A non-actionable (weak) proposal is refused — the edge can lower standing,

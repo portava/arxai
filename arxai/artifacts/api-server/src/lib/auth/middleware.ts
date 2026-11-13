@@ -16,6 +16,8 @@ declare global {
   namespace Express {
     interface Request {
       authUser?: User;
+      // Verification failed; this is not evidence that the session is absent.
+      authSessionUnavailable?: boolean;
     }
   }
 }
@@ -27,6 +29,7 @@ function readSessionCookie(req: Request): string | null {
 }
 
 export async function attachAuthUser(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  delete req.authSessionUnavailable;
   try {
     const raw = readSessionCookie(req);
     if (raw) {
@@ -34,12 +37,19 @@ export async function attachAuthUser(req: Request, _res: Response, next: NextFun
       if (user) req.authUser = user;
     }
   } catch {
-    // fail open — req.authUser stays undefined, downstream middleware decides.
+    // Public handlers can still run, but private boundaries must deny with a
+    // recoverable error rather than tell the browser its session was revoked.
+    delete req.authUser;
+    req.authSessionUnavailable = true;
   }
   next();
 }
 
 export function requireUser(req: Request, res: Response, next: NextFunction): void {
+  if (req.authSessionUnavailable) {
+    res.status(503).json({ error: "SESSION_CHECK_UNAVAILABLE", message: "Session check is temporarily unavailable. Please try again." });
+    return;
+  }
   if (req.authUser) {
     next();
     return;
@@ -60,6 +70,6 @@ export function requireUser(req: Request, res: Response, next: NextFunction): vo
       next();
     })
     .catch(() => {
-      res.status(401).json({ error: "AUTH_REQUIRED", message: "Sign in required." });
+      res.status(503).json({ error: "SESSION_CHECK_UNAVAILABLE", message: "Session check is temporarily unavailable. Please try again." });
     });
 }

@@ -8,6 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:session-availability": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/auth/AuthGate.sessionAvailability.test.tsx src/hooks/useCurrentUser.identityChange.test.tsx src/lib/authReturnTo.test.ts",
     "test": "vitest run",
     "test:pnl-cell": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/trade-logs/PnlCell.test.tsx",
     "test:risk-limit-layers": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/risk/RiskLimitLayersPanel.test.tsx",

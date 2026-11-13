@@ -27,7 +27,7 @@ import {
   resolveNewsRiskEvents,
   resolveNewsRiskForSymbol,
 } from "../calendar/newsRiskResolver.js";
-import { __resetEconomicCalendarStateForTests } from "../calendar/economicCalendarService.js";
+import { __resetEconomicCalendarStateForTests, __setEconomicCalendarFetcherForTests } from "../calendar/economicCalendarService.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "../../..");
@@ -36,27 +36,30 @@ function read(rel: string): string {
   return readFileSync(resolve(SRC, rel), "utf8");
 }
 
-/** Run `fn` with NO economic-calendar provider selected or keyed. */
+/** Explicitly select a provider without its required key. An unset selection
+ * enables the public Forex Factory calendar, so it is not a missing provider. */
 async function withNoProvider<T>(fn: () => Promise<T>): Promise<T> {
-  const saved = {
-    provider: process.env["ECONOMIC_CALENDAR_PROVIDER"],
-    te: process.env["TRADING_ECONOMICS_KEY"],
-    fred: process.env["FRED_API_KEY"],
-  };
-  delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
-  delete process.env["TRADING_ECONOMICS_KEY"];
-  delete process.env["FRED_API_KEY"];
+  const keys = ["ECONOMIC_CALENDAR_PROVIDER", "TRADING_ECONOMICS_KEY", "TRADING_ECONOMICS_SECRET", "FRED_API_KEY"] as const;
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  process.env["ECONOMIC_CALENDAR_PROVIDER"] = "trading_economics";
+  let fetches = 0;
   __resetEconomicCalendarStateForTests();
+  __setEconomicCalendarFetcherForTests(async () => {
+    fetches++;
+    throw new Error("An unconfigured calendar must not attempt a provider fetch");
+  });
   try {
-    return await fn();
+    const result = await fn();
+    assert.equal(fetches, 0, "missing configuration must be tested without relying on a network failure");
+    return result;
   } finally {
-    if (saved.provider === undefined) delete process.env["ECONOMIC_CALENDAR_PROVIDER"];
-    else process.env["ECONOMIC_CALENDAR_PROVIDER"] = saved.provider;
-    if (saved.te === undefined) delete process.env["TRADING_ECONOMICS_KEY"];
-    else process.env["TRADING_ECONOMICS_KEY"] = saved.te;
-    if (saved.fred === undefined) delete process.env["FRED_API_KEY"];
-    else process.env["FRED_API_KEY"] = saved.fred;
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
     __resetEconomicCalendarStateForTests();
+    __setEconomicCalendarFetcherForTests(null);
   }
 }
 
@@ -108,7 +111,7 @@ describe("A1 — no provider configured yields an honest unavailable read", () =
     const out = await withNoProvider(() => resolveNewsRiskEvents());
     assert.equal(out.available, false);
     assert.deepEqual(out.events, []);
-    assert.ok(out.reason.length > 0, "an operator-readable reason is required");
+    assert.match(out.reason, /provider missing/i, "missing configuration must not be confused with a failed or quiet feed");
   });
 
   it("resolveNewsRiskForSymbol emits no countdown and never blocks", async () => {
@@ -118,6 +121,7 @@ describe("A1 — no provider configured yields an honest unavailable read", () =
     assert.equal(r.minutesUntilEvent, null, "no countdown may be invented");
     assert.equal(r.upcomingEvent, null, "no event may be invented");
     assert.equal(r.riskLevel, "none");
+    assert.match(r.reason, /provider missing/i);
     assert.ok(
       !/\bin \d+m\b/.test(r.reason) && !/blocked/i.test(r.reason),
       `unconfigured reason must not read as a verdict, got: ${r.reason}`,

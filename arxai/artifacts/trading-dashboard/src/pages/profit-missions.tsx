@@ -125,6 +125,7 @@ import type {
 } from "@workspace/api-client-react";
 import {
   computeMissionMath,
+  projectMissionImpact,
   evaluateFeasibility,
   evaluateProbability,
   specToMinutes,
@@ -1130,11 +1131,13 @@ function edgeTierBadge(tier: string | null | undefined): ReactElement | null {
   );
 }
 
-// ── Mission Impact Preview: best / expected / worst case (ESTIMATE ONLY) ─────
-function MissionImpactPreview({ impact }: { impact: MissionImpact }) {
+// ── Mission Impact Preview: conditional target / stop (ESTIMATE ONLY) ───────
+export function MissionImpactPreview({ impact: storedImpact }: { impact: MissionImpact }) {
+  // Also protect cached responses from older API versions during deployment.
+  const impact = projectMissionImpact(storedImpact);
+  if (!impact) return <p data-testid="mission-impact-unavailable">Mission impact unavailable.</p>;
   const rows: { key: string; label: string; v: MissionImpact["win"]; cls: string }[] = [
     { key: "win", label: "If target hits", v: impact.win, cls: "text-success" },
-    { key: "expected", label: "Expected", v: impact.expected, cls: "text-muted-foreground" },
     { key: "loss", label: "If stop hits", v: impact.loss, cls: "text-destructive" },
   ];
   return (
@@ -1165,7 +1168,7 @@ function MissionImpactPreview({ impact }: { impact: MissionImpact }) {
                     {pct(r.v.progressPctDelta)})
                   </span>
                 </td>
-                <td className="py-1">{pct(r.v.requiredDailyPaceAfter)}/day</td>
+                <td className="py-1">{money(r.v.requiredDailyPaceAfter)}/day</td>
               </tr>
             ))}
           </tbody>

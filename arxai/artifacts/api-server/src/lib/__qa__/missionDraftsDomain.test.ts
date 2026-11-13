@@ -14,13 +14,18 @@
 //   - Mission impact: a TP raises progress / eases pace; an SL lowers progress /
 //     hardens pace; deterministic + estimate-labelled.
 //
-// This imports ONLY @workspace/domain (no `@workspace/db`), so it is an OFFLINE
+// This imports domain + generated API contracts (no `@workspace/db`), so it is an OFFLINE
 // unit suite and is wired into the root `ci` lane (not the integration lane).
 //
 // Run: pnpm --filter @workspace/api-server run test:mission-drafts-domain
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import {
+  ListMissionProposalsResponseItem, RunMissionScanResponse,
+  ListMissionTradeDraftsResponseItem, ApproveMissionProposalDraftResponse,
+  RejectMissionProposalDraftResponse, ExecuteMissionProposalDraftResponse,
+} from "@workspace/api-zod";
 import {
   computeEdgeScore,
   isActionableTier,
@@ -31,6 +36,7 @@ import {
   resolveEffectiveDraftStatus,
   isTerminalDraftStatus,
   computeMissionImpact,
+  projectMissionImpact,
   checkMissionCopyDeep,
   type EdgeInput,
   type EdgeTier,
@@ -259,7 +265,6 @@ test("mission impact: TP raises progress / eases pace; SL lowers it / hardens pa
     },
     riskAmount: 50,
     expectedR: 2,
-    winProbability: 0.5,
   });
 
   // Win (TP) moves progress UP and eases the required pace.
@@ -290,7 +295,6 @@ test("mission impact is deterministic (identical inputs → identical output)", 
     },
     riskAmount: 40,
     expectedR: 2.5,
-    winProbability: 0.55,
   };
   assert.deepEqual(computeMissionImpact(input), computeMissionImpact(input));
 });
@@ -322,8 +326,87 @@ test("no Phase 5 generated copy uses banned guaranteed-profit vocabulary", () =>
     ...queue.queue.flatMap((q) => q.reasons),
     impact.win.label,
     impact.loss.label,
-    impact.expected.label,
+    impact.summary,
   ];
   const verdict = checkMissionCopyDeep(copy);
   assert.equal(verdict.ok, true, `generated copy used banned vocabulary: ${verdict.violations.join(", ")}`);
+});
+
+const impactInput = {
+  math: { startingAmount: 1000, targetAmount: 1300, currentValue: 1000,
+    timeframeStartMs: NOW, timeframeEndMs: NOW + 7 * DAY, nowMs: NOW },
+  riskAmount: 50,
+  expectedR: 2,
+};
+
+test("mission impact has no invented default probability or expected return", () => {
+  const impact = computeMissionImpact(impactInput);
+  assert.equal(impact.winProbability, null);
+  assert.equal(impact.expected, null);
+  assert.match(impact.summary, /Expected return unavailable/);
+  assert.doesNotMatch(impact.summary, /50%|win-rate estimate/);
+  assert.equal(impact.win.profitDelta, 100);
+  assert.equal(impact.loss.profitDelta, -50);
+});
+
+test("old JS callers supplying naked score-derived probabilities cannot create expected returns", () => {
+  for (const winProbability of [0, 0.5, 0.75, 1, NaN, Infinity, -1, null]) {
+    const legacyInput = { ...impactInput, winProbability };
+    const impact = computeMissionImpact(legacyInput);
+    assert.equal(impact.winProbability, null);
+    assert.equal(impact.expected, null);
+  }
+});
+
+test("legacy stored previews lose unsupported expected values and claims without modifying storage", () => {
+  const conditional = computeMissionImpact(impactInput);
+  const legacy = { ...conditional, winProbability: 0.9,
+    expected: { ...conditional.win, label: "expected", profitDelta: 85 },
+    summary: "Expected case at a 90% win-rate estimate: $85.", extraPrediction: 85 };
+  const before = JSON.stringify(legacy);
+  const projected = projectMissionImpact(legacy)!;
+  assert.deepEqual(projected, conditional);
+  assert.equal(JSON.stringify(legacy), before);
+  assert.doesNotMatch(JSON.stringify(projected), /90%|extraPrediction/);
+  projected.win.profitDelta = 999;
+  assert.equal(legacy.win.profitDelta, 100, "read projection must not alias the stored object");
+});
+
+test("stored previews with malformed or inconsistent conditional values are unavailable", () => {
+  const valid = computeMissionImpact(impactInput);
+  for (const value of [null, {}, [], { ...valid, win: null },
+    { ...valid, riskAmount: -50 }, { ...valid, takeProfitGain: NaN },
+    { ...valid, current: { ...valid.current, currentValue: "1000" } },
+    { ...valid, win: { ...valid.win, resultingValue: 9000 } },
+    { ...valid, loss: { ...valid.loss, profitDelta: 50 } },
+    { ...valid, loss: { ...valid.loss, requiredDailyPaceAfter: Infinity } }]) {
+    assert.equal(projectMissionImpact(value), null);
+  }
+});
+
+test("current and already-completed mission projections remain valid on persisted read", () => {
+  for (const currentValue of [950, 1000, 1290, 1300, 1500]) {
+    const impact = computeMissionImpact({ ...impactInput, math: { ...impactInput.math, currentValue } });
+    assert.deepEqual(projectMissionImpact(impact), impact);
+    assert.deepEqual(projectMissionImpact(projectMissionImpact(impact)), impact);
+  }
+});
+
+test("all seven generated API impact schemas accept explicit unavailable fields", () => {
+  const impact = computeMissionImpact(impactInput);
+  const schemas = [
+    ListMissionProposalsResponseItem.shape.missionImpact,
+    RunMissionScanResponse.shape.proposals.element.shape.missionImpact,
+    RunMissionScanResponse.shape.missionImpact,
+    ListMissionTradeDraftsResponseItem.shape.missionImpact,
+    ApproveMissionProposalDraftResponse.shape.missionImpact,
+    RejectMissionProposalDraftResponse.shape.missionImpact,
+    ExecuteMissionProposalDraftResponse.shape.draft.shape.missionImpact,
+  ];
+  for (const schema of schemas) {
+    assert.equal(schema.safeParse(impact).success, true);
+    assert.equal(schema.safeParse({ ...impact, expected: undefined }).success, false);
+    assert.equal(schema.safeParse({ ...impact, winProbability: undefined }).success, false);
+    assert.equal(schema.safeParse({ ...impact, winProbability: "unavailable" }).success, false);
+  }
 });

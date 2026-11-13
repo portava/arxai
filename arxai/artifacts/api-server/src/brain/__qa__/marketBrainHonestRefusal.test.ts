@@ -15,27 +15,41 @@
 //      fabricated schedule, never blockTrading on unknown data).
 //
 // Offline by construction (established pattern — provenanceEnvelope.test.ts):
-// dummy DATABASE_URL; provider/calendar env keys cleared BEFORE module load so
-// the router serves honest-empty and the calendar reports not-connected.
+// dummy DATABASE_URL; market keys cleared and a keyless calendar provider
+// explicitly selected BEFORE module load. Unset calendar selection enables the
+// public weekly feed, so clearing keys alone does not mean not-connected.
 //
 // Run: node --import tsx --test --test-force-exit \
 //   src/brain/__qa__/marketBrainHonestRefusal.test.ts
 
-process.env.DATABASE_URL ??= "postgres://qa:qa@127.0.0.1:1/qa_offline_never_connects";
-delete process.env.TWELVEDATA_API_KEY;
-delete process.env.POLYGON_API_KEY;
-delete process.env.FINNHUB_API_KEY;
-delete process.env.ALPHA_VANTAGE_API_KEY;
-delete process.env.NEWSAPI_API_KEY;
-delete process.env.DERIV_APP_ID;
-delete process.env.DERIV_API_TOKEN;
-delete process.env.TRADING_ECONOMICS_KEY;
-delete process.env.FRED_API_KEY;
-
-import { test } from "node:test";
+import { test, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Candle } from "../../lib/strategyEngine.js";
 
+const ENV_KEYS = ["DATABASE_URL", "TWELVEDATA_API_KEY", "POLYGON_API_KEY", "FINNHUB_API_KEY",
+  "ALPHA_VANTAGE_API_KEY", "NEWSAPI_API_KEY", "DERIV_APP_ID", "DERIV_API_TOKEN",
+  "ECONOMIC_CALENDAR_PROVIDER", "TRADING_ECONOMICS_KEY", "TRADING_ECONOMICS_SECRET", "FRED_API_KEY"] as const;
+const savedEnv = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
+for (const key of ENV_KEYS) delete process.env[key];
+process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/qa_offline_never_connects";
+process.env.ECONOMIC_CALENDAR_PROVIDER = "trading_economics";
+const { __resetEconomicCalendarStateForTests, __setEconomicCalendarFetcherForTests } =
+  await import("../../lib/news/calendar/economicCalendarService.js");
+let calendarFetches = 0;
+__resetEconomicCalendarStateForTests();
+__setEconomicCalendarFetcherForTests(async () => {
+  calendarFetches++;
+  throw new Error("Missing-provider fixture must not fetch a real calendar");
+});
+afterEach(() => assert.equal(calendarFetches, 0, "unavailable news must reflect missing configuration, not an offline fetch failure"));
+after(() => {
+  __resetEconomicCalendarStateForTests();
+  __setEconomicCalendarFetcherForTests(null);
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
 const { analyzeMarket, MIN_REAL_CANDLES_FOR_BRAIN } = await import("../marketBrain.js");
 
 // Deterministic fixture bars (test fixtures may synthesize; __qa__ is excluded
@@ -98,6 +112,7 @@ test("caller-supplied real bars analyze; sub-engines are honest, not fabricated"
   // schedule, and never blockTrading on unknown data.
   assert.equal(out.newsDetails.providerConnected, false);
   assert.equal(out.newsDetails.blockTrading, false);
+  assert.match(out.newsDetails.reason, /provider missing/i);
   assert.ok(!/simulated/i.test(out.newsDetails.reason), "no simulated events may appear");
 });
 

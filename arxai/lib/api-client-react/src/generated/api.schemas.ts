@@ -1187,18 +1187,18 @@ export type MissionImpactCurrent = {
 };
 
 /**
- * Best/expected/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.
+ * Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.
 
  */
 export interface MissionImpact {
   current: MissionImpactCurrent;
   win: MissionImpactScenario;
   loss: MissionImpactScenario;
-  expected: MissionImpactScenario;
+  expected: MissionImpactScenario | null;
   riskAmount: number;
   takeProfitGain: number;
   expectedR: number;
-  winProbability: number;
+  winProbability: number | null;
   summary: string;
   isEstimate: boolean;
 }

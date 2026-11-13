@@ -3,7 +3,7 @@
 // PLANNING / DISPLAY ONLY. Given a mission's math context and a planned setup
 // (risk amount + reward-to-risk), this projects what the trade WOULD do to the
 // mission if its take-profit is reached (win), if its stop-loss is hit (loss),
-// and a probability-weighted expected case. It reports the change in mission
+// without inventing a probability-weighted expected case. It reports the change in mission
 // progress and the change in the required go-forward daily pace.
 //
 // HONESTY: every number is a labelled ESTIMATE, never a promise. The summary
@@ -22,8 +22,6 @@ export interface MissionImpactInput {
   riskAmount: number;
   /** Reward-to-risk: take-profit gain = riskAmount * expectedR. */
   expectedR: number;
-  /** Win probability 0..1 for the expected case (advisory; default 0.5). */
-  winProbability?: number | null;
 }
 
 export interface MissionImpactScenario {
@@ -53,21 +51,18 @@ export interface MissionImpact {
   };
   win: MissionImpactScenario;
   loss: MissionImpactScenario;
-  expected: MissionImpactScenario;
+  /** Unavailable: this contract has no measured probability bound to the plan. */
+  expected: null;
 
   riskAmount: number;
   takeProfitGain: number;
   expectedR: number;
-  winProbability: number;
+  winProbability: null;
 
   /** Banned-vocabulary-safe, estimate-labelled summary. */
   summary: string;
   /** Always true — these are labelled estimates, not promises. */
   isEstimate: true;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
 }
 
 function round2(n: number): number {
@@ -80,7 +75,7 @@ function fmtMoney(n: number): string {
 }
 
 /**
- * Project a mission's progress + required pace under win / loss / expected
+ * Project a mission's progress + required pace under conditional win / loss
  * outcomes of a planned setup. Pure; composes computeMissionMath.
  */
 export function computeMissionImpact(input: MissionImpactInput): MissionImpact {
@@ -94,11 +89,6 @@ export function computeMissionImpact(input: MissionImpactInput): MissionImpact {
   const riskAmount = Math.max(0, Number(input.riskAmount) || 0);
   const expectedR = Math.max(0, Number(input.expectedR) || 0);
   const takeProfitGain = round2(riskAmount * expectedR);
-  const winProbability = clamp(
-    input.winProbability == null || !Number.isFinite(input.winProbability) ? 0.5 : Number(input.winProbability),
-    0,
-    1,
-  );
 
   // Go-forward pace = remaining profit spread over remaining days. Once the
   // target is reached the required pace is 0.
@@ -134,18 +124,6 @@ export function computeMissionImpact(input: MissionImpactInput): MissionImpact {
 
   const win = buildScenario("win", takeProfitGain);
   const loss = buildScenario("loss", -riskAmount);
-  const expectedDelta = winProbability * takeProfitGain - (1 - winProbability) * riskAmount;
-  const expected = buildScenario("expected", expectedDelta);
-
-  const summary =
-    `Estimate only. If the take-profit is reached, mission progress changes by ` +
-    `${win.progressPctDelta >= 0 ? "+" : ""}${win.progressPctDelta}% and the required daily pace ` +
-    `${win.requiredDailyPaceDelta <= 0 ? "eases by " + fmtMoney(Math.abs(win.requiredDailyPaceDelta)) : "rises by " + fmtMoney(win.requiredDailyPaceDelta)}. ` +
-    `If the stop-loss is hit, progress changes by ${loss.progressPctDelta}% and the required pace ` +
-    `rises by ${fmtMoney(Math.abs(loss.requiredDailyPaceDelta))}. ` +
-    `Expected case (at a ${Math.round(winProbability * 100)}% win-rate estimate): ` +
-    `${fmtMoney(expected.profitDelta)}. A loss is possible; these figures are projections, not promises.`;
-
   return {
     current: {
       currentValue: round2(currentValue),
@@ -155,12 +133,92 @@ export function computeMissionImpact(input: MissionImpactInput): MissionImpact {
     },
     win,
     loss,
-    expected,
+    expected: null,
     riskAmount: round2(riskAmount),
     takeProfitGain,
     expectedR: round2(expectedR),
-    winProbability,
-    summary,
+    winProbability: null,
+    summary: impactSummary(win, loss),
+    isEstimate: true,
+  };
+}
+
+function impactSummary(win: MissionImpactScenario, loss: MissionImpactScenario): string {
+  return (
+    `Estimate only. If the take-profit is reached, mission progress changes by ` +
+    `${win.progressPctDelta >= 0 ? "+" : ""}${win.progressPctDelta}% and the required daily pace ` +
+    `${win.requiredDailyPaceDelta <= 0 ? "eases by " + fmtMoney(Math.abs(win.requiredDailyPaceDelta)) : "rises by " + fmtMoney(win.requiredDailyPaceDelta)}. ` +
+    `If the stop-loss is hit, progress changes by ${loss.progressPctDelta}% and the required pace ` +
+    `rises by ${fmtMoney(Math.abs(loss.requiredDailyPaceDelta))}. ` +
+    `Expected return unavailable: no measured win probability is bound to this trade plan. ` +
+    `A loss is possible; these figures are projections, not promises.`
+  );
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function scenario(value: unknown, label: "win" | "loss"): MissionImpactScenario | null {
+  const r = record(value);
+  if (!r || r.label !== label || !finite(r.resultingValue) || !finite(r.profitDelta) ||
+      !finite(r.progressPctAfter) || !finite(r.progressPctDelta) ||
+      !finite(r.remainingProfitAfter) || !finite(r.requiredDailyPaceAfter) ||
+      !finite(r.requiredDailyPaceDelta) || r.requiredDailyPaceAfter < 0) return null;
+  return {
+    label, resultingValue: r.resultingValue, profitDelta: r.profitDelta,
+    progressPctAfter: r.progressPctAfter, progressPctDelta: r.progressPctDelta,
+    remainingProfitAfter: r.remainingProfitAfter,
+    requiredDailyPaceAfter: r.requiredDailyPaceAfter,
+    requiredDailyPaceDelta: r.requiredDailyPaceDelta,
+  };
+}
+
+/**
+ * Allowlist persisted/cached previews at every public read boundary. Legacy
+ * expected values were derived from heuristic scores or a 50% default, without
+ * calibration provenance tied to the plan. Never serve those values or their
+ * stored summary. Conditional scenarios survive only when internally valid.
+ * This does not mutate or purge the persisted record.
+ */
+export function projectMissionImpact(value: unknown): MissionImpact | null {
+  const r = record(value);
+  const c = record(r?.current);
+  const win = scenario(r?.win, "win");
+  const loss = scenario(r?.loss, "loss");
+  if (!r || !c || !win || !loss || !finite(c.currentValue) || !finite(c.progressPct) ||
+      !finite(c.remainingProfit) || !finite(c.requiredDailyPace) || c.requiredDailyPace < 0 ||
+      !finite(r.riskAmount) || r.riskAmount < 0 || !finite(r.takeProfitGain) || r.takeProfitGain < 0 ||
+      !finite(r.expectedR) || r.expectedR < 0) return null;
+  const close = (a: number, b: number): boolean => Math.abs(a - b) <= 0.011;
+  if (!close(win.profitDelta, r.takeProfitGain) || !close(loss.profitDelta, -r.riskAmount)) return null;
+  for (const s of [win, loss]) {
+    if (!close(s.resultingValue, c.currentValue + s.profitDelta) ||
+        !close(s.progressPctDelta, s.progressPctAfter - c.progressPct) ||
+        !close(s.remainingProfitAfter, c.remainingProfit - s.profitDelta) ||
+        !close(s.requiredDailyPaceDelta, s.requiredDailyPaceAfter - c.requiredDailyPace)) return null;
+  }
+
+  return {
+    current: {
+      currentValue: c.currentValue,
+      progressPct: c.progressPct,
+      remainingProfit: c.remainingProfit,
+      requiredDailyPace: c.requiredDailyPace,
+    },
+    win,
+    loss,
+    expected: null,
+    riskAmount: r.riskAmount,
+    takeProfitGain: r.takeProfitGain,
+    expectedR: r.expectedR,
+    winProbability: null,
+    summary: impactSummary(win, loss),
     isEstimate: true,
   };
 }

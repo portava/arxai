@@ -149,6 +149,8 @@ export function useCurrentUser() {
   return {
     user: q.data ?? null,
     isLoading: q.isLoading,
+    isError: q.isError,
+    isFetching: q.isFetching,
     isSignedIn: !!q.data,
     refetch: q.refetch,
   };

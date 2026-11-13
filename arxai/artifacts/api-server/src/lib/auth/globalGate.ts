@@ -2,7 +2,7 @@
 //
 // PHASE-1 SAFETY NET: Until every route is individually wrapped in
 // `requireUser` (Phase 3 of the per-user isolation refactor), this middleware
-// 401s any /api/* request that does not have an authenticated user, EXCEPT
+// denies any /api/* request that does not have an authenticated user, EXCEPT
 // for an explicit allowlist of paths that must remain public:
 //
 //   - health checks
@@ -10,6 +10,7 @@
 //   - MT5 bridge endpoints (which have their own X-MT5-Bridge-Token guard
 //     and stay fail-closed when the token env is unset)
 //   - app version + release info (used by the splash page before login)
+// Missing/revoked sessions return 401; unavailable verification returns 503.
 //
 // Phase 3 of the per-user isolation refactor LANDED (closed May 17, 2026 —
 // see docs/TODO_PER_USER_ISOLATION.md): `requireUser` is wired on every
@@ -143,13 +144,17 @@ export function requireAuthOrPublic(req: Request, res: Response, next: NextFunct
     next();
     return;
   }
-  if (req.authUser) {
-    next();
-    return;
-  }
   // path is the request path WITHOUT the /api prefix (router-relative).
   const pathname = req.path || "/";
   if (isPublic(pathname)) {
+    next();
+    return;
+  }
+  if (req.authSessionUnavailable) {
+    res.status(503).json({ error: "SESSION_CHECK_UNAVAILABLE", message: "Session check is temporarily unavailable. Please try again." });
+    return;
+  }
+  if (req.authUser) {
     next();
     return;
   }

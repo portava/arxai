@@ -28,10 +28,31 @@ function AuthFallback() {
 // off a fresh browser — no MT5, no paper ideas, no AI history, nothing
 // loads until /api/me returns a user.
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { user, isLoading } = useCurrentUser();
+  const { user, isLoading, isError, isFetching, refetch } = useCurrentUser();
   const [location, navigate] = useLocation();
 
   if (isLoading) return <AuthFallback />;
+
+  // A failed check does not establish that the user signed out. On a fresh
+  // document keep private content hidden and let the same session be retried.
+  // A background failure retains the previously resolved identity in Query;
+  // private API requests still perform their own server-side verification.
+  if (!user && isError) {
+    return (
+      <main className="mx-auto mt-16 max-w-xl rounded-lg border border-border bg-card p-6 text-center" role="alert" data-testid="session-check-error">
+        <h1 className="text-lg font-semibold">We couldn't check your session.</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Check your connection and try again. The service may be temporarily unavailable.</p>
+        <button
+          type="button"
+          className="mt-5 rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          disabled={isFetching}
+          onClick={() => { void refetch(); }}
+        >
+          {isFetching ? "Checking session…" : "Retry session check"}
+        </button>
+      </main>
+    );
+  }
 
   if (!user) {
     // Allow the public auth routes; redirect anything else to /login.

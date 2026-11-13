@@ -469,7 +469,8 @@ export async function runMissionScan(args: {
         },
         riskAmount: selRisk,
         expectedR: selExpectedR,
-        winProbability: selectedProposal.confidence > 0 ? selectedProposal.confidence / 100 : null,
+        // Scanner confidence is a heuristic score, not a measured probability
+        // of this proposal's target beating its stop within a bound horizon.
       });
     }
   }

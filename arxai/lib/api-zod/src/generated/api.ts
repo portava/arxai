@@ -2271,16 +2271,16 @@ export const ListMissionProposalsResponseItem = zod
           remainingProfitAfter: zod.number(),
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
-        }),
+        }).nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
-        winProbability: zod.number(),
+        winProbability: zod.number().nullable(),
         summary: zod.string(),
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish()
       .describe(
@@ -2437,16 +2437,16 @@ export const RunMissionScanResponse = zod
                 remainingProfitAfter: zod.number(),
                 requiredDailyPaceAfter: zod.number(),
                 requiredDailyPaceDelta: zod.number(),
-              }),
+              }).nullable(),
               riskAmount: zod.number(),
               takeProfitGain: zod.number(),
               expectedR: zod.number(),
-              winProbability: zod.number(),
+              winProbability: zod.number().nullable(),
               summary: zod.string(),
               isEstimate: zod.boolean(),
             })
             .describe(
-              "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+              "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
             )
             .nullish()
             .describe(
@@ -2570,16 +2570,16 @@ export const RunMissionScanResponse = zod
           remainingProfitAfter: zod.number(),
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
-        }),
+        }).nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
-        winProbability: zod.number(),
+        winProbability: zod.number().nullable(),
         summary: zod.string(),
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish()
       .describe("Mission-impact preview for the selected proposal (Phase 5)."),
@@ -2685,16 +2685,16 @@ export const ListMissionTradeDraftsResponseItem = zod
           remainingProfitAfter: zod.number(),
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
-        }),
+        }).nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
-        winProbability: zod.number(),
+        winProbability: zod.number().nullable(),
         summary: zod.string(),
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -2962,16 +2962,16 @@ export const ApproveMissionProposalDraftResponse = zod
           remainingProfitAfter: zod.number(),
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
-        }),
+        }).nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
-        winProbability: zod.number(),
+        winProbability: zod.number().nullable(),
         summary: zod.string(),
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -3093,16 +3093,16 @@ export const RejectMissionProposalDraftResponse = zod
           remainingProfitAfter: zod.number(),
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
-        }),
+        }).nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
-        winProbability: zod.number(),
+        winProbability: zod.number().nullable(),
         summary: zod.string(),
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -3558,16 +3558,16 @@ export const ExecuteMissionProposalDraftResponse = zod
               remainingProfitAfter: zod.number(),
               requiredDailyPaceAfter: zod.number(),
               requiredDailyPaceDelta: zod.number(),
-            }),
+            }).nullable(),
             riskAmount: zod.number(),
             takeProfitGain: zod.number(),
             expectedR: zod.number(),
-            winProbability: zod.number(),
+            winProbability: zod.number().nullable(),
             summary: zod.string(),
             isEstimate: zod.boolean(),
           })
           .describe(
-            "Best\/expected\/worst-case mission-impact preview for a setup. ESTIMATE ONLY (isEstimate always true) — banned-vocabulary-safe, never a promise.\n",
+            "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
           )
           .nullish(),
         reason: zod.string().nullish(),

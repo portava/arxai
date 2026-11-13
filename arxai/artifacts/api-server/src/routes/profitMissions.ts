@@ -23,6 +23,7 @@ import { normalizeProductRole, isAdminProductRole } from "../lib/auth/productRol
 import { CreateProfitMissionBody } from "@workspace/api-zod";
 import {
   computeMissionMath,
+  projectMissionImpact,
   evaluateFeasibility,
   evaluateProbability,
   resolveUserAction,
@@ -543,7 +544,7 @@ function serializeProposal(row: MissionProposalRow) {
     judgeDecision: row.judgeDecision ?? null,
     createdAt: row.createdAt.toISOString(),
     edge: (row.edgeJson as Record<string, unknown> | null) ?? null,
-    missionImpact: (row.missionImpactJson as Record<string, unknown> | null) ?? null,
+    missionImpact: projectMissionImpact(row.missionImpactJson),
     executionQuality: (row.executionQualityJson as Record<string, unknown> | null) ?? null,
   };
 }
