@@ -38,7 +38,7 @@ export type DataProvider =
   | "core"            // backend symbolRegistry covers it
   | "deriv"           // needs DERIV_APP_ID; synthetics still selectable when missing
   | "broker_mt5"      // tradable via EA bridge
-  | "external"        // TwelveData / TradingView only
+  | "external"        // external data references only
   | "unknown";
 
 export interface SymbolEntry {

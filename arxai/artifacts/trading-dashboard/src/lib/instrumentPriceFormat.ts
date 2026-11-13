@@ -2,7 +2,7 @@
 //
 // Owner screenshots (2026-10-27, V75 1m): the header said 33,588.01 (2 dp,
 // grouped), the chart badge 33588.0069 then 33575.372 (raw JS number, 3–4 dp),
-// the price axis 33575.37 (lightweight-charts' default 2 dp) and the trade
+// the price axis 33575.37 (a generic chart default) and the trade
 // modal seeded 2 dp — four precisions for one quote. The server already ships
 // the instrument's precision on /api/chart/candles (truthResult.pricePrecision,
 // venue-pip-derived in symbolProfile). These pure helpers are the ONE rule:
@@ -84,7 +84,7 @@ export function seedInstrumentPrice(value: number, precision: number | null | un
   return String(Number(formatInstrumentPrice(value, precision)));
 }
 
-/** lightweight-charts series priceFormat for a known precision, else null. */
+/** Chart series price format for a known precision, else null. */
 export function candlestickPriceFormat(
   precision: number | null | undefined,
 ): { type: "price"; precision: number; minMove: number } | null {

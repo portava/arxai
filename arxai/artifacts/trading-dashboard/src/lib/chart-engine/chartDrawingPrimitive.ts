@@ -1,4 +1,4 @@
-import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, UTCTimestamp } from "lightweight-charts";
+import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, UTCTimestamp } from "./arxCanvas";
 import { drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
 import { measurementLabels } from "./chartRangeMeasurement";
 import type { ChartEngineCandle } from "./types";
@@ -142,6 +142,7 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   private strokes: DrawingStroke[] = [];
   private notes: DrawingNote[] = [];
   private dirty = true;
+  private visible = true;
   private selected: string | null = null;
   private candleRef: ChartEngineCandle[] | null = null;
   private candleKey = "";
@@ -149,6 +150,7 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   private labels: ISeriesPrimitiveAxisView[] = [];
   private renderer: IPrimitivePaneRenderer = {
     draw: target => target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      if (!this.visible) return;
       if (this.dirty) this.updateGeometry();
       ctx.save();
       try {
@@ -222,6 +224,12 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
       visible: () => this.attachment != null && this.times.size > 0,
     }));
     this.updateAllViews();
+    this.attachment?.requestUpdate();
+  }
+
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
     this.attachment?.requestUpdate();
   }
 

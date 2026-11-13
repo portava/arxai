@@ -25,7 +25,7 @@ const code = strip(readFileSync(join(HERE, "ScannerChartPanel.tsx"), "utf8"));
 // Chart (ARXNativeChart) that ScannerChartPanel mounts; the axis precision and
 // the published live tip are locked there.
 const smart = strip(readFileSync(join(HERE, "../charts/ARXNativeChart.tsx"), "utf8"));
-const adapterSrc = strip(readFileSync(join(HERE, "../../lib/chart-engine/lightweightChartsAdapter.ts"), "utf8"));
+const adapterSrc = strip(readFileSync(join(HERE, "../../lib/chart-engine/arxCanvasAdapter.ts"), "utf8"));
 
 function badgeBlock(testId: string): string {
   const idx = code.indexOf(`data-testid="${testId}"`);

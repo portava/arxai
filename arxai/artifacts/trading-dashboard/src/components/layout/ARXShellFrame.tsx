@@ -41,6 +41,7 @@ type ShellFrameBaseProps = {
   onAllToolsOpenChange: (open: boolean) => void;
   layoutMenuContent?: ReactNode;
   safetyNotice?: ReactNode;
+  sectionNavigation?: ReactNode;
   children: ReactNode;
   mobileToolsOpen: boolean;
   onMobileToolsOpenChange: (open: boolean) => void;
@@ -203,6 +204,7 @@ export function ARXShellFrame(props: ARXShellFrameProps) {
       {props.safetyNotice && <section className="arx-shell-safety-notice" aria-label="Safety notice">
         {props.safetyNotice}
       </section>}
+      {props.sectionNavigation}
 
       <main
         id="main-content"

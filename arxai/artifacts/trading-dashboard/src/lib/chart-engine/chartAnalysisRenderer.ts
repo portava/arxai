@@ -4,7 +4,7 @@ import {ChartVolumeProfilePrimitive} from "./chartVolumeProfilePrimitive";
 import type {VolumeProfileInspection} from "./chartVolumeProfile";
 import {studyId} from "./chartStudies";
 import { volumeInputQuantity, observedTradeVolumeIdentity } from "./chartVolume";
-import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "lightweight-charts";
+import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "./arxCanvas";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
@@ -23,6 +23,7 @@ export class ChartAnalysisRenderer {
   private priceOnlyScale = false;
   private compactTitles = false;
   private drawings: ChartDrawing[] = [];
+  private drawingsVisible = true;
   private drawingPrimitive: ChartDrawingPrimitive | null = null;
   private selectedDrawing: string | null = null;
   private frame: number | null = null;
@@ -197,7 +198,7 @@ export class ChartAnalysisRenderer {
     }
     return true;
   }
-  /** Perf caveat: in lightweight-charts 5, applyOptions on the default left or
+  /** Perf caveat: in the ARX Canvas renderer, applyOptions on a default price scale or
    * right price scale of ANY pane also merges those options into the chart
    * options. The drawing freeze path (lightweightChartsAdapter freeze) sets
    * autoScale:false on pane 0 and restores pane 0's previous value, so a
@@ -365,6 +366,10 @@ export class ChartAnalysisRenderer {
     this.drawings = validateDrawings(drawings);
     this.refreshDrawings(candles);
   }
+  setDrawingsVisible(visible: boolean): void {
+    this.drawingsVisible = visible;
+    this.drawingPrimitive?.setVisible(visible);
+  }
   refreshDrawings(candles: ChartEngineCandle[]): void {
     if (!this.drawingPrimitive && this.drawings.length) {
       this.drawingPrimitive = new ChartDrawingPrimitive();
@@ -372,6 +377,7 @@ export class ChartAnalysisRenderer {
       this.drawingPrimitive.setSelection(this.selectedDrawing);
     }
     this.drawingPrimitive?.setData(this.drawings, candles);
+    this.drawingPrimitive?.setVisible(this.drawingsVisible);
   }
   /** Read back the painted drawings against their stored anchors (render evidence). */
   measureDrawings(priceStep: number): DrawingFidelity {

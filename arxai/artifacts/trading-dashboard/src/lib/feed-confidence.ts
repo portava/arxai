@@ -8,8 +8,8 @@ import { type ChartFeedStatus, type ChartFeedStatusQuality } from "@workspace/ap
 //   - severity drives colour + how prominent the badge becomes
 //   - aiUsable is passed straight through (true ONLY when quality is clean) so
 //     Level 5 AI overlays can refuse to draw on an unconfirmed feed
-//   - suggestFallback marks the cases where the native feed cannot be trusted
-//     and the TradingView reference should be offered instead
+//   - suggestFallback marks cases where the native feed cannot be trusted and
+//     the user should review alternate verified data sources
 //
 // HONESTY: we never upgrade the backend's own verdict. quality/aiUsable/stale
 // come from the contract; we only translate them into copy + severity.
@@ -25,7 +25,7 @@ export interface FeedConfidence {
   aiUsable: boolean;
   /** One-line human message (prefers the contract's own message/warning). */
   message: string;
-  /** True when the feed can't be trusted and a TradingView fallback should show. */
+  /** True when the feed can't be trusted and alternate verified data is needed. */
   suggestFallback: boolean;
 }
 

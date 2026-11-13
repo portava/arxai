@@ -68,7 +68,7 @@ export function ChartDrawingToolbar({
           /* private storage */
         }
     });
-    adapter.setDrawings?.(drawings);
+    adapter.setDrawingToolDrawings?.(drawings);
     adapter.setDrawingTool?.("cursor");
     setTool("cursor");
     return () => adapter.onDrawingsChange?.(null);

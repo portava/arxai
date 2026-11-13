@@ -29,6 +29,7 @@ vi.mock("@/lib/chart-engine/arxCanvas", () => {
   const makeCandleSeries = () => ({
     setData: vi.fn(),
     update: vi.fn(),
+    options: vi.fn(() => ({ priceLineVisible: true, lastValueVisible: true })),
     applyOptions: vi.fn(),
     createPriceLine: vi.fn(() => ({})),
     removePriceLine: vi.fn(),

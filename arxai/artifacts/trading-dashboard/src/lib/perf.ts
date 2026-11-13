@@ -342,9 +342,16 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   function disposeObserver() {
     if (disposed) return;
     disposed = true;
-    if (intervalId !== null) ownerWindow.clearInterval(intervalId);
-    ownerWindow.removeEventListener("visibilitychange", onVisibilityChange);
-    ownerWindow.removeEventListener("pagehide", onPageHide);
+    if (intervalId !== null && typeof ownerWindow.clearInterval === "function") {
+      ownerWindow.clearInterval(intervalId);
+    }
+    // Test documents and embedded previews may retire their Window methods as
+    // the realm is torn down. In a live document these are always present; in a
+    // retired realm the listeners are already unreachable and cannot be removed.
+    if (typeof ownerWindow.removeEventListener === "function") {
+      ownerWindow.removeEventListener("visibilitychange", onVisibilityChange);
+      ownerWindow.removeEventListener("pagehide", onPageHide);
+    }
   }
   function onVisibilityChange() {
     if (!ownsLiveDocument()) {

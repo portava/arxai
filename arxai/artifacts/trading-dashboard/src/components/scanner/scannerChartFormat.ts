@@ -1,5 +1,5 @@
 // Pure, unit-tested display helpers for the Scanner chart header (Task #524).
-// Kept out of ScannerChartPanel.tsx (which imports lightweight-charts + the whole
+// Kept out of ScannerChartPanel.tsx (which imports the chart renderer + the whole
 // component tree) so these can be tested in isolation, mirroring the
 // scannerCandleAdapter.ts pattern. NOTHING here touches data sources, the
 // candles/tick-stream contract, or any execution path — it is display-only.
@@ -95,7 +95,7 @@ export function inferBarSeconds(candleTimesMs: number[]): number {
 // Resolve where (if at all) an economic event should be marked on the chart.
 // Given the loaded candle window [firstSec, lastSec] and a forward look-ahead
 // horizon (windowEndSec), returns the marker time in epoch SECONDS (the
-// lightweight-charts unit), or null when the event falls outside the chart's
+// chart formatter unit), or null when the event falls outside the chart's
 // window (before the loaded history, or beyond the look-ahead horizon — never
 // clamped onto the edges). A near-future in-window event has no candle to sit on
 // yet, so it anchors to the right edge (lastSec); an in-history event sits at its
@@ -120,13 +120,13 @@ export function resolveEventMarkerSec(
 // Economic events land at arbitrary timestamps that almost never align to a
 // fixed candle interval, so every marker is anchored to the bar whose open-time
 // contains it; a marker whose time does not exactly match a loaded bar makes
-// lightweight-charts' findBar() return null and the candlestick colorer throw
+// the renderer's marker lookup fail and the candlestick paint path throw
 // "Value is null" on every repaint (SeriesBarColorer.Candlestick → ensureNotNull).
 export { snapSecToCandle } from "@/lib/chart-engine/candleSanitize";
 
 // ── Chart time zone + candle-close countdown (owner screenshots 2026-10-27) ──
 //
-// lightweight-charts formats the time axis and crosshair from the UTC fields of
+// The chart formats the time axis and crosshair from the UTC fields of
 // each bar's timestamp, so the axis read 14:00 … 16:00 at 16:04 UTC for a
 // viewer whose wall clock said 12:04 (New York) — with no zone stated anywhere.
 // The repo's explicit-time convention is UTC (market-closed chip, ARX native

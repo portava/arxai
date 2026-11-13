@@ -2,14 +2,14 @@
 // (scripts/src/qaChartRenderBrowser.ts). Loaded only by e2e/render-evidence.html
 // under the Vite dev server; never part of the production bundle.
 //
-// It boots the dashboard's REAL chart engine (LightweightChartsAdapter on the
-// real lightweight-charts canvas in Chromium), loads a deterministic candle
+// It boots the dashboard's real first-party ARX Canvas renderer in Chromium,
+// loads a deterministic candle
 // feed from the test server, draws the requested style and drawings, and lets
 // the REAL reporter (renderEvidenceReporter.ts) measure and post the evidence
 // to the real api-server. A run may inject one fault INTO THE ENGINE (one
 // drawn bar, or one painted drawing stroke) — never into the measurement — so
 // the test can prove the server records a measured FAIL.
-import { LightweightChartsAdapter } from "@/lib/chart-engine/lightweightChartsAdapter";
+import { ArxCanvasAdapter } from "@/lib/chart-engine/arxCanvasAdapter";
 import { reportRenderEvidence, __resetRenderEvidenceReporterForTests } from "@/lib/chart-engine/renderEvidenceReporter";
 import type { ChartDrawing, ChartStyle } from "@/lib/chart-engine/chartWorkspace";
 import type { ChartEngineCandle, RenderFidelity } from "@/lib/chart-engine/types";
@@ -37,7 +37,7 @@ const frames = (n: number) => new Promise<void>(resolve => {
   step(n);
 });
 
-let adapter: LightweightChartsAdapter | null = null;
+let adapter: ArxCanvasAdapter | null = null;
 
 async function run(cfg: HarnessRun): Promise<HarnessResult> {
   adapter?.destroy();
@@ -45,7 +45,7 @@ async function run(cfg: HarnessRun): Promise<HarnessResult> {
   const res = await fetch("/__fixture/candles.json");
   const candles = await res.json() as ChartEngineCandle[];
   const container = document.getElementById("chart")!;
-  adapter = new LightweightChartsAdapter();
+  adapter = new ArxCanvasAdapter();
   adapter.init({ container, height: 480 });
   adapter.setDisplayPricePrecision(5);
   adapter.setCandles(candles);

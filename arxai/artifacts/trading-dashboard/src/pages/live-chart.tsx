@@ -51,7 +51,7 @@ export default function LiveChartPage() {
   // the ticket hidden (fail-safe) rather than flashing it to an investor.
   const { isInvestor, isLoading: roleLoading } = useProductRole();
   const canSeeTradeEntry = !isInvestor && !roleLoading;
-  // The active rendering engine descriptor (lightweight-charts today). Surfaced
+  // The active first-party rendering engine descriptor. Surfaced
   // as a small label so the Shell is honest about which engine is drawing and so
   // a future engine swap is visible without code spelunking.
   const activeEngine = CHART_ENGINE_DESCRIPTORS[DEFAULT_CHART_ENGINE_ID];

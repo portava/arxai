@@ -137,7 +137,8 @@
     "./chart-patterns": "./src/chart-patterns/index.ts",
     "./backtest/research-core": "./src/backtest/researchCore.ts",
     "./backtest/research-browser": "./src/backtest/researchBrowser.ts",
-    "./chart-indicator-math": "./src/chart-indicator-math/index.ts"
+    "./chart-indicator-math": "./src/chart-indicator-math/index.ts",
+    "./structural": "./src/structural/index.ts"
   },
   "scripts": {},
   "dependencies": {

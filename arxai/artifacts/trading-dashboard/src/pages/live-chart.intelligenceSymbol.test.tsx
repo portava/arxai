@@ -51,7 +51,7 @@ vi.mock("@/hooks/useChartSetupPreview", () => ({ useChartSetupPreview: () => ({ 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ envelope: null, cleanModeLabel: "Demo", isLiveShared: false }) }));
 vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => ({ isInvestor: false, isLoading: false }) }));
 vi.mock("@/lib/chart-engine/chartWorkspace", () => ({ readChartStorage: () => null, writeChartStorage: () => {} }));
-vi.mock("@/lib/chart-engine", () => ({ CHART_ENGINE_DESCRIPTORS: { lw: { label: "lightweight-charts" } }, DEFAULT_CHART_ENGINE_ID: "lw" }));
+vi.mock("@/lib/chart-engine", () => ({ CHART_ENGINE_DESCRIPTORS: { "arx-canvas": { label: "ARX Canvas" } }, DEFAULT_CHART_ENGINE_ID: "arx-canvas" }));
 
 const { default: LiveChartPage } = await import("./live-chart");
 

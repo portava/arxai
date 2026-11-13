@@ -10,7 +10,7 @@ import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
 import { chartUtcClockQualified } from "@/lib/chart-engine/chartClockEvidence";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "./useDerivedOverlayContext";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
-import { createSeriesMarkers, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
+import { createSeriesMarkers, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "@/lib/chart-engine/arxCanvas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -763,7 +763,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
   // position/pending price lines can be redrawn WITHOUT recreating the chart.
   const lineSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  // News event markers (Task #197). lightweight-charts v5 surfaces markers via
+  // News event markers (Task #197). The chart adapter surfaces markers via
   // the standalone createSeriesMarkers(series, markers) plugin (the v4
   // series.setMarkers() was removed). We keep the plugin handle so events can be
   // re-drawn without recreating the chart, and detach it on rebuild.
@@ -1639,8 +1639,8 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       lastSec + inferBarSeconds(candles.slice(-2).map((c) => c.time)) * NEWS_MARKER_LOOKAHEAD_BARS;
     // The ascending open-times (epoch seconds) of the candles ACTUALLY in the
     // series — sanitized identically to setData so a marker can only ever anchor
-    // to a bar that exists. lightweight-charts throws "Value is null" if a marker
-    // resolves to a missing bar (findBar → null), so every marker time below is
+    // to a bar that exists. A marker with no source bar is not rendered, so
+    // every marker time below is
     // snapped onto one of these real bars.
     const candleSecsAsc = sanitizeCandlestickData(
       candles.map((c) => ({
@@ -1674,7 +1674,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       });
     }
     if (markers.length === 0) return;
-    // lightweight-charts requires markers sorted ascending by time.
+    // Marker times are kept sorted ascending for stable rendering.
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     const markerLayer = createSeriesMarkers(series, markers);
     newsMarkersApiRef.current = markerLayer;
@@ -1738,8 +1738,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
 
     // Snap every structure marker onto a real bar present in the series. The
     // engine intends bar-anchored times, but a marker whose time doesn't EXACTLY
-    // match a loaded bar makes lightweight-charts' findBar() return null and the
-    // candlestick colorer throw "Value is null" on repaint — so we enforce
+    // match a loaded bar has no valid candle anchor — so we enforce
     // bar-membership here against the SAME sanitized open-times fed to setData,
     // rather than trusting the upstream alignment.
     const structureCandleSecs = sanitizeCandlestickData(
@@ -1785,9 +1784,8 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     // and cleared across a symbol/timeframe switch. `candles` MUST be a dep: the
     // markers above are snapped onto the bars in the series at draw time, and the
     // poll's setData slides the fixed-size window forward (oldest bars roll off) —
-    // a marker left anchored to a dropped bar makes lightweight-charts' findBar()
-    // return null and the candlestick colorer throw "Value is null" on the next
-    // repaint (uncatchable here), which crashed the Scanner page when the chart
+    // a marker left anchored to a dropped bar loses its source anchor on the next
+    // repaint, which previously crashed the Scanner page when the chart
     // sat open across candle refreshes. Re-running on every candle window keeps
     // every anchor on a real bar.
   }, [trendlineOverlay, isLiveDisplay, chartEpoch, candles, chartContext]);

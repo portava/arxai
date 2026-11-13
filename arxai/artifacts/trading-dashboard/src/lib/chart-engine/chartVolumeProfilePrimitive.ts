@@ -1,4 +1,4 @@
-import type { IPrimitivePaneRenderer,IPrimitivePaneView,ISeriesPrimitive,SeriesAttachedParameter } from 'lightweight-charts';
+import type { IPrimitivePaneRenderer,IPrimitivePaneView,ISeriesPrimitive,SeriesAttachedParameter } from './arxCanvas';
 import type { VolumeProfileResult } from './chartVolumeProfile';
 export interface ProfilePixelRow {index:number;x:number;y:number;width:number;height:number;poc:boolean;inValueArea:boolean}
 /** Distribution columns use at most 28% of the price pane. Multiple profile

@@ -149,8 +149,5 @@
     "wouter": "^3.3.5",
     "zod": "catalog:",
     "@workspace/markets": "workspace:*"
-  },
-  "dependencies": {
-    "lightweight-charts": "^5.2.0"
   }
 }

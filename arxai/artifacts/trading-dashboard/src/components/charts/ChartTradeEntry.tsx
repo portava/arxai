@@ -1,4 +1,4 @@
-// Chart-side trade entry panel — sits next to the TradingView chart and
+// Chart-side trade entry panel — sits alongside the ARX Smart Chart and
 // lets the user pre-stage a live order ticket from the symbol the chart
 // is currently showing.
 //

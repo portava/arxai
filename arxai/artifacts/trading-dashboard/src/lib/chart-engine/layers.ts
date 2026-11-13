@@ -69,6 +69,8 @@ export function overlayLayer(o: ChartOverlay): ChartLayerId {
       signal: "scanner",
       ruby: "ruby",
       agent: "agents",
+      eleanor: "ruby",
+      research: "setups",
     } as const
   )[o.source];
 }

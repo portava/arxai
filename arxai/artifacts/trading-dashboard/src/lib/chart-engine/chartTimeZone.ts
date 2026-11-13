@@ -1,6 +1,6 @@
 /**
  * Display time zone for the ARX native chart. Pure helpers only: no
- * lightweight-charts runtime import and no chart-workspace import.
+ * chart renderer runtime import and no chart-workspace import.
  *
  * The zone is DISPLAY-ONLY. Candle times, drawing anchors, view-link events,
  * data requests, goToTime and replayCountAtClose all stay Unix UTC seconds;
@@ -20,7 +20,7 @@ export function isChartTimeZone(value: unknown): value is ChartTimeZone {
   return typeof value === "string" && (CHART_TIME_ZONES as readonly string[]).includes(value);
 }
 
-/** lightweight-charts TickMarkType numbers (typings.d.ts: Year 0 … TimeWithSeconds 4). */
+/** Chart tick granularity numbers (Year 0 … TimeWithSeconds 4). */
 export type ChartTickMarkType = 0 | 1 | 2 | 3 | 4;
 
 const UTC_ALIASES = new Set(["UTC", "Etc/UTC", "Etc/GMT", "GMT", "Etc/Universal", "Etc/Zulu", "Universal", "Zulu", "Etc/UCT", "UCT", "Etc/Greenwich", "Greenwich", "Etc/GMT0", "Etc/GMT+0", "Etc/GMT-0", "GMT0", "GMT+0", "GMT-0"]);
@@ -181,7 +181,7 @@ export function convertWallClock(value: string, fromZone: ChartTimeZone, toZone:
 }
 
 const monthNames = new Map<string, string>();
-/** Short month name as lightweight-charts derives it: a local Date on the 1st,
+/** Short month name as the chart axis derives it: a local Date on the 1st,
  * toLocaleString(locale, {month:"short"}). */
 function shortMonth(year: number, month: number, locale: string): string {
   const key = `${locale}|${year}|${month}`;
@@ -218,7 +218,7 @@ export function tickMarkLabel(sec: number, type: ChartTickMarkType, zone: ChartT
   }
 }
 
-/** lightweight-charts' default crosshair date ("dd MMM 'yy"), replicated
+/** Default crosshair date ("dd MMM 'yy"), replicated
  * replacement for replacement (dev.mjs formatDate). */
 function libraryDate(p: WallParts, locale: string): string {
   return "dd MMM 'yy"

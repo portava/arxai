@@ -9,7 +9,7 @@ import { suppressNextReturnTo } from "@/lib/authReturnTo";
 // Fresh First-Load invariant — on logout we drop every per-user UI artifact
 // that could leak User A's context to User B on a shared browser:
 //   • highroll.activeSymbol / highroll.recentSymbols (last symbol + history)
-//   • highroll.chartSymbol                          (TradingView chart symbol)
+//   • highroll.chartSymbol                          (saved chart symbol)
 //   • highroll.onboarding.firstrun.dismissed.v1     (tour-dismissed flag)
 //   • arx.nav.recent.v1                             (recent visited routes)
 // User-scoped keys like `arx_feature_unlocks_v1:<userId>` are already

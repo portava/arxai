@@ -11,7 +11,19 @@ import { chartVolumeEvidence, observedTickVolume, observedTradeVolume } from "@/
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
-import { ChartLibraryCredit } from "./ChartLibraryCredit";
+import { ChartLayersMenu } from "./ChartLayersMenu";
+import { StructuralForecastPanel } from "./StructuralForecastPanel";
+import type { GhostPath, Scenario } from "@workspace/domain/structural";
+import {
+  allLayers,
+  overlayLayer,
+  SCENARIO_LAYERS,
+  structureMarkerLayer,
+  visibleOverlays,
+  type ChartLayerId,
+  type ChartLayerVisibility,
+} from "@/lib/chart-engine/layers";
+import type { ChartGhostPath } from "@/lib/chart-engine/types";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
@@ -136,7 +148,7 @@ const CANDLE_POLL_MS = 8000;
 
 // Comparison engine init is staged out of the frame that mounts the card.
 // The card, its controls and its sized canvas container commit synchronously;
-// only the lightweight-charts engine (init + its own first paint, the dominant
+// only the ARX Canvas engine (init + its own first paint, the dominant
 // cost of adding comparison views) waits until after the mounting frame has
 // painted. A single rAF queued during the commit would still run inside that
 // frame, before its paint, so each job waits for an animation frame and then a
@@ -351,6 +363,8 @@ export function ARXNativeChart({
   const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
   const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
   const [preferencesSaved, setPreferencesSaved] = useState(true);
+  const [layers, setLayers] = useState<ChartLayerVisibility>(() => allLayers(true));
+  const [scenarioGhostPaths, setScenarioGhostPaths] = useState<ChartGhostPath[]>([]);
   const [renderVerdict, setRenderVerdict] = useState<RenderVerdict | null>(null);
   const scaleMode = preferences.scale;
 
@@ -589,6 +603,9 @@ export function ARXNativeChart({
   // third-party sources, stored history and an empty feed never open one, so
   // they can never be "reconnecting".
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  useEffect(() => {
+    setScenarioGhostPaths([]);
+  }, [chartContext]);
   const tickSource = chartTickSource(data?.feedStatus?.source);
   const streamEnabled = data?.feedStatus?.notLiveReason !== "stored_history" &&
     resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
@@ -621,12 +638,68 @@ export function ARXNativeChart({
   const containerRef = useRef<HTMLDivElement | null>(null);
   // The chart RENDERER lives behind the swappable chart-engine adapter (Task
   // #373). This component owns React state, data, feed-status and UI; the
-  // imperative engine (lightweight-charts v5) is driven only through the adapter.
+  // imperative engine is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const releaseScannerSurface = useRef<(() => void) | null>(null);
   const overlays = useMemo(() => [...suppliedOverlays,...(researchOpen&&researchLayer?.context===chartContext?researchLayer.rows:[])].filter(overlay =>
     overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
   [suppliedOverlays,researchLayer,researchOpen,chartContext,resolvedSymbol,timeframe]);
+  const chartVisibleOverlays = useMemo(
+    () => visibleOverlays(overlays, layers),
+    [overlays, layers],
+  );
+  const acceptScenarioPaths = useCallback((paths: GhostPath[]) => {
+    const colors: Record<Scenario, string> = {
+      UP_FIRST: "#36d6b0",
+      DOWN_FIRST: "#fa668d",
+      NEITHER: "#a88cff",
+    };
+    setScenarioGhostPaths(paths
+      .filter((path) => path.label === "ILLUSTRATIVE_TRAINING_PATH" && !path.unavailableReason)
+      .map((path) => ({
+        id: path.scenario,
+        color: colors[path.scenario],
+        candles: path.candles.map((bar) => ({
+          time: Math.floor(bar.openTime / 1000),
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        })),
+      })));
+  }, []);
+  const visibleScenarioPaths = useMemo(
+    () => scenarioGhostPaths.filter((path) => {
+      const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
+      return layer ? layers[layer] : false;
+    }),
+    [scenarioGhostPaths, layers],
+  );
+  const layerAvailability = useMemo(() => {
+    const counts: Partial<Record<ChartLayerId, number>> = {
+      drawings: adapterRef.current?.getDrawingCount?.() ?? 0,
+    };
+    for (const overlay of overlays) {
+      const layer = overlayLayer(overlay);
+      counts[layer] = (counts[layer] ?? 0) + 1;
+    }
+    const structural = intelligenceState?.trendlineOverlay;
+    if (structural?.visible) {
+      for (const line of structural.lines) {
+        const layer = line.id.endsWith(":rail") ? "channels" : "trendlines";
+        counts[layer] = (counts[layer] ?? 0) + 1;
+      }
+      for (const marker of structural.markers) {
+        const layer = structureMarkerLayer(marker.kind);
+        counts[layer] = (counts[layer] ?? 0) + 1;
+      }
+    }
+    for (const path of scenarioGhostPaths) {
+      const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
+      if (layer) counts[layer] = (counts[layer] ?? 0) + path.candles.length;
+    }
+    return counts;
+  }, [overlays, intelligenceState?.trendlineOverlay, scenarioGhostPaths]);
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
   const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
@@ -1291,20 +1364,30 @@ export function ARXNativeChart({
   useEffect(() => {
     const adapter = adapterRef.current;
     if (!adapter) return;
+    adapter.setDrawingsVisible?.(layers.drawings);
+  }, [layers.drawings, chartEpoch]);
+
+  useEffect(() => {
+    adapterRef.current?.setGhostPaths?.(visibleScenarioPaths);
+  }, [visibleScenarioPaths, chartEpoch]);
+
+  useEffect(() => {
+    const adapter = adapterRef.current;
+    if (!adapter) return;
     // Markers anchor to the most recent bar so they stay visible for open positions.
     const lastCandle = candles[candles.length - 1];
     const lastTime =
       lastCandle && Number.isFinite(new Date(lastCandle.openTime).getTime())
         ? Math.floor(new Date(lastCandle.openTime).getTime() / 1000)
         : null;
-    adapter.setOverlays(overlays, lastTime);
-  }, [overlays, candles, chartEpoch]);
+    adapter.setOverlays(chartVisibleOverlays, lastTime);
+  }, [chartVisibleOverlays, candles, chartEpoch]);
 
   // ── Level 4 — track P/L bubble coordinates. Overlays whose metadata carries a
   //    finite `pnl` get a floating bubble anchored to their price; we recompute
   //    the Y coordinate on a light loop so it follows zoom / scroll / resize.
   useEffect(() => {
-    const pnlOverlays = overlays.filter(
+    const pnlOverlays = chartVisibleOverlays.filter(
       (o) => o.price != null && overlayMetaNumber(o, "pnl") !== null,
     );
     if (pnlOverlays.length === 0) {
@@ -1357,7 +1440,7 @@ export function ARXNativeChart({
       if (timer != null) clearTimeout(timer);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [overlays, chartEpoch]);
+  }, [chartVisibleOverlays, chartEpoch]);
 
   const positionCount = useMemo(
     () => overlays.filter((o) => o.metadata?.primary === true).length,
@@ -1438,7 +1521,9 @@ export function ARXNativeChart({
             ? "#f59e0b"
             : "#94a3b8";
 
-    const lines: ChartStructureLine[] = overlay.lines.map((ln) => ({
+    const lines: ChartStructureLine[] = overlay.lines
+      .filter((line) => layers[line.id.endsWith(":rail") ? "channels" : "trendlines"])
+      .map((ln) => ({
       id: ln.id,
       start: { time: ln.start.time, price: ln.start.price },
       end: { time: ln.end.time, price: ln.end.price },
@@ -1449,7 +1534,9 @@ export function ARXNativeChart({
       width: ln.dominant ? 2 : 1,
     }));
 
-    const markers: ChartStructureMarker[] = overlay.markers.map((m) => ({
+    const markers: ChartStructureMarker[] = overlay.markers
+      .filter((marker) => layers[structureMarkerLayer(marker.kind)])
+      .map((m) => ({
       time: m.time,
       // Anchor side by bias (support breaks below, resistance above); the dot
       // sits on the bar — never at an arbitrary price (engine rule).
@@ -1462,7 +1549,7 @@ export function ARXNativeChart({
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
     // `aiUsable`; chartEpoch re-runs this after a context reset so structure
     // is applied only to the matching instrument, timeframe and provider.
-  }, [intelligenceState, aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
+  }, [intelligenceState, aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data, layers]);
 
   // Feed strip — the header chip's capped verdict, plus the specific reason for
   // a stale / invalid / unavailable grade. A background refetch is shown as its
@@ -1659,6 +1746,11 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
+          <ChartLayersMenu
+            value={layers}
+            onChange={setLayers}
+            availability={layerAvailability}
+          />
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
@@ -1677,6 +1769,7 @@ export function ARXNativeChart({
   const chartDetailsContent = <>
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
+    <StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} />
     <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
     <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
       <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
@@ -2066,7 +2159,6 @@ export function ARXNativeChart({
           {(!compactDesktopWorkspace || advancedToolsMounted) && <div className="space-y-2">{chartDetailsContent}</div>}
         </div>
       ) : chartDetailsContent}
-      <ChartLibraryCredit />
     </Card>
   );
 }

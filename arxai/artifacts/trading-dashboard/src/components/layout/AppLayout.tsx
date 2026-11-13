@@ -42,6 +42,11 @@ import {
   type ShellPreferences,
 } from "./shellLayoutModel";
 import { RouteLayoutPanel } from "./RouteLayoutPanel";
+import {
+  workspaceTabs,
+  workspaceTabForPath,
+  workspaceSubnav,
+} from "./workspaceNavigation";
 import "@/components/dashboard/command-workspace.css";
 
 // Lazy-load the Eleanor assistant panel (voice / realtime-WebRTC / TTS stack) so
@@ -911,6 +916,36 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <SafetyHeader />
       </div>
     : undefined;
+  const workspaceAccess = {
+    isInvestor,
+    isAdmin: viewMode.effectiveIsAdmin,
+    isApprovedTrader,
+    isLoading: !roleReady,
+  };
+  const workspacePrimaryTabs = workspaceTabs(workspaceAccess);
+  const activeWorkspaceTab = workspaceTabForPath(location, workspacePrimaryTabs);
+  const subnavItems = workspaceSubnav(location, workspaceAccess);
+  const workspaceSectionNavigation = <div className="arx-workspace-section-navigation">
+    <nav className="arx-workspace-section-tabs" aria-label="Workspace sections" data-testid="workspace-section-tabs">
+      {workspacePrimaryTabs.map((tab) => <Link
+        key={tab.href}
+        href={tab.href}
+        className={activeWorkspaceTab?.href === tab.href ? "is-active" : ""}
+        aria-current={activeWorkspaceTab?.href === tab.href ? "page" : undefined}
+        data-testid={`workspace-tab-${tab.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      >{tab.label}</Link>)}
+    </nav>
+    {subnavItems.length > 0 && <nav
+      className="arx-workspace-subnav"
+      aria-label={`${activeWorkspaceTab?.label ?? "Workspace"} tools`}
+    >
+      {subnavItems.map((item) => <Link
+        key={item.href}
+        href={item.href}
+        aria-current={location.split("?")[0] === item.href ? "page" : undefined}
+      >{item.label}</Link>)}
+    </nav>}
+  </div>;
   const routePanel = ROUTE_LAYOUT_PANELS[location];
   const guardedRoute = <RouteAccessGuard>
     {routePanel
@@ -936,6 +971,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     onAllToolsOpenChange: setAllToolsOpen,
     layoutMenuContent,
     safetyNotice,
+    sectionNavigation: workspaceSectionNavigation,
     children: shellContent,
     mobileToolsOpen,
     onMobileToolsOpenChange: setMobileToolsOpen,

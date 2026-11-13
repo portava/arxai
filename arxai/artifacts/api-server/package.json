@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node ../../scripts/validation/run-named-tests.mjs node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:structural-db": "node --import tsx --test --test-force-exit src/lib/structural/persistence.test.ts",
     "qa:stop-limit": "tsx src/lib/tradeAction/__qa__/stopLimitValidatorTests.ts",
     "qa:symbol-category": "tsx src/lib/mt5/__qa__/symbolCategoryTests.ts",
     "qa:assistant-routing": "tsx src/lib/assistant/__qa__/performanceRoutingTests.ts",

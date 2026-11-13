@@ -17,7 +17,7 @@ const engine = vi.hoisted(() => ({
   seriesDrift: 0,
 }));
 
-vi.mock("lightweight-charts", () => {
+vi.mock("@/lib/chart-engine/arxCanvas", () => {
   const timeScale = {
     subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn(), getVisibleLogicalRange: vi.fn(() => null),
     setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(),
@@ -79,7 +79,7 @@ vi.mock("lightweight-charts", () => {
     ColorType: { Solid: "solid" }, CrosshairMode: { Normal: 0 }, LineStyle: { Solid: 0, Dashed: 2 }, PriceScaleMode: { Normal: 0 } };
 });
 
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { heikinAshi } from "./heikinAshi";
 import { aiChartCommandsToOverlays, setupPreviewToCommands } from "@/lib/ai-chart-commands";
 import type { SetupPreview } from "@/lib/setup-preview";
@@ -91,7 +91,7 @@ vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect()
 const bar = (time: number, close = 1.105): ChartEngineCandle => ({ time, open: 1.1, high: 1.11, low: 1.09, close });
 const bars = [bar(300), bar(600), bar(900, 1.107)];
 function adapter() {
-  const a = new LightweightChartsAdapter();
+  const a = new ArxCanvasAdapter();
   a.init({ container: document.createElement("div"), height: 300 });
   return a;
 }

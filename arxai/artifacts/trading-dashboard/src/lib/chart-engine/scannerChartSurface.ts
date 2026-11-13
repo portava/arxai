@@ -1,4 +1,4 @@
-import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, SeriesType } from "./arxCanvas";
 import type { ChartStyle } from "./chartWorkspace";
 
 /** Temporary view-only bridge for Scanner's existing owned-position, annotation

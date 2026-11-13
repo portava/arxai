@@ -10,16 +10,51 @@ import {
  * All prices and times come from caller-supplied observations or labelled overlays.
  */
 export type UTCTimestamp = number;
-export type SeriesType = "Candlestick" | "Line";
+export type Time = number;
+export type TickMarkType = 0 | 1 | 2 | 3 | 4;
+export type TickMarkFormatter = (time: Time, type: TickMarkType, locale: string) => string | null;
+export type SeriesType = "Candlestick" | "Line" | "Histogram" | "Bar" | "Area" | "Baseline";
 export const CandlestickSeries = "Candlestick" as const;
 export const LineSeries = "Line" as const;
+export const HistogramSeries = "Histogram" as const;
+export const BarSeries = "Bar" as const;
+export const AreaSeries = "Area" as const;
+export const BaselineSeries = "Baseline" as const;
 export const ColorType = { Solid: "solid" } as const;
 export const CrosshairMode = { Normal: 0 } as const;
 export const LineStyle = { Solid: 0, Dotted: 1, Dashed: 2 } as const;
+export const PriceScaleMode = { Normal: 0, Logarithmic: 1, Percentage: 2, IndexedTo100: 3 } as const;
+type Options = Record<string, any>;
+export type LogicalRange = { from: number; to: number };
+export type LineSeriesPartialOptions = Options;
+export type HistogramSeriesPartialOptions = Options;
+export type AutoscaleInfoProvider = (original: () => unknown) => unknown;
+export interface CanvasRenderingTarget2D {
+  useMediaCoordinateSpace<T>(fn: (scope: { context: CanvasRenderingContext2D; mediaSize: { width: number; height: number } }) => T): T;
+}
+export interface IPrimitivePaneRenderer { draw(target: CanvasRenderingTarget2D): void }
+export interface IPrimitivePaneView { zOrder(): "bottom" | "normal" | "top"; renderer(): IPrimitivePaneRenderer }
+export interface ISeriesPrimitiveAxisView {
+  coordinate(): number;
+  text(): string;
+  textColor(): string;
+  backColor(): string;
+  visible(): boolean;
+}
+export interface ISeriesPrimitive {
+  attached?(parameter: SeriesAttachedParameter): void;
+  detached?(): void;
+  updateAllViews?(): void;
+  paneViews?(): readonly IPrimitivePaneView[];
+  priceAxisViews?(): readonly ISeriesPrimitiveAxisView[];
+}
+export interface SeriesAttachedParameter { chart: IChartApi; series: ISeriesApi; requestUpdate(): void }
 export interface LineData<T = number> {
   time: T;
   value: number;
+  color?: string;
 }
+export interface WhitespaceData<T = number> { time: T }
 export interface CandleData {
   time: number;
   open: number;
@@ -27,8 +62,7 @@ export interface CandleData {
   low: number;
   close: number;
 }
-type Point = CandleData | LineData;
-type Options = Record<string, any>;
+type Point = CandleData | LineData | WhitespaceData;
 type Range = { from: number; to: number };
 export interface SeriesMarker<T = number> {
   time: T;
@@ -60,11 +94,11 @@ export function cleanPoints<T extends Point>(
   const unique = new Map<number, T>();
   for (const p of points)
     if (
-      kind === "Candlestick"
+      kind === "Candlestick" || kind === "Bar"
         ? validCandle(p as CandleData)
         : Number.isFinite(p.time) &&
           p.time > 0 &&
-          Number.isFinite((p as LineData).value)
+          (!("value" in p) || Number.isFinite(p.value))
     )
       unique.set(p.time, p);
   return [...unique.values()].sort((a, b) => a.time - b.time);
@@ -75,17 +109,19 @@ export function zoomRange(range: Range, factor: number, anchor = 0.5): Range {
   return { from: pivot - span * anchor, to: pivot + span * (1 - anchor) };
 }
 
-class CanvasSeries<T extends SeriesType> {
+export class CanvasSeries<T extends SeriesType> {
   data: Point[] = [];
-  options: Options;
+  private seriesOptions: Options;
   lines = new Set<IPriceLine>();
+  primitives = new Set<ISeriesPrimitive>();
   markerLayers = new Map<symbol, SeriesMarker[]>();
   constructor(
     readonly chart: CanvasChart,
     readonly kind: T,
     options: Options,
+    readonly paneIndex = 0,
   ) {
-    this.options = {
+    this.seriesOptions = {
       priceLineVisible: false,
       lastValueVisible: false,
       ...options,
@@ -105,7 +141,7 @@ class CanvasSeries<T extends SeriesType> {
     this.chart.dataChanged(following && last?.time !== point.time);
   }
   applyOptions(options: Options) {
-    Object.assign(this.options, options);
+    Object.assign(this.seriesOptions, options);
     this.chart.paintSoon();
   }
   createPriceLine(options: Options): IPriceLine {
@@ -125,19 +161,53 @@ class CanvasSeries<T extends SeriesType> {
     this.lines.delete(line);
     this.chart.paintSoon();
   }
-  priceToCoordinate(price: number) {
-    return this.chart.priceToCoordinate(price);
-  }
   coordinateToPrice(y: number) {
-    return this.chart.coordinateToPrice(y);
+    return this.chart.coordinateToPrice(y, this.paneIndex);
+  }
+  priceToCoordinate(price: number) { return this.chart.priceToCoordinate(price, this.paneIndex); }
+  priceScale() { return this.chart.priceScale("right", this.paneIndex); }
+  getPane() { return this.chart.panes()[this.paneIndex]; }
+  options() { return this.seriesOptions; }
+  setSeriesOrder(order: number) { this.seriesOptions.zOrder = order; this.chart.paintSoon(); }
+  pop(count = 1) {
+    const removed = this.data.splice(Math.max(0, this.data.length - count), count);
+    this.chart.dataChanged();
+    return removed;
+  }
+  priceFormatter() {
+    const precision = Number(this.seriesOptions.priceFormat?.precision);
+    const minimumFractionDigits = Number.isInteger(precision) ? precision : 2;
+    return { format: (value: number) => value.toLocaleString("en-US", { minimumFractionDigits, maximumFractionDigits: minimumFractionDigits }) };
+  }
+  barsInLogicalRange(range: Range) {
+    const from = this.chart.logicalIndex(range.from);
+    const to = this.chart.logicalIndex(range.to);
+    const visible = this.data.filter((point) => {
+      const index = this.chart.logicalIndex(point.time);
+      return index >= range.from && index <= range.to;
+    });
+    const before = this.data.filter((point) => this.chart.logicalIndex(point.time) < range.from).length;
+    const after = this.data.filter((point) => this.chart.logicalIndex(point.time) > range.to).length;
+    return { barsBefore: before, barsAfter: after, from, to, visible };
+  }
+  attachPrimitive(primitive: ISeriesPrimitive) {
+    this.primitives.add(primitive);
+    primitive.attached?.({ chart: this.chart, series: this, requestUpdate: () => this.chart.paintSoon() });
+    this.chart.paintSoon();
+  }
+  detachPrimitive(primitive: ISeriesPrimitive) {
+    if (this.primitives.delete(primitive)) primitive.detached?.();
+    this.chart.paintSoon();
   }
 }
 
-class CanvasChart {
+export class CanvasChart {
   readonly canvas: HTMLCanvasElement;
   readonly series: CanvasSeries<SeriesType>[] = [];
   private ctx: CanvasRenderingContext2D | null;
-  private options: Options;
+  private chartOptions: Options;
+  private paneWeights = new Map<number, number>([[0, 3]]);
+  private paneScaleOptions = new Map<string, Options>();
   private width = 0;
   private height = 0;
   private frame = 0;
@@ -147,11 +217,13 @@ class CanvasChart {
   private fitted = false;
   private low = 0;
   private high = 1;
+  private paneRanges = new Map<number, { low: number; high: number }>();
   private hover: { x: number; y: number } | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
   private gesture: { range: Range; x: number; distance: number } | null = null;
   private rangeListeners = new Set<(r: Range | null) => void>();
   private crosshairListeners = new Set<(p: any) => void>();
+  private clickListeners = new Set<(p: any) => void>();
   private cleanups: (() => void)[] = [];
   private drawingsVisible = true;
   setDrawingsVisible(visible: boolean) {
@@ -254,7 +326,7 @@ class CanvasChart {
     private container: HTMLElement,
     options: Options,
   ) {
-    this.options = options;
+    this.chartOptions = options;
     this.canvas = document.createElement("canvas");
     this.canvas.dataset.arxChart = "canvas";
     this.canvas.tabIndex = 0;
@@ -275,7 +347,7 @@ class CanvasChart {
         this.placeDrawing(this.point(e));
         return;
       }
-      if (this.options.handleScroll?.pressedMouseMove === false) return;
+      if (this.chartOptions.handleScroll?.pressedMouseMove === false) return;
       this.canvas.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, this.point(e));
       this.startGesture();
@@ -286,7 +358,7 @@ class CanvasChart {
       if (this.pointers.has(e.pointerId) && this.gesture) {
         this.pointers.set(e.pointerId, p);
         const values = [...this.pointers.values()];
-        if (values.length > 1 && this.options.handleScale?.pinch !== false) {
+        if (values.length > 1 && this.chartOptions.handleScale?.pinch !== false) {
           const distance = Math.abs(values[1].x - values[0].x);
           if (distance > 5)
             this.setRange(
@@ -317,10 +389,30 @@ class CanvasChart {
         this.paintSoon();
       }
     });
+    this.on("click", (event: MouseEvent) => {
+      const point = this.point(event);
+      const time = this.timeAtIndex(this.indexAt(point.x));
+      const selected = this.series.find((series) => series.kind === "Candlestick");
+      const seriesData = new Map<CanvasSeries<SeriesType>, Point>();
+      for (const series of this.series) {
+        const row = series.data.find((item) => item.time === time);
+        if (row) seriesData.set(series, row);
+      }
+      for (const listener of this.clickListeners) {
+        listener({
+          time,
+          point,
+          seriesData,
+          hoveredSeries: selected,
+          hoveredObjectId: undefined,
+          sourceEvent: event,
+        });
+      }
+    });
     this.on(
       "wheel",
       (e: WheelEvent) => {
-        if (this.options.handleScale?.mouseWheel === false) return;
+        if (this.chartOptions.handleScale?.mouseWheel === false) return;
         e.preventDefault();
         const p = this.point(e);
         this.setRange(
@@ -472,6 +564,14 @@ class CanvasChart {
       (time - this.times[lo - 1]) / (this.times[lo] - this.times[lo - 1])
     );
   }
+  logicalIndex(time: number) { return this.indexForTime(time); }
+  private logicalIndexAtTime(time: number) {
+    if (!this.times.length) return 0;
+    const step = this.times.length > 1 ? this.times.at(-1)! - this.times.at(-2)! : 60;
+    if (time < this.times[0]!) return (time - this.times[0]!) / step;
+    if (time > this.times.at(-1)!) return this.times.length - 1 + (time - this.times.at(-1)!) / step;
+    return this.indexForTime(time);
+  }
   private setRange(range: Range) {
     const span = Math.max(8, range.to - range.from),
       max = Math.max(this.times.length + span * 0.8, span);
@@ -488,7 +588,7 @@ class CanvasChart {
   dataChanged(advance = false) {
     const oldCount = this.times.length;
     const candleTimes = this.series
-      .filter((s) => s.kind === "Candlestick")
+      .filter((s) => s.kind === "Candlestick" || s.kind === "Bar")
       .flatMap((s) => s.data.map((p) => p.time));
     this.times = [
       ...new Set(
@@ -509,7 +609,7 @@ class CanvasChart {
       this.updateScale();
       this.paintSoon();
     }
-    const bars = this.series.find((s) => s.kind === "Candlestick")?.data;
+    const bars = this.series.find((s) => s.kind === "Candlestick" || s.kind === "Bar")?.data;
     const last = bars?.at(-1) as CandleData | undefined;
     this.canvas.setAttribute(
       "aria-description",
@@ -519,56 +619,149 @@ class CanvasChart {
     );
   }
   private updateScale() {
-    const values: number[] = [];
-    for (const s of this.series)
-      for (const p of s.data) {
-        const i = this.indexForTime(p.time);
-        if (i < this.range.from - 1 || i > this.range.to + 1) continue;
-        if ("close" in p) values.push(p.high, p.low);
-        else values.push(p.value);
-      }
-    if (!values.length) {
-      this.low = 0;
-      this.high = 1;
-      return;
+    const panes = this.panes().length;
+    for (let pane = 0; pane < panes; pane++) {
+      if (this.priceScale("right", pane).options().autoScale === false && this.paneRanges.has(pane)) continue;
+      const values: number[] = [];
+      for (const s of this.series.filter((item) => item.paneIndex === pane))
+        for (const p of s.data) {
+          const i = this.indexForTime(p.time);
+          if (i < this.range.from - 1 || i > this.range.to + 1) continue;
+          if ("close" in p) {
+            const high = this.toScaleValue(p.high, pane);
+            const low = this.toScaleValue(p.low, pane);
+            if (Number.isFinite(high)) values.push(high);
+            if (Number.isFinite(low)) values.push(low);
+          }
+          else if ("value" in p) {
+            const autoscale = s.options().autoscaleInfoProvider;
+            const included = typeof autoscale !== "function" ||
+              autoscale(() => ({ priceRange: { minValue: p.value, maxValue: p.value } })) !== null;
+            const value = this.toScaleValue(p.value, pane);
+            if (included && Number.isFinite(value)) values.push(value);
+          }
+        }
+      let low = values.length ? Math.min(...values) : 0;
+      let high = values.length ? Math.max(...values) : 1;
+      const pad = Math.max((high - low) * 0.12, Math.abs(high) * 0.00002, 0.000001);
+      low -= pad;
+      high += pad;
+      this.paneRanges.set(pane, { low, high });
+      if (pane === 0) { this.low = low; this.high = high; }
     }
-    let low = Math.min(...values),
-      high = Math.max(...values);
-    const pad = Math.max(
-      (high - low) * 0.12,
-      Math.abs(high) * 0.00002,
-      0.000001,
-    );
-    this.low = low - pad;
-    this.high = high + pad;
   }
-  priceToCoordinate(price: number): number | null {
-    if (!Number.isFinite(price) || price < this.low || price > this.high)
-      return null;
-    return ((this.high - price) / (this.high - this.low)) * this.plotHeight();
+  private paneTop(index: number): number {
+    let top = 0;
+    for (let pane = 0; pane < index; pane++) top += this.paneHeight(pane);
+    return top;
   }
-  coordinateToPrice(y: number): number | null {
-    return Number.isFinite(y) && y >= 0 && y <= this.plotHeight()
-      ? this.high - (y / this.plotHeight()) * (this.high - this.low)
-      : null;
+  private paneRange(index: number) { return this.paneRanges.get(index) ?? { low: this.low, high: this.high }; }
+  private priceMode(pane: number) {
+    return Number(this.priceScale("right", pane).options().mode ?? 0);
   }
-  addSeries<T extends SeriesType>(type: T, options: Options = {}) {
-    const s = new CanvasSeries(this, type, options);
+  private priceBase(pane: number) {
+    const series = this.series.find((item) => item.paneIndex === pane && (item.kind === "Candlestick" || item.kind === "Bar"));
+    const first = series?.data[0] as CandleData | undefined;
+    return Number(first?.close) || 1;
+  }
+  private toScaleValue(price: number, pane: number) {
+    const mode = this.priceMode(pane);
+    if (mode === 1) return price > 0 ? Math.log(price) : Number.NaN;
+    if (mode === 2) return ((price / this.priceBase(pane)) - 1) * 100;
+    if (mode === 3) return (price / this.priceBase(pane)) * 100;
+    return price;
+  }
+  private fromScaleValue(value: number, pane: number) {
+    const mode = this.priceMode(pane);
+    if (mode === 1) return Math.exp(value);
+    if (mode === 2) return this.priceBase(pane) * (1 + value / 100);
+    if (mode === 3) return this.priceBase(pane) * value / 100;
+    return value;
+  }
+  private scaleMargins(pane: number) {
+    const margins = this.priceScale("right", pane).options().scaleMargins ?? {};
+    const top = Math.max(0, Math.min(0.45, Number(margins.top ?? 0)));
+    const bottom = Math.max(0, Math.min(0.45, Number(margins.bottom ?? 0)));
+    return { top, available: Math.max(0.1, 1 - top - bottom) };
+  }
+  priceToCoordinate(price: number, pane = 0): number | null {
+    const {low,high} = this.paneRange(pane);
+    if (!Number.isFinite(price)) return null;
+    const value = this.toScaleValue(price, pane);
+    if (value < low || value > high) return null;
+    const margins = this.scaleMargins(pane);
+    const fraction = (high - value) / (high - low);
+    const inverted = this.priceScale("right", pane).options().invertScale === true ? 1 - fraction : fraction;
+    return (margins.top + inverted * margins.available) * this.paneHeight(pane);
+  }
+  coordinateToPrice(y: number, pane = 0): number | null {
+    const {low,high} = this.paneRange(pane);
+    if (!Number.isFinite(y) || y < 0 || y > this.paneHeight(pane)) return null;
+    const margins = this.scaleMargins(pane);
+    const rawFraction = (y / this.paneHeight(pane) - margins.top) / margins.available;
+    const fraction = this.priceScale("right", pane).options().invertScale === true ? 1 - rawFraction : rawFraction;
+    return this.fromScaleValue(high - fraction * (high - low), pane);
+  }
+  addSeries<T extends SeriesType>(type: T, options: Options = {}, paneIndex = 0) {
+    const s = new CanvasSeries(this, type, options, paneIndex);
+    if (!this.paneWeights.has(paneIndex)) this.paneWeights.set(paneIndex, 1);
     this.series.push(s);
+    this.paintSoon();
     return s;
   }
   removeSeries(s: CanvasSeries<SeriesType>) {
     const index = this.series.indexOf(s);
     if (index >= 0) this.series.splice(index, 1);
+    const used = new Set([0, ...this.series.map((series) => series.paneIndex)]);
+    for (const pane of this.paneWeights.keys()) if (!used.has(pane)) this.paneWeights.delete(pane);
     this.dataChanged();
   }
+  panes() {
+    const count = Math.max(1, ...this.series.map((series) => series.paneIndex + 1));
+    return Array.from({ length: count }, (_, index) => ({
+      getSeries: () => this.series.filter((series) => series.paneIndex === index),
+      getHeight: () => this.paneHeight(index),
+      setStretchFactor: (factor: number) => {
+        if (Number.isFinite(factor) && factor > 0) {
+          this.paneWeights.set(index, factor);
+          this.paintSoon();
+        }
+      },
+    }));
+  }
+  private paneHeight(index: number) {
+    const total = [...this.paneWeights.values()].reduce((sum, value) => sum + value, 0) || 1;
+    return this.plotHeight() * (this.paneWeights.get(index) ?? 1) / total;
+  }
+  priceScale(side: "left" | "right" = "right", paneIndex = 0) {
+    const key = `${paneIndex}:${side}`;
+    const defaults = paneIndex === 0
+      ? this.chartOptions[`${side}PriceScale`] ?? {}
+      : this.paneScaleOptions.get(key) ?? this.chartOptions[`${side}PriceScale`] ?? {};
+    return {
+      options: () => ({ ...defaults, ...(this.paneScaleOptions.get(key) ?? {}) }),
+      applyOptions: (next: Options) => {
+        this.paneScaleOptions.set(key, { ...defaults, ...(this.paneScaleOptions.get(key) ?? {}), ...next });
+        this.updateScale();
+        this.paintSoon();
+      },
+    };
+  }
   applyOptions(options: Options) {
-    this.options = { ...this.options, ...options };
+    const merged: Options = { ...this.chartOptions, ...options };
+    for (const key of ["layout", "grid", "crosshair", "timeScale", "rightPriceScale", "leftPriceScale", "localization", "handleScale", "handleScroll"] as const) {
+      const current = this.chartOptions[key];
+      const incoming = options[key];
+      if (current && incoming && typeof current === "object" && typeof incoming === "object") {
+        merged[key] = { ...current, ...incoming };
+      }
+    }
+    this.chartOptions = merged;
     this.width = Math.max(
       1,
-      Number(this.options.width) || this.container.clientWidth || 600,
+      Number(this.chartOptions.width) || this.container.clientWidth || 600,
     );
-    this.height = Math.max(80, Number(this.options.height) || 400);
+    this.height = Math.max(80, Number(this.chartOptions.height) || 400);
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(this.width * dpr);
     this.canvas.height = Math.round(this.height * dpr);
@@ -586,6 +779,7 @@ class CanvasChart {
   }
   timeScale() {
     return {
+      options: () => this.chartOptions.timeScale ?? {},
       fitContent: () => this.fitContent(),
       getVisibleLogicalRange: () =>
         this.times.length ? { ...this.range } : null,
@@ -595,22 +789,55 @@ class CanvasChart {
           from: this.indexForTime(r.from),
           to:
             this.indexForTime(r.to) +
-            Math.max(2, Number(this.options.timeScale?.rightOffset) || 3),
+             Math.max(2, Number(this.chartOptions.timeScale?.rightOffset) || 3),
         }),
       subscribeVisibleLogicalRangeChange: (fn: (r: Range | null) => void) =>
         this.rangeListeners.add(fn),
       unsubscribeVisibleLogicalRangeChange: (fn: (r: Range | null) => void) =>
         this.rangeListeners.delete(fn),
       timeToCoordinate: (time: number) =>
-        this.times.length ? this.x(this.indexForTime(time)) : null,
+        this.times.length ? this.x(this.logicalIndexAtTime(time)) : null,
+      coordinateToTime: (x: number) => this.timeAtIndex(this.indexAt(x)),
+      getVisibleRange: () => {
+        if (!this.times.length) return null;
+        const from = this.timeAtIndex(this.range.from);
+        const to = this.timeAtIndex(this.range.to);
+        return from == null || to == null ? null : { from, to };
+      },
+      width: () => this.plotWidth(),
+      scrollToRealTime: () => this.fitContent(),
+      scrollToPosition: (position: number, _animated?: boolean) => {
+        const span = this.range.to - this.range.from;
+        this.setRange({ from: this.times.length + position - span, to: this.times.length + position });
+      },
     };
+  }
+  options() { return this.chartOptions; }
+  resize(width: number, height: number) { this.applyOptions({ width, height }); }
+  takeScreenshot() { return this.canvas; }
+  subscribeClick(listener: (event: any) => void) { this.clickListeners.add(listener); }
+  unsubscribeClick(listener: (event: any) => void) { this.clickListeners.delete(listener); }
+  setCrosshairPosition(price: number, time: number, _series?: CanvasSeries<SeriesType>) {
+    const x = this.timeScale().timeToCoordinate(time);
+    const y = this.priceToCoordinate(price);
+    this.hover = x == null || y == null ? null : { x, y };
+    this.paintSoon();
+  }
+  clearCrosshairPosition() { this.hover = null; this.paintSoon(); }
+  private timeAtIndex(index: number): number | null {
+    if (!this.times.length || !Number.isFinite(index)) return null;
+    const lo = Math.floor(index);
+    const fraction = index - lo;
+    const step = this.times.length > 1 ? this.times.at(-1)! - this.times.at(-2)! : 60;
+    const at = (i: number) => i < 0 ? this.times[0]! + i * step : i >= this.times.length ? this.times.at(-1)! + (i - this.times.length + 1) * step : this.times[i]!;
+    return at(lo) + (at(lo + 1) - at(lo)) * fraction;
   }
   private fitContent() {
     this.setRange({
       from: Math.max(-1, this.times.length - (this.width < 600 ? 65 : 150)),
       to:
         this.times.length +
-        Math.max(3, Number(this.options.timeScale?.rightOffset) || 5),
+            Math.max(3, Number(this.chartOptions.timeScale?.rightOffset) || 5),
     });
   }
   paintSoon() {
@@ -629,14 +856,21 @@ class CanvasChart {
     const text = dark ? "#91a5bc" : "#596c80",
       grid = dark ? "#1c2a3b" : "#e5ebf1",
       background = dark ? "#0b1421" : "#ffffff";
-    const precision = this.high < 10 ? 5 : this.high < 100 ? 3 : 2;
+    const declaredPrecision = Number(this.series.find((series) => series.kind === "Candlestick" || series.kind === "Bar")?.options().priceFormat?.precision);
+    const precision = Number.isInteger(declaredPrecision) && declaredPrecision >= 0
+      ? Math.min(12, declaredPrecision)
+      : this.high < 10 ? 5 : this.high < 100 ? 3 : 2;
     const fmt = (n: number) =>
       n.toLocaleString("en-US", {
         minimumFractionDigits: precision,
         maximumFractionDigits: precision,
       });
-    const rawY = (price: number) =>
-      ((this.high - price) / (this.high - this.low)) * h;
+    const paneTop = (pane: number) => this.paneTop(pane);
+    const paneHeight = (pane: number) => this.paneHeight(pane);
+    const rawY = (price: number, pane = 0) => {
+      const coordinate = this.priceToCoordinate(price, pane);
+      return coordinate == null ? Number.NaN : paneTop(pane) + coordinate;
+    };
     c.clearRect(0, 0, this.width, this.height);
     c.fillStyle = background;
     c.fillRect(0, 0, this.width, this.height);
@@ -645,14 +879,20 @@ class CanvasChart {
     c.strokeStyle = grid;
     c.lineWidth = 1;
     c.setLineDash([]);
-    for (let i = 0; i <= 5; i++) {
-      const y = 12 + ((h - 24) * i) / 5;
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(w, y);
-      c.stroke();
-      c.fillStyle = text;
-      c.fillText(fmt(this.high - (y / h) * (this.high - this.low)), w + 9, y);
+    for (let pane = 0; pane < this.panes().length; pane++) {
+      const top = paneTop(pane), paneH = paneHeight(pane), range = this.paneRange(pane);
+      const margins = this.scaleMargins(pane);
+      for (let i = 0; i <= 4; i++) {
+        const y = top + paneH * (margins.top + (margins.available * i) / 4);
+        c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+        c.fillStyle = text;
+        c.fillText(fmt(this.fromScaleValue(range.high - (i / 4) * (range.high - range.low), pane)), w + 9, y);
+      }
+      if (pane > 0) {
+        c.strokeStyle = dark ? "#31445c" : "#cad3de";
+        c.beginPath(); c.moveTo(0, top); c.lineTo(w, top); c.stroke();
+        c.strokeStyle = grid;
+      }
     }
     const timeTicks = Math.max(2, Math.floor(w / 110));
     for (let i = 0; i <= timeTicks; i++) {
@@ -664,18 +904,13 @@ class CanvasChart {
       const time = this.times[Math.round(this.indexAt(x))];
       if (time) {
         const date = new Date(time * 1000);
-        const stamp =
-          this.times.at(-1)! - this.times[0] > 86400 * 3
-            ? date.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                timeZone: "UTC",
-              })
-            : date.toLocaleTimeString("en-GB", {
-                hour: "2-digit",
-                minute: "2-digit",
-                timeZone: "UTC",
-              });
+        const span = this.times.at(-1)! - this.times[0]!;
+        const tickType: TickMarkType = span > 86400 * 365 ? 0 : span > 86400 * 60 ? 1 : span > 86400 * 3 ? 2 : span > 3600 ? 3 : 4;
+        const formatter = this.chartOptions.timeScale?.tickMarkFormatter as TickMarkFormatter | undefined;
+        const stamp = formatter?.(time, tickType, this.chartOptions.localization?.locale ?? navigator.language) ??
+          (span > 86400 * 3
+            ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+            : date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }));
         c.fillStyle = text;
         c.fillText(stamp, Math.min(w - 42, Math.max(4, x - 18)), h + 17);
       }
@@ -685,23 +920,69 @@ class CanvasChart {
     c.rect(0, 0, w, h);
     c.clip();
     for (const s of this.series) {
+      const pane = s.paneIndex, top = paneTop(pane), paneH = paneHeight(pane);
+      const localY = (price: number) => {
+        const coordinate = this.priceToCoordinate(price, pane);
+        return coordinate == null ? Number.NaN : top + coordinate;
+      };
+      c.save();
+      c.beginPath(); c.rect(0, top, w, paneH); c.clip();
       const body = Math.max(
         1,
         Math.min(14, (w / (this.range.to - this.range.from)) * 0.62),
       );
-      if (s.kind === "Line") {
-        c.strokeStyle = s.options.color || "#60a5fa";
-        c.lineWidth = s.options.lineWidth || 1;
-        c.setLineDash(s.options.lineStyle ? [5, 4] : []);
+      if (s.kind === "Line" || s.kind === "Area" || s.kind === "Baseline") {
+        c.strokeStyle = s.options().color || "#60a5fa";
+        c.lineWidth = s.options().lineWidth || 1;
+        c.setLineDash(s.options().lineStyle === 1 ? [1, 3] : s.options().lineStyle === 2 ? [5, 4] : []);
         c.beginPath();
-        s.data.forEach((p, i) => {
-          const x = this.x(this.indexForTime(p.time)),
-            y = rawY((p as LineData).value);
-          if (i) c.lineTo(x, y);
-          else c.moveTo(x, y);
-        });
+        let drawing = false;
+        for (const p of s.data) {
+          if (!("value" in p)) { drawing = false; continue; }
+          const x = this.x(this.indexForTime(p.time)), y = localY(p.value);
+          if (drawing) c.lineTo(x, y); else { c.moveTo(x, y); drawing = true; }
+        }
+        if (s.kind === "Baseline") {
+          const base = Number(s.options().baseValue?.price ?? s.options().base ?? 0);
+          const baseY = localY(base);
+          for (const point of s.data) {
+            if (!("value" in point)) continue;
+            const x = this.x(this.indexForTime(point.time));
+            const y = localY(point.value);
+            c.globalAlpha = 0.22;
+            c.fillStyle = point.value >= base
+              ? s.options().topFillColor ?? "#22c55e"
+              : s.options().bottomFillColor ?? "#ef4444";
+            c.fillRect(x - body / 2, Math.min(y, baseY), body, Math.max(1, Math.abs(baseY - y)));
+          }
+          c.globalAlpha = 1;
+        }
+        if (s.kind === "Area" && drawing) {
+          const valid = s.data.filter((point): point is LineData => "value" in point);
+          const last = valid.at(-1), first = valid[0];
+          if (first && last) {
+            c.lineTo(this.x(this.indexForTime(last.time)), top + paneH);
+            c.lineTo(this.x(this.indexForTime(first.time)), top + paneH);
+            c.closePath(); c.globalAlpha = 0.18; c.fillStyle = s.options().topColor ?? s.options().lineColor ?? "#38bdf8"; c.fill(); c.globalAlpha = 1;
+            c.beginPath();
+            valid.forEach((point, index) => {
+              const x = this.x(this.indexForTime(point.time)), y = localY(point.value);
+              index ? c.lineTo(x, y) : c.moveTo(x, y);
+            });
+          }
+        }
         c.stroke();
         c.setLineDash([]);
+      } else if (s.kind === "Histogram") {
+        const base = Number(s.options().base) || 0;
+        for (const point of s.data) {
+          if (!("value" in point)) continue;
+          const x = this.x(this.indexForTime(point.time));
+          if (x < -body || x > w + body) continue;
+          const y = localY(point.value), baseY = localY(base);
+          c.fillStyle = point.color ?? s.options().color ?? (point.value >= base ? "#22c55e" : "#ef4444");
+          c.fillRect(x - body / 2, Math.min(y, baseY), body, Math.max(1, Math.abs(baseY - y)));
+        }
       } else
         for (const point of s.data) {
           const p = point as CandleData,
@@ -709,23 +990,28 @@ class CanvasChart {
           if (x < -body || x > w + body) continue;
           const up = p.close >= p.open;
           const color = up
-            ? s.options.upColor || "#35c9a6"
-            : s.options.downColor || "#f27787";
+            ? s.options().upColor || "#35c9a6"
+            : s.options().downColor || "#f27787";
           c.fillStyle = color;
           c.strokeStyle = up
-            ? s.options.wickUpColor || color
-            : s.options.wickDownColor || color;
+            ? s.options().wickUpColor || color
+            : s.options().wickDownColor || color;
           c.lineWidth = 1;
           c.beginPath();
-          c.moveTo(x, rawY(p.high));
-          c.lineTo(x, rawY(p.low));
+          c.moveTo(x, localY(p.high));
+          c.lineTo(x, localY(p.low));
           c.stroke();
-          const top = rawY(Math.max(p.open, p.close)),
-            height = Math.max(1, Math.abs(rawY(p.close) - rawY(p.open)));
-          if (s.options.title === "Illustrative scenario") {
+          const candleTop = localY(Math.max(p.open, p.close)),
+            candleHeight = Math.max(1, Math.abs(localY(p.close) - localY(p.open)));
+          if (s.kind === "Bar") {
+            c.beginPath(); c.moveTo(x - body / 2, localY(p.open)); c.lineTo(x, localY(p.open));
+            c.moveTo(x, localY(p.close)); c.lineTo(x + body / 2, localY(p.close)); c.stroke();
+            continue;
+          }
+          if (s.options().title === "Illustrative scenario") {
             c.strokeStyle = color;
-            c.strokeRect(x - body / 2, top, body, height);
-          } else c.fillRect(x - body / 2, top, body, height);
+            c.strokeRect(x - body / 2, candleTop, body, candleHeight);
+          } else c.fillRect(x - body / 2, candleTop, body, candleHeight);
         }
       for (const markers of s.markerLayers.values())
         for (const m of markers) {
@@ -736,7 +1022,7 @@ class CanvasChart {
           const x = this.x(this.indexForTime(m.time));
           if (x < 0 || x > w) continue;
           const above = m.position === "aboveBar",
-            y = rawY(above ? bar.high : bar.low) + (above ? -12 : 12);
+            y = localY(above ? bar.high : bar.low) + (above ? -12 : 12);
           c.fillStyle = m.color;
           c.beginPath();
           c.arc(x, y, 3, 0, Math.PI * 2);
@@ -750,6 +1036,35 @@ class CanvasChart {
             );
           }
         }
+      for (const line of s.lines) {
+        const lineOptions = line.options();
+        const y = localY(Number(lineOptions.price));
+        if (!Number.isFinite(y) || y < top || y > top + paneH) continue;
+        c.strokeStyle = lineOptions.color ?? "#57d7f0";
+        c.lineWidth = Number(lineOptions.lineWidth) || 1;
+        c.setLineDash(lineOptions.lineStyle ? [5, 4] : []);
+        c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); c.setLineDash([]);
+        if (lineOptions.axisLabelVisible) { c.fillStyle = lineOptions.axisLabelColor ?? c.strokeStyle; c.fillText(lineOptions.title ?? fmt(Number(lineOptions.price)), w + 8, y); }
+      }
+      if (s.primitives.size) {
+        const target: CanvasRenderingTarget2D = {
+          useMediaCoordinateSpace: (render) => {
+            c.save(); c.translate(0, top);
+            try { return render({ context: c, mediaSize: { width: w, height: paneH } }); }
+            finally { c.restore(); }
+          },
+        };
+        for (const primitive of s.primitives) {
+          primitive.updateAllViews?.();
+          for (const view of primitive.paneViews?.() ?? []) view.renderer().draw(target);
+          for (const axis of primitive.priceAxisViews?.() ?? []) if (axis.visible()) {
+            const y = top + axis.coordinate();
+            c.fillStyle = axis.backColor(); c.fillRect(w + 2, y - 8, 80, 16);
+            c.fillStyle = axis.textColor(); c.fillText(axis.text(), w + 5, y);
+          }
+        }
+      }
+      c.restore();
     }
     const drawAnnotation = (d: ChartDrawing, preview = false) => {
       const x1 = this.drawingX(d.start.time),
@@ -843,12 +1158,12 @@ class CanvasChart {
     for (const s of this.series) {
       for (const line of s.lines) priceLine(line.options());
       const last = s.data.at(-1) as CandleData | undefined;
-      if (last && s.kind === "Candlestick" && s.options.priceLineVisible)
+      if (last && s.kind === "Candlestick" && s.options().priceLineVisible)
         priceLine({
           price: last.close,
-          color: s.options.priceLineColor || "#4ebed3",
+          color: s.options().priceLineColor || "#4ebed3",
           lineStyle: 2,
-          axisLabelVisible: s.options.lastValueVisible,
+          axisLabelVisible: s.options().lastValueVisible,
         });
     }
     if (this.hover && this.hover.x < w && this.hover.y < h) {

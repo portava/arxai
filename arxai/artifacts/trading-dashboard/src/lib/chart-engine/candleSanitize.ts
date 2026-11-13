@@ -1,7 +1,7 @@
 // Candlestick data sanitizer — the single boundary guard that keeps malformed
-// bars out of lightweight-charts.
+// bars out of the first-party chart renderer.
 //
-// Why this exists: lightweight-charts v5 treats a candlestick point with any
+// Why this exists: the Canvas candle renderer requires every candlestick point
 // missing / null / NaN OHLC field as a *whitespace* point, but its candlestick
 // colorer still maps over EVERY item and calls `ensureNotNull` on the bar's
 // color data during PAINT. A single bad bar therefore throws "Value is null"
@@ -44,7 +44,7 @@ export function sanitizeCandlestickData<T extends SanitizableCandlePoint>(
 }
 
 // Snap an arbitrary epoch-second onto a real candle bar present in the series.
-// lightweight-charts resolves every series marker to a bar via findBar(); a
+// The renderer resolves every series marker to a bar; a
 // marker whose time does NOT exactly match a loaded bar makes findBar() return
 // null and the candlestick colorer throws "Value is null" on every repaint
 // (SeriesBarColorer.Candlestick → ensureNotNull) — uncatchable at the call

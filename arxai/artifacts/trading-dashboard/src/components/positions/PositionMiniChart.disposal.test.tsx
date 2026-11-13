@@ -110,15 +110,13 @@ beforeEach(() => {
 });
 
 describe("PositionMiniChart ResizeObserver disposal race", () => {
-  it("disables the provider logo and retains a plain-text library credit", () => {
+  it("uses a native-renderer canvas without vendor attribution", () => {
     const view = renderMiniChart();
     expect(createChartMock).toHaveBeenCalledWith(
       expect.any(HTMLElement),
-      expect.objectContaining({ layout: expect.objectContaining({ attributionLogo: false }) }),
+      expect.not.objectContaining({ layout: expect.objectContaining({ attributionLogo: expect.anything() }) }),
     );
-    const credit = view.getByTestId("chart-library-credit");
-    expect(credit.querySelector("svg, img, canvas")).toBeNull();
-    expect(view.getByRole("link", { name: "TradingView Lightweight Charts™" }).getAttribute("href")).toBe("https://www.tradingview.com/");
+    expect(view.queryByTestId("chart-library-credit")).toBeNull();
   });
 
   it("a late RO callback after unmount must not throw (Object is disposed lock)", () => {

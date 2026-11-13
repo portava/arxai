@@ -9,18 +9,18 @@ const mocks = vi.hoisted(() => {
   const createChart = vi.fn((_el: unknown, _options: any) => chart);
   return { line, series, scale, chart, createChart };
 });
-vi.mock("lightweight-charts", () => ({ createChart: (el: unknown, options: unknown) => mocks.createChart(el, options), CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+vi.mock("@/lib/chart-engine/arxCanvas", () => ({ createChart: (el: unknown, options: unknown) => mocks.createChart(el, options), CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { sanitizeCandlestickData } from "./candleSanitize";
 import { candleDisplayPrecision } from "./candleReconciliation";
 import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
 const bar = (time: number, close = 1.15) => ({time,open:1.1,high:1.2,low:1.0,close});
-let adapter: LightweightChartsAdapter;
+let adapter: ArxCanvasAdapter;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("ResizeObserver", class { observe(){} disconnect(){} });
   mocks.scale.getVisibleLogicalRange.mockReturnValue({from:0,to:1});
-  adapter = new LightweightChartsAdapter();
+  adapter = new ArxCanvasAdapter();
   adapter.init({container:document.createElement("div"),height:400});
 });
 afterEach(() => {adapter.destroy();vi.useRealTimers();});

@@ -14,10 +14,8 @@ import type { ChartTimeZone } from "./chartTimeZone";
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
 //
 // The Smart Chart Shell (live-chart page) owns ALL chart state and intelligence.
-// The actual on-screen RENDERER lives behind this adapter interface, so the
-// engine can be swapped (lightweight-charts today; a licensed TradingView
-// Advanced Charts engine, or another renderer, later) WITHOUT the Shell ever
-// touching engine-specific code.
+// The actual on-screen first-party ARX Canvas renderer lives behind this adapter
+// interface, so the Shell never depends on renderer-specific internals.
 //
 // HONESTY / SAFETY:
 //  - This contract is purely a VIEW contract. No adapter may place, modify, or
@@ -28,7 +26,13 @@ import type { ChartTimeZone } from "./chartTimeZone";
 //    contract. An adapter never fabricates bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
+export type ChartEngineId = "arx-canvas";
+
+export interface ChartGhostPath {
+  id: string;
+  color: string;
+  candles: ChartEngineCandle[];
+}
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
@@ -128,11 +132,10 @@ export interface ChartStructureMarker {
 
 /**
  * The renderer-agnostic engine contract. The Smart Chart Shell drives the chart
- * ONLY through these methods. lightweight-charts is the first implementation;
- * any future engine implements the same surface.
+ * ONLY through these methods. The ARX Canvas renderer implements this surface.
  */
 /** What the engine actually drew versus the source bars it was given
- * (LightweightChartsAdapter.measureRenderFidelity). Reported to the server as
+ * (ArxCanvasAdapter.measureRenderFidelity). Reported to the server as
  * Render Accuracy evidence. */
 export interface RenderFidelity {
   displayMode: "ohlc" | "close" | "hollow" | "heikinAshi";
@@ -219,6 +222,7 @@ export interface ChartEngineAdapter {
     lines: ChartStructureLine[],
     markers: ChartStructureMarker[],
   ): void;
+  setGhostPaths?(paths: ChartGhostPath[]): void;
   /** Restore the default visible range (last N candles). */
   resetScale(): void;
   /** Map a price to a Y pixel coordinate (for DOM overlays); null if off-scale. */
@@ -268,8 +272,15 @@ export interface ChartEngineAdapter {
   setChartStyle?(style: ChartStyle): void;
   setStudies?(studies: ChartStudy[]): void;
   setDrawings?(drawings: ChartDrawing[]): void;
+  setDrawingsVisible?(visible: boolean): void;
+  getDrawingCount?(): number;
   setDrawingInteraction?(config: DrawingInteraction | null): void;
   setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;
+  setDrawingTool?(tool: import("./drawings").DrawingTool): void;
+  setDrawingToolDrawings?(drawings: import("./drawings").ChartDrawing[]): void;
+  onDrawingsChange?(listener: ((drawings: import("./drawings").ChartDrawing[], canUndo: boolean) => void) | null): void;
+  undoDrawing?(): void;
+  clearDrawings?(): void;
   exportImage?(): string | null;
 
   // ── Optional / staged. Present so the Shell can feature-detect support. ──────

@@ -10,16 +10,16 @@ const m=vi.hoisted(()=>{
     pop:vi.fn((count:number)=>{for(let i=data.length-1;i>=0&&count>0;i--)if(data[i].value!=null||data[i].close!=null){data.splice(i,1);count--;}}),applyOptions:vi.fn(change=>Object.assign(state,change)),createPriceLine:vi.fn(options=>{const state={...options};return{options:()=>({...state}),applyOptions:vi.fn(change=>Object.assign(state,change))};}),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),clearCrosshairPosition:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
   return{chart,handles,scale};
 });
-vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",AreaSeries:"area",BaselineSeries:"baseline",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+vi.mock("@/lib/chart-engine/arxCanvas",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",AreaSeries:"area",BaselineSeries:"baseline",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { STUDY_DEFAULTS, STUDY_CATALOG, StudyCalculator } from "./chartStudies";
 import { heikinAshi, hollowPoint } from "./heikinAshi";
 import type { ChartStyle } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
 const bars=Array.from({length:100},(_,i)=>({time:100+i*60,open:1,high:2,low:1,close:1.5+Math.sin(i)*.1}));
-let adapter:LightweightChartsAdapter;
+let adapter:ArxCanvasAdapter;
 let container:HTMLDivElement;
-beforeEach(()=>{Object.assign(m.scale.getVisibleLogicalRange(),{from:10,to:30});vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new LightweightChartsAdapter();container=document.createElement("div");document.body.append(container);adapter.init({container,height:500});adapter.setCandles(bars);});
+beforeEach(()=>{Object.assign(m.scale.getVisibleLogicalRange(),{from:10,to:30});vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new ArxCanvasAdapter();container=document.createElement("div");document.body.append(container);adapter.init({container,height:500});adapter.setCandles(bars);});
 afterEach(()=>{adapter.destroy();container.remove();});
 describe("Smart Chart studies, styles and drawing ownership",()=>{
   it("resets all context-owned geometry and stream state without destroying the canvas",()=>{
@@ -451,7 +451,7 @@ describe("compact study labels follow actual chart width",()=>{
   adapter.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(1);const price=m.handles[0];const writes=price.setData.mock.calls.length;const read=adapter.getStudyValues(bars[80].time);adapter.resize(390,400);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);expect(price.setData).toHaveBeenCalledTimes(writes);expect(adapter.getStudyValues(bars[80].time)).toEqual(read);adapter.resize(800,500);expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);
  });
  it("initial sizing and observed resizes apply the same title policy",()=>{
-  let callback:(()=>void)|undefined;vi.stubGlobal("ResizeObserver",class{constructor(cb:()=>void){callback=cb;}observe(){}disconnect(){}});const el=document.createElement("div");let width=390;Object.defineProperty(el,"clientWidth",{get:()=>width});const local=new LightweightChartsAdapter();
+  let callback:(()=>void)|undefined;vi.stubGlobal("ResizeObserver",class{constructor(cb:()=>void){callback=cb;}observe(){}disconnect(){}});const el=document.createElement("div");let width=390;Object.defineProperty(el,"clientWidth",{get:()=>width});const local=new ArxCanvasAdapter();
   try{local.init({container:el,height:400});local.setCandles(bars);const start=m.handles.length;local.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(start);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);width=800;callback?.();expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);}finally{local.destroy();}
  });
 });

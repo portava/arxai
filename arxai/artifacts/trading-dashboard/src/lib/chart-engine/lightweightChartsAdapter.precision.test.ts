@@ -17,13 +17,13 @@ const m = vi.hoisted(() => {
     remove: vi.fn(), clearCrosshairPosition: vi.fn(), panes: () => Array.from({ length: 4 }, () => ({ setHeight: vi.fn(), setStretchFactor: vi.fn(), getHeight: () => 300 })) };
   return { chart, handles };
 });
-vi.mock("lightweight-charts", () => ({ createChart: () => m.chart, CandlestickSeries: "candles", BarSeries: "bars", LineSeries: "line",
+vi.mock("@/lib/chart-engine/arxCanvas", () => ({ createChart: () => m.chart, CandlestickSeries: "candles", BarSeries: "bars", LineSeries: "line",
   HistogramSeries: "histogram", createSeriesMarkers: () => ({ detach: vi.fn() }), ColorType: { Solid: "solid" }, CrosshairMode: { Normal: 0 },
   LineStyle: { Dashed: 2, Solid: 0 }, PriceScaleMode: { Normal: 0, Logarithmic: 1 } }));
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 
 const bars = Array.from({ length: 30 }, (_, i) => ({ time: 100 + i * 60, open: 33588, high: 33590, low: 33580, close: 33585 + i }));
-let adapter: LightweightChartsAdapter;
+let adapter: ArxCanvasAdapter;
 let container: HTMLDivElement;
 function lastPrecision(): number | undefined {
   const calls = m.handles[0].applyOptions.mock.calls.filter((c: any[]) => c[0]?.priceFormat);
@@ -32,7 +32,7 @@ function lastPrecision(): number | undefined {
 beforeEach(() => {
   vi.clearAllMocks(); m.handles.length = 0;
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
-  adapter = new LightweightChartsAdapter(); container = document.createElement("div"); document.body.append(container);
+  adapter = new ArxCanvasAdapter(); container = document.createElement("div"); document.body.append(container);
   adapter.init({ container, height: 500 }); adapter.setSymbol("US30");
 });
 afterEach(() => { adapter.destroy(); container.remove(); vi.unstubAllGlobals(); });

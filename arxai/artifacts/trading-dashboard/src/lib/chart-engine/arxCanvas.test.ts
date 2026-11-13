@@ -3,6 +3,12 @@ import {
   createChart,
   CandlestickSeries,
   createSeriesMarkers,
+  LineSeries,
+  HistogramSeries,
+  BarSeries,
+  AreaSeries,
+  BaselineSeries,
+  PriceScaleMode,
   cleanPoints,
   zoomRange,
 } from "./arxCanvas";
@@ -86,6 +92,41 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(s.coordinateToPrice(y!)).toBeCloseTo(150);
     expect(s.priceToCoordinate(10000)).toBeNull();
     expect(s.coordinateToPrice(-1)).toBeNull();
+    chart.remove();
+  });
+  it("preserves line, histogram, bar, area and baseline series in independent panes", () => {
+    const chart = createChart(container, { width: 900, height: 400 });
+    const candles = chart.addSeries(CandlestickSeries);
+    candles.setData(bars);
+    const line = chart.addSeries(LineSeries, { color: "#38bdf8" }, 1);
+    line.setData(bars.map((bar) => ({ time: bar.time, value: bar.close })));
+    const histogram = chart.addSeries(HistogramSeries, { color: "#a78bfa" }, 2);
+    histogram.setData(bars.map((bar) => ({ time: bar.time, value: bar.close - 100 })));
+    const barsView = chart.addSeries(BarSeries, {}, 3);
+    barsView.setData(bars);
+    const area = chart.addSeries(AreaSeries, {}, 4);
+    area.setData(bars.map((bar) => ({ time: bar.time, value: bar.close })));
+    const baseline = chart.addSeries(BaselineSeries, { baseValue: { type: "price", price: 100 } }, 5);
+    baseline.setData(bars.map((bar) => ({ time: bar.time, value: bar.close })));
+    expect(chart.panes()).toHaveLength(6);
+    expect(chart.panes().map((pane) => pane.getSeries().length)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(chart.panes()[1]!.getHeight()).toBeGreaterThan(0);
+    chart.remove();
+  });
+  it("round-trips logarithmic, percentage, indexed and inverted price coordinates", () => {
+    const chart = createChart(container, { width: 900, height: 400 });
+    const series = chart.addSeries(CandlestickSeries);
+    series.setData(bars.map((bar) => ({ ...bar, open: bar.open + 100, high: bar.high + 100, low: bar.low + 100, close: bar.close + 100 })));
+    for (const mode of [PriceScaleMode.Logarithmic, PriceScaleMode.Percentage, PriceScaleMode.IndexedTo100]) {
+      chart.applyOptions({ rightPriceScale: { mode } });
+      const y = series.priceToCoordinate(250);
+      expect(y).not.toBeNull();
+      expect(series.coordinateToPrice(y!)).toBeCloseTo(250, 5);
+    }
+    chart.applyOptions({ rightPriceScale: { mode: PriceScaleMode.Normal, invertScale: true, scaleMargins: { top: 0.1, bottom: 0.1 } } });
+    const inverted = series.priceToCoordinate(250);
+    expect(inverted).not.toBeNull();
+    expect(series.coordinateToPrice(inverted!)).toBeCloseTo(250, 5);
     chart.remove();
   });
   it("keeps independent marker layers and tears down its canvas and handlers", () => {

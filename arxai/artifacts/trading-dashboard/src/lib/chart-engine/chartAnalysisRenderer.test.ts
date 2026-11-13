@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChartAnalysisRenderer, studyDisplayWindow } from "./chartAnalysisRenderer";
-import { HistogramSeries, LineStyle } from "lightweight-charts";
+import { HistogramSeries, LineStyle } from "./arxCanvas";
 import { StudyCalculator, STUDY_DEFAULTS, STUDY_CATALOG, type ChartStudy } from "./chartStudies";
 
 const SCALE_DEFAULTS = { mode: 0, autoScale: true, invertScale: false, alignLabels: true, borderVisible: true, scaleMargins: { top: .2, bottom: .1 } };

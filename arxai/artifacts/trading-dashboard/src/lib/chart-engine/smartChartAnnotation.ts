@@ -1,4 +1,4 @@
-import type { IPrimitivePaneRenderer, ISeriesPrimitive, SeriesAttachedParameter, UTCTimestamp } from "lightweight-charts";
+import type { IPrimitivePaneRenderer, ISeriesPrimitive, SeriesAttachedParameter, UTCTimestamp } from "./arxCanvas";
 import type { ChartEngineCandle } from "./types";
 
 export interface SmartChartAnnotation {

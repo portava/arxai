@@ -5,7 +5,7 @@
 // closed). This helper turns that last broker-quote time into a small, honest
 // label so a still-forming bar reads as closed-market, not a broken feed.
 //
-// Kept out of the chart components (which import lightweight-charts + the whole
+// Kept out of the chart components (which import the chart renderer + the whole
 // component tree) so it can be unit-tested in isolation — mirrors the
 // scannerChartFormat.ts pattern. Nothing here touches a data source, the
 // candles/tick-stream contract, or any execution path; it is display-only and

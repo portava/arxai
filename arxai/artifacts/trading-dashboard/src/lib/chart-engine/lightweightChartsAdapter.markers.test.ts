@@ -24,7 +24,7 @@ const { createSeriesMarkersMock } = vi.hoisted(() => ({
   createSeriesMarkersMock: vi.fn(() => ({ detach: vi.fn() })),
 }));
 
-vi.mock("lightweight-charts", () => {
+vi.mock("@/lib/chart-engine/arxCanvas", () => {
   const makeLineSeries = () => ({ setData: vi.fn() });
   const makeCandleSeries = () => {
     const state: Record<string, unknown> = {priceLineVisible:true,lastValueVisible:true};
@@ -66,7 +66,7 @@ vi.mock("lightweight-charts", () => {
   };
 });
 
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import type { ChartEngineCandle, ChartStructureMarker } from "./types";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
@@ -94,8 +94,8 @@ function lastMarkerTimes(): number[] {
   return markers.map((m) => m.time);
 }
 
-function makeAdapter(): LightweightChartsAdapter {
-  const adapter = new LightweightChartsAdapter();
+function makeAdapter(): ArxCanvasAdapter {
+  const adapter = new ArxCanvasAdapter();
   adapter.init({ container: document.createElement("div"), height: 300 });
   return adapter;
 }
