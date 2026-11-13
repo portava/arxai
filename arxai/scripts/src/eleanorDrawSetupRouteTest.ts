@@ -30,7 +30,9 @@
 //   "true_ohlc" → providerDeliversRealOhlc=true, satisfying the chart-truth +
 //   handshake gates. The newest bar opens at the CURRENT bucket (trailing 0) so
 //   feed quality resolves "clean" (aiUsable=true). The window is pushed WITH
-//   the test user's bridge identity, so the served series is attributed
+//   an explicit MID price-basis declaration (these fixture closes are the
+//   midpoint of the fixture quotes), and the test user's bridge identity, so
+//   the served series is attributed
 //   (provider + bridge + owner observed). A live quote straddling the newest
 //   CLOSED bar is pushed by the SAME bridge with its own observed tick time, so
 //   the per-user broker comparison is BOUND (brokerQuoteBinding.ts) and
@@ -58,7 +60,10 @@
 
 import { projectionRoles } from "../../artifacts/api-server/src/lib/data/chart/renderEvidence.js";
 import { randomBytes, createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { eq } from "drizzle-orm";
+import { mt5PriceBasisEvidence } from "../../artifacts/api-server/src/lib/data/candlePriceBasisEvidence.js";
+import type { Candle as BrokerCandle } from "../../artifacts/api-server/src/lib/data/types.js";
 import {
   db,
   pool,
@@ -138,8 +143,8 @@ function assert(cond: boolean, label: string): void {
  * yielding a drawable BUY setup. Equal candle ranges, zero gaps, valid OHLC — no
  * anomalies that would degrade the truth assessment below CLEAN.
  */
-function buildCleanWindow(intervalMs = M5_MS): Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> {
-  const out: Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> = [];
+function buildCleanWindow(intervalMs = M5_MS): BrokerCandle[] {
+  const out: BrokerCandle[] = [];
   const base = 1.1000;
   const stepUp = 0.00008; // gentle per-bar drift → directional, no spike anomaly
   const body = 0.00004;
@@ -159,6 +164,9 @@ function buildCleanWindow(intervalMs = M5_MS): Array<{ time: string; open: numbe
       low: Number(low.toFixed(5)),
       close: Number(close.toFixed(5)),
       volume: 1000,
+      // Explicit fixture producer metadata. Never infer this from forex or
+      // the provider name: our quote builder intentionally straddles the close.
+      priceBasisEvidence: mt5PriceBasisEvidence("mid"),
     });
   }
   return out;
@@ -362,11 +370,13 @@ export async function run(): Promise<CiTestResultLike> {
   // (renderEvidenceReporter.ts); VERIFIED requires that measurement (owner
   // ruling 2026-11-09). Report what an exact draw of the SERVED series
   // measures: read the served source and newest bar the way the chart does.
+  let lastRenderedState: any = null;
   const reportRender = async (override: Partial<Record<string, unknown>> = {}, timeframe: string = TIMEFRAME) => {
     const intel = await fetch(`${baseUrl}/api/me/chart/intelligence?symbol=${VERIFIED_SYMBOL}&timeframe=${timeframe}`, {
       headers: { cookie },
     }).then((r) => r.json()).catch(() => null) as any;
     const st = intel?.state;
+    lastRenderedState = st;
     const newest = st?.currentCandle ?? st?.latestClosedCandle;
     const res = await fetch(`${baseUrl}/api/me/chart/render-evidence`, {
       method: "POST",
@@ -435,6 +445,7 @@ export async function run(): Promise<CiTestResultLike> {
 
     // ── 1d. Exact draw of the served series measured → VERIFIED. ───────────
     assert((await reportRender()) === 200, "render evidence (exact draw) accepted → 200");
+    assert(lastRenderedState?.brokerAlignment?.chartPriceBasis === "MID", "fixture producer MID declaration survives to route alignment");
     pushBoundQuote();
     const verified = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
     assert(verified.status === 200, `verified HTTP 200 (got ${verified.status})`);
@@ -662,6 +673,19 @@ export async function run(): Promise<CiTestResultLike> {
       rebound.json?.setupPreview?.dataFreshness?.basis === "VERIFIED",
       `rebound: bound tick restores VERIFIED (got ${String(rebound.json?.setupPreview?.dataFreshness?.basis)})`,
     );
+
+    // ── 3c. Withdraw only the original producer price-basis declaration. ────
+    // Keep the same candles, bound quote and exact render. Cached numbers or
+    // an old declaration must not establish the new series' original basis.
+    // Wait for the documented 3-second cache rather than bypassing its gate.
+    updateCandlesFromMT5(VERIFIED_SYMBOL, cleanWindow.map((bar) => ({ ...bar, priceBasisEvidence: undefined })), TIMEFRAME, bridge);
+    await delay(3_100);
+    assert((await reportRender()) === 200, "render evidence (undeclared series) accepted → 200");
+    assert(lastRenderedState?.brokerAlignment?.chartPriceBasis === "UNKNOWN", "numeric-only fixture retains UNKNOWN price basis");
+    pushBoundQuote();
+    const undeclared = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(undeclared.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED", "undeclared basis: bound quote and exact render still cannot establish VERIFIED");
+    assert(undeclared.json?.setupPreview?.levels === null, "undeclared basis: no levels invented");
 
     // ── 4. NO LIVE SIDE EFFECTS — a drawing can never act ───────────────────
     const cmdAfter = await countCommands();
