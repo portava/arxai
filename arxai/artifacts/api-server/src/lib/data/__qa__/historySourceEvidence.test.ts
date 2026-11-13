@@ -8,6 +8,7 @@ const before = new Date(now - 5 * 60_000).toISOString();
 let sourceMode = "deriv_public";
 let cacheReads = 0;
 let routeReads = 0;
+const routeLimits: number[] = [];
 let afterCacheRead: (() => void) | null = null;
 let pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)];
 let hasOlderInCache = true;
@@ -27,7 +28,7 @@ function resetRouted() {
 }
 mock.module("../marketDataRouter.js", { namedExports: {
   classifySymbol: () => "synthetic",
-  routeCandles: async () => { routeReads++; return routed; },
+  routeCandles: async (_symbol: string, _timeframe: string, limit: number) => { routeReads++; routeLimits.push(limit); return routed; },
 } });
 mock.module("../providers/derivFeedClient.js", { namedExports: { derivMarketDataSource: () => sourceMode } });
 mock.module("../providers/derivProvider.js", { namedExports: {
@@ -61,7 +62,7 @@ const { scannerSourceIdentity } = await import("../../scannerInputIntegrity.js")
 const request = () => ({ symbol: "V75", timeframe: "M1", source: "deriv_public", before, limit: 2,
   expectedSourceIdentity: scannerSourceIdentity(routed) });
 beforeEach(() => {
-  sourceMode = "deriv_public"; cacheReads = 0; routeReads = 0; afterCacheRead = null;
+  sourceMode = "deriv_public"; cacheReads = 0; routeReads = 0; routeLimits.length = 0; afterCacheRead = null;
   hasOlderInCache = true; fetchProducer = undefined; permitProviderFetch = false; writtenSources.length = 0;
   pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)]; resetRouted();
 });
@@ -71,6 +72,8 @@ test("public provider history returns actual matching source evidence and remain
   const result = await getCandleHistory(input);
   assert.equal(result.ok, true); assert.equal(result.status, "historical_only");
   assert.equal(result.candles.length, 2); assert.equal(cacheReads, 1); assert.equal(routeReads, 1);
+  assert.deepEqual(routeLimits, [2], "the two-bar request is only a source-identity check");
+  assert.deepEqual(writtenSources, [], "the identity check does not write to the shared candle cache");
   assert.deepEqual(result.historyEvidence, { symbol: "V75", timeframe: "M1", source: "deriv_public",
     sourceIdentity: input.expectedSourceIdentity, lastClosedCandleAt: new Date(now - 8 * 60_000).toISOString(), scope: "public_provider" });
   assert.equal(JSON.stringify(result.historyEvidence).includes("accountNumber"), false);
@@ -86,7 +89,7 @@ for (const source of ["mt5_broker", "deriv", "assistant_real:vendor"]) {
     const result = await getCandleHistory({ ...request(), source });
     assert.equal(result.ok, false); assert.equal(result.historyEvidence, null);
     assert.match(result.limitationReason!, /identity cannot be verified/);
-    assert.equal(cacheReads, 0); assert.equal(routeReads, 0);
+    assert.equal(cacheReads, 0); assert.equal(routeReads, 0); assert.deepEqual(routeLimits, []);
   });
 }
 

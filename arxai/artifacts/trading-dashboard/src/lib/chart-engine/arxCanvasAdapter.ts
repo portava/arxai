@@ -68,6 +68,17 @@ const displayModeOf = (style: ChartStyle): DisplayMode => style === "heikinAshi"
 const DEFAULT_VISIBLE_DESKTOP = 150;
 const DEFAULT_VISIBLE_MOBILE = 80;
 
+/** Keep initial candles large enough to read without letting a narrow chart
+ * squeeze a full request into a few pixels. This is only the untouched default
+ * window; Fit history remains an explicit all-loaded-history action. */
+export function defaultVisibleBarsForWidth(plotWidth: number, mobile = false): number {
+  const width = Number.isFinite(plotWidth) ? Math.max(0, plotWidth) : 0;
+  const min = mobile ? 45 : 55;
+  const max = mobile ? DEFAULT_VISIBLE_MOBILE : DEFAULT_VISIBLE_DESKTOP;
+  const targetBarWidth = mobile ? 6.5 : 7.5;
+  return Math.max(min, Math.min(max, Math.floor(width / targetBarWidth)));
+}
+
 const CAPABILITIES: ChartEngineCapabilities = {
   id: "arx-canvas",
   label: "ARX Canvas",
@@ -184,6 +195,12 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   /** Shell-resolved display precision (shared instrument rule); null = detect from bars. */
   private displayPrecision: number | null = null;
   private intervalSeconds = 900;
+  private pendingUserRange: {
+    range: { from: number; to: number };
+    previousLength: number;
+    symbol: string;
+    intervalSeconds: number;
+  } | null = null;
   private viewLinkHandler: ((event: ChartViewEvent) => void) | null = null;
   private viewLinkStatusHandler: ((message: string) => void) | null = null;
   private viewLinkFrame: number | null = null;
@@ -317,16 +334,39 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
     this.chart = chart;
     this.series = series;
-    const takeRange = () => this.takeRangeOwnership();
+    let dragStart: { x: number; y: number } | null = null;
+    const pointerDown = (event: PointerEvent) => {
+      dragStart = { x: event.clientX, y: event.clientY };
+    };
+    const pointerMove = (event: PointerEvent) => {
+      if (!dragStart || !(event.buttons & 1)) return;
+      if (Math.abs(event.clientX - dragStart.x) + Math.abs(event.clientY - dragStart.y) >= 4) {
+        this.takeRangeOwnership();
+        dragStart = null;
+      }
+    };
+    const pointerUp = () => { dragStart = null; };
+    const wheel = () => this.takeRangeOwnership();
+    const keydown = (event: KeyboardEvent) => {
+      if (["ArrowLeft", "ArrowRight", "Home", "End", "+", "=", "-", "_"].includes(event.key)) {
+        this.takeRangeOwnership();
+      }
+    };
     const leave = () => { this.pendingLinkedCursor = null; this.queueViewLinkUpdate(); };
-    el.addEventListener("pointerdown", takeRange, true);
-    el.addEventListener("wheel", takeRange, {capture:true,passive:true});
-    el.addEventListener("keydown", takeRange, true);
+    el.addEventListener("pointerdown", pointerDown, true);
+    el.addEventListener("pointermove", pointerMove, true);
+    el.addEventListener("pointerup", pointerUp, true);
+    el.addEventListener("pointercancel", pointerUp, true);
+    el.addEventListener("wheel", wheel, {capture:true,passive:true});
+    el.addEventListener("keydown", keydown, true);
     el.addEventListener("pointerleave", leave);
     this.clearViewListeners = () => {
-      el.removeEventListener("pointerdown", takeRange, true);
-      el.removeEventListener("wheel", takeRange, true);
-      el.removeEventListener("keydown", takeRange, true);
+      el.removeEventListener("pointerdown", pointerDown, true);
+      el.removeEventListener("pointermove", pointerMove, true);
+      el.removeEventListener("pointerup", pointerUp, true);
+      el.removeEventListener("pointercancel", pointerUp, true);
+      el.removeEventListener("wheel", wheel, true);
+      el.removeEventListener("keydown", keydown, true);
       el.removeEventListener("pointerleave", leave);
     };
     let frozenOptions: { scroll: ReturnType<IChartApi["options"]>["handleScroll"]; scale: ReturnType<IChartApi["options"]>["handleScale"]; autoScale: boolean } | null = null;
@@ -417,6 +457,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.pendingLinkedCursor = undefined;
     this.pendingRange = false;
     this.ownsRange = false;
+    this.pendingUserRange = null;
     this.linkedRange = null;
     this.linkedCursor = undefined;
     this.clearViewListeners?.(); this.clearViewListeners = null;
@@ -472,6 +513,15 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
 
   resetDataContext(): void {
+    const visibleRange = this.ownsRange ? this.chart?.timeScale().getVisibleLogicalRange() : null;
+    this.pendingUserRange = visibleRange && this.candles.length
+      ? {
+          range: { ...visibleRange },
+          previousLength: this.candles.length,
+          symbol: this.symbol,
+          intervalSeconds: this.intervalSeconds,
+        }
+      : null;
     this.setFeedState({livePriceAffordance:false,source:null});
     this.setDrawingHandler(null);
     this.setDrawingInteraction(null);
@@ -538,8 +588,13 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         for (let k = 0; k < updates.length; k++) series.update(this.displayPoint(base + k));
       }
       if (!this.didFit && sanitized.length > 0) {
-        this.applyDefaultVisibleRange();
+        if (!this.restorePendingUserRange(sanitized.length)) this.applyDefaultVisibleRange();
         this.didFit = true;
+      } else if (this.isUntouchedInitialWindowExpansion(previous.length, sanitized.length)) {
+        // Some feeds start with only a few recent bars and then deliver the
+        // requested window on the next poll. Refit that untouched initial
+        // viewport instead of shifting the sparse range to the new right edge.
+        this.applyDefaultVisibleRange();
       } else if ((updates === null || bulk) && savedRange && chart && sanitized.length) {
         chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
       }
@@ -1368,7 +1423,9 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       return;
     }
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const defaultVisible = isMobile ? this.visibleMobile : this.visibleDesktop;
+    const plotWidth = chart.timeScale().width();
+    const configuredVisible = isMobile ? this.visibleMobile : this.visibleDesktop;
+    const defaultVisible = Math.min(configuredVisible, defaultVisibleBarsForWidth(plotWidth, isMobile));
     try {
       if (times.length <= defaultVisible) {
         chart.timeScale().fitContent();
@@ -1379,5 +1436,31 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         });
       }
     } catch { /* ignore */ }
+  }
+
+  private isUntouchedInitialWindowExpansion(previousLength: number, nextLength: number): boolean {
+    return !this.ownsRange && !this.linkedRange && this.didFit
+      && previousLength > 0 && previousLength <= 32
+      && nextLength >= Math.max(24, previousLength * 4);
+  }
+
+  private restorePendingUserRange(nextLength: number): boolean {
+    const pending = this.pendingUserRange;
+    this.pendingUserRange = null;
+    if (!pending || !this.chart || pending.symbol !== this.symbol
+      || pending.intervalSeconds !== this.intervalSeconds || nextLength < 8) return false;
+    const span = pending.range.to - pending.range.from;
+    if (!Number.isFinite(span) || span < 8 || nextLength < Math.min(32, Math.ceil(span * 0.6))) return false;
+    const previousLast = pending.previousLength - 1;
+    const fromOffset = previousLast - pending.range.from;
+    const toOffset = previousLast - pending.range.to;
+    const range = {
+      from: nextLength - 1 - fromOffset,
+      to: nextLength - 1 - toOffset,
+    };
+    if (!Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to - range.from < 8) return false;
+    this.chart.timeScale().setVisibleLogicalRange(range);
+    this.ownsRange = true;
+    return true;
   }
 }

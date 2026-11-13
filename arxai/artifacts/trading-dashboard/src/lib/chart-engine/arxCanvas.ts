@@ -13,6 +13,29 @@ export type UTCTimestamp = number;
 export type Time = number;
 export type TickMarkType = 0 | 1 | 2 | 3 | 4;
 export type TickMarkFormatter = (time: Time, type: TickMarkType, locale: string) => string | null;
+
+export function adaptiveTimeTickCount(plotWidth: number, labelWidth = 42): number {
+  const width = Number.isFinite(plotWidth) ? Math.max(0, plotWidth) : 0;
+  return Math.max(2, Math.floor(width / Math.max(76, labelWidth + 18)));
+}
+
+export function niceLinearPriceTicks(low: number, high: number, targetCount: number): number[] {
+  if (!Number.isFinite(low) || !Number.isFinite(high) || high <= low || !Number.isFinite(targetCount) || targetCount < 1) return [];
+  const rawStep = (high - low) / targetCount;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  const step = factor * magnitude;
+  if (!Number.isFinite(step) || step <= 0) return [];
+  const firstIndex = Math.ceil(low / step);
+  const lastIndex = Math.floor(high / step);
+  const ticks: number[] = [];
+  for (let index = firstIndex; index <= lastIndex && ticks.length < 20; index++) {
+    const value = index * step;
+    if (Number.isFinite(value)) ticks.push(value);
+  }
+  return ticks;
+}
 export type SeriesType = "Candlestick" | "Line" | "Histogram" | "Bar" | "Area" | "Baseline";
 export const CandlestickSeries = "Candlestick" as const;
 export const LineSeries = "Line" as const;
@@ -882,11 +905,23 @@ export class CanvasChart {
     for (let pane = 0; pane < this.panes().length; pane++) {
       const top = paneTop(pane), paneH = paneHeight(pane), range = this.paneRange(pane);
       const margins = this.scaleMargins(pane);
-      for (let i = 0; i <= 4; i++) {
-        const y = top + paneH * (margins.top + (margins.available * i) / 4);
+      const tickCount = Math.max(4, Math.min(8, Math.floor(paneH / 56)));
+      const priceTicks = this.priceMode(pane) === 0
+        ? niceLinearPriceTicks(range.low, range.high, tickCount)
+        : Array.from({ length: tickCount + 1 }, (_, i) =>
+            this.fromScaleValue(range.high - (i / tickCount) * (range.high - range.low), pane));
+      const ticks = priceTicks.length >= 2
+        ? priceTicks
+        : Array.from({ length: tickCount + 1 }, (_, i) =>
+            this.fromScaleValue(range.high - (i / tickCount) * (range.high - range.low), pane));
+      for (const price of ticks) {
+        const scaleValue = this.toScaleValue(price, pane);
+        const fraction = (range.high - scaleValue) / (range.high - range.low);
+        const inverted = this.priceScale("right", pane).options().invertScale === true ? 1 - fraction : fraction;
+        const y = top + paneH * (margins.top + margins.available * inverted);
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
         c.fillStyle = text;
-        c.fillText(fmt(this.fromScaleValue(range.high - (i / 4) * (range.high - range.low), pane)), w + 9, y);
+        c.fillText(fmt(price), w + 9, y);
       }
       if (pane > 0) {
         c.strokeStyle = dark ? "#31445c" : "#cad3de";
@@ -894,7 +929,7 @@ export class CanvasChart {
         c.strokeStyle = grid;
       }
     }
-    const timeTicks = Math.max(2, Math.floor(w / 110));
+    const timeTicks = adaptiveTimeTickCount(w);
     for (let i = 0; i <= timeTicks; i++) {
       const x = (w * i) / timeTicks;
       c.beginPath();

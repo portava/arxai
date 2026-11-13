@@ -1732,6 +1732,53 @@ export function ARXNativeChart({
               </Button>
             )}
           </div>);
+  const layersMenu = (
+    <ChartLayersMenu
+      value={layers}
+      onChange={setLayers}
+      availability={layerAvailability}
+    />
+  );
+  const compactTimer = !hasCandles
+    ? <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer">Timer waiting for candles</Badge>
+    : marketFrozen
+      ? <Badge variant="outline" className="gap-1 text-[10px] text-amber-300" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Timer paused — feed frozen</Badge>
+      : !isLivePriceAffordance
+        ? <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Timer unavailable — feed not live-confirmed</Badge>
+        : formingCloseMs != null
+          ? <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} requireServerClock />
+          : <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Waiting for live candle</Badge>;
+  const openDrawingTools = () => {
+    setAdvancedToolsMounted(true);
+    setAdvancedToolsOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("arx-chart-workbench-tools")?.scrollIntoView?.({ block: "nearest" });
+    });
+  };
+  const compactQuickTools = compactDesktopWorkspace ? (
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-2 py-1.5"
+      role="toolbar"
+      aria-label="Smart Chart quick tools"
+      data-testid="arx-native-compact-tools"
+    >
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 text-xs"
+        aria-label="Open drawing tools"
+        aria-controls="arx-chart-workbench-tools"
+        onClick={openDrawingTools}
+        data-testid="arx-native-drawing-tools"
+      >
+        Drawing tools
+      </Button>
+      {layersMenu}
+      <div className="ml-auto flex min-w-0 items-center" aria-label="Candle close timer">
+        {compactTimer}
+      </div>
+    </div>
+  ) : null;
   const chartControls = <Fragment key="chart-controls">
     <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-3 py-2">
             <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
@@ -1746,17 +1793,15 @@ export function ARXNativeChart({
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
-          <ChartLayersMenu
-            value={layers}
-            onChange={setLayers}
-            availability={layerAvailability}
-          />
+          {!compactDesktopWorkspace && layersMenu}
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
       </div>
 
-      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: scheduledClosure, quoteFrozen: marketFrozen != null && !scheduledClosure })} />
+      <div id="arx-chart-workbench-tools" data-testid="arx-chart-workbench-tools">
+        <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: scheduledClosure, quoteFrozen: marketFrozen != null && !scheduledClosure })} />
+      </div>
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       {hasCandles && <div className="px-3 pt-1"><RenderVerdictChip verdict={renderVerdict} /></div>}
@@ -1890,7 +1935,7 @@ export function ARXNativeChart({
                 <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
               </Badge>
             )}
-            {formingCloseMs != null && isLivePriceAffordance && !marketFrozen && (
+            {!compactDesktopWorkspace && formingCloseMs != null && isLivePriceAffordance && !marketFrozen && (
               <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} />
             )}
             {hasCandles && (
@@ -1910,6 +1955,7 @@ export function ARXNativeChart({
         </CardTitle>
       </CardHeader>
 
+      {compactQuickTools}
       {replayError && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{replayError}</p>}
       {tradeVolumeSelected && hasCandles && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
       {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}

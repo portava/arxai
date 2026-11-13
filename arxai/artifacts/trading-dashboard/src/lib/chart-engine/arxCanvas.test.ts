@@ -10,6 +10,8 @@ import {
   BaselineSeries,
   PriceScaleMode,
   cleanPoints,
+  adaptiveTimeTickCount,
+  niceLinearPriceTicks,
   zoomRange,
 } from "./arxCanvas";
 const bars = Array.from({ length: 100 }, (_, i) => ({
@@ -36,6 +38,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("ARX renderer market-data and viewport contract", () => {
+  it("uses readable adaptive time ticks and rounded linear price labels", () => {
+    expect(adaptiveTimeTickCount(320)).toBeGreaterThan(2);
+    expect(adaptiveTimeTickCount(1000)).toBeGreaterThan(adaptiveTimeTickCount(320));
+    expect(niceLinearPriceTicks(12_401, 61_999, 5)).toEqual([20_000, 30_000, 40_000, 50_000, 60_000]);
+    expect(niceLinearPriceTicks(5, 5, 5)).toEqual([]);
+  });
   it("rejects invalid OHLC, deduplicates and orders observations without creating bars", () => {
     const clean = cleanPoints(
       [
