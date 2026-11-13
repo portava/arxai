@@ -50,7 +50,7 @@ const { charts, createChartMock } = vi.hoisted(() => {
   return { charts, createChartMock };
 });
 
-vi.mock("lightweight-charts", () => ({
+vi.mock("@/lib/chart-engine/arxCanvas", () => ({
   createChart: createChartMock,
   CandlestickSeries: { __kind: "CandlestickSeries" },
   createSeriesMarkers: vi.fn(() => ({ detach: vi.fn() })),

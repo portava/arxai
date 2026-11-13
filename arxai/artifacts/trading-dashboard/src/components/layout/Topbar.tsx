@@ -208,7 +208,7 @@ export function ViewModeSwitch() {
   );
 }
 
-function UserMenu() {
+export function UserMenu() {
   const { user } = useCurrentUser();
   const logout = useLogout();
   if (!user) return null;

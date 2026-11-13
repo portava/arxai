@@ -114,7 +114,7 @@ export function resolveEventMarkerSec(
 
 // Snap an arbitrary epoch-second onto a real candle bar present in the series.
 // Canonical implementation now lives in the chart-engine boundary guard module
-// (candleSanitize.ts) so the LightweightChartsAdapter can use the SAME snap
+// (candleSanitize.ts) so the ArxCanvasAdapter can use the SAME snap
 // when it re-anchors structure markers after the candle window slides — the
 // re-export keeps this module the scanner-side import point (and its tests).
 // Economic events land at arbitrary timestamps that almost never align to a

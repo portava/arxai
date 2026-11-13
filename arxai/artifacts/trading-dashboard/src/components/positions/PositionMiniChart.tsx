@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, LineStyle, CrosshairMode, type UTCTimestamp } from "lightweight-charts";
+import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, LineStyle, CrosshairMode, type UTCTimestamp } from "@/lib/chart-engine/arxCanvas";
 import { ChartFeedStatusBadge } from "@/components/charts/ChartFeedStatusBadge";
 import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
 import { isLivePriceDisplay, type ChartDisplayStatus } from "@/lib/chart-display-status";
@@ -69,7 +69,7 @@ export function PositionMiniChart({
       handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
     });
 
-    // lightweight-charts v5: addSeries(CandlestickSeries, options). The legacy
+    // ARX Canvas: addSeries(CandlestickSeries, options). The legacy
     // v4 addCandlestickSeries() was removed and throws at runtime.
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#10b981", downColor: "#ef4444",
@@ -81,7 +81,7 @@ export function PositionMiniChart({
       lastValueVisible: isLive,
     });
 
-    // Drop malformed bars (missing / null / NaN OHLC) so the lightweight-charts
+    // Drop malformed bars (missing / null / NaN OHLC) so the ARX Canvas
     // candlestick colorer can't throw "Value is null" during a later repaint.
     const sanitized = sanitizeCandlestickData(
       candles.map((c) => ({ time: Math.floor(c.time / 1000) as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close }))
@@ -106,7 +106,7 @@ export function PositionMiniChart({
 
       // Entry marker on the closest candle to entry time (use last candle as
       // anchor — the position is open right now so the marker stays visible).
-      // lightweight-charts v5: markers moved off the series instance to the
+      // ARX Canvas: markers moved off the series instance to the
       // standalone createSeriesMarkers(series, markers) plugin. Anchor to the
       // last SANITIZED bar (not raw candles[last]) so the marker time always
       // resolves to a bar that exists — an off-series marker time makes the

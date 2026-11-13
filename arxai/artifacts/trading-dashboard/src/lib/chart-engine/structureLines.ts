@@ -2,11 +2,11 @@
 //
 // The ONE imperative routine that turns the backend Chart Intelligence
 // `trendlineOverlay` verdict (already honesty-folded server-side) into drawable
-// diagonal line series + bar-anchored markers on a lightweight-charts v5 chart.
+// diagonal line series + bar-anchored markers on a ARX Canvas chart.
 //
 // WHY THIS LIVES HERE (not inlined twice): both the chart-engine adapter
-// (`LightweightChartsAdapter.setStructureLines`, used by the ARX native chart)
-// and the Scanner page's raw-lightweight-charts panel (`ScannerChartPanel`) draw
+// (`ArxCanvasAdapter.setStructureLines`, used by the ARX native chart)
+// and the Scanner page's raw-ARX Canvas panel (`ScannerChartPanel`) draw
 // the SAME structure. Sharing one routine guarantees they can never drift —
 // identical geometry, identical clear-on-switch teardown, identical fail-safe
 // try/catch so a single bad line never breaks the chart.
@@ -24,7 +24,7 @@ import {
   type SeriesMarker,
   type SeriesType,
   type LineData,
-} from "lightweight-charts";
+} from "@/lib/chart-engine/arxCanvas";
 import type { ChartStructureLine, ChartStructureMarker } from "./types";
 
 /** Live handles for the structural overlay so it can be cleared/redrawn. */
@@ -98,7 +98,7 @@ export function applyStructureLines(
   const series: ISeriesApi<"Line">[] = [];
   for (const ln of lines) {
     // Two real time/price anchors → a straight diagonal segment on the time
-    // scale. lightweight-charts requires ascending, de-duplicated times.
+    // scale. ARX Canvas requires ascending, de-duplicated times.
     const a = ln.start;
     const b = ln.end;
     if (!drawableStructureLine(ln)) continue;

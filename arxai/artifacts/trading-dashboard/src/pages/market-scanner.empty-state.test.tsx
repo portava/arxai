@@ -69,7 +69,7 @@ vi.mock("@/lib/use-chart-symbol", () => ({
 }));
 vi.mock("@/lib/symbolRegistry", () => ({ resolveSymbol: (s: string) => ({ canonicalSymbol: s }) }));
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ realIsAdmin: false }) }));
-vi.mock("wouter", () => ({ Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
+vi.mock("wouter", () => ({ useLocation: () => ["/market-scanner", vi.fn()], Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
 
 vi.mock("lucide-react", () => {
   const Stub = () => null;
