@@ -47,7 +47,8 @@ describe("useAiChartOverlays Eleanor read expiry + scanner status", () => {
     await waitFor(() => expect(result.current.eleanor.status).toBe("ok"));
     expect(eleanorOverlays(result.current.overlays)).toHaveLength(2);
     expect(result.current.eleanor.expired).toBe(false);
-    expect(result.current.eleanor.asOf).toBe("12:00 UTC");
+    // An ISO-shaped broker timestamp does not establish a measured UTC mapping.
+    expect(result.current.eleanor.asOf).toBe("12:00 source clock");
 
     // Jump past 12:05 (next M5 close); the deadline hook rechecks on focus.
     vi.setSystemTime(NOW + 4 * 60_000 + 1_000);
