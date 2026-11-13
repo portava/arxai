@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultVisibleBarsForWidth,
   rebaseUserVisibleRange,
+  shiftRangeForPrependedArchive,
   shouldRefitSparseInitialWindow,
 } from "./arxCanvasAdapter";
 
@@ -40,5 +41,13 @@ describe("ARX Canvas initial viewport sizing", () => {
     expect(rebaseUserVisibleRange({ from: 40, to: 100 }, 200, 200)).toEqual({ from: 40, to: 100 });
     expect(rebaseUserVisibleRange({ from: 40, to: 100 }, 200, 2)).toBeNull();
     expect(rebaseUserVisibleRange({ from: 40, to: 100 }, 200, 180)).toEqual({ from: 20, to: 80 });
+  });
+
+  it("keeps the same visible bars in place when an older archive page is prepended", () => {
+    expect(shiftRangeForPrependedArchive({ from: 120, to: 190 }, 500))
+      .toEqual({ from: 620, to: 690 });
+    expect(shiftRangeForPrependedArchive({ from: 120, to: 190 }, 0))
+      .toEqual({ from: 120, to: 190 });
+    expect(shiftRangeForPrependedArchive({ from: 120, to: 190 }, -1)).toBeNull();
   });
 });
