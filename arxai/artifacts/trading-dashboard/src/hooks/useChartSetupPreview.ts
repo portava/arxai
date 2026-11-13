@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChartOverlay } from "@/lib/chart-overlays";
+import { parseChartInterval } from "@/lib/chart-engine/chartIntervals";
 import {
   type SetupPreview,
   type SetupPreviewStatus,
@@ -129,7 +130,14 @@ export function useChartSetupPreview(
           // Ignore a stale response if the chart changed mid-flight.
           if (mySeq !== reqSeq.current) return;
           if (!body?.setupPreview) throw new Error("empty preview");
-          setPreview(body.setupPreview);
+          const incoming = body.setupPreview;
+          const requestedTimeframe = parseChartInterval(timeframe);
+          if (typeof incoming.symbol !== "string" || incoming.symbol.trim().toUpperCase() !== symbol.trim().toUpperCase() ||
+              requestedTimeframe == null || parseChartInterval(incoming.timeframe) !== requestedTimeframe) {
+            throw new Error("The returned setup does not match this chart's symbol and timeframe.");
+          }
+          if (isExpired(incoming)) throw new Error("The returned setup has expired or its timing could not be confirmed.");
+          setPreview(incoming);
           setLifecycle("preview");
           setStatus("ok");
         } catch (e) {

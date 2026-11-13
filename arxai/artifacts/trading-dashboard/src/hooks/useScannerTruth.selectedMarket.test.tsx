@@ -29,12 +29,14 @@ it("truth and panel share active timeframe analysis, cap pending/error, and canc
   expect(requests.every((r) => r.url.includes("timeframe=M15"))).toBe(true);
   const candles = requests.find((r) => r.url.includes("/chart/candles"))!;
   const analysis = requests.find((r) => r.url.includes("selected-market"))!;
-  await act(async () => candles.resolve(new Response(JSON.stringify({ candles: [], feedStatus: null }))));
+  await act(async () => candles.resolve(new Response(JSON.stringify({ symbol: "EURUSD", timeframe: "M15", candles: [], feedStatus: { source: null }, quality: "empty", aiUsable: false }))));
   await waitFor(() => expect(resolver).toHaveBeenCalled());
   expect(resolver.mock.calls.at(-1)?.[0]).toMatchObject({ headerOk: false, timeframe: "15m" });
   await act(async () => analysis.resolve(new Response(JSON.stringify({ ok: true, symbol: "EURUSD", timeframe: "M15", highlights: {}, explanation: {} }))));
   await waitFor(() => expect(result.current.panel.data?.ok).toBe(true));
-  expect(resolver.mock.calls.at(-1)?.[0].headerOk).toBe(true);
+  // Analysis answered, but this fixture's empty candle response supplies no
+  // bound closed-bar evidence; an ok analysis alone cannot confirm the read.
+  expect(resolver.mock.calls.at(-1)?.[0].headerOk).toBe(false);
   let refresh!: Promise<unknown>;
   act(() => { refresh = result.current.panel.refresh().catch(() => undefined); });
   await waitFor(() => expect(requests).toHaveLength(3));

@@ -13,6 +13,7 @@ import {
   CALIBRATION_METHOD,
   CALIBRATION_EDGE_MIN_SAMPLE,
   fitCalibration,
+  isUsableCalibrationFit,
   type CalibrationFit,
   type CalibrationSample,
 } from "./calibration.engine";
@@ -49,12 +50,15 @@ export function agentTrustFromFit(
   noReplayReason?: string | null,
 ): MeasuredAgentTrust {
   const f = fit?.method === CALIBRATION_METHOD ? fit : fitCalibration([]);
+  const usable = isUsableCalibrationFit(f);
   let influence = 0;
   let basis: string;
   if (f.status !== "measured" && !fit && noReplayReason) {
     basis = `no_replayable_record:${noReplayReason}`;
   } else if (f.status !== "measured") {
     basis = `no_scored_record:n=${f.n}`;
+  } else if (!usable) {
+    basis = "invalid_skill_evidence:influence_withheld";
   } else if (!f.cv) {
     basis = `no_prospective_validation:n=${f.n}; timed resolved outcomes required`;
   } else if (!f.edgeDetected || !f.holdout?.passed) {
@@ -75,10 +79,10 @@ export function agentTrustFromFit(
   influence = Math.round(influence * 1000) / 1000;
   return {
     agentKey,
-    n: f.n,
+    n: Number.isSafeInteger(f.n) && f.n >= 0 ? f.n : 0,
     influence,
     trustScore: Math.round((50 + 50 * influence) * 10) / 10,
-    status: f.status,
+    status: usable ? "measured" : "unmeasured",
     basis,
     fit: f,
   };

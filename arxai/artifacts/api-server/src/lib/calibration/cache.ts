@@ -29,12 +29,15 @@ const fits = new Map<string, CachedFit>();
 let loadedAt: string | null = null;
 
 export const calibrationLookup: FitLookup = {
-  get: (key) => fits.get(key),
+  get: (key) => {
+    const entry = fits.get(key);
+    return entry ? structuredClone(entry) : undefined;
+  },
 };
 
 export function replaceCalibrationCache(entries: Iterable<[string, CachedFit]>): void {
   fits.clear();
-  for (const [k, v] of entries) if (v.fit.method === CALIBRATION_METHOD) fits.set(k, v);
+  for (const [k, v] of entries) if (v.fit.method === CALIBRATION_METHOD) fits.set(k, structuredClone(v));
   loadedAt = new Date().toISOString();
 }
 
@@ -44,7 +47,7 @@ export function clearCalibrationCache(): void {
 }
 
 export function calibrationCacheEntries(): [string, CachedFit][] {
-  return [...fits.entries()];
+  return structuredClone([...fits.entries()]);
 }
 
 export function calibrationCacheLoadedAt(): string | null {

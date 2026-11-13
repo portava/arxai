@@ -191,8 +191,8 @@ describe("an M5 draw-setup gets a scanner reading", () => {
 
 describe("three-tier measured ranking", () => {
   const stamp = (model: "isotonic" | "base_rate", p: number, n: number) =>
-    ({ status: "measured" as const, model, probability: p, baseRate: model === "base_rate" ? p : 0.4, n });
-  const unmeasured = (n = 0) => ({ status: "unmeasured" as const, model: "none" as const, probability: null, baseRate: null, n });
+    ({ status: "measured" as const, model, probability: p, baseRate: model === "base_rate" ? p : 0.4, n, edgeDetected: model === "isotonic" });
+  const unmeasured = (n = 0) => ({ status: "unmeasured" as const, model: "none" as const, probability: null, baseRate: null, n, edgeDetected: false });
 
   it("tier 1: calibrated probability orders by probability, then N, carrying N in the label", () => {
     const k = classifyMeasuredRank({ rawScore: 10, calibration: stamp("isotonic", 0.62, 143) });

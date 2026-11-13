@@ -49,6 +49,27 @@ afterEach(() => {
 });
 
 describe("useChartSetupPreview — expiry wins over confirmation", () => {
+  it.each([
+    ["wrong symbol", { symbol: "GBPUSD" }],
+    ["wrong timeframe", { timeframe: "H4" }],
+    ["unknown timeframe", { timeframe: "bogus" }],
+    ["invalid expiry", { expiresAt: "not-a-time" }],
+    ["future creation", { createdAt: new Date(NOW + 10_000).toISOString() }],
+  ] as const)("rejects a %s response instead of offering its chart levels", async (_name, change) => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ setupPreview: { ...preview(), ...change } }))));
+    const { result } = renderHook(() => useChartSetupPreview({ symbol: "EURUSD", timeframe: "M15", aiUsable: true }));
+    act(() => result.current.requestDraw());
+    await waitFor(() => expect(result.current.status).not.toBe("loading"));
+    expect(result.current.status).toBe("error");
+    expect(result.current.preview).toBeNull();
+    expect(result.current.overlays).toHaveLength(0);
+  });
+
+  it("never offers an undated preview as a ticket prefill", () => {
+    expect(canUseSetup({ ...preview(), expiresAt: "not-a-time" }, "preview", NOW)).toBe(false);
+  });
+
   it("a confirmed preview goes stale at expiry: no overlays, no 'Use this setup'", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
     vi.stubGlobal(

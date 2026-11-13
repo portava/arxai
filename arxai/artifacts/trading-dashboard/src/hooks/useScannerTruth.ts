@@ -30,6 +30,9 @@ import {
 } from "@/lib/scannerTruth";
 import { candleIntervalMs } from "@workspace/domain/market";
 import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
+import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
+import { selectSmartChartWindow } from "@/lib/chart-engine/smartChartAnalysis";
+import { adaptChartCandles } from "@/components/scanner/scannerCandleAdapter";
 import { chartUtcClockQualified } from "@/lib/chart-engine/chartClockEvidence";
 
 export interface UseScannerTruthResult {
@@ -46,8 +49,8 @@ export interface UseScannerTruthResult {
    * Close time (ISO) of the newest CLOSED bar in the same shared candles — the
    * observation the server's truth snapshot reports as data.lastCandleAt. Not
    * feedStatus.lastCandleTime, which for a still-forming bar is its scheduled
-   * future close. Bars that do not state completeness (legacy shape) fall back
-   * to the feed's lastCandleTime. Null when no closed bar is known.
+   * future close. Null when the original identity, finality or closed window
+   * cannot be confirmed.
    */
   lastClosedCandleAt: string | null;
   isLoading: boolean;
@@ -101,14 +104,22 @@ export function useScannerTruth(
   const mode = useTradingMode();
   const { name: assistantName } = useAssistantName();
 
-  const candles = candlesQ.data?.candles ?? [];
-  const feedStatus = candlesQ.data?.feedStatus ?? null;
+  const originalResponse = candlesQ.data?.originalResponse;
+  const normalizedResponse = useMemo(
+    () => sharedChartResponse(originalResponse, symbol, apiTf),
+    [originalResponse, symbol, apiTf],
+  );
+  // The transport always supplies originalResponse. Match Smart Chart's
+  // identity/shape check before allowing its lossy display adapter to support
+  // any read. A legacy cached projection cannot prove the original evidence.
+  const candles = useMemo(() => normalizedResponse
+    ? adaptChartCandles(normalizedResponse.candles.map(c => ({ ...c }))) : [], [normalizedResponse]);
+  const feedStatus = normalizedResponse?.feedStatus ?? null;
   // Bar times are UTC only with original-UTC clock evidence on every bar (the
   // chart axis rule); MT5 bars stay on the broker's trade-server clock.
-  const originalResponse = candlesQ.data?.originalResponse;
   const barClockUtc = useMemo(
-    () => chartUtcClockQualified(sharedChartResponse(originalResponse, symbol, apiTf)?.candles ?? []),
-    [originalResponse, symbol, apiTf],
+    () => chartUtcClockQualified(normalizedResponse?.candles ?? []),
+    [normalizedResponse],
   );
   const last = candles.length > 0 ? candles[candles.length - 1] : null;
   const first = candles.length > 0 ? candles[0] : null;
@@ -119,16 +130,19 @@ export function useScannerTruth(
     () => resolveDisplayPricePrecision(serverPrecision, candles.flatMap((c) => [c.open, c.high, c.low, c.close])),
     [serverPrecision, candles],
   );
-  // Newest CLOSED bar (forming tip excluded) when the bars state completeness;
-  // undefined for legacy shapes (the truth then uses lastTime).
-  const statesCompleteness = candles.some((c) => typeof c.isComplete === "boolean");
-  const lastClosedBar = statesCompleteness
-    ? [...candles].reverse().find((c) => c.isComplete !== false)
-    : undefined;
-  const lastClosedTime = statesCompleteness ? candleTimeIso(lastClosedBar?.time) : undefined;
+  // Use Smart Chart's actual capture/window validators: source identity,
+  // OHLC, chronological uniqueness, finality, interval bounds and observation
+  // cutoff are one contract. No independently mutable adapter metadata votes.
+  const renderNowMs = Date.now();
+  const captured = captureSmartChartBars(normalizedResponse, { symbol, timeframe: apiTf }, [], null, renderNowMs);
+  const window = selectSmartChartWindow({ ...captured.context, bars: captured.bars, asOfMs: renderNowMs });
+  const sourceEvidenceConfirmed = captured.status === "ready" && window.status === "ready";
+  const observedClosedBars = sourceEvidenceConfirmed ? window.bars : [];
+  const newestObservedClosed = observedClosedBars.at(-1);
+  const lastClosedTime = newestObservedClosed ? candleTimeIso(newestObservedClosed.time * 1000) : null;
+  const lastClosedCandleAt = newestObservedClosed ? candleTimeIso(newestObservedClosed.closeTime * 1000) : null;
   // Re-resolve at the earliest future evidence deadline: the next candle
   // interval boundary, or the start/end of a scheduled weekend closure.
-  const renderNowMs = Date.now();
   // The shared trailing-interval rule only changes class at an interval
   // boundary (the gap is measured from floor(now / interval)), so the next
   // boundary is the exact next evidence deadline.
@@ -136,9 +150,6 @@ export function useScannerTruth(
   const candleDeadline = lastTime != null && candleIvMs != null
     ? (Math.floor(renderNowMs / candleIvMs) + 1) * candleIvMs
     : null;
-  const lastClosedCandleAt = statesCompleteness
-    ? lastClosedBar != null && candleIvMs != null ? candleTimeIso(lastClosedBar.time + candleIvMs) : null
-    : feedStatus?.lastCandleTime ?? null;
   const closureBoundary = nextWeekendClosureBoundaryMs(feedStatus?.assetClass ?? null, renderNowMs);
   const futureDeadlines = [candleDeadline, closureBoundary == null ? null : closureBoundary + 1]
     .filter((d): d is number => d != null && Number.isFinite(d) && d > renderNowMs);
@@ -171,12 +182,8 @@ export function useScannerTruth(
         timeframe: chartTimeframe,
         feedStatus,
         candleCount: candles.length,
-        // CLOSED bars only — the server marks the forming tip isComplete=false.
-        // Legacy shapes that never state completeness leave this undefined
-        // (the truth then falls back to candleCount).
-        closedCandleCount: statesCompleteness
-          ? candles.filter((c) => c.isComplete !== false).length
-          : undefined,
+        // The exact confirmed window used by Smart Chart, never legacy display bars.
+        closedCandleCount: observedClosedBars.length,
         lastClosedTime,
         barClockUtc,
         requestedCount: limit,
@@ -192,8 +199,8 @@ export function useScannerTruth(
         quote: null,
         // Keep cached bars as historical context after a failed refresh, but
         // withdraw live affordances for every direct truth consumer as well.
-        headerOk: candlesQ.isError ? false : headerOk,
-        headerCapReason,
+        headerOk: candlesQ.isError || !sourceEvidenceConfirmed ? false : headerOk,
+        headerCapReason: headerCapReason ?? (!sourceEvidenceConfirmed ? "candle_evidence_unconfirmed" : null),
         mode: truthMode,
         nowMs,
       }, assistantName)
@@ -202,7 +209,7 @@ export function useScannerTruth(
   return {
     truth,
     feedStatus,
-    sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
+    sourceIdentity: sourceEvidenceConfirmed ? captured.context.sourceIdentity : null,
     lastClosedCandleAt,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,

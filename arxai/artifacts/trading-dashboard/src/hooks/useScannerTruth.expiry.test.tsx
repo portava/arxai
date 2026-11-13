@@ -6,6 +6,7 @@ import { useScannerTruth } from "./useScannerTruth";
 import { useScannerReadGate } from "./useScannerReadGate";
 import { useEvidenceDeadline } from "./useEvidenceDeadline";
 import { chartCandlesQueryKey } from "@/lib/chartCandlesQuery";
+import { withOriginalChartResponse } from "./scannerTruthTestFixture";
 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
@@ -21,10 +22,10 @@ afterEach(() => { cleanup(); client.clear(); vi.useRealTimers(); vi.unstubAllGlo
 
 it("expires stationary candle truth at its deadline without another render or request", async () => {
   const lastOpen = NOW - 89_000;
-  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), withOriginalChartResponse({
     candles: Array.from({ length: 200 }, (_, index) => ({ time: lastOpen - (199 - index) * 60_000, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
-  });
+  }));
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result, unmount } = renderHook(() => useScannerTruth("EURUSD", "M1", { refetchInterval: 3_600_000 }), { wrapper });
   // Shared trailing-interval rule (@workspace/domain/market): the bar opened
@@ -58,10 +59,10 @@ it("rechecks evidence after a suspended tab resumes even before throttled timers
 });
 
 it("keeps out-of-range timestamps unconfirmed without crashing the scanner", () => {
-  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), withOriginalChartResponse({
     candles: Array.from({ length: 200 }, () => ({ time: 1e20, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
-  });
+  }));
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result } = renderHook(() => useScannerTruth("EURUSD", "M1"), { wrapper });
   expect(result.current.truth?.actionable).toBe(false);
@@ -69,10 +70,10 @@ it("keeps out-of-range timestamps unconfirmed without crashing the scanner", () 
 });
 
 it("withdraws live truth after a failed refresh while retaining the historical candle context", async () => {
-  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), withOriginalChartResponse({
     candles: Array.from({ length: 200 }, (_, index) => ({ time: NOW - (200 - index) * 60_000, open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
-  });
+  }));
   vi.mocked(fetch).mockResolvedValue(new Response("{}", { status: 503 }));
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result } = renderHook(() => ({ ...useScannerTruth(" eurusd ", "M1"), gate: useScannerReadGate("EURUSD", "M1") }), { wrapper });

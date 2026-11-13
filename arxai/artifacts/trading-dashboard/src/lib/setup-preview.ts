@@ -98,10 +98,12 @@ export interface DrawSetupResponse {
   allowOrderExecution: boolean;
 }
 
-/** A preview is past its server-issued expiry. */
+/** Missing/contradictory time evidence cannot make a preview immortal. */
 export function isExpired(preview: SetupPreview, nowMs: number = Date.now()): boolean {
   const exp = Date.parse(preview.expiresAt);
-  return Number.isFinite(exp) && nowMs >= exp;
+  const created = Date.parse(preview.createdAt);
+  return !Number.isFinite(nowMs) || !Number.isFinite(exp) || !Number.isFinite(created) ||
+    created > nowMs || exp <= created || nowMs >= exp;
 }
 
 /**

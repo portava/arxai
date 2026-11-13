@@ -442,10 +442,57 @@ export function fitCalibration(samples: CalibrationSample[], opts: FitOptions = 
   };
 }
 
+const isProbability = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+const sampleCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+/** Persisted JSON is evidence only when its counts, probability and validation
+ * agree. Method/status tags alone cannot authorize a measured reading. */
+export function isUsableCalibrationFit(fit: CalibrationFit | null | undefined): fit is CalibrationFit {
+  if (!fit || fit.method !== CALIBRATION_METHOD || fit.status !== "measured"
+    || !sampleCount(fit.n) || !sampleCount(fit.minSample) || fit.minSample < 1 || fit.n < fit.minSample
+    || !sampleCount(fit.wins) || fit.wins > fit.n || !isProbability(fit.baseRate)
+    || Math.abs(fit.baseRate - fit.wins / fit.n) > 0.000001
+    || !Number.isFinite(fit.priorStrength) || fit.priorStrength < 0
+    || !["base_rate", "isotonic"].includes(fit.model)
+    || !Array.isArray(fit.blocks) || fit.blocks.length === 0) return false;
+  let n = 0, wins = 0, previousHi = -1, previousProbability = -1;
+  for (const block of fit.blocks) {
+    if (!block || !Number.isFinite(block.lo) || !Number.isFinite(block.hi)
+      || block.lo < 0 || block.hi > 100 || block.lo > block.hi || block.lo <= previousHi
+      || !sampleCount(block.n) || block.n < 1 || !sampleCount(block.wins) || block.wins > block.n
+      || !isProbability(block.probability) || block.probability < previousProbability) return false;
+    n += block.n; wins += block.wins; previousHi = block.hi; previousProbability = block.probability;
+  }
+  if (n !== fit.n || wins !== fit.wins) return false;
+  if (fit.model === "base_rate") return fit.edgeDetected === false;
+  const cv = fit.cv, holdout = fit.holdout;
+  return fit.edgeDetected === true && cv?.edgeDetected === true && holdout?.passed === true
+    && sampleCount(cv.n) && cv.n >= CALIBRATION_EDGE_MIN_SAMPLE && cv.n <= holdout.trainN
+    && sampleCount(cv.folds) && cv.folds >= 3 && cv.folds <= cv.n
+    && isProbability(cv.brierModel) && isProbability(cv.brierBaseline) && cv.brierModel < cv.brierBaseline
+    && isProbability(cv.improvementLower95) && cv.improvementLower95 > CALIBRATION_EDGE_TOLERANCE
+    && sampleCount(holdout.n) && holdout.n >= CALIBRATION_EDGE_MIN_SAMPLE
+    && sampleCount(holdout.trainN) && holdout.trainN >= fit.minSample
+    && holdout.trainN + holdout.n <= fit.n
+    && Number.isFinite(Date.parse(holdout.from)) && holdout.selectedModel === "isotonic"
+    && isProbability(holdout.brierSelected) && isProbability(holdout.brierBaseline)
+    && holdout.brierSelected < holdout.brierBaseline
+    && isProbability(holdout.improvementLower95) && holdout.improvementLower95 > CALIBRATION_EDGE_TOLERANCE;
+}
+
 /** Read a calibrated probability for one raw score off a fit. */
 export function readCalibration(fit: CalibrationFit | null | undefined, score: number): CalibratedReading {
+  const safeN = sampleCount(fit?.n) ? fit.n : 0;
+  if (!Number.isFinite(score) || score < 0 || score > 100) {
+    return unmeasuredReading(safeN, "Unmeasured: invalid prediction score.");
+  }
+  if (fit?.method === CALIBRATION_METHOD && fit.status === "measured" && !isUsableCalibrationFit(fit)) {
+    return unmeasuredReading(safeN, "Unmeasured: invalid calibration evidence; refit required.");
+  }
   if (!fit || fit.method !== CALIBRATION_METHOD || fit.status !== "measured" || fit.baseRate == null) {
-    const n = fit?.n ?? 0;
+    const n = safeN;
     return {
       probability: null,
       status: "unmeasured",

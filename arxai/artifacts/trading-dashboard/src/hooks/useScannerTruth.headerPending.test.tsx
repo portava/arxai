@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { chartCandlesQueryKey } from "@/lib/chartCandlesQuery";
+import { withOriginalChartResponse } from "./scannerTruthTestFixture";
 
 const header = vi.hoisted(() => ({ value: { data: undefined as { ok: boolean } | undefined, isError: false } }));
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
@@ -22,13 +23,13 @@ const NOW = Date.parse("2026-10-28T12:00:00Z");
 let client: QueryClient;
 
 function seedLiveCandles() {
-  const lastOpen = NOW - 10_000;
-  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), {
+  const lastOpen = NOW - 60_000;
+  client.setQueryData(chartCandlesQueryKey("EURUSD", "M1", 200), withOriginalChartResponse({
     candles: Array.from({ length: 200 }, (_, i) => ({
       time: lastOpen - (199 - i) * 60_000, open: 1.1, high: 1.11, low: 1.09, close: 1.1,
     })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false },
-  });
+  }));
 }
 
 const wrapper = ({ children }: { children: ReactNode }) => (

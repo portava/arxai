@@ -1,5 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
+import {fitCalibration} from "@workspace/domain/calibration";
 import {evaluateProspective,prospectiveHash,validateProspectivePlan} from "../prospectiveEvaluation.js";
 import {fixturePlan,fixtureReceipts,REGISTERED} from "./prospectiveFixtures.js";
 const end=Date.parse("2030-01-05T00:00:00Z");
@@ -13,7 +14,7 @@ test("registered frozen calibration comparison exposes improvement only after fi
 });
 test("equal or worse frozen calibrators do not pass",()=>{
  for(const probability of [0.5,0.1]){
- const plan=fixturePlan();plan.candidate.fit.baseRate=probability;
+ const plan=fixturePlan();plan.candidate.fit=fitCalibration(Array.from({length:100},(_,i)=>({score:50,outcome:i<probability*100?1 as const:0 as const})));
  assert.equal(evaluateProspective(plan,REGISTERED,fixtureReceipts(plan),end).status,"NO_IMPROVEMENT");
  }
 });

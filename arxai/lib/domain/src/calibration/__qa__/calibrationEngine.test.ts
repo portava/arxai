@@ -45,6 +45,48 @@ function signal(n: number, seed: number): CalibrationSample[] {
   });
 }
 
+describe("persisted calibration evidence boundary", () => {
+  const valid = fitCalibration(noise(300, 418));
+  for (const score of [NaN, Infinity, -Infinity, -1, 101]) {
+    it(`withholds a probability for invalid input score ${score}`, () => {
+      const r = readCalibration(valid, score);
+      assert.equal(r.status, "unmeasured");
+      assert.equal(r.probability, null);
+    });
+  }
+  const mutations: [string, (f: CalibrationFit) => void][] = [
+    ["nonfinite base rate", f => { f.baseRate = NaN; }],
+    ["out-of-range base rate", f => { f.baseRate = 1.2; }],
+    ["invented base rate", f => { f.baseRate = 0.99; }],
+    ["negative sample count", f => { f.n = -1; }],
+    ["fractional sample count", f => { f.n = 30.5; }],
+    ["insufficient sample count", f => { f.n = 2; f.wins = 1; f.baseRate = 0.5; }],
+    ["impossible win count", f => { f.wins = f.n + 1; }],
+    ["no served model", f => { f.model = "none"; }],
+    ["unsupported isotonic edge", f => { f.model = "isotonic"; f.edgeDetected = true; f.holdout = null; }],
+    ["invalid block probability", f => { f.blocks[0].probability = Infinity; }],
+    ["contradictory edge claim", f => { f.edgeDetected = true; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    it(`refuses ${name} in a persisted fit`, () => {
+      const fit = structuredClone(valid); mutate(fit);
+      const result = readCalibration(fit, 90);
+      assert.equal(result.probability, null);
+      assert.equal(result.edgeDetected, false);
+    });
+  }
+  it("skips an invalid exact fit and labels a valid fallback honestly", () => {
+    const invalid = { ...valid, baseRate: 1.2 };
+    const entries = new Map([
+      [fitKey("scanner", "EURUSD", "M15"), { fit: invalid, version: 4 }],
+      [fitKey("scanner", "EURUSD", "H1"), { fit: valid, version: 3 }],
+    ]);
+    const result = readScoped({ get: key => entries.get(key) }, "scanner", "EURUSD", "M15", 80);
+    assert.equal(result.scope, "timeframe_fallback:H1");
+    assert.equal(result.probability, readCalibration(valid, 80).probability);
+  });
+});
+
 describe("calibration engine: unmeasured below the minimum sample", () => {
   it("returns null + unmeasured with N, never a rate off a tiny sample", () => {
     const fit = fitCalibration(noise(CALIBRATION_MIN_SAMPLE - 1, 1));
@@ -176,6 +218,15 @@ describe("cross-timeframe fallback and calibrated ranking", () => {
     assert.equal(onlyThin.n, 10, "unmeasured still carries the N it has");
   });
 
+  it("non-finite and out-of-range probabilities never earn measured rank", () => {
+    const ranked = rankByCalibration([
+      ...[NaN, Infinity, -Infinity, -0.1, 1.1].map((probability, i) => ({ id: String(i), rawScore: 99, reading: { probability } })),
+      { id: "valid", rawScore: 10, reading: { probability: 0.41 } },
+    ]);
+    assert.equal(ranked[0].id, "valid");
+    assert.ok(ranked.slice(1).every(r => r.rankBasis === "unmeasured_raw_order"));
+  });
+
   it("measured rows always outrank unmeasured rows; raw score orders the rest", () => {
     const ranked = rankByCalibration([
       { id: "a", rawScore: 99, reading: { probability: null } },
@@ -243,8 +294,21 @@ it("malformed or inconsistent persisted validation cannot grant agent authority"
     assert.equal(trust.trustScore, 50);
   }
   for (const malformed of [
+    { ...fit, baseRate: NaN },
+    { ...fit, wins: fit.n + 1 },
+    { ...fit, minSample: fit.n + 1 },
+    { ...fit, blocks: [] },
+    { ...fit, cv: { ...fit.cv!, brierModel: 1, brierBaseline: 0 } },
+    { ...fit, holdout: { ...fit.holdout!, brierSelected: 1, brierBaseline: 0 } },
+    { ...fit, cv: { ...fit.cv!, n: fit.n + 1 } },
+    { ...fit, cv: { ...fit.cv!, folds: 3.5 } },
+    { ...fit, holdout: { ...fit.holdout!, trainN: fit.n } },
     { ...fit, holdout: { ...fit.holdout!, n: 1 } },
     { ...fit, cv: { ...fit.cv!, edgeDetected: false } },
     { ...fit, model: "base_rate" as const },
-  ]) assert.equal(agentTrustFromFit("inconsistent", malformed).influence, 0);
+  ]) {
+    assert.equal(readCalibration(malformed, 90).probability, null);
+    assert.equal(agentTrustFromFit("inconsistent", malformed).influence, 0);
+    assert.equal(agentTrustFromFit("inconsistent", malformed).status, "unmeasured");
+  }
 });

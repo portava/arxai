@@ -73,11 +73,13 @@ export function readScoped(
     const hit = lookup.get(step.key);
     if (!hit) continue;
     if (!sawAny) {
-      mostSpecificN = hit.fit.n;
+      mostSpecificN = Number.isSafeInteger(hit.fit.n) && hit.fit.n >= 0 ? hit.fit.n : 0;
       sawAny = true;
     }
-    if (hit.fit.status !== "measured") continue;
-    return { ...readCalibration(hit.fit, score), fitKey: step.key, scope: step.scope, fitVersion: hit.version };
+    if (!Number.isSafeInteger(hit.version) || hit.version < 1) continue;
+    const reading = readCalibration(hit.fit, score);
+    if (reading.status !== "measured") continue;
+    return { ...reading, fitKey: step.key, scope: step.scope, fitVersion: hit.version };
   }
   return { ...unmeasuredReading(mostSpecificN), fitKey: null, scope: "none", fitVersion: null };
 }
@@ -98,8 +100,10 @@ export type RankBasis = "calibrated_probability" | "unmeasured_raw_order";
  * of each position is returned with it.
  */
 export function rankByCalibration<T extends RankInput>(rows: readonly T[]): (T & { rank: number; rankBasis: RankBasis })[] {
-  const measured = rows.filter((r) => r.reading.probability != null);
-  const unmeasured = rows.filter((r) => r.reading.probability == null);
+  const validProbability = (r: T): boolean => typeof r.reading.probability === "number"
+    && Number.isFinite(r.reading.probability) && r.reading.probability >= 0 && r.reading.probability <= 1;
+  const measured = rows.filter(validProbability);
+  const unmeasured = rows.filter((r) => !validProbability(r));
   measured.sort(
     (a, b) => (b.reading.probability as number) - (a.reading.probability as number) || b.rawScore - a.rawScore,
   );

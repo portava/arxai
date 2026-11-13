@@ -15,16 +15,17 @@
 // score. The tier and a ready-to-render label travel with every row.
 
 import type { CalibrationStamp } from "../calibration/cache.js";
+import { CALIBRATION_MIN_SAMPLE } from "@workspace/domain/calibration";
 
 export type MeasuredRankBasis = "calibrated_probability" | "measured_base_rate" | "unmeasured_raw_order";
 
 export const UNMEASURED_RANK_LABEL = "unmeasured, ranked by raw score";
 
 /** What the ranker needs from a row. `calibration` is the full stamp when the
- *  producer has it; `probability` alone (no stamp) is read as tier 1. */
+ *  producer has it. A naked probability cannot establish measured ranking. */
 export interface MeasuredRankInput {
   rawScore: number;
-  calibration?: Pick<CalibrationStamp, "probability" | "status" | "model" | "n" | "baseRate"> | null;
+  calibration?: Pick<CalibrationStamp, "probability" | "status" | "model" | "n" | "baseRate" | "edgeDetected"> | null;
   probability?: number | null;
 }
 
@@ -48,15 +49,23 @@ const TIER_ORDER: Record<MeasuredRankBasis, number> = {
 function finite(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n);
 }
+const probability = (value: unknown): value is number => finite(value) && value >= 0 && value <= 1;
+const measuredCount = (value: unknown): value is number =>
+  finite(value) && Number.isSafeInteger(value) && value >= CALIBRATION_MIN_SAMPLE;
 
 /** Tier + ordering value for one row. Pure. */
 export function classifyMeasuredRank(row: MeasuredRankInput): Omit<MeasuredRank, "rank"> {
   const raw = finite(row.rawScore) ? row.rawScore : 0;
   const c = row.calibration ?? null;
-  if (c && c.status === "measured" && finite(c.probability)) {
-    const n = finite(c.n) ? c.n : 0;
+  if (c && c.status === "measured" && probability(c.probability) && probability(c.baseRate)
+    && measuredCount(c.n) && (
+      (c.model === "isotonic" && c.edgeDetected === true) ||
+      // readCalibration serves four decimals while the stored base rate has six.
+      (c.model === "base_rate" && c.edgeDetected === false && c.probability === Math.round(c.baseRate * 10_000) / 10_000)
+    )) {
+    const n = c.n;
     if (c.model === "base_rate") {
-      const br = finite(c.baseRate) ? c.baseRate : c.probability;
+      const br = c.baseRate;
       return {
         rankBasis: "measured_base_rate",
         rankValue: br,
@@ -71,18 +80,10 @@ export function classifyMeasuredRank(row: MeasuredRankInput): Omit<MeasuredRank,
       rankLabel: `ranked by calibrated probability ${Math.round(c.probability * 100)}% (N=${n})`,
     };
   }
-  if (!c && finite(row.probability)) {
-    return {
-      rankBasis: "calibrated_probability",
-      rankValue: row.probability,
-      rankN: 0,
-      rankLabel: `ranked by calibrated probability ${Math.round(row.probability * 100)}%`,
-    };
-  }
   return {
     rankBasis: "unmeasured_raw_order",
     rankValue: raw,
-    rankN: c && finite(c.n) ? c.n : 0,
+    rankN: c && finite(c.n) && Number.isSafeInteger(c.n) && c.n >= 0 ? c.n : 0,
     rankLabel: UNMEASURED_RANK_LABEL,
   };
 }

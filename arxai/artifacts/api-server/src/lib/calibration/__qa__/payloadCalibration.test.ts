@@ -33,6 +33,8 @@ import {
 import {
   agentCalibrationKey,
   calibrate,
+  calibrationLookup,
+  calibrationCacheEntries,
   clearCalibrationCache,
   replaceCalibrationCache,
   SCANNER_CALIBRATION_KEY,
@@ -42,6 +44,7 @@ import { reviewTrade } from "../../aiReviewEngine.js";
 import { rankScannerOpportunities, scannerCalibrationFields, type ScannerOpportunity } from "../../marketScanner.js";
 import { measuredSnapshot } from "../../agentEcosystem/advisoryInfluence.js";
 import { buildCalibrationSummary } from "../../../routes/calibration.js";
+import { classifyMeasuredRank } from "../../ranking/measuredRank.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = (p: string) => readFileSync(resolve(here, "../../..", p), "utf8");
@@ -62,6 +65,46 @@ function cache(entries: [string, CalibrationFit][], source = "test") {
 }
 
 afterEach(() => clearCalibrationCache());
+
+describe("calibration snapshots cannot be changed by readers", () => {
+  for (const path of ["input", "lookup", "entries"] as const) {
+    it(`isolates the ${path} reference from future scanner readings`, () => {
+      const key = fitKey("scanner", "EURUSD", "M15");
+      const fit = fitCalibration(noise(300, 918));
+      cache([[key, fit]]);
+      const before = calibrate("scanner", "EURUSD", "M15", 80);
+      const exposed = path === "input" ? fit : path === "lookup"
+        ? calibrationLookup.get(key)!.fit : calibrationCacheEntries()[0][1].fit;
+      exposed.baseRate = 0.99;
+      exposed.blocks[0].probability = 0.99;
+      assert.deepEqual(calibrate("scanner", "EURUSD", "M15", 80), before);
+    });
+  }
+});
+
+describe("ranking requires probability evidence", () => {
+  it("accepts the actual reader's rounded base rate without inventing an edge", () => {
+    cache([[fitKey("scanner", "EURUSD", "M15"), fitCalibration(noise(137, 42))]]);
+    const stamp = calibrate("scanner", "EURUSD", "M15", 90);
+    assert.notEqual(stamp.probability, stamp.baseRate, "fixture exercises the reader's rounding");
+    assert.equal(classifyMeasuredRank({ rawScore: 90, calibration: stamp }).rankBasis, "measured_base_rate");
+  });
+  it("does not label a naked number as calibrated", () => {
+    assert.equal(classifyMeasuredRank({ rawScore: 90, probability: 0.99 }).rankBasis, "unmeasured_raw_order");
+  });
+  const good = { probability: 0.7, status: "measured" as const, model: "isotonic" as const, n: 300, baseRate: 0.5, edgeDetected: true };
+  for (const [name, patch] of Object.entries({
+    outOfRange: { probability: 1.5 }, nonfinite: { probability: NaN }, noSamples: { n: 0 },
+    negativeSamples: { n: -30 }, fractionalSamples: { n: 30.5 }, noModel: { model: "none" as const },
+    invalidBase: { baseRate: -0.1 },
+    unsupportedEdge: { edgeDetected: false },
+    conflictingBaseRate: { model: "base_rate" as const, edgeDetected: false },
+  })) {
+    it(`withholds measured ranking for ${name}`, () => {
+      assert.equal(classifyMeasuredRank({ rawScore: 90, calibration: { ...good, ...patch } }).rankBasis, "unmeasured_raw_order");
+    });
+  }
+});
 
 describe("strategy engine payload", () => {
   it("directional calls carry null + unmeasured with N when no fit exists; WAIT carries N=0", () => {
@@ -126,7 +169,9 @@ describe("scanner rows", () => {
 
   it("rank measured rows above unmeasured rows across timeframes", () => {
     const row = (tf: string, score: number, p: number | null) =>
-      ({ symbol: "EURUSD", timeframe: tf, opportunity: { score }, calibratedProbability: p } as unknown as ScannerOpportunity);
+      ({ symbol: "EURUSD", timeframe: tf, opportunity: { score }, calibratedProbability: p,
+      calibration: p == null ? undefined : { probability: p, status: "measured", model: "isotonic", n: 200, baseRate: 0.5, edgeDetected: true },
+      } as unknown as ScannerOpportunity);
     const ranked = rankScannerOpportunities([row("M1", 95, null), row("H4", 40, 0.52), row("D1", 60, 0.47), row("M5", 70, null)]);
     assert.deepEqual(ranked.map((r) => r.timeframe), ["H4", "D1", "M1", "M5"]);
     assert.deepEqual(ranked.map((r) => r.rankBasis), ["calibrated_probability", "calibrated_probability", "unmeasured_raw_order", "unmeasured_raw_order"]);

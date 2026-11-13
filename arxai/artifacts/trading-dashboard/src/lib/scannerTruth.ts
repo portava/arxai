@@ -144,11 +144,13 @@ export type ConsistencyStatus = "aligned" | "mismatch" | "unknown";
  *   analysis_unavailable  — it answered without an analysis (ok:false)
  *   analysis_request_failed — the analysis request itself failed
  *   candles_refresh_failed — the latest candle refresh failed (cached bars)
+ *   candle_evidence_unconfirmed — the original candle source/window is not usable
  */
 export type ScannerHeaderCapReason =
   | "analysis_pending"
   | "analysis_unavailable"
   | "analysis_request_failed"
+  | "candle_evidence_unconfirmed"
   | "candles_refresh_failed";
 export type ReadLevel = "full" | "limited" | "historical_only" | "blocked";
 export type OverlayStatus = "verified" | "limited" | "check" | "blocked";
@@ -643,6 +645,9 @@ export function resolveScannerTruth(
   if (count === 0 || displayStatus === "UNAVAILABLE") {
     candleStatus = "unavailable";
     candleReason = "No candles are available for this market right now.";
+  } else if (input.headerOk === false && input.headerCapReason === "candle_evidence_unconfirmed") {
+    candleStatus = "historical_only";
+    candleReason = "The original candle source and closed-bar window are not confirmed for this read — historical context only, not valid for a live entry.";
   } else if (!minMet) {
     candleStatus = "insufficient";
     candleReason = hasFormingBar
