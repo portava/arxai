@@ -2,6 +2,7 @@ import {
   describe, it, expect, beforeEach, afterEach, vi,
 } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import type { PropsWithChildren } from "react";
 import { RouteAccessGuard } from "./RouteAccessGuard";
 import { ARXShellFrame } from "./ARXShellFrame";
 
@@ -44,6 +45,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("wouter", () => ({
   useLocation: () => [h.location, h.setLocation] as const,
+  Link: ({ children, href, ...props }: PropsWithChildren<{ href: string; [key: string]: unknown }>) =>
+    <a href={href} {...props}>{children}</a>,
 }));
 vi.mock("@/hooks/useViewMode", () => ({
   useViewMode: () => h.viewMode,

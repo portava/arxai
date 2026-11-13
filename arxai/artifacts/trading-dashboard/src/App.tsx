@@ -17,6 +17,10 @@ import { ChartReplayBoundary } from "@/components/chart-replay/ChartReplayBounda
 import { AuthGate } from "@/components/auth/AuthGate";
 import { useActivityPing } from "@/hooks/useActivityPing";
 import { ScannerPageRoute } from "@/components/scanner/ScannerPageRoute";
+import { useProductRole } from "@/hooks/useProductRole";
+import { useTraderTier } from "@/hooks/useTraderTier";
+import { useViewMode } from "@/hooks/useViewMode";
+import { workspaceLandingPath } from "@/components/layout/workspaceNavigation";
 
 // Load the trading cockpit only after authentication and route selection.
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -232,6 +236,19 @@ function PageFallback() {
   );
 }
 
+function WorkspaceHomeRedirect() {
+  const { isInvestor } = useProductRole();
+  const { isApprovedTrader, isLoading } = useTraderTier();
+  const { realIsAdmin, effectiveIsAdmin } = useViewMode();
+  if (isLoading) return <PageFallback />;
+  return <Redirect to={workspaceLandingPath({
+    isInvestor,
+    isAdmin: realIsAdmin || effectiveIsAdmin,
+    isApprovedTrader,
+    isLoading: false,
+  })} />;
+}
+
 function ActivityPingMount() {
   // Phase 24 — Mounted once inside AuthGate. Tracks presence; defaults to
   // UNKNOWN; backend treats UNKNOWN as a hard block for auto-close execution.
@@ -256,7 +273,8 @@ function Router() {
       <RouteErrorBoundary>
       <Suspense fallback={<PageFallback />}>
         <Switch>
-          <Route path="/" component={Dashboard} />
+          <Route path="/" component={WorkspaceHomeRedirect} />
+          <Route path="/market-desk" component={Dashboard} />
           <Route path="/investor" component={InvestorPortal} />
           {/* /scanner kept as a redirect for old URLs / bookmarks — the
               tabbed Market Scanner at /market-scanner is the single

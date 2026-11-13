@@ -8,7 +8,7 @@ import {
   ListChecks, Briefcase, GitMerge, HelpCircle, User, Users, Crosshair,
   ScrollText, Trophy, Eye, Swords, Gauge, TrendingUp, NotebookPen, BarChart3,
   Plug, LineChart, Award, ShieldCheck, Search, X, Zap, Wallet, LayoutGrid, Banknote,
-  Thermometer, GraduationCap, Flag, ScanLine,
+  Thermometer, GraduationCap, Flag,
   Calendar as CalendarIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -28,9 +28,8 @@ import { RouteAccessGuard } from "./RouteAccessGuard";
 import { AssistantDockProvider, useChartActionDockTarget } from "@/components/help/AssistantDock";
 import { SymbolPicker } from "./SymbolPicker";
 import { ViewModeSwitch } from "./Topbar";
-import { ARXShellFrame, type CockpitShellItem, type PageShellItem } from "./ARXShellFrame";
+import { ARXShellFrame, type PageShellItem } from "./ARXShellFrame";
 import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
-import { NotificationBell } from "@/components/alerts/NotificationBell";
 import { LiveModeBadge } from "@/components/live/LiveModeBadge";
 import { SafetyHeader } from "@/components/ss/SafetyHeader";
 import NotificationCenter from "@/components/NotificationCenter";
@@ -45,7 +44,6 @@ import { RouteLayoutPanel } from "./RouteLayoutPanel";
 import {
   workspaceTabs,
   workspaceTabForPath,
-  workspaceSubnav,
 } from "./workspaceNavigation";
 import "@/components/dashboard/command-workspace.css";
 
@@ -73,7 +71,8 @@ export function shouldShowEmergencyStop(isInvestor: boolean) {
 // Curated aliases / descriptions for the menu search so users can find
 // pages by intent ("demo", "eleanor", "scanner") not just exact labels.
 const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; description?: string }> => ({
-  "/": { aliases: ["home", "cockpit", "overview"], description: "Live overview of P&L, account, signals" },
+  "/": { aliases: ["home", "cockpit", "overview"], description: "Primary workspace landing" },
+  "/market-desk": { aliases: ["market desk", "classic cockpit", "overview"], description: "Secondary full market overview" },
   "/live-chart": { aliases: ["chart", "market", "candles", "ohlc"], description: "Live OHLC chart with overlays" },
   "/trade-command-room": { aliases: ["trade", "order", "ticket", "execute", "buy", "sell"], description: "Compose and review AI trade setups" },
   "/watchlists": { aliases: ["symbols", "favorites"], description: "Your tracked symbols" },
@@ -154,6 +153,7 @@ const buildNavGroups = (name: string): NavGroup[] => [
     approvedOnly: true,
     items: [
       { href: "/market-scanner",      label: "Market Scanner", icon: Search },
+      { href: "/market-desk",         label: "Market desk",    icon: Target },
       { href: "/trade-command-room",  label: "Trade",          icon: Crosshair },
       { href: "/live-trading",        label: "Live Trading",   icon: Zap },
       { href: "/ai-command-center",   label: `${name} (AI)`,      icon: Brain },
@@ -629,18 +629,6 @@ const SHELL_DEFAULTS: ShellPreferences = {
   density: "comfortable",
 };
 
-const COCKPIT_PANELS: CockpitShellItem[] = [
-  { id: "discovery", label: "Scanner", shortLabel: "Scanner", icon: Search, onSelect: () => focusCockpitPanel("discovery") },
-  { id: "chart", label: "Chart", shortLabel: "Chart", icon: Activity, onSelect: () => focusCockpitPanel("chart") },
-  { id: "heat", label: "Market heat", shortLabel: "Heat", icon: Thermometer, onSelect: () => focusCockpitPanel("heat") },
-  { id: "intelligence", label: "Intelligence", shortLabel: "Intel", icon: ScanLine, onSelect: () => focusCockpitPanel("intelligence") },
-  { id: "clock", label: "Desk clock", shortLabel: "Clock", icon: CalendarIcon, onSelect: () => focusCockpitPanel("clock") },
-  { id: "eleanor", label: "AI read", shortLabel: "AI", icon: Brain, onSelect: () => focusCockpitPanel("eleanor") },
-  { id: "risk", label: "Risk", shortLabel: "Risk", icon: Shield, onSelect: () => focusCockpitPanel("risk") },
-  { id: "order", label: "Order entry", shortLabel: "Order", icon: Crosshair, onSelect: () => focusCockpitPanel("order") },
-  { id: "positions", label: "Open positions", shortLabel: "Positions", icon: Briefcase, onSelect: () => focusCockpitPanel("positions") },
-];
-
 function focusCockpitPanel(id: string) {
   window.dispatchEvent(new CustomEvent("arx:focus-workspace-panel", { detail: { id } }));
 }
@@ -710,7 +698,7 @@ function CommandPaletteLauncher({ open, onOpen }: { open: boolean; onOpen: () =>
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
-  const isRootWorkspace = location === "/";
+  const isRootWorkspace = location === "/market-desk";
   const { user, isLoading: userLoading } = useCurrentUser();
   const logout = useLogout();
   const { isInvestor } = useProductRole();
@@ -889,7 +877,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     {roleReady && shouldShowEmergencyStop(isInvestor) && <Link href="/emergency" className="arx-shell-emergency-link" data-testid="shell-emergency-stop">
       <AlertOctagon size={14} aria-hidden="true" /><span>Emergency Stop</span>
     </Link>}
-    <NotificationBell />
     {user && <button
       type="button"
       onClick={() => logout.mutate()}
@@ -904,6 +891,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const title = isRootWorkspace
     ? <>Market desk <span className="arx-shell-symbol">{activeSymbol}</span></>
+    : location === "/live-chart"
+      ? "Smart Chart"
     : (toolCatalog.find((item) => item.href === location)?.label
       ?? toolCatalog.find((item) => location.startsWith(`${item.href}/`))?.label
       ?? "ARX workspace");
@@ -924,7 +913,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
   const workspacePrimaryTabs = workspaceTabs(workspaceAccess);
   const activeWorkspaceTab = workspaceTabForPath(location, workspacePrimaryTabs);
-  const subnavItems = workspaceSubnav(location, workspaceAccess);
   const workspaceSectionNavigation = <div className="arx-workspace-section-navigation">
     <nav className="arx-workspace-section-tabs" aria-label="Workspace sections" data-testid="workspace-section-tabs">
       {workspacePrimaryTabs.map((tab) => <Link
@@ -935,16 +923,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         data-testid={`workspace-tab-${tab.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
       >{tab.label}</Link>)}
     </nav>
-    {subnavItems.length > 0 && <nav
-      className="arx-workspace-subnav"
-      aria-label={`${activeWorkspaceTab?.label ?? "Workspace"} tools`}
-    >
-      {subnavItems.map((item) => <Link
-        key={item.href}
-        href={item.href}
-        aria-current={location.split("?")[0] === item.href ? "page" : undefined}
-      >{item.label}</Link>)}
-    </nav>}
   </div>;
   const routePanel = ROUTE_LAYOUT_PANELS[location];
   const guardedRoute = <RouteAccessGuard>
@@ -960,6 +938,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const sharedFrame = {
     title,
     eyebrow,
+    brandHref: isInvestor ? "/investor" : "/",
     dockMode: shellPreferences.dockMode,
     contentWidth: shellPreferences.contentWidth,
     density: shellPreferences.density,
@@ -986,19 +965,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         Skip to main content
       </a>
-      {isRootWorkspace && roleReady && !isInvestor
-        ? <ARXShellFrame
-            {...sharedFrame}
-            variant="cockpit"
-            dockItems={COCKPIT_PANELS}
-            mobileTrayItems={COCKPIT_PANELS.filter((item) => ["discovery", "chart", "heat", "clock", "order"].includes(item.id))}
-          />
-        : <ARXShellFrame
-            {...sharedFrame}
-            variant="page"
-            dockItems={pageDockItems}
-            mobileTrayItems={mobilePageItems}
-          />}
+      <ARXShellFrame
+        {...sharedFrame}
+        variant="page"
+        dockItems={pageDockItems}
+        mobileTrayItems={mobilePageItems}
+      />
       <FloatingActionPanel rootWorkspace={isRootWorkspace} />
       <CommandPaletteLauncher open={commandPaletteOpen} onOpen={() => setCommandPaletteOpen(true)} />
       {commandPaletteOpen && (

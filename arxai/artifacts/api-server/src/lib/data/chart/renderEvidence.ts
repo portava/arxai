@@ -66,6 +66,8 @@
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { withSubMetric } from "./chartTruthScore.js";
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
+import { copyStateCandleWindow } from "./stateCandleWindow.js";
+import { copyStateTruthResult } from "./stateTruthResult.js";
 import { currentFeedScopeBridgeSync, feedScopeCacheKey } from "../feedScope.js";
 import { heikinAshiRun } from "./heikinAshiTransform.js";
 
@@ -354,5 +356,11 @@ export function applyRenderEvidence<T extends ChartIntelligenceState>(state: T, 
   const verdict = judgeRenderEvidence(userId, state, now);
   const raw = verdict.status === "measured" ? verdict.score : null;
   const chartTruthScore = withSubMetric(state.chartTruthScore, "render_accuracy", raw, verdict.detail);
-  return chartTruthScore === state.chartTruthScore ? state : { ...state, chartTruthScore };
+  if (chartTruthScore === state.chartTruthScore) return state;
+  const enriched = { ...state, chartTruthScore } as T;
+  // These exact source-window and truth-basis records intentionally live in
+  // WeakMaps, outside API JSON. Any immutable state clone must carry them too.
+  copyStateCandleWindow(state, enriched);
+  copyStateTruthResult(state, enriched);
+  return enriched;
 }

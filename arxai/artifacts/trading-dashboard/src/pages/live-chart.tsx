@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
-import { SmartChartSymbolSelect } from "@/components/charts/SmartChartView";
 import {
   ARXNativeChart,
   type ArxTimeframe,
@@ -22,11 +21,11 @@ import { useLivePositionOverlays } from "@/hooks/useLivePositionOverlays";
 import { useAiChartOverlays } from "@/hooks/useAiChartOverlays";
 import { useChartSetupPreview } from "@/hooks/useChartSetupPreview";
 import type { SetupPreview } from "@/lib/setup-preview";
-import { Badge } from "@/components/ui/badge";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { LiveChartModeNotice } from "@/components/charts/LiveChartModeNotice";
 import { useProductRole } from "@/hooks/useProductRole";
 import { bareSymbol, useChartSymbol } from "@/lib/use-chart-symbol";
+import { PageTabs } from "@/components/ui/PageTabs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Smart Chart Shell (Task #373).
@@ -55,7 +54,7 @@ export default function LiveChartPage() {
   // as a small label so the Shell is honest about which engine is drawing and so
   // a future engine swap is visible without code spelunking.
   const activeEngine = CHART_ENGINE_DESCRIPTORS[DEFAULT_CHART_ENGINE_ID];
-  const [chartSymbol, setChartSymbol] = useChartSymbol();
+  const [chartSymbol] = useChartSymbol();
   // The Shell owns the timeframe (controlled). The Native renderer reflects this
   // value and reports user changes back via onTimeframeChange, so the Shell — not
   // the renderer — is the single source of truth for the timeframe on screen.
@@ -64,6 +63,15 @@ export default function LiveChartPage() {
     return restoreChartInterval(saved);
   });
   useEffect(()=>{writeChartStorage("arx.chart.primaryTimeframe.v1",timeframe);},[timeframe]);
+  const [chartHeight, setChartHeight] = useState(() =>
+    typeof window === "undefined" ? 500 : Math.min(560, Math.max(390, Math.floor(window.innerHeight * 0.62))),
+  );
+  useEffect(() => {
+    const updateHeight = () =>
+      setChartHeight(Math.min(560, Math.max(390, Math.floor(window.innerHeight * 0.62))));
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
   const onTimeframeChange = useCallback((tf: ArxTimeframe) => setTimeframe(tf), []);
   // Level 4 — read-only open-position overlays for the ARX Native chart, sourced
   // from the existing per-user live-position endpoint. Always called (hooks rule)
@@ -142,75 +150,93 @@ export default function LiveChartPage() {
       ? chartIntelligence
       : null;
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold leading-tight">
-          Smart Chart
-          {mode.envelope && (
-            <Badge variant="outline" className="text-[10px]" data-testid="chart-mode-badge">{mode.cleanModeLabel}</Badge>
-          )}
-        </h1>
-        <p className="text-sm text-txt-secondary">
-          Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality.
-        </p>
+    <div
+      className="mx-auto w-full max-w-[1600px] space-y-3 p-2 sm:p-3 md:p-4 pb-24 md:pb-4"
+      data-testid="smart-chart-primary-workspace"
+    >
+      <h1 className="sr-only">Smart Chart</h1>
+      {canSeeTradeEntry && <div className="flex justify-end lg:hidden">
+        <a
+          href="#chart-order-ticket"
+          className="inline-flex min-h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-primary"
+          data-testid="link-jump-order-ticket"
+        >Jump to order ticket</a>
+      </div>}
+      <div className={`grid min-w-0 gap-3 ${canSeeTradeEntry ? "lg:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"}`}>
+        <section className="min-w-0" aria-label="ARX Smart Chart">
+          <SmartChartLayout symbol={chartSymbol} primaryTimeframe={timeframe}>
+            <ARXNativeChart
+              symbol={chartSymbol}
+              mode={mode.cleanModeLabel}
+              timeframe={timeframe}
+              onTimeframeChange={onTimeframeChange}
+              height={chartHeight}
+              mobileHeight={360}
+              compactWorkspace
+              showFeedStatus
+              overlays={[...overlayData.overlays, ...aiOverlays.overlays, ...setupPreview.overlays]}
+              onChartContextChange={onChartContextChange}
+              onIntelligenceChange={onIntelligenceChange}
+            />
+          </SmartChartLayout>
+        </section>
+        {canSeeTradeEntry && <aside
+          id="chart-order-ticket"
+          className="min-w-0 scroll-mt-24"
+          aria-label="Reviewed order ticket"
+          data-testid="chart-order-ticket"
+        >
+          <ChartTradeEntry prefill={tradePrefill} timeframe={timeframe} />
+        </aside>}
       </div>
-      <SmartChartSymbolSelect symbol={chartSymbol} onSymbolChange={setChartSymbol} />
-      <LiveChartModeNotice mode={mode} />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0 space-y-4">
-            {/* MT5-style one-click bar. Off → a single "Turn on" button (disclaimer
-                first). On → SELL bid | lot | BUY ask + × close, first click trades.
-                Same gated router / demo queue underneath; nothing bypasses a gate. */}
-            {canSeeTradeEntry && (
-              <OneClickTradePanel
+      <PageTabs
+        storageKey="chart-workspace-details"
+        defaultTab="analysis"
+        variant="pill"
+        tabs={[
+          {
+            id: "analysis",
+            label: "Eleanor & analysis",
+            content: <div className="space-y-3">
+              <ChartModes state={shownIntelligence} />
+              <ChartSetupPreviewPanel data={setupPreview} canUseSetup={canSeeTradeEntry} onUseSetup={onUseSetup} />
+              {canSeeTradeEntry && <ChartDecisionReceiptsPanel
+                symbol={bareSymbol(chartCtx.symbol || chartSymbol || "").toUpperCase()}
+                timeframe={chartCtx.timeframe || timeframe}
+              />}
+            </div>,
+          },
+          {
+            id: "positions",
+            label: "Positions & orders",
+            content: <div className="space-y-3">
+              <ChartPositionOverlayPanel symbol={chartSymbol} data={overlayData} />
+              <LivePendingOrders symbol={chartSymbol} enabled={mode.isLiveShared} compact />
+              <PositionPickerPanel />
+            </div>,
+          },
+          {
+            id: "layers",
+            label: "Chart layers",
+            content: <ChartAiOverlayPanel data={aiOverlays} />,
+          },
+          {
+            id: "status",
+            label: "Trading & status",
+            content: <div className="space-y-3">
+              {canSeeTradeEntry && <OneClickTradePanel
                 symbol={bareSymbol(chartSymbol)}
                 positions={overlayData.positions}
                 onPositionsChanged={overlayData.reload}
-              />
-            )}
-            <SmartChartLayout symbol={chartSymbol} primaryTimeframe={timeframe}>
-              <ARXNativeChart
-                symbol={chartSymbol}
-                mode={mode.cleanModeLabel}
-                timeframe={timeframe}
-                onTimeframeChange={onTimeframeChange}
-                height={680}
-                showFeedStatus
-                overlays={[...overlayData.overlays, ...aiOverlays.overlays, ...setupPreview.overlays]}
-                onChartContextChange={onChartContextChange}
-                onIntelligenceChange={onIntelligenceChange}
-              />
-            </SmartChartLayout>
-            <p className="text-[10px] text-txt-secondary" data-testid="chart-engine-label">
-              Rendering engine: {activeEngine.label}
-            </p>
-            <ChartPositionOverlayPanel symbol={chartSymbol} data={overlayData} />
-            <LivePendingOrders symbol={chartSymbol} enabled={mode.isLiveShared} compact />
-            <ChartAiOverlayPanel data={aiOverlays} />
-            <ChartSetupPreviewPanel
-              data={setupPreview}
-              canUseSetup={canSeeTradeEntry}
-              onUseSetup={onUseSetup}
-            />
-            {/* Decision receipts: the trader's own recorded chart reads, outcome
-                recording (append-only), similar past setups and behavior cautions.
-                Hidden from view-only roles; never places a trade. */}
-            {canSeeTradeEntry && (
-              <ChartDecisionReceiptsPanel
-                symbol={bareSymbol(chartCtx.symbol || chartSymbol || "").toUpperCase()}
-                timeframe={chartCtx.timeframe || timeframe}
-              />
-            )}
-            <ChartModes state={shownIntelligence} />
-          </div>
-        <div className="space-y-4">
-          {/* Trade entry is the single gated order surface. Hidden from view-only
-              (investor) roles and while identity resolves; placement itself still
-              routes through the server-side instant-trade router + 16-gate. */}
-          {canSeeTradeEntry && <ChartTradeEntry prefill={tradePrefill} timeframe={timeframe} />}
-          <PositionPickerPanel />
-        </div>
-      </div>
+              />}
+              <LiveChartModeNotice mode={mode} />
+              <p className="text-[10px] text-txt-secondary" data-testid="chart-engine-label">
+                Rendering engine: {activeEngine.label}
+              </p>
+            </div>,
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -58,6 +58,11 @@ export function workspaceTabs(
     ? TRADING_TABS
     : PENDING_TABS;
 }
+export function workspaceLandingPath(access: WorkspaceAccess): string {
+  if (access.isInvestor) return "/investor";
+  if (access.isLoading) return "/";
+  return access.isAdmin || access.isApprovedTrader ? "/market-scanner" : "/onboarding";
+}
 export function workspaceTabForPath(
   path: string,
   tabs: readonly WorkspaceLink[],

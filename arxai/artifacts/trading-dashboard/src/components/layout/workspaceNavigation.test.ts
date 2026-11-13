@@ -3,6 +3,7 @@ import {
   workspaceTabs,
   workspaceSubnav,
   workspaceTabForPath,
+  workspaceLandingPath,
   TRADING_TABS,
   type WorkspaceAccess,
 } from "./workspaceNavigation";
@@ -18,6 +19,12 @@ const approved: WorkspaceAccess = {
   isLoading: false,
 };
 describe("workspace navigation preserves account access", () => {
+  it("opens the primary workspace for approved traders and preserves investor and pending destinations", () => {
+    expect(workspaceLandingPath(approved)).toBe("/market-scanner");
+    expect(workspaceLandingPath({ ...approved, isInvestor: true })).toBe("/investor");
+    expect(workspaceLandingPath({ ...approved, isApprovedTrader: false })).toBe("/onboarding");
+    expect(workspaceLandingPath({ ...approved, isLoading: true })).toBe("/");
+  });
   it("approved traders have the five requested sections on existing product routes", () => {
     const tabs = workspaceTabs(approved);
     expect(tabs.map((t) => t.label)).toEqual([

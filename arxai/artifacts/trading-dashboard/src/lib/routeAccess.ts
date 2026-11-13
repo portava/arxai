@@ -63,6 +63,7 @@ const PENDING_USER_PREFIXES: readonly string[] = [
 const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   // ── Primary (visible nav group) ──
   "/",
+  "/market-desk",
   "/market-scanner",
   "/trade-command-room",
   "/ai-command-center",

@@ -58,6 +58,16 @@ const { default: LiveChartPage } = await import("./live-chart");
 afterEach(() => { cleanup(); responses.clear(); currentSymbol = "EURUSD"; });
 
 describe("Smart Chart intelligence follows the chart's symbol", () => {
+  it("keeps the native chart first and moves secondary panels into reachable details", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><LiveChartPage /></QueryClientProvider>);
+    expect(screen.getByTestId("smart-chart-primary-workspace")).toBeTruthy();
+    expect(screen.getByTestId("native-chart")).toBeTruthy();
+    expect(screen.getByTestId("chart-order-ticket")).toBeTruthy();
+    expect(screen.getByTestId("link-jump-order-ticket")).toBeTruthy();
+    expect(screen.queryByText(/Your chart workspace — price action/)).toBeNull();
+  });
+
   it("does not keep the previous symbol's intelligence after a symbol switch", async () => {
     responses.set("EURUSD", { symbol: "EURUSD", timeframe: "M15" });
     // Panels that read their own data (receipts, pending orders) do so through

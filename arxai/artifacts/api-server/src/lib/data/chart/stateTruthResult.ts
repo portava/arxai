@@ -14,6 +14,11 @@ export function recordStateTruthResult(state: ChartIntelligenceState, truthResul
   truthResultByState.set(state, truthResult);
 }
 
+/** Preserve the chart's non-serialized truth basis when a state is enriched. */
+export function copyStateTruthResult(from: ChartIntelligenceState, to: ChartIntelligenceState): void {
+  if (truthResultByState.has(from)) truthResultByState.set(to, truthResultByState.get(from) ?? null);
+}
+
 /** The truth result a state was built from, or null when it is not known. */
 export function truthResultOfState(state: ChartIntelligenceState): TimeframeTruthResult | null {
   if (truthResultByState.has(state)) return truthResultByState.get(state) ?? null;

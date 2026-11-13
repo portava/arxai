@@ -40,6 +40,7 @@ describe("#6 admin emergency-close surface containment", () => {
     // trade room and scanner.
     expect(isNormalUserAllowedPath("/trade-command-room")).toBe(true);
     expect(isNormalUserAllowedPath("/market-scanner")).toBe(true);
+    expect(isNormalUserAllowedPath("/market-desk")).toBe(true);
     // …and the investor portal IS allowed for an investor.
     expect(isInvestorAllowedPath("/investor")).toBe(true);
   });
@@ -47,5 +48,6 @@ describe("#6 admin emergency-close surface containment", () => {
   it("an investor is contained even out of trader-execution surfaces", () => {
     expect(isInvestorAllowedPath("/trade-command-room")).toBe(false);
     expect(isInvestorAllowedPath("/market-scanner")).toBe(false);
+    expect(isInvestorAllowedPath("/market-desk")).toBe(false);
   });
 });

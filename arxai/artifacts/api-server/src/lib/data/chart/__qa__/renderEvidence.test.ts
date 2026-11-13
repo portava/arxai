@@ -12,6 +12,9 @@ import { withSubMetric } from "../chartTruthScore.js";
 import { heikinAshiRun } from "../heikinAshiTransform.js";
 import { buildChartHandshake } from "../chartHandshake.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
+import { closedCandlesOfState, evidenceOfState, recordStateCandleWindow } from "../stateCandleWindow.js";
+import { recordStateTruthResult, truthResultOfState } from "../stateTruthResult.js";
+import type { NormalizedChartCandle } from "../candleNormalization.js";
 
 const NOW = Date.parse("2026-11-09T12:00:00Z");
 const NEWEST_OPEN = "2026-11-09T11:55:00Z";
@@ -219,4 +222,70 @@ test("measured evidence turns RenderHealth PASS; a measured mismatch fails it", 
   const bad = applyRenderEvidence(withState, USER, NOW).chartTruthScore;
   assert.equal(buildChartHandshake(gate, bad).RenderHealth, "FAIL");
   assert.equal(withSubMetric(base, "missing_key", 100, "n").subMetrics.length, 1, "unknown key is a no-op");
+});
+
+test("render-evidence enrichment preserves the measured closed window and its truth basis", () => {
+  const base = { subMetrics: [{ key: "render_accuracy", label: "Render Accuracy", weight: 0.07, rawScore: null,
+    weightedScore: null, evidenceStatus: "unavailable", detail: "x" }], score: 0, label: "Read-blocked",
+    evidenceCoverage: 0, unmeasuredKeys: ["render_accuracy"], primaryConcern: null, note: "" } as never;
+  const evidence = { source: "mt5_broker", symbol: "EURUSD", timeframe: "M5", identity: "scope-1" } as never;
+  const rawTruth = { barsAnalyzed: 1, source: "mt5_broker" } as never;
+  const candle = {
+    symbol: "EURUSD", displaySymbol: "EURUSD", providerSymbol: "EURUSD", brokerSymbol: "EURUSD", timeframe: "M5", openTime: NEWEST_OPEN,
+    closeTime: "2026-11-09T12:00:00.000Z", open: 1.1, high: 1.101, low: 1.099, close: 1.1005,
+    volume: 12, tickVolume: null, source: "mt5_broker", sourceMode: "live", priceBasis: "BID",
+    isComplete: true, isFinal: true, isForming: false, receivedAt: "2026-11-09T12:00:00.000Z",
+    qualityFlags: [],
+  } as NormalizedChartCandle;
+  const original = {
+    ...state,
+    latestClosedCandle: { openTime: NEWEST_OPEN, closeTime: candle.closeTime, open: candle.open, high: candle.high, low: candle.low, close: candle.close },
+    candleStats: { barsAnalyzed: 1 },
+    chartTruthScore: base,
+  } as unknown as ChartIntelligenceState;
+  recordStateCandleWindow(original, [candle], evidence);
+  recordStateTruthResult(original, rawTruth);
+  recordRenderEvidence(USER, exact(), null, NOW);
+
+  const enriched = applyRenderEvidence(original, USER, NOW);
+  assert.notEqual(enriched, original, "applying the render score creates the immutable enriched state");
+  assert.equal(enriched.chartTruthScore.subMetrics[0]!.evidenceStatus, "measured");
+  assert.equal(closedCandlesOfState(enriched).length, 1);
+  assert.deepEqual(closedCandlesOfState(enriched), [{
+    time: NEWEST_OPEN, open: 1.1, high: 1.101, low: 1.099, close: 1.1005, volume: 12,
+  }]);
+  assert.deepEqual(evidenceOfState(enriched), evidence);
+  assert.equal(truthResultOfState(enriched), rawTruth);
+  assert.equal(enriched.candleStats.barsAnalyzed, closedCandlesOfState(enriched).length);
+});
+
+test("unmeasured render evidence preserves window metadata without manufacturing a measurement", () => {
+  const base = { subMetrics: [{ key: "render_accuracy", label: "Render Accuracy", weight: 0.07, rawScore: null,
+    weightedScore: null, evidenceStatus: "unavailable", detail: "not checked" }], score: 0, label: "Read-blocked",
+    evidenceCoverage: 0, unmeasuredKeys: ["render_accuracy"], primaryConcern: null, note: "" } as never;
+  const evidence = { source: "mt5_broker", symbol: "EURUSD", timeframe: "M5", identity: "scope-2" } as never;
+  const rawTruth = { barsAnalyzed: 1, source: "mt5_broker" } as never;
+  const candle = {
+    symbol: "EURUSD", displaySymbol: "EURUSD", providerSymbol: "EURUSD", brokerSymbol: "EURUSD", timeframe: "M5", openTime: NEWEST_OPEN,
+    closeTime: "2026-11-09T12:00:00.000Z", open: 1.1, high: 1.101, low: 1.099, close: 1.1005,
+    volume: 12, tickVolume: null, source: "mt5_broker", sourceMode: "live", priceBasis: "BID",
+    isComplete: true, isFinal: true, isForming: false, receivedAt: "2026-11-09T12:00:00.000Z",
+    qualityFlags: [],
+  } as NormalizedChartCandle;
+  const original = {
+    ...state,
+    latestClosedCandle: { openTime: NEWEST_OPEN, closeTime: candle.closeTime, open: candle.open, high: candle.high, low: candle.low, close: candle.close },
+    candleStats: { barsAnalyzed: 1 },
+    chartTruthScore: base,
+  } as unknown as ChartIntelligenceState;
+  recordStateCandleWindow(original, [candle], evidence);
+  recordStateTruthResult(original, rawTruth);
+
+  const enriched = applyRenderEvidence(original, USER, NOW);
+  assert.notEqual(enriched, original);
+  assert.equal(judgeRenderEvidence(USER, enriched, NOW).status, "absent");
+  assert.equal(enriched.chartTruthScore.subMetrics[0]!.rawScore, null);
+  assert.equal(closedCandlesOfState(enriched).length, 1);
+  assert.deepEqual(evidenceOfState(enriched), evidence);
+  assert.equal(truthResultOfState(enriched), rawTruth);
 });

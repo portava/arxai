@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Home, Shield } from "lucide-react";
 import { ARXShellFrame } from "./ARXShellFrame";
 
@@ -40,6 +40,7 @@ describe("shared ARX shell on specialist routes", () => {
       variant="page"
       title="Risk"
       eyebrow="ARX · TRADING WORKSPACE"
+      sectionNavigation={<nav aria-label="Workspace sections"><a href="/risk-command-center" aria-current="page">Risk</a></nav>}
       dockItems={[
         { id: "cockpit", label: "Cockpit", icon: Home, href: "/" },
         { id: "risk", label: "Risk", icon: Shield, href: "/risk-command-center" },
@@ -56,12 +57,14 @@ describe("shared ARX shell on specialist routes", () => {
       <div>Risk page content</div>
     </ARXShellFrame>);
 
-    expect(screen.getByTestId("shell-dock-risk").getAttribute("aria-current")).toBe("page");
+    expect(within(document.querySelector("header")!).getByRole("link", { name: "Risk" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByTestId("shell-tray-risk").getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByLabelText("Page navigation")).toBeNull();
     expect(screen.getByTestId("shell-emergency-stop")).toBeTruthy();
     expect(screen.getByTestId("shell-safety-notice")).toBeTruthy();
     expect(screen.getByText("Risk page content")).toBeTruthy();
     expect(screen.getByText("Layout")).toBeTruthy();
+    expect(screen.getByTestId("button-shell-all-tools")).toBeTruthy();
   });
 
   it("opens the role-filtered All tools content without leaving the page", () => {
@@ -81,5 +84,38 @@ describe("shared ARX shell on specialist routes", () => {
 
     expect(screen.getByRole("dialog").getAttribute("data-side")).toBe("right");
     expect(screen.getByText("Risk Command Center")).toBeTruthy();
+  });
+
+  it("opens All tools from the shared header control", () => {
+    const onAllToolsOpenChange = vi.fn();
+    render(<ARXShellFrame
+      variant="page"
+      title="Market Scanner"
+      dockItems={[]}
+      allToolsOpen={false}
+      onAllToolsOpenChange={onAllToolsOpenChange}
+      mobileToolsOpen={false}
+      onMobileToolsOpenChange={vi.fn()}
+    ><div>Scanner content</div></ARXShellFrame>);
+    fireEvent.click(screen.getByTestId("button-shell-all-tools"));
+    expect(onAllToolsOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("places the tabbed navigation and ARX brand in the shared header without a permanent side rail", () => {
+    const { container } = render(<ARXShellFrame
+      variant="page"
+      title="Smart Chart"
+      sectionNavigation={<nav aria-label="Workspace sections"><a href="/live-chart" aria-current="page">Chart</a></nav>}
+      dockItems={[]}
+      allToolsOpen={false}
+      onAllToolsOpenChange={vi.fn()}
+      mobileToolsOpen={false}
+      onMobileToolsOpenChange={vi.fn()}
+    ><div>Chart content</div></ARXShellFrame>);
+    const header = container.querySelector("header")!;
+    expect(header.querySelector('[aria-label="ARX workspace home"]')).toBeTruthy();
+    expect(header.querySelector('[aria-label="Workspace sections"]')).toBeTruthy();
+    expect(container.querySelector(".arx-shell-dock")).toBeNull();
+    expect(container.querySelector("main")?.textContent).toContain("Chart content");
   });
 });
