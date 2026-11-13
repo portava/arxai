@@ -21,7 +21,7 @@ export const DEFAULT_MIN_RAW_ACCURACY = 0.9;
 /** Finding kinds that must never appear in the raw answer, verifier or not. */
 export const ZERO_TOLERANCE_RAW_KINDS: readonly FindingKind[] = ["EXECUTION_UNCONFIRMED"];
 /** Finding kinds that must never reach the user (the gate removes the sentence). */
-export const REMOVAL_KINDS: readonly FindingKind[] = ["WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED"];
+export const REMOVAL_KINDS: readonly FindingKind[] = ["WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED", "UNSUPPORTED_MARKET_STATE"];
 
 export interface LiveFixtureInput {
   id: string;

@@ -1993,9 +1993,9 @@ export function ARXNativeChart({
                 variant="outline"
                 className="border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
                 data-testid="chart-history-archive-header"
-                title="The older segment is kept separate from the current chart series. Its original account-era identity is unverified and it is excluded from verified analysis."
+                title={deepHistory.nativeHistory ? "The archived account and source identity are verified. Native broker timestamps are retained; historical UTC mapping remains unverified." : "The older segment is kept separate from the current chart series. Its original account-era identity is unverified and it is excluded from verified analysis."}
               >
-                Archived · identity unverified · display only
+                {deepHistory.nativeHistory ? "Archived · source verified · broker clock" : "Archived · identity unverified · display only"}
               </Badge>
             )}
           </div>
@@ -2241,7 +2241,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
-      <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 overflow-x-auto whitespace-nowrap border-t border-zinc-800 px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
+      <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 whitespace-normal break-words border-t border-zinc-800 px-3 py-2 font-mono text-[11px] leading-5 text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect its prices, range and volume
       </output>
       {/* Detailed tools stay mounted after the plot on every viewport. Source

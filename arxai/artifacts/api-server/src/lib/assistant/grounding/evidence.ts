@@ -9,6 +9,7 @@
 //
 // Pure and deterministic: no clock, no I/O.
 
+import { collectMarketStateFacts, type MarketStateFact } from "./stateClaims.js";
 export type EvidenceSource = "tool" | "user";
 
 export interface EvidenceNumber {
@@ -62,6 +63,7 @@ export interface ExecutionEvidence {
 }
 
 export interface EvidenceIndex {
+  marketStates: MarketStateFact[];
   numbers: EvidenceNumber[];
   times: EvidenceTime[];
   /** Every string leaf (lower-cased) — used for tickets and symbols. */
@@ -222,7 +224,7 @@ function executionOf(obj: Record<string, unknown>, tool: string, path: string, f
 const SYMBOL_KEYS = /^(symbol|displaySymbol|instrument|market|name|ticker|pair)$/;
 
 export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): EvidenceIndex {
-  const idx: EvidenceIndex = { numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name) };
+  const idx: EvidenceIndex = { numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name), marketStates: collectMarketStateFacts(outputs) };
   const seen = new WeakSet<object>();
 
   const walk = (v: unknown, key: string, path: string, tool: string, frame: Frame, depth: number): void => {

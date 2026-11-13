@@ -10,7 +10,8 @@
 // visible, unmeasured comparison with named reasons. Missing quotes leave the
 // placeholder in place: absence is never treated as a successful match.
 //
-// SAFETY: READ-ONLY. Fail-open to the unenriched state on any lookup error.
+// SAFETY: READ-ONLY. A failed optional snapshot lookup never upgrades a quote
+// or discards an observed live candidate and its binding failure reasons.
 
 import { eq, and } from "drizzle-orm";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
@@ -39,28 +40,41 @@ export async function enrichStateWithUserBrokerQuote(
   const live = series?.bridgeConnectionId != null && series.userId === args.userId
     ? observationFromMt5Quote(readMt5Quote(args.symbol, { bridgeConnectionId: series.bridgeConnectionId }))
     : null;
-  const specRow = await db
-    .select({
-      userId: arxSymbolSpecsTable.userId,
-      bridgeConnectionId: arxSymbolSpecsTable.bridgeConnectionId,
-      accountType: arxSymbolSpecsTable.accountType,
-      brokerSymbol: arxSymbolSpecsTable.brokerSymbol,
-      bid: arxSymbolSpecsTable.bid,
-      ask: arxSymbolSpecsTable.ask,
-      spreadPoints: arxSymbolSpecsTable.spreadPoints,
-      lastTickTime: arxSymbolSpecsTable.lastTickTime,
-    })
-    .from(arxSymbolSpecsTable)
-    .where(and(
-      eq(arxSymbolSpecsTable.userId, args.userId),
-      eq(arxSymbolSpecsTable.symbol, args.symbol.toUpperCase()),
-    ))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-  const snapshot = specRow?.bid != null && specRow.ask != null ? observationFromSymbolSpec(specRow) : null;
-  const { quote, binding } = selectBrokerQuote([live, snapshot], {
+  let selected = selectBrokerQuote([live], {
     series, requestingUserId: args.userId, now: Date.now(),
   });
+  // The preferred, already-bound own-bridge observation needs no DB fallback.
+  if (selected.binding.status !== "BOUND") {
+    let snapshot: ReturnType<typeof observationFromSymbolSpec> = null;
+    try {
+      const specRow = await db
+        .select({
+          userId: arxSymbolSpecsTable.userId,
+          bridgeConnectionId: arxSymbolSpecsTable.bridgeConnectionId,
+          accountType: arxSymbolSpecsTable.accountType,
+          brokerSymbol: arxSymbolSpecsTable.brokerSymbol,
+          bid: arxSymbolSpecsTable.bid,
+          ask: arxSymbolSpecsTable.ask,
+          spreadPoints: arxSymbolSpecsTable.spreadPoints,
+          lastTickTime: arxSymbolSpecsTable.lastTickTime,
+        })
+        .from(arxSymbolSpecsTable)
+        .where(and(
+          eq(arxSymbolSpecsTable.userId, args.userId),
+          eq(arxSymbolSpecsTable.symbol, args.symbol.toUpperCase()),
+        ))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      snapshot = specRow?.bid != null && specRow.ask != null ? observationFromSymbolSpec(specRow) : null;
+    } catch {
+      // Optional enrichment is unavailable. Re-evaluate the live candidate at
+      // the current time, retaining any observed stale/mismatch/unknown reason.
+    }
+    selected = selectBrokerQuote([live, snapshot], {
+      series, requestingUserId: args.userId, now: Date.now(),
+    });
+  }
+  const { quote, binding } = selected;
   if (!quote) return state;
   return enrichStateWithBrokerAlignment(ctx.state, ctx.truthResult, ctx.feedStatus, {
     chartPrice: ctx.state.latestClosedCandle?.close ?? null,

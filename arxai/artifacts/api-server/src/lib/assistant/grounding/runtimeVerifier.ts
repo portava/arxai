@@ -24,12 +24,13 @@ export const VERIFIER_NOTICES: Record<Exclude<FindingKind, "FABRICATION">, strin
   STALE_AS_LIVE: "[Removed by the ARX verifier: that price came from stale data and was presented as live.]",
   UNCALIBRATED_PROBABILITY: "[Removed by the ARX verifier: a figure was presented as a probability or edge that ARX has not measured. Raw scores are not probabilities, and a base rate is not an edge.]",
   EXECUTION_UNCONFIRMED: "[Removed by the ARX verifier: no executed result came back from ARX this turn, so I can't say the order executed.]",
+  UNSUPPORTED_MARKET_STATE: "[Removed by the ARX verifier: this market-state claim was not supported by the chart or scanner evidence for this turn.]",
 };
 export const VERIFIER_FAILED_NOTICE = "[Withheld: the ARX verifier could not check this part of the answer.]";
 export const verifierFooter = (n: number): string =>
   `\n\n_ARX verifier: ${n} claim${n === 1 ? "" : "s"} in this answer could not be matched to this turn's ARX data and ${n === 1 ? "is" : "are"} marked or removed._`;
 
-const REMOVE_KINDS = new Set<FindingKind>(["WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED"]);
+const REMOVE_KINDS = new Set<FindingKind>(["WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED", "UNSUPPORTED_MARKET_STATE"]);
 
 export interface VerifiedSegment {
   original: string;

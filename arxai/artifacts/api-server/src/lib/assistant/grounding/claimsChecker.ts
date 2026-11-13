@@ -25,10 +25,11 @@
 // (runtimeVerifier.ts).
 
 import { buildEvidenceIndex, splitKey, type EvidenceIndex, type EvidenceNumber, type ToolOutput } from "./evidence.js";
+import { checkMarketStateClaims } from "./stateClaims.js";
 
-export type ClaimKind = "number" | "ticket" | "time" | "date" | "execution";
-export type FindingKind = "FABRICATION" | "WRONG_NUMBER" | "STALE_AS_LIVE" | "UNCALIBRATED_PROBABILITY" | "EXECUTION_UNCONFIRMED";
-export const FINDING_KINDS: readonly FindingKind[] = ["FABRICATION", "WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED"];
+export type ClaimKind = "number" | "ticket" | "time" | "date" | "execution" | "market_state";
+export type FindingKind = "FABRICATION" | "WRONG_NUMBER" | "STALE_AS_LIVE" | "UNCALIBRATED_PROBABILITY" | "EXECUTION_UNCONFIRMED" | "UNSUPPORTED_MARKET_STATE";
+export const FINDING_KINDS: readonly FindingKind[] = ["FABRICATION", "WRONG_NUMBER", "STALE_AS_LIVE", "UNCALIBRATED_PROBABILITY", "EXECUTION_UNCONFIRMED", "UNSUPPORTED_MARKET_STATE"];
 
 export interface Claim {
   kind: ClaimKind;
@@ -537,6 +538,10 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     }
   }
 
+  for (const state of checkMarketStateClaims(raw, idx.marketStates, idx.symbols)) {
+    const claim = pushClaim({kind:"market_state",text:state.text,grounded:state.grounded,groundedBy:state.grounded ? state.paths : [],localStart:state.start,localEnd:state.end});
+    if (!state.grounded) findings.push({kind:"UNSUPPORTED_MARKET_STATE",claim,detail:state.detail});
+  }
   return { claims, findings };
 }
 
