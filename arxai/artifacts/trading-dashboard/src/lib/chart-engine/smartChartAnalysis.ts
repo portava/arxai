@@ -1,6 +1,6 @@
 import { detectChartPatterns, findSwings, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
-import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
+import { chartIntervalSeconds, chartBarCloseSeconds, isChartInterval } from "./chartIntervals";
 
 export interface SmartChartAnalysisContext {
   symbol: string;
@@ -77,7 +77,7 @@ function contextKey(c: SmartChartAnalysisContext): string {
 }
 function validContext(c: SmartChartAnalysisContext): boolean {
   return typeof c.symbol === "string" && c.symbol.trim().length > 0 && c.symbol.trim() === c.symbol
-    && smartChartIntervalSeconds(c.timeframe) != null && typeof c.source === "string"
+    && isChartInterval(c.timeframe) && typeof c.source === "string"
     && c.source.trim().length > 0 && c.source.trim() === c.source && c.source !== "unknown"
     && typeof c.sourceIdentity === "string" && /^[a-f0-9]{64}$/.test(c.sourceIdentity);
 }
@@ -117,9 +117,9 @@ function caveat(input: SmartChartAnalysisInput): string {
   const freshness = input.dataState === "stale" ? "The feed is stale; this describes stored candles. " : "";
   return scope + freshness + "A chart pattern describes price behavior; it does not predict the next move or authorize a trade. Volume confirmation and actual order flow were not measured.";
 }
-function validBar(bar: SmartChartAnalysisBar, interval: number): boolean {
+function validBar(bar: SmartChartAnalysisBar, timeframe: string): boolean {
   return finite(bar.time) && bar.time > 0 && finite(bar.closeTime)
-    && Math.abs(bar.closeTime - bar.time - interval) < 0.001
+    && bar.closeTime === chartBarCloseSeconds(bar.time, timeframe)
     && [bar.open, bar.high, bar.low, bar.close].every(positive)
     && bar.high >= Math.max(bar.open, bar.close, bar.low)
     && bar.low <= Math.min(bar.open, bar.close, bar.high)
@@ -136,8 +136,6 @@ export interface SmartChartSelectedWindow {
 export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChartSelectedWindow {
   const key = contextKey(input);
   const unavailable = (reason:string):SmartChartSelectedWindow => ({status:"unavailable",reason,contextKey:key,asOf:null,coverage:{available:0,analyzed:0,truncated:false,note:null},bars:[]});
-  const intervalLimitation = chartIntervalLimitation(input.timeframe);
-  if (intervalLimitation) return unavailable(intervalLimitation);
   if (!validContext(input)) return unavailable("Analysis is waiting for this chart's original data-source evidence.");
   if (!finite(input.asOfMs) || input.asOfMs <= 0) return unavailable("The analysis observation time is unavailable.");
   const range = input.visibleRange;
@@ -148,7 +146,6 @@ export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChart
   const observation = input.asOfMs / 1000;
   // Range selects bar OPEN times. Replay selects when complete bars were known.
   const cutoff = Math.min(observation, input.replayCutoff ?? Infinity);
-  const interval = smartChartIntervalSeconds(input.timeframe)!;
   const selected: SmartChartAnalysisBar[] = [];
   let prior = -Infinity;
   for (const bar of input.bars) {
@@ -159,7 +156,7 @@ export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChart
     if (bar.time >= cutoff || (range && bar.time > range.to)) continue;
     if (bar.time <= prior) return unavailable("Candles are not in a unique chronological sequence.");
     prior = bar.time;
-    if (!validBar(bar, interval)) return unavailable("Candle prices, timeframe or completion evidence disagree.");
+    if (!validBar(bar, input.timeframe)) return unavailable("Candle prices, timeframe or completion evidence disagree.");
     if (bar.isComplete && bar.closeTime > observation) return unavailable("A future candle close cannot be confirmed.");
     if (!bar.isComplete || bar.isForming || bar.closeTime > cutoff || (range && bar.time < range.from)) continue;
     selected.push(bar);

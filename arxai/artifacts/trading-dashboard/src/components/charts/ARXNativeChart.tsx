@@ -26,7 +26,7 @@ import {
 import type { ChartGhostPath } from "@/lib/chart-engine/types";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds } from "@/lib/chart-engine/chartIntervals";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds, chartBarCloseSeconds } from "@/lib/chart-engine/chartIntervals";
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -1325,7 +1325,8 @@ export function ARXNativeChart({
           isLivePriceAffordanceRef.current ? Number(formatInstrumentPrice(b.close, pricePrecisionRef.current)) : null,
         );
       }
-      const seconds = chartIntervalSeconds(timeframe);
+      const expectedClose = chartBarCloseSeconds(b.openTimeMs / 1000, timeframe);
+      const seconds = expectedClose == null ? null : expectedClose - b.openTimeMs / 1000;
       const closeMs = b.closeTimeMs;
       const validClose = seconds && typeof closeMs === "number" && Number.isFinite(closeMs)
         && closeMs - b.openTimeMs === seconds * 1000 ? closeMs : null;
@@ -1711,13 +1712,11 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
-            <select className={`h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100 ${compactDesktopWorkspace ? "shrink-0" : ""}`} aria-label="More chart intervals" title="Additional intervals; weekly and monthly source boundaries are not yet supported"
+            <select className={`h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100 ${compactDesktopWorkspace ? "shrink-0" : ""}`} aria-label="More chart intervals" title="All native broker intervals, including calendar weeks and months"
               value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
               onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
               <option value="" disabled>More intervals</option>
               {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
-              <option value="W1" disabled>W1 — source week boundaries not verified</option>
-              <option value="MN1" disabled>MN1 — calendar boundaries not verified</option>
             </select>
             {(hasCandles || compactDesktopWorkspace) && (
               <Button
@@ -1767,7 +1766,7 @@ export function ARXNativeChart({
         ? <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Timer unavailable — feed not live-confirmed</Badge>
         : formingCloseMs != null
           ? <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} requireServerClock />
-          : <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Waiting for live candle</Badge>;
+          : <Badge variant="outline" className="gap-1 text-[10px] text-zinc-400" data-testid="arx-native-candle-timer"><Clock className="h-2.5 w-2.5" />Timer waiting for a verified candle-close timestamp</Badge>;
   const historyControls = (
     <ChartHistoryControls
       loadedCount={displayEngineCandles.length}
@@ -1775,6 +1774,7 @@ export function ARXNativeChart({
       clockLabel={utcClockQualified ? "UTC" : "source clock · UTC unverified"}
       archiveCount={archiveEngineCandles.length}
       archiveLabel={historySource === "mt5_broker" ? "Archived MT5 bars" : "Archived bars"}
+      nativeHistory={deepHistory.nativeHistory}
       loading={deepHistory.loading}
       hasMore={deepHistory.hasMore}
       canLoad={hasCandles}

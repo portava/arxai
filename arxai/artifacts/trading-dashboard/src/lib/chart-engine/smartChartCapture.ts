@@ -1,7 +1,8 @@
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartHistoryPage } from "@/lib/chartCandlesQuery";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
-import { bindSmartChartBars, smartChartIntervalSeconds, type SmartChartAnalysisContext, type SmartChartBoundBars, type SmartChartAnalysisBar } from "./smartChartAnalysis";
+import { chartBarCloseSeconds, isChartInterval } from "./chartIntervals";
+import { bindSmartChartBars, type SmartChartAnalysisContext, type SmartChartBoundBars, type SmartChartAnalysisBar } from "./smartChartAnalysis";
 
 /** Analysis gets the underlying observations and their original response
  * identity. Renderer sanitization/stream tips never become confirmed history. */
@@ -15,8 +16,7 @@ export function captureSmartChartBars(data: ChartCandlesResponse | undefined,
     || evidence.symbol !== expected.symbol || evidence.timeframe !== expected.timeframe
     || evidence.source !== data.feedStatus?.source || evidence.source !== data.source
     || ["invalid","empty","unavailable"].includes(data.quality)) return unavailable("Waiting for matching, usable candle-source evidence.");
-  const interval=smartChartIntervalSeconds(expected.timeframe);
-  if (!interval || !Number.isFinite(now)) return unavailable("This chart interval cannot be analyzed yet.");
+  if (!isChartInterval(expected.timeframe) || !Number.isFinite(now)) return unavailable("This chart interval cannot be analyzed yet.");
   const current:SmartChartAnalysisBar[]=[];
   for (const [index,c] of data.candles.entries()) {
     if (c.symbol !== expected.symbol || c.timeframe !== expected.timeframe || c.source !== evidence.source
@@ -35,8 +35,8 @@ export function captureSmartChartBars(data: ChartCandlesResponse | undefined,
   if (older.length) {
     if (!historyEvidence || historyEvidence.scope !== "public_provider" || historyEvidence.source !== "deriv_public") return unavailable("Older candles are visible, but their original source is not verified for analysis.");
     const end=Date.parse(historyEvidence.lastClosedCandleAt)/1000;
-    if (!Number.isFinite(end) || end*1000>now || older.some((c,i)=>c.time/1000+interval>end||(i>0&&c.time<=older[i-1]!.time))) return unavailable("Older history does not have a valid closed-candle boundary.");
-    batches.push({evidence:historyEvidence,bars:older.map(c=>({time:c.time/1000,closeTime:c.time/1000+interval,open:c.open,high:c.high,low:c.low,close:c.close,isComplete:true,isFinal:true,isForming:false}))});
+    if (!Number.isFinite(end) || end*1000>now || older.some((c,i)=>(chartBarCloseSeconds(c.time/1000,expected.timeframe) ?? Infinity)>end||(i>0&&c.time<=older[i-1]!.time))) return unavailable("Older history does not have a valid closed-candle boundary.");
+    batches.push({evidence:historyEvidence,bars:older.map(c=>({time:c.time/1000,closeTime:(chartBarCloseSeconds(c.time/1000,expected.timeframe) ?? Infinity),open:c.open,high:c.high,low:c.low,close:c.close,isComplete:true,isFinal:true,isForming:false}))});
   }
   return {...bindSmartChartBars(context,batches),context};
 }

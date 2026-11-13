@@ -84,6 +84,7 @@ export interface CandleHistoryResult {
   userMessage: string;
   adminDetail: string;
   /** Actual producer evidence, never inferred from the caller's continuation. */
+  nativeHistoryEvidence?: { sourceIdentity: string; clockBasis: "broker_server"; importStatus: string; barsStored: number; oldest: string | null; boundary: string | null };
   historyEvidence?: {
     symbol: string;
     timeframe: string;
@@ -98,6 +99,10 @@ export interface CandleHistoryResult {
  * requesting continuity get producer evidence or no bars, never a digest
  * stamped onto a mixed historical cache using today's connection settings. */
 export async function getCandleHistory(args: GetCandleHistoryArgs): Promise<CandleHistoryResult> {
+  if (args.source === "mt5_broker") {
+    const { readBrokerHistory } = await import("./brokerHistoryRead.js");
+    return readBrokerHistory(args);
+  }
   if (args.expectedSourceIdentity == null) return getLegacyCandleHistory(args);
   const symbol = (args.symbol ?? "").trim().toUpperCase();
   const timeframe = normalizeChartTimeframe(args.timeframe);
@@ -162,6 +167,7 @@ export async function getCandleHistory(args: GetCandleHistoryArgs): Promise<Cand
 }
 
 export interface GetCandleHistoryArgs {
+  userId?: number | null;
   symbol: string;
   timeframe: string;
   limit?: number;

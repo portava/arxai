@@ -24,6 +24,7 @@ export interface ChartDeepHistoryState {
   archiveCandles: Candle[];
   /** Actual producer evidence retained for optional historical analysis. */
   analysisEvidence: ChartHistoryPage["historyEvidence"];
+  nativeHistory: ChartHistoryPage["nativeHistoryEvidence"];
   /** True while a back-page fetch is in flight. */
   loading: boolean;
   /** Older bars may still exist (cache or a deep-cursor provider). */
@@ -97,6 +98,8 @@ export function useChartDeepHistory(
   const [loadedAny, setLoadedAny] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [analysisEvidence, setAnalysisEvidence] = useState<ChartHistoryPage["historyEvidence"]>(null);
+  const [nativeHistory, setNativeHistory] = useState<ChartHistoryPage["nativeHistoryEvidence"]>(null);
+  const retryAfter = useRef(0);
   const analysisRefused = useRef(false);
   const analysisObservations = useRef(new Map<number,string>());
   const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf, sourceIdentity });
@@ -135,6 +138,8 @@ export function useChartDeepHistory(
     setLoadedAny(false);
     setLoadError(null);
     setAnalysisEvidence(null);
+    setNativeHistory(null);
+    retryAfter.current = 0;
     analysisRefused.current = false;
     analysisObservations.current.clear();
   }, []);
@@ -158,7 +163,7 @@ export function useChartDeepHistory(
       if (!mountedRef.current || !enabled || inFlightRef.current) return;
       // A renderer may retain a prior series' reach-start callback briefly.
       if (identityRef.current.symbol !== symbol || identityRef.current.apiTf !== apiTf || identityRef.current.sourceIdentity !== sourceIdentity) return;
-      if (!hasMore) return;
+      if (!hasMore || Date.now() < retryAfter.current) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
       inFlightRef.current = true;
@@ -176,7 +181,7 @@ export function useChartDeepHistory(
             limit: 500,
             before,
             source: sourceRef.current,
-            ...(sourceRef.current === "deriv_public" && evidenceIdentity
+            ...(evidenceIdentity
               ? { sourceIdentity: evidenceIdentity }
               : {}),
             signal: controller.signal,
@@ -186,6 +191,19 @@ export function useChartDeepHistory(
             setHasMore(false);
             setProviderCapped(true);
             setLimitationReason("Older history did not match the chart's data source.");
+            return;
+          }
+          setNativeHistory(page.nativeHistoryEvidence ?? null);
+          const importing = page.source === "mt5_broker" && !!page.nativeHistoryEvidence
+            && page.nativeHistoryEvidence.importStatus !== "COMPLETE";
+          if (importing && page.candles.length === 0) {
+            // The persisted cursor can gain older rows as the collector advances.
+            // Keep this cursor retryable; an empty cache page is not broker EOF.
+            cursorRef.current = before;
+            retryAfter.current = Date.now() + 5000;
+            setHasMore(true);
+            setProviderCapped(false);
+            setLimitationReason(page.providerMessage);
             return;
           }
           if (!page.ok) {
@@ -241,12 +259,12 @@ export function useChartDeepHistory(
               setArchiveCandles(previous => isCurrent() ? dedupeAscending(previous, page.candles) : previous);
             }
           }
-          cursorRef.current = cursorAdvanced ? page.nextBefore : null;
+          cursorRef.current = cursorAdvanced ? page.nextBefore : importing && pageOldestMs != null ? new Date(pageOldestMs).toISOString() : null;
           if (page.candles.length > 0) {
             setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
             setLoadedAny(true);
           }
-          setHasMore(page.hasMoreHistory && cursorAdvanced && page.nextBefore != null);
+          setHasMore((page.hasMoreHistory && cursorAdvanced && page.nextBefore != null) || importing);
           setProviderCapped(cursorFailure || page.providerLimitReached);
           if (!page.hasMoreHistory || cursorAdvanced) setLimitationReason(page.limitationReason ?? page.providerMessage);
           if (page.coverageDays != null) setCoverageDays(page.coverageDays);
@@ -278,6 +296,7 @@ export function useChartDeepHistory(
     analysisCandles: currentState ? analysisCandles : [],
     archiveCandles: currentState ? archiveCandles : [],
     analysisEvidence: currentState ? analysisEvidence : null,
+    nativeHistory: currentState ? nativeHistory : null,
     loading: currentState ? loading : false,
     hasMore: currentState ? hasMore : true,
     providerCapped: currentState ? providerCapped : false,

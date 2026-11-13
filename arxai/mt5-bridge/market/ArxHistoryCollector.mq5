@@ -1,5 +1,5 @@
 #property strict
-#property version "1.00"
+#property version "1.01"
 #property indicator_chart_window
 #property indicator_buffers 1
 #property indicator_plots 0
@@ -38,19 +38,25 @@ void ExtraFullSnapshot() {
    ulong now=GetTickCount64();if(extraFullAt[slot]>0 && now-extraFullAt[slot]<60000)return;
    int timeframeIndex=slot/ArraySize(arxMarketCanonicals), index=arxMarketHistoryOrder[slot%ArraySize(arxMarketCanonicals)];
    ENUM_TIMEFRAMES tf=arxExtraTimeframes[timeframeIndex];string name=ArxMarketResolve(index);if(name=="")return;
-   // Always request the full target first; local Bars() may only reflect an
-   // incomplete cache, not the broker history limit. Indicator CopyRates is async.
-   MqlRates probe[];ResetLastError();int fullCount=CopyRates(name,tf,1,200,probe),fullError=GetLastError();
-   int available=Bars(name,tf), wanted=fullCount>0?fullCount:(available>1?MathMin(200,available-1):200);
-   long localFirst=SeriesInfoInteger(name,tf,SERIES_FIRSTDATE),serverFirst=SeriesInfoInteger(name,tf,SERIES_SERVER_FIRSTDATE);
-   bool boundaryReached=localFirst>0 && serverFirst>0 && localFirst<=serverFirst;
-   bool complete=false;string group=ArxMarketSeries(index,tf,wanted,complete);if(group=="")return;
-   group=StringSubstr(group,0,StringLen(group)-1)+",\"requestedHistoryBars\":200,\"fullRequestCount\":"+(string)fullCount+",\"fullRequestError\":"+(string)fullError+
-      ",\"localFirstHistoryServer\":"+(string)localFirst+",\"serverFirstHistoryServer\":"+(string)serverFirst+",\"brokerHistoryBoundaryReached\":"+(boundaryReached?"true":"false")+
-      ",\"availableBarsIncludingForming\":"+(string)available+
-      ",\"historyDepthPartial\":"+((wanted<200 || !complete)?"true":"false")+"}";
+   bool complete=false;string group=ArxMarketSeries(index,tf,200,complete);if(group=="")return;
    string timeframe=StringSubstr(EnumToString(tf),7);
    if(ArxMarketWrite("history-extra-"+arxMarketCanonicals[index]+"-"+timeframe+".json",ArxMarketHeader()+",\"producer\":\"read_only_history_indicator\",\"series\":["+group+"]}") && complete)extraFullAt[slot]=now;
+}
+// A read-only cursor file contains ONE native timestamp. It cannot carry a
+// route, credential, symbol substitution, order, or terminal command.
+void ExtraBackfillSnapshot() {
+   static int cursor=0;
+   int slot=cursor;cursor=(cursor+1)%ArraySize(extraFullAt);
+   int ti=slot/ArraySize(arxMarketCanonicals),i=arxMarketHistoryOrder[slot%ArraySize(arxMarketCanonicals)];
+   string timeframe=StringSubstr(EnumToString(arxExtraTimeframes[ti]),7);
+   string key=arxMarketCanonicals[i]+"-"+timeframe;
+   int file=FileOpen("ARX_ReadOnly_MarketData\\backfill-request-"+key+".txt",FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+   if(file==INVALID_HANDLE)return;
+   string raw=FileReadString(file);FileClose(file);
+   long end=StringToInteger(raw);if(end<=0 || end>TimeTradeServer())return;
+   bool complete=false;string group=ArxMarketSeries(i,arxExtraTimeframes[ti],5000,complete,(datetime)end);
+   if(group=="")return;
+   ArxMarketWrite("backfill-extra-"+key+".json",ArxMarketHeader()+",\"producer\":\"read_only_history_indicator\",\"series\":["+group+"]}");
 }
 void OnTimer() {ArxExtraObserve();}
 void ArxExtraObserve() {
@@ -66,4 +72,5 @@ void ArxExtraObserve() {
    for(int i=0;i<2;i++) {ExtraFastSnapshot(extraFastCursor);extraFastCursor++;if(extraFastCursor>=ArraySize(arxExtraTimeframes))extraFastCursor=1;}
    ulong began=GetTickCount64();
    for(int i=0;i<12 && GetTickCount64()-began<150;i++)ExtraFullSnapshot();
+   for(int i=0;i<24 && GetTickCount64()-began<250;i++)ExtraBackfillSnapshot();
 }

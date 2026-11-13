@@ -387,8 +387,8 @@ function gateShortfalls(state: ChartIntelligenceState): string[] {
   for (const [check, key] of HANDSHAKE_SUBMETRIC) {
     const verdict = hs[check];
     if (verdict === "PASS") continue;
-    // Renderer telemetry only gates a candle read when it measured a FAIL.
-    if (check === "RenderHealth" && verdict !== "FAIL") continue;
+    // The full handshake requires a measured renderer, so explain missing
+    // telemetry as well as a measured mismatch.
     if (check === "FeedFreshness" && !gate.autonomousChartActionAllowed) continue;
     const m = state.chartTruthScore.subMetrics.find((sm) => sm.key === key);
     const label = m?.label ?? check;

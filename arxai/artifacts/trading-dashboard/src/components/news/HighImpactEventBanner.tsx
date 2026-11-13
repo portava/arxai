@@ -24,6 +24,7 @@
 //     not other rows are shown: rows on screen are not a complete account of
 //     an hour that was not checked.
 
+import { isSynthetic } from "@workspace/domain/news-risk";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TickingTime } from "@/components/ui/TickingTime";
@@ -35,6 +36,7 @@ interface UpcomingEvent {
   eventTime: string;
   /** Calendar provider of the row; "fred" rows carry a date only. */
   source?: string | null;
+  timePrecision?: string;
 }
 
 // Matches the radar's post-release LIVE window (smartChartLayers RECENT_WINDOW_S).
@@ -67,8 +69,19 @@ function timedEventLabel(timestamp: string, now: number): string {
     : deltaMin <= 0 ? "in <1m" : `in ${deltaMin}m`;
 }
 
-export function HighImpactEventBanner() {
-  const { data, isError, dataUpdatedAt } = useQuery<{ events: UpcomingEvent[]; calendarCoverage?: CalendarCoverage }>({
+export function HighImpactEventBanner({ symbol }: { symbol?: string } = {}) {
+  // Same provider snapshot as the Calendar tab; stored rows are a fallback.
+  const live = useQuery<{ connected?: boolean; provider?: string; lastFetchAt?: string; coverageNote?: string;
+    events?: { id: string; title: string; currency: string; impactTier: string; eventTimeUtc: string; source: string; timePrecision: string; fetchedAt: string }[] }>({
+    queryKey: ["economic-calendar-live-banner", symbol ?? ""],
+    queryFn: async () => {
+      const query = new URLSearchParams({ daysAhead: "1", impact: "high", ...(symbol ? { symbol } : {}) });
+      const result = await fetch(`/api/economic-calendar/events?${query}`);
+      if (!result.ok) throw new Error("Calendar provider unavailable");
+      return result.json();
+    }, refetchInterval: 60_000,
+  });
+  const { data: stored, isError: storedError, dataUpdatedAt } = useQuery<{ events: UpcomingEvent[]; calendarCoverage?: CalendarCoverage }>({
     queryKey: ["upcoming-high-impact"],
     queryFn: async () => {
       const r = await fetch(
@@ -99,7 +112,14 @@ export function HighImpactEventBanner() {
     refetchInterval: 5 * 60_000,
   });
 
-  if (isError) {
+  if (symbol && isSynthetic(symbol)) return <p className="text-xs text-slate-400" data-testid="high-impact-banner-synthetic">Synthetic market · scheduled economic events do not determine this market’s price.</p>;
+
+  const providerRows = live.data?.connected === true && !live.isError ? (live.data.events ?? []).map(e => ({
+    id: e.id, eventName: e.title, currency: e.currency, impactLevel: e.impactTier.toUpperCase(),
+    eventTime: e.eventTimeUtc, source: e.source, timePrecision: e.timePrecision,
+  })) : null;
+  const data = providerRows ? { events: providerRows, calendarCoverage: undefined } : stored;
+  if (storedError && providerRows == null) {
     const lastOk = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
     return (
       <div
@@ -118,16 +138,16 @@ export function HighImpactEventBanner() {
   // "released Xm ago". A date-only row in the window response is there only
   // because of its sentinel, so it is never taken from it.
   const timed = (data?.events ?? []).filter((e) => {
-    if (isDateOnlyCalendarSource(e.source)) return false;
+    if ((e.timePrecision === "date" || isDateOnlyCalendarSource(e.source))) return false;
     const t = new Date(e.eventTime).getTime();
-    return Number.isFinite(t) && t > windowStartMs;
+    return Number.isFinite(t) && t > windowStartMs && t <= nowMs + 3600000;
   });
   // Date-only rows are listed by the UTC date they carry: today's, all day.
-  const dateOnly = (day.data?.events ?? []).filter((e) =>
-    isDateOnlyCalendarSource(e.source) &&
+  const dateOnly = (providerRows ?? day.data?.events ?? []).filter((e) =>
+    (e.timePrecision === "date" || isDateOnlyCalendarSource(e.source)) &&
     (e.impactLevel === "HIGH" || e.impactLevel === "CRITICAL") &&
     typeof e.eventTime === "string" && e.eventTime.slice(0, 10) === todayUtc);
-  const dayReadFailed = day.isError;
+  const dayReadFailed = providerRows == null && day.isError;
   const events = [...timed, ...dateOnly];
   if (events.length === 0) {
     // No banner is read as "nothing in the next hour". When the stored
@@ -177,10 +197,12 @@ export function HighImpactEventBanner() {
   return (
     <div className={`rounded-md border p-3 text-sm ${cls}`} data-testid="high-impact-banner">
       <div className="font-semibold">⚠ {headedCritical ? "Critical" : "High-impact"} economic event{plural} {when}{alsoDated}</div>
+      {providerRows != null && <p className="mt-1 text-[10px] opacity-75">{live.data?.provider} · fetched {live.data?.lastFetchAt ? new Date(live.data.lastFetchAt).toLocaleTimeString() : "time unavailable"}{live.data?.coverageNote ? ` · ${live.data.coverageNote}` : ""}</p>}
       <ul className="mt-1 space-y-0.5 text-xs">
         {events.slice(0, 4).map((e) => {
           const label = isDateOnlyCalendarSource(e.source)
             ? calendarEventWhen(e, nowMs).display
+            : e.timePrecision === "date" ? `${e.eventTime.slice(0,10)} — release time not published`
             : <TickingTime timestamp={e.eventTime} format={timedEventLabel} />;
           return (
             <li key={e.id} data-testid={`high-impact-event-${e.id}`}>

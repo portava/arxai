@@ -78,7 +78,7 @@ describe("bounded historical request to existing research schema",()=>{
     const result=parseChartResearchRequest(text,context);
     expect(result?.kind).toBe("unsupported");expect(result).not.toHaveProperty("draft");
   });
-  it.each(["garbage","W1","MN1","1M"])("refuses unsupported selected interval %s instead of falling back",timeframe=>{
+  it.each(["garbage","MN1","1M"])("refuses unsupported selected interval %s instead of falling back",timeframe=>{
     expect(parseChartResearchRequest(example,{...context,timeframe})?.kind).toBe("unsupported");
   });
   it("leaves ordinary conversation and live-order text outside this historical-only grammar",()=>{

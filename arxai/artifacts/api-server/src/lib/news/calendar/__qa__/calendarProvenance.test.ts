@@ -201,11 +201,10 @@ test("stored-event routes serve fetchedAt/freshness and never serve legacy mock 
   assert.match(readiness, /ne\(economicEventsTable\.source, "mock"\)/);
 });
 
-test("the mock generator is gone: no provider selected ⇒ honest-empty 'none'", async () => {
+test("the mock generator is gone: default selects the live Forex Factory provider", async () => {
   for (const k of ENV) delete process.env[k];
   const p = pickNewsProvider();
-  assert.equal(p.name, "none");
-  assert.deepEqual(await p.fetchEvents(7), []);
+  assert.equal(p.name, "forex_factory");
   const ev = src("../economicEvents.ts");
   assert.ok(!/getMockEvents|TEMPLATES|source: "Mock"/.test(ev));
 });

@@ -1,6 +1,6 @@
 import {vwapAnchorEvidence} from "./chartVwapAnchor";
 import type {VwapAnchor} from "./chartStudies";
-import { chartIntervalSeconds } from "./chartIntervals";
+import { chartIntervalSeconds, chartBarCloseSeconds } from "./chartIntervals";
 import {
   createChart,
   CandlestickSeries,
@@ -237,6 +237,13 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   /** Shell-resolved display precision (shared instrument rule); null = detect from bars. */
   private displayPrecision: number | null = null;
   private intervalSeconds = 900;
+  private timeframe = "M15";
+  private barEnd(time: number) { return chartBarCloseSeconds(time, this.timeframe) ?? time; }
+  private linkedCandle(bars: ChartEngineCandle[], time: number) {
+    let lo=0, hi=bars.length;
+    while(lo<hi){const mid=(lo+hi)>>>1;if(bars[mid]!.time<=time)lo=mid+1;else hi=mid;}
+    const bar=bars[lo-1]; return bar && time < this.barEnd(bar.time) ? bar : null;
+  }
   private pendingUserRange: {
     range: { from: number; to: number };
     previousLength: number;
@@ -1046,8 +1053,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.pendingLinkedCursor = undefined;
     this.hoveredCandle = time === null
       ? null
-      : candleAtLinkedTime(this.candles, time, this.intervalSeconds)
-        ?? candleAtLinkedTime(this.archiveCandles, time, this.intervalSeconds);
+      : this.linkedCandle(this.candles, time)
+        ?? this.linkedCandle(this.archiveCandles, time);
     const targetSeries = this.hoveredCandle && this.archiveCandles.some(c => c.time === this.hoveredCandle!.time)
       ? this.archiveSeries
       : this.series;
@@ -1069,7 +1076,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     let lo = 0, hi = this.candles.length;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < range.from) lo = mid + 1; else hi = mid; }
     let from = lo;
-    if (lo > 0 && range.from < this.candles[lo - 1]!.time + this.intervalSeconds) from--;
+    if (lo > 0 && range.from < this.barEnd(this.candles[lo - 1]!.time)) from--;
     lo = 0; hi = this.candles.length;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time <= range.to) lo = mid + 1; else hi = mid; }
     const to = lo - 1;
@@ -1083,7 +1090,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     if (!current || Math.abs(current.from-from) > 1e-6 || Math.abs(current.to-to) > 1e-6) {
       this.chart.timeScale().setVisibleLogicalRange({from,to});
     }
-    this.viewLinkStatusHandler?.(range.from < first.time || range.to >= last.time + this.intervalSeconds
+    this.viewLinkStatusHandler?.(range.from < first.time || range.to >= this.barEnd(last.time)
       ? "Linked time range is clipped to this view's loaded history." : "");
   }
 
@@ -1230,7 +1237,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     const series = this.series, chart = this.chart;
     if (!series || !chart || !this.candles.length) return null;
     let drawn: readonly unknown[];
-    try { drawn = (series as unknown as { data(): readonly unknown[] }).data(); } catch { return null; }
+    try { drawn = series.data; } catch { return null; }
     const mode = this.displayMode;
     // What each drawn point must equal: the source bar, or its HA transform.
     const expected: readonly ChartEngineCandle[] = mode === "heikinAshi" ? heikinAshi(this.candles) : this.candles;
@@ -1336,8 +1343,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       try {
         if (ok) {
           const want = structureLinePoints(line!);
-          const got = (s as unknown as { data(): readonly Record<string, unknown>[] }).data();
-          ok = got.length === 2 && got.every((p, k) => p["time"] === want[k]!.time && p["value"] === want[k]!.value);
+          const got = s.data;
+          ok = got.length === 2 && got.every((p, k) => p["time"] === want[k]!.time && "value" in p && p.value === want[k]!.value);
           const ts = chart.timeScale(), width = ts.width();
           for (const p of want) {
             if (!ok) break;
@@ -1449,6 +1456,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
 
   setTimeframe(timeframe: string): void {
+    this.timeframe = timeframe;
     const intervalSeconds = chartIntervalSeconds(timeframe) ?? 0;
     if (this.pendingUserRange && this.pendingUserRange.intervalSeconds !== intervalSeconds) this.pendingUserRange = null;
     this.intervalSeconds = intervalSeconds;

@@ -46,7 +46,7 @@ class ContractTests(unittest.TestCase):
   if not p.exists():p=Path('/Users/areyouok/arx-tier1-release/truth-fix-20261105/current/arxai/mt5-bridge/market/ArxHistoryCollector.mq5')
   source=p.read_text()
   for forbidden in ['OrderSend(', 'OrderSendAsync(', 'CTrade', 'WebRequest(', 'AccountInfoDouble(']:self.assertNotIn(forbidden,source)
-  self.assertIn('if(!ArxMarketSafe()',source);self.assertIn('GetTickCount64()-began<150',source);self.assertIn('historyDepthPartial',source);self.assertIn('ArxExtraObserve();if(rates_total>0)',source);self.assertIn('SetIndexBuffer(0,extraPulse,INDICATOR_DATA)',source)
+  self.assertIn('if(!ArxMarketSafe()',source);self.assertIn('GetTickCount64()-began<150',source);self.assertIn('ExtraBackfillSnapshot()',source);self.assertIn('ArxExtraObserve();if(rates_total>0)',source);self.assertIn('SetIndexBuffer(0,extraPulse,INDICATOR_DATA)',source)
   import re
   self.assertEqual(set(re.findall(r'PERIOD_([A-Z0-9]+)',source))|{'M1','M5','H1'},SUPPORTED_TIMEFRAMES)
  def test_calendar_safety_heartbeat_follows_collection_and_precedes_dispatch(self):

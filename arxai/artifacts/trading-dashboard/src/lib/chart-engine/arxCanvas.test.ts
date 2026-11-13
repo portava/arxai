@@ -1,3 +1,4 @@
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import {
   createChart,
@@ -173,4 +174,18 @@ describe('User chart annotations',()=>{
   const chart=createChart(container,{width:900,height:400});chart.addSeries(CandlestickSeries).setData(bars);chart.setDrawingTool('horizontal');chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));expect(chart.getDrawings()).toHaveLength(1);
   chart.setDrawingTool('rectangle');chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));expect(chart.getDrawings()).toHaveLength(1);chart.remove();
  });
+});
+
+it("measures the real native canvas array instead of calling a library-specific method", () => {
+  Object.defineProperty(container, "clientWidth", { value: 900 });
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container, height: 400 });
+  adapter.setCandles(bars);
+  const measured = adapter.measureRenderFidelity();
+  expect(measured).not.toBeNull();
+  expect(measured?.mismatchedBars).toBe(0);
+  expect(measured?.barsCompared).toBe(100);
+  expect(measured?.visibleBarsRoundTripped).toBeGreaterThan(0);
+  adapter.destroy();
 });

@@ -86,11 +86,19 @@ void ArxMarketQuotes() {
 int arxMarketHistoryCursor=0;
 ulong arxMarketFullHistoryAt[], arxMarketLastFastM1=0, arxMarketLastFastSlow=0;
 #include "ArxNativeSeamObservation.mqh"
-string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete) {
+datetime ArxHistoryClose(datetime opened,ENUM_TIMEFRAMES tf) {
+   if(tf!=PERIOD_MN1)return opened+PeriodSeconds(tf);
+   MqlDateTime d;TimeToStruct(opened,d);d.day=1;d.hour=0;d.min=0;d.sec=0;
+   d.mon++;if(d.mon>12){d.mon=1;d.year++;}return StructToTime(d);
+}
+string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete,datetime endBefore=0) {
    string name=ArxMarketResolve(index);complete=false;if(name=="")return "";
    SymbolSelect(name,true);MqlRates bars[];ResetLastError();
-   int count=CopyRates(name,tf,1,wanted,bars), error=GetLastError();
-   complete=count==wanted && error==0;
+   int count=endBefore>0 ? CopyRates(name,tf,endBefore,wanted,bars) : CopyRates(name,tf,1,wanted,bars);
+   int error=GetLastError();
+   long serverFirst=SeriesInfoInteger(name,tf,SERIES_SERVER_FIRSTDATE);
+   bool boundary=count>0 && serverFirst>0 && bars[0].time<=serverFirst && ArxHistoryClose(bars[0].time,tf)>serverFirst;
+   complete=error==0 && (count==wanted || boundary);
    int digits=(int)SymbolInfoInteger(name,SYMBOL_DIGITS);string values="";
    for(int b=0;b<count;b++) {
       if(values!="")values+=",";
@@ -99,9 +107,12 @@ string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete) {
          ",\"tickVolume\":"+(string)bars[b].tick_volume+",\"spreadPoints\":"+(string)bars[b].spread+"}";
    }
    string timeframe=StringSubstr(EnumToString(tf),7);
+   string history=wanted>2 ? ",\"requestedHistoryBars\":"+(string)wanted+",\"historyKind\":"+ArxMarketQ(endBefore>0?"backfill":"seed")+
+      ",\"requestedEndServer\":"+(string)(long)endBefore+",\"serverFirstHistoryServer\":"+(string)serverFirst+
+      ",\"brokerHistoryBoundaryReached\":"+(boundary?"true":"false")+",\"historyDepthPartial\":"+(count<wanted?"true":"false") : "";
    string seam=wanted==2 ? ",\"nativeSeam\":"+ArxNativeSeamObservation(index,tf) : "";
    return "{\"canonical\":"+ArxMarketQ(arxMarketCanonicals[index])+","+ArxMarketSpec(name)+",\"timeframe\":"+ArxMarketQ(timeframe)+
-      ",\"copyCount\":"+(string)count+",\"error\":"+(string)error+",\"closedOnly\":true,\"bars\":["+values+"]"+seam+"}";
+      ",\"copyCount\":"+(string)count+",\"error\":"+(string)error+",\"closedOnly\":true,\"bars\":["+values+"]"+seam+history+"}";
 }
 void ArxMarketFastClosed(bool minuteOnly) {
    string groups="";

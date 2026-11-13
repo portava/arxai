@@ -91,7 +91,7 @@ router.post("/backtests", requireUser, async (req, res) => {
   try {
     const body = RunBacktestBody.parse(req.body);
     const userId = req.authUser!.id;
-    const candles: Candle[] = body.candles.map((c) => ({
+    const candles: Candle[] = body.candles.map((c: Candle) => ({
       time: c.time,
       open: c.open,
       high: c.high,

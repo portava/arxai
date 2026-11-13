@@ -25,7 +25,9 @@
 // SAFETY: read-only telemetry. Never an execution gate. Never fabricates a bar.
 
 import { and, desc, eq, gte } from "drizzle-orm";
-import { db, brokerCandlesTable } from "@workspace/db";
+import { currentFeedScopeBridge } from "../feedScope.js";
+import { brokerHistoryIdentity } from "../brokerHistoryPolicy.js";
+import { db, brokerCandlesTable, mt5ConnectionTable } from "@workspace/db";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -200,20 +202,25 @@ async function readBrokerOpenTimes(
   symbol: string,
   timeframe: ChartTimeframe,
   now: number,
+  bridge: number | null,
+  identity: string | null,
 ): Promise<number[]> {
   const sinceMs = now - PROFILE_LOOKBACK_WEEKS * WEEK_MS;
   const rows = await db
-    .select({ openTimeUtc: brokerCandlesTable.openTimeUtc })
+    .select({ openTimeUtc: brokerCandlesTable.openTimeUtc, bridge: brokerCandlesTable.bridgeConnectionId, identity: brokerCandlesTable.historyIdentity })
     .from(brokerCandlesTable)
     .where(
       and(
         eq(brokerCandlesTable.symbol, symbol.toUpperCase()),
+        ...(bridge != null ? [eq(brokerCandlesTable.bridgeConnectionId, bridge)] : []),
+        ...(identity != null ? [eq(brokerCandlesTable.historyIdentity, identity)] : []),
         eq(brokerCandlesTable.timeframe, timeframe),
         gte(brokerCandlesTable.openTimeUtc, new Date(sinceMs)),
       ),
     )
     .orderBy(desc(brokerCandlesTable.openTimeUtc))
     .limit(PROFILE_MAX_ROWS);
+  if (new Set(rows.map(r => `${r.bridge}:${r.identity}`)).size > 1) return [];
   return rows.map((r) => new Date(r.openTimeUtc as unknown as Date).getTime());
 }
 
@@ -228,7 +235,11 @@ export async function getSessionProfile(
   timeframe: ChartTimeframe,
   now: number = Date.now(),
 ): Promise<WeeklyPresenceProfile | null> {
-  const key = `${symbol.toUpperCase()}|${timeframe}`;
+  const bridge = await currentFeedScopeBridge();
+  const [connection] = bridge == null ? [] : await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, bridge));
+  const identity = connection?.userId != null ? brokerHistoryIdentity({userId: connection.userId, bridgeConnectionId: bridge!, accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server"}) : null;
+  if (bridge != null && !identity) return null;
+  const key = `${symbol.toUpperCase()}|${timeframe}|${bridge}|${identity}`;
   const dayKey = Math.floor(now / DAY_MS);
   const cached = profileCache.get(key);
   if (cached && cached.dayKey === dayKey && now - cached.builtAt < PROFILE_CACHE_TTL_MS) {
@@ -249,7 +260,7 @@ export async function getSessionProfile(
     return null;
   }
   try {
-    const opens = await readBrokerOpenTimes(symbol, readTimeframe, now);
+    const opens = await readBrokerOpenTimes(symbol, readTimeframe, now, bridge, identity);
     const profile = buildWeeklyPresenceProfile(opens, timeframeMs(timeframe));
     profileCache.set(key, { profile, builtAt: now, dayKey });
     return profile;

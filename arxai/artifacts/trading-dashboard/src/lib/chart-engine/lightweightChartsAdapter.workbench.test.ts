@@ -80,7 +80,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     expect(drawing.drawings).toHaveLength(1);
   });
   it("keeps studies incremental and independent of style switches and live-price truth",()=>{
-    adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(1);
+    adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(2);
     expect(studies).toHaveLength(9);expect(studies.filter(s=>s.pane===1)).toHaveLength(1);expect(studies.filter(s=>s.pane===2)).toHaveLength(3);
     adapter.updateActiveCandle({...bars.at(-1)!,close:1.7});
     adapter.getStudyValues(bars.at(-1)!.time); // inspection flushes the pending frame
@@ -108,7 +108,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
   it.each(STUDY_CATALOG.filter(d=>d.defaults.kind!=="volume_profile"))("$name retains only correct causal state across replay and corrections", definition => {
     const config = definition.defaults;
     adapter.setStudies([config]);
-    const renderedStudies=m.handles.slice(1);
+    const renderedStudies=m.handles.slice(2);
     const verify = (next: typeof bars) => {
       Object.assign(m.scale.getVisibleLogicalRange(),{from:Math.max(0,next.length-20),to:next.length+10});
       adapter.setCandles(next);
@@ -142,7 +142,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
   });
   it("keeps user drawings separate and excludes off-history endpoints from the time scale",()=>{
     adapter.setDrawings([{id:"h",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"},{id:"t",kind:"trend",start:{time:100,price:1.2},end:{time:160,price:1.4},color:"#ffffff"},{id:"outside",kind:"trend",start:{time:1,price:1.2},end:{time:160,price:1.4},color:"#ffffff"}]);
-    expect(m.handles).toHaveLength(1);
+    expect(m.handles).toHaveLength(2);
     expect(m.handles[0].attachPrimitive).toHaveBeenCalledTimes(1);
     const primitive = m.handles[0].attachPrimitive.mock.calls[0][0];
     expect(primitive.autoscaleInfo).toBeUndefined();
@@ -192,7 +192,7 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
   afterEach(()=>{flush();vi.unstubAllGlobals();vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});});
 
   it.each(["area","baseline","heikinAshi","hollow"] as const)("%s keeps range, studies, drawings, annotation and overlay lines on a style switch",style=>{
-    adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(1);
+    adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(2);
     adapter.setDrawings([{id:"saved",kind:"horizontal",start:{time:varied[3]!.time,price:1.1},color:"#ffffff"}]);
     const original=m.handles[0],drawing=original.attachPrimitive.mock.calls[0][0];
     adapter.setSmartAnnotation({id:"doji",anchors:[{time:varied[4]!.time,price:1.1,label:"Doji"}],color:"#38bdf8",dashed:true});
@@ -353,7 +353,7 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
 
 
 it("changes only overlay autoscaling and does not reset a subsequent manual scale on an unchanged preference",()=>{
- adapter.setStudies([STUDY_DEFAULTS[0]]);const price=m.handles[0],overlay=m.handles[1];
+ adapter.setStudies([STUDY_DEFAULTS[0]]);const price=m.handles[0],overlay=m.handles[2];
  const data=JSON.stringify(m.handles.map(h=>h.data));const writes=m.handles.map(h=>h.setData.mock.calls.length);
  adapter.setPriceOnlyScale(true);
  expect(overlay.applyOptions.mock.calls.at(-1)[0].autoscaleInfoProvider(()=>({priceRange:{minValue:0,maxValue:1000}}))).toBeNull();
@@ -448,7 +448,7 @@ it('keeps estimated profile on original OHLC under Heikin Ashi and withdraws met
 
 describe("compact study labels follow actual chart width",()=>{
  it("explicit resize preserves study and price data, then restores titles",()=>{
-  adapter.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(1);const price=m.handles[0];const writes=price.setData.mock.calls.length;const read=adapter.getStudyValues(bars[80].time);adapter.resize(390,400);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);expect(price.setData).toHaveBeenCalledTimes(writes);expect(adapter.getStudyValues(bars[80].time)).toEqual(read);adapter.resize(800,500);expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);
+  adapter.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(2);const price=m.handles[0];const writes=price.setData.mock.calls.length;const read=adapter.getStudyValues(bars[80].time);adapter.resize(390,400);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);expect(price.setData).toHaveBeenCalledTimes(writes);expect(adapter.getStudyValues(bars[80].time)).toEqual(read);adapter.resize(800,500);expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);
  });
  it("initial sizing and observed resizes apply the same title policy",()=>{
   let callback:(()=>void)|undefined;vi.stubGlobal("ResizeObserver",class{constructor(cb:()=>void){callback=cb;}observe(){}disconnect(){}});const el=document.createElement("div");let width=390;Object.defineProperty(el,"clientWidth",{get:()=>width});const local=new ArxCanvasAdapter();

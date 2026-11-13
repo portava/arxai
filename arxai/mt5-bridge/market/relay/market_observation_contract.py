@@ -53,7 +53,7 @@ def candle_payload(series,observation,now_ms):
     tf=series.get('timeframe')
     if tf not in SUPPORTED_TIMEFRAMES or series.get('closedOnly') is not True or series.get('chartPriceBasis') not in ('bid','last'):raise ContractError('CANDLE_BASIS_UNVERIFIED')
     bars=series.get('bars')
-    if series.get('error')!=0 or not isinstance(bars,list) or not bars or len(bars)>200 or series.get('copyCount')!=len(bars):raise ContractError('CANDLE_COPY_INCOMPLETE')
+    if series.get('error')!=0 or not isinstance(bars,list) or not bars or len(bars)>5000 or series.get('copyCount')!=len(bars):raise ContractError('CANDLE_COPY_INCOMPLETE')
     result=[];last=0
     for bar in bars:
         ts=bar.get('openTimeServer')
@@ -65,6 +65,18 @@ def candle_payload(series,observation,now_ms):
         if not integer(bar.get('tickVolume')) or bar['tickVolume']<0:raise ContractError('CANDLE_VOLUME_INVALID')
         result.append({'openTime':ts*1000,'closeTime':close_ts*1000,'open':o,'high':h,'low':l,'close':c,'tickVolume':bar['tickVolume'],'spread':bar.get('spreadPoints'),'isClosed':True})
         last=ts
-    return {'symbol':series['canonical'],'brokerSymbol':series['brokerSymbol'],'timeframe':tf,'priceBasis':series['chartPriceBasis'],
-        'accountNumber':observation['account'],'terminalId':observation['instanceId'],'source':'mt5_ea','eaVersion':'1.55-readonly-market-observer',
+    payload={'symbol':series['canonical'],'brokerSymbol':series['brokerSymbol'],'timeframe':tf,'priceBasis':series['chartPriceBasis'],
+        'accountNumber':observation['account'],'serverName':observation['server'],'clockBasis':'broker_server','terminalId':observation['instanceId'],'source':'mt5_ea','eaVersion':'1.55-readonly-market-observer',
         'brokerLimited':series.get('historyDepthPartial') is True and series.get('brokerHistoryBoundaryReached') is True,'brokerServerTime':observation['serverNow']*1000,'sentAt':observation['observedAtUtc']*1000,'bars':result}
+
+    if series.get('historyKind') in ('seed','backfill'):
+        requested=series.get('requestedHistoryBars');first=series.get('serverFirstHistoryServer');end=series.get('requestedEndServer')
+        if not integer(requested) or not 1<=requested<=5000 or not integer(first) or first<0:raise ContractError('HISTORY_PROOF_INVALID')
+        boundary=series.get('brokerHistoryBoundaryReached') is True
+        if boundary and not (bars[0]['openTimeServer']<=first<candle_close_seconds(bars[0]['openTimeServer'],tf)):raise ContractError('HISTORY_BOUNDARY_NOT_IN_PAGE')
+        proof={'kind':series['historyKind'],'serverFirstRawMs':first*1000,'requestedBars':requested,'copiedBars':len(bars),'boundaryReached':boundary}
+        if proof['kind']=='backfill':
+            if not integer(end) or end<=0 or bars[-1]['openTimeServer']>end:raise ContractError('HISTORY_CURSOR_INVALID')
+            proof['requestedEndRawMs']=end*1000
+        payload['historyPage']=proof
+    return payload

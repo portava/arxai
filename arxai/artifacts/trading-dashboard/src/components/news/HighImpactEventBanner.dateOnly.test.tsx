@@ -94,7 +94,7 @@ describe("HighImpactEventBanner date-only events follow their date, not the sent
     expect(heading).toBe("⚠ Critical economic event dated 2026-10-28 — release time not published");
     expect(screen.getByTestId("high-impact-banner").className).not.toContain("animate-pulse");
     // The day read reaches back past today's UTC midnight (17h45m ago).
-    const dayUrl = calls.find((u) => !u.includes("/upcoming")) ?? "";
+    const dayUrl = calls.find((u) => u.startsWith("/api/economic-events?")) ?? "";
     expect(dayUrl).toMatch(/^\/api\/economic-events\?/);
     const pastHours = Number(new URL(dayUrl, "http://x").searchParams.get("pastHours"));
     expect(pastHours).toBeGreaterThanOrEqual(18);
@@ -166,4 +166,25 @@ describe("HighImpactEventBanner keeps the not-checked notice next to a date-only
     await screen.findByTestId("high-impact-event-1");
     expect(screen.queryByTestId("high-impact-banner-window-not-checked")).toBeNull();
   });
+});
+
+it("uses the Calendar tab's live provider when the stored snapshot is empty", async()=>{
+  vi.setSystemTime(new Date("2026-10-28T17:40:00Z"));
+  vi.stubGlobal("fetch",vi.fn(async (url: string)=>new Response(JSON.stringify(url.includes("economic-calendar/events") ? {
+    connected:true,provider:"forexfactory",lastFetchAt:"2026-10-28T17:39:00Z",events:[{
+      id:"live-cpi",title:"CPI live provider",currency:"USD",impactTier:"high",eventTimeUtc:"2026-10-28T18:00:00Z",source:"forexfactory",timePrecision:"exact"
+    }]
+  } : {events:[],calendarCoverage:{windowCovered:false,note:"stored empty"}}),{status:200})));
+  const qc=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  render(<QueryClientProvider client={qc}><HighImpactEventBanner symbol="EURUSD" /></QueryClientProvider>);
+  expect((await screen.findByTestId("high-impact-event-live-cpi")).textContent).toContain("in 20m");
+  expect(screen.queryByTestId("high-impact-banner-not-checked")).toBeNull();
+});
+
+it("does not show a macro-event warning on a synthetic market", async()=>{
+  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({events:[FOMC],calendarCoverage:{windowCovered:false}}),{status:200})));
+  const qc=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  render(<QueryClientProvider client={qc}><HighImpactEventBanner symbol="V25_1S" /></QueryClientProvider>);
+  expect(screen.getByTestId("high-impact-banner-synthetic")).toBeTruthy();
+  expect(screen.queryByTestId("high-impact-banner")).toBeNull();
 });

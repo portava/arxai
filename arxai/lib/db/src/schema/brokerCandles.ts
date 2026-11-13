@@ -56,6 +56,8 @@ export const brokerCandlesTable = pgTable(
     userId: integer("user_id").notNull(),
     // mt5_connection.id — the bridge/account that produced the bar.
     bridgeConnectionId: integer("bridge_connection_id").notNull(),
+    // Immutable producer/account/clock era; legacy rows remain explicitly unattested.
+    historyIdentity: text("history_identity").notNull().default("legacy"),
     // Broker account number (provenance only; nullable until reported).
     accountNumber: text("account_number"),
     // EXACT broker Market-Watch name (case-sensitive on MT5).
@@ -80,6 +82,11 @@ export const brokerCandlesTable = pgTable(
     source: text("source").notNull().default("mt5_ea"),
     // EA terminal identifier (provenance only; nullable).
     terminalId: text("terminal_id"),
+    serverName: text("server_name"),
+    clockBasis: text("clock_basis"),
+    rawOpenTime: timestamp("raw_open_time", { withTimezone: true }),
+    rawCloseTime: timestamp("raw_close_time", { withTimezone: true }),
+    priceBasis: text("price_basis"),
     // FALSE while the newest bar is still forming; TRUE once finalized.
     isClosedBar: boolean("is_closed_bar").notNull().default(true),
     // Broker server clock at push time (provenance / skew analysis; nullable).
@@ -97,6 +104,7 @@ export const brokerCandlesTable = pgTable(
     // one timeframe, one open instant) can exist only once.
     uniq: uniqueIndex("broker_candles_bridge_sym_tf_time_uq").on(
       t.bridgeConnectionId,
+      t.historyIdentity,
       t.brokerSymbol,
       t.timeframe,
       t.openTimeUtc,

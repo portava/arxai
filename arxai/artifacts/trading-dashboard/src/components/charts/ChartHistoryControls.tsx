@@ -8,6 +8,7 @@ export interface ChartHistoryControlsProps {
   clockLabel: string;
   archiveCount: number;
   archiveLabel: string;
+  nativeHistory?: { importStatus: string; barsStored: number; oldest: string | null } | null;
   loading: boolean;
   hasMore: boolean;
   canLoad: boolean;
@@ -30,6 +31,7 @@ export function ChartHistoryControls({
   clockLabel,
   archiveCount,
   archiveLabel,
+  nativeHistory,
   loading,
   hasMore,
   canLoad,
@@ -54,11 +56,14 @@ export function ChartHistoryControls({
           variant="outline"
           className="text-[10px] leading-4 text-amber-200"
           data-testid="chart-archive-display-only"
-          title="Archived candles are shown separately. Their original account-era source identity is unverified; they are excluded from verified analysis."
+          title={nativeHistory ? "Account and source identity verified; native broker clock retained. Historical UTC mapping is not asserted." : "Archived candles are excluded from verified analysis until their source identity is established."}
         >
-          {archiveLabel} · {archiveCount} · identity unverified · display only
+          {archiveLabel} · {archiveCount} · {nativeHistory ? "source verified · broker clock" : "identity unverified · display only"}
         </Badge>
       )}
+      {nativeHistory && <span className="text-[10px] text-cyan-200" role="status">
+        {nativeHistory.barsStored.toLocaleString()} stored · since {nativeHistory.oldest?.slice(0,10) ?? "pending"} · {nativeHistory.importStatus === "COMPLETE" ? "all available history imported" : "importing older history"}
+      </span>}
       <Button
         size="sm"
         variant="outline"

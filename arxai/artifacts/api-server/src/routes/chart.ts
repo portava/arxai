@@ -135,6 +135,7 @@ router.get("/chart/history", async (req, res) => {
     return;
   }
   const out = await getCandleHistory({
+    userId: req.authUser?.id ?? null,
     symbol: q.symbol,
     timeframe: q.timeframe,
     limit: q.limit,

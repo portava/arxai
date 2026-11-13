@@ -55,3 +55,6 @@ Thumbs.db
 /exports/*.zip
 /exports/*.tar.gz
 /attached_assets/Pasted-*.txt
+
+# Local collector test bytecode
+mt5-bridge/market/relay/__pycache__/

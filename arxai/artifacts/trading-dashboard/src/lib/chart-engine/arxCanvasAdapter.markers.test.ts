@@ -85,7 +85,7 @@ it("ghost candles occupy three separate series and clearing them preserves real 
   const realSeries = chart.addSeries.mock.results[0].value;
   const before = realSeries.setData.mock.calls.length;
   adapter.setGhostPaths(["UP", "DOWN", "NEITHER"].map(id => ({ id, color: "#888", candles: [bar(180), bar(240)] })));
-  expect(chart.addSeries).toHaveBeenCalledTimes(4);
+  expect(chart.addSeries).toHaveBeenCalledTimes(5); // closed, forming, three forecast paths
   expect(realSeries.setData.mock.calls.length).toBe(before);
   adapter.setGhostPaths([]);
   expect(chart.removeSeries).toHaveBeenCalledTimes(3);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHART_INTERVALS, CHART_QUICK_INTERVALS, chartIntervalSeconds, isChartInterval, restoreChartInterval, parseChartInterval, chartIntervalDisplayId } from "./chartIntervals";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS, chartIntervalSeconds, isChartInterval, restoreChartInterval, parseChartInterval, chartIntervalDisplayId, chartBarCloseSeconds } from "./chartIntervals";
 import { validateChartLayout } from "./chartLayout";
 import { candleAtLinkedTime } from "./chartViewLink";
 import { smartChartIntervalSeconds } from "./smartChartAnalysis";
@@ -10,7 +10,7 @@ const expected = [
 ] as const;
 describe("supported native-chart interval contract", () => {
   it("exposes the 19 supported fixed-duration MT5 intervals and retains seven quick controls", () => {
-    expect(CHART_INTERVALS).toEqual(expected.map(([code])=>code));
+    expect(CHART_INTERVALS).toEqual([...expected.map(([code])=>code),"W1","MN1"]);
     expect(CHART_QUICK_INTERVALS).toEqual(["M1","M5","M15","M30","H1","H4","D1"]);
   });
   it.each(expected)("keeps %s in saved comparison views, analysis and exact linked-candle boundaries", (code, seconds) => {
@@ -23,7 +23,7 @@ describe("supported native-chart interval contract", () => {
     expect(candleAtLinkedTime(bars,time+seconds,seconds)).toBeNull();
     expect(candleAtLinkedTime(bars,time+seconds*2-1,seconds)).toBeNull();
   });
-  it.each(["W1","MN1","1mo","1M","1m","M60","H24","__proto__","",undefined,null])("does not guess the duration or support for %s", code => {
+  it.each(["1mo","1M","1m","M60","H24","__proto__","",undefined,null])("does not guess the duration or support for %s", code => {
     expect(isChartInterval(code)).toBe(false);expect(chartIntervalSeconds(code)).toBeNull();
   });
 });
@@ -43,7 +43,7 @@ describe("Scanner/native interval vocabulary", () => {
   it("uses the existing Scanner display IDs for all nineteen supported API intervals", () => {
     expect(CHART_INTERVALS.map(chartIntervalDisplayId)).toEqual([
       "1m","2m","3m","4m","5m","6m","10m","12m","15m","20m","30m",
-      "1h","2h","3h","4h","6h","8h","12h","1d",
+      "1h","2h","3h","4h","6h","8h","12h","1d","1w","1mo",
     ]);
   });
   it.each(expected)("round-trips %s without relying on an unknown-to-M5 query fallback", code => {
@@ -65,4 +65,11 @@ describe("Scanner/native interval vocabulary", () => {
   it.each(["M60", "H24", "bogus", "", 12, null, {}, "01m"])("does not parse %s as a supported interval", value => {
     expect(parseChartInterval(value)).toBeNull();
   });
+});
+
+it("keeps native Sunday weeks and advances leap-year months without a fixed duration", () => {
+  const week = Date.parse("2026-11-01T00:00:00Z") / 1000;
+  expect(chartBarCloseSeconds(week,"W1")).toBe(Date.parse("2026-11-08T00:00:00Z") / 1000);
+  expect(chartBarCloseSeconds(Date.parse("2024-02-01T00:00:00Z") / 1000,"MN1")).toBe(Date.parse("2024-03-01T00:00:00Z") / 1000);
+  expect(chartIntervalSeconds("MN1")).toBeNull();
 });

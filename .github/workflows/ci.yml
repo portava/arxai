@@ -13,9 +13,8 @@ name: CI
 
 on:
   push:
-    branches: [claude/replit-slice6-eleanor-20261105]
+    branches: [main, master, "codex/**", "claude/**"]
   pull_request:
-    branches: [claude/replit-slice6-eleanor-20261105]
   workflow_dispatch:
 
 permissions:
@@ -69,6 +68,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Provision schema (disposable DB)
         run: pnpm --filter @workspace/db run push-force
+      - name: Native history and renderer regressions
+        env:
+          ARX_REQUIRE_INTEGRATION_DB: "true"
+        run: |
+          pnpm --dir artifacts/api-server exec node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/fullHistoryRepair.test.ts src/lib/data/chart/__qa__/fullHistoryRepair.postgres.test.ts
+          pnpm --dir artifacts/trading-dashboard exec vitest run src/lib/useChartDeepHistory.test.ts src/lib/chart-engine/arxCanvas.test.ts src/lib/chart-engine/chartReplay.test.ts src/lib/chart-engine/lightweightChartsAdapter.renderFidelity.test.ts src/components/news/HighImpactEventBanner.dateOnly.test.tsx
+          python3 -m unittest discover -s mt5-bridge/market/relay -p "test_*.py"
       - run: pnpm run ci
 
   integration:

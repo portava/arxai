@@ -1,7 +1,7 @@
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import { validatePreferences, type ChartPreferences } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
-import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
+import { chartBarCloseSeconds, isChartInterval } from "./chartIntervals";
 
 export { replayDrawingKey, replayExitUrl } from "./replayNavigation";
 
@@ -31,10 +31,8 @@ export function captureChartReplay(data: ChartCandlesResponse | undefined, owner
   const unavailable = (error: string): ReplayCapture => ({ error });
   if (!Number.isSafeInteger(ownerId) || ownerId <= 0) return unavailable("Sign in to open a private replay.");
   const evidence = data?.marketEvidence;
-  const intervalLimitation = chartIntervalLimitation(data?.timeframe);
-  if (intervalLimitation) return unavailable(intervalLimitation);
-  const seconds = chartIntervalSeconds(data?.timeframe);
-  if (!data || !evidence || !seconds || !Number.isFinite(now)
+
+  if (!data || !evidence || !isChartInterval(data.timeframe) || !Number.isFinite(now)
     || (expected && (expected.symbol !== data.symbol || expected.timeframe !== data.timeframe))
     || evidence.symbol !== data.symbol || evidence.timeframe !== data.timeframe
     || evidence.source !== data.feedStatus?.source || !evidence.source
@@ -62,7 +60,7 @@ export function captureChartReplay(data: ChartCandlesResponse | undefined, owner
     const time = Date.parse(candle.openTime) / 1000;
     const closeTime = Date.parse(candle.closeTime) / 1000;
     const prices = [candle.open, candle.high, candle.low, candle.close];
-    if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(closeTime) || closeTime - time !== seconds
+    if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(closeTime) || closeTime !== chartBarCloseSeconds(time, data.timeframe)
       || closeTime * 1000 > now || prices.some(value => !Number.isFinite(value) || value <= 0)
       || candle.high < Math.max(candle.open,candle.close,candle.low) || candle.low > Math.min(candle.open,candle.close)
       || !["live","demo"].includes(candle.sourceMode)

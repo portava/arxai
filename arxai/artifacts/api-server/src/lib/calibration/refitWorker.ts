@@ -128,11 +128,13 @@ async function brokerReplayEvidence(): Promise<ReplayEvidence> {
       symbol: brokerCandlesTable.symbol,
       timeframe: brokerCandlesTable.timeframe,
       bridgeConnectionId: brokerCandlesTable.bridgeConnectionId,
+      historyIdentity: brokerCandlesTable.historyIdentity,
+      brokerSymbol: brokerCandlesTable.brokerSymbol,
       bars: sql<number>`count(*)::int`,
     })
     .from(brokerCandlesTable)
     .where(eq(brokerCandlesTable.isClosedBar, true))
-    .groupBy(brokerCandlesTable.symbol, brokerCandlesTable.timeframe, brokerCandlesTable.bridgeConnectionId)
+    .groupBy(brokerCandlesTable.symbol, brokerCandlesTable.timeframe, brokerCandlesTable.bridgeConnectionId, brokerCandlesTable.historyIdentity, brokerCandlesTable.brokerSymbol)
     .orderBy(desc(sql`count(*)`))
     .limit(REPLAY_SERIES_CAP * 4);
   // One series (the longest) per symbol × timeframe.
@@ -158,6 +160,8 @@ async function brokerReplayEvidence(): Promise<ReplayEvidence> {
         eq(brokerCandlesTable.symbol, s.symbol),
         eq(brokerCandlesTable.timeframe, s.timeframe),
         eq(brokerCandlesTable.bridgeConnectionId, s.bridgeConnectionId),
+        eq(brokerCandlesTable.historyIdentity, s.historyIdentity),
+        eq(brokerCandlesTable.brokerSymbol, s.brokerSymbol),
         eq(brokerCandlesTable.isClosedBar, true),
       ))
       .orderBy(desc(brokerCandlesTable.openTimeUtc))

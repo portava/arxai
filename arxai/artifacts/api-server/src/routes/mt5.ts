@@ -2690,6 +2690,7 @@ router.post("/mt5/candles/ingest", bridgeAuthPerUserOnly, async (req, res) => {
     userId: userConn.userId,
     bridgeConnectionId: userConn.id,
     accountNumber: userConn.accountNumber ?? null,
+    serverName: userConn.serverName ?? null,
   });
   req.log.info(
     {

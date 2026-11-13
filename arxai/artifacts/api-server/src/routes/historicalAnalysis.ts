@@ -7,6 +7,7 @@ const router = Router();
 const requestSchema = z.object({
   symbol: z.string().min(1).max(64),
   timeframe: z.string().min(1).max(8).optional(),
+  before: z.string().datetime().optional(),
   limit: z.number().int().min(200).max(5000).optional(),
 });
 
@@ -22,6 +23,8 @@ router.post("/market/historical-analysis", async (req, res) => {
   try {
     const result = await getHistoricalAnalysis({
       symbol: body.symbol,
+      userId: req.authUser?.id,
+      before: body.before,
       timeframe: body.timeframe,
       limit: body.limit,
     });

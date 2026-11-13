@@ -16,8 +16,9 @@ def api_boot_upper_ms(health):
 
 def history_key(path):
     name=Path(path).stem
-    if not name.startswith('history-extra-'):return None
-    bits=name[len('history-extra-'):].rsplit('-',1)
+    prefix=next((p for p in ('history-extra-','backfill-extra-') if name.startswith(p)),None)
+    if prefix is None:return None
+    bits=name[len(prefix):].rsplit('-',1)
     return '|'.join(bits) if len(bits)==2 else None
 
 def resolved_depth(mark):return mark is not None and (mark[2]>=200 or mark[3] is True)

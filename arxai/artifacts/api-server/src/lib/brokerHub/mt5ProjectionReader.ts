@@ -5,6 +5,11 @@ import {
   mt5ConnectionTable,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
+import { brokerHistoryIdentity } from "../data/brokerHistoryPolicy.js";
+async function ownedHistory(userId: number, connectionId: number) {
+  const [connection] = await db.select().from(mt5ConnectionTable).where(and(eq(mt5ConnectionTable.id, connectionId), eq(mt5ConnectionTable.userId, userId)));
+  return connection ? brokerHistoryIdentity({userId, bridgeConnectionId: connectionId, accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server"}) : null;
+}
 import type { Mt5ProjectionReader } from "./mt5ReadOnlyAdapter.js";
 
 export const mt5ProjectionReader: Mt5ProjectionReader = {
@@ -55,6 +60,8 @@ export const mt5ProjectionReader: Mt5ProjectionReader = {
   },
 
   async readLatestOwnedCandle(userId, connectionId) {
+    const identity = await ownedHistory(userId, connectionId);
+    if (!identity) return null;
     const rows = await db.select({
       brokerSymbol: brokerCandlesTable.brokerSymbol,
       timeframe: brokerCandlesTable.timeframe,
@@ -72,12 +79,15 @@ export const mt5ProjectionReader: Mt5ProjectionReader = {
       receivedAt: brokerCandlesTable.receivedAt,
     }).from(brokerCandlesTable).where(and(
       eq(brokerCandlesTable.userId, userId),
+      eq(brokerCandlesTable.historyIdentity, identity),
       eq(brokerCandlesTable.bridgeConnectionId, connectionId),
     )).orderBy(desc(brokerCandlesTable.receivedAt)).limit(1);
     return rows[0] ?? null;
   },
 
   async readOwnedCandles(userId, connectionId, exactBrokerSymbol, timeframe, limit) {
+    const identity = await ownedHistory(userId, connectionId);
+    if (!identity) return [];
     const rows = await db.select({
       brokerSymbol: brokerCandlesTable.brokerSymbol,
       timeframe: brokerCandlesTable.timeframe,
@@ -95,6 +105,7 @@ export const mt5ProjectionReader: Mt5ProjectionReader = {
       receivedAt: brokerCandlesTable.receivedAt,
     }).from(brokerCandlesTable).where(and(
       eq(brokerCandlesTable.userId, userId),
+      eq(brokerCandlesTable.historyIdentity, identity),
       eq(brokerCandlesTable.bridgeConnectionId, connectionId),
       eq(brokerCandlesTable.brokerSymbol, exactBrokerSymbol),
       eq(brokerCandlesTable.timeframe, timeframe),

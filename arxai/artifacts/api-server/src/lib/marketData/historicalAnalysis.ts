@@ -8,7 +8,11 @@
 // surfaces, or mutates safety state.
 
 import { logger } from "../logger.js";
-import { getMarketData } from "../data/dataManager.js";
+import { getMarketDataWithProvenance } from "../data/dataManager.js";
+import { getCandleHistory } from "../data/candleHistoryService.js";
+import { currentFeedScope } from "../data/feedScope.js";
+import { normalizeChartTimeframe } from "../data/chart/timeframes.js";
+import { createHash } from "node:crypto";
 import {
   analyzeHistoricalComparison,
   type HistoricalComparisonResult,
@@ -19,45 +23,36 @@ const CACHE_TTL_MS = 60_000;
 
 const cache = new Map<string, { ts: number; result: HistoricalComparisonResult }>();
 
-function cacheKey(symbol: string, timeframe: string): string {
-  return `${symbol.toUpperCase()}::${timeframe}`;
-}
-
-const SAFE_TIMEFRAMES = new Set([
-  "1m", "5m", "15m", "30m",
-  "1h", "4h",
-  "1d", "1w", "1M",
-  "M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1",
-]);
-
-function normalizeTimeframe(tf: string): string {
-  if (SAFE_TIMEFRAMES.has(tf)) return tf;
-  const map: Record<string, string> = {
-    M1: "1m", M5: "5m", M15: "15m", M30: "30m",
-    H1: "1h", H4: "4h", D1: "1d", W1: "1w", MN1: "1M",
-  };
-  return map[tf] ?? "1h";
-}
-
 export async function getHistoricalAnalysis(args: {
   symbol: string;
   timeframe?: string;
   limit?: number;
+  before?: string;
+  userId?: number;
 }): Promise<HistoricalComparisonResult> {
   const symbol = args.symbol.trim();
-  const timeframe = normalizeTimeframe(args.timeframe ?? "1d");
+  const timeframe = normalizeChartTimeframe(args.timeframe ?? "D1");
+  if (!timeframe) throw new Error("Unsupported historical timeframe");
   const limit = Math.min(Math.max(args.limit ?? 2000, 200), 5000);
 
-  const key = cacheKey(symbol, timeframe);
   const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && now - hit.ts < CACHE_TTL_MS) {
-    return hit.result;
-  }
-
+  let key = "";
   let candles: HistoricalCandle[] = [];
+  let nativeClock = false;
   try {
-    const raw = await getMarketData(symbol, timeframe, limit);
+    const routed = await getMarketDataWithProvenance(symbol, timeframe, limit);
+    const userId = args.userId ?? currentFeedScope()?.userId ?? undefined;
+    const source = routed.provenance?.providerId;
+    const history = source === "mt5_broker" && userId != null
+      ? await getCandleHistory({ symbol, timeframe, limit, before: args.before, source, userId }) : null;
+    const raw = history ? history.candles : routed.candles;
+    nativeClock = history?.nativeHistoryEvidence?.clockBasis === "broker_server";
+    // Include the actual source, owner, requested limit/cursor and observed
+    // window; no request can inherit another account's cached analysis.
+    key = createHash("sha256").update(JSON.stringify([symbol, timeframe, limit, args.before ?? null,
+      userId ?? null, routed.provenance?.providerId, routed.provenance?.sourceId, history?.nativeHistoryEvidence?.sourceIdentity, raw])).digest("hex");
+    const hit = cache.get(key);
+    if (hit && now - hit.ts < CACHE_TTL_MS) return hit.result;
     candles = raw
       .map((c) => {
         const ts = typeof c.time === "string"
@@ -86,9 +81,12 @@ export async function getHistoricalAnalysis(args: {
     symbol,
     timeframe,
     candles,
-    now,
+    now: nativeClock && candles.length ? candles.at(-1)!.timestamp : args.before ? Date.parse(args.before) : now,
   });
+  result.generatedAt = now;
+  if (nativeClock) result.dataQuality.coverageWarnings.push("Comparison anchored to the newest loaded native broker candle. Source-clock dates are preserved; historical UTC mapping is unverified.");
 
-  cache.set(key, { ts: now, result });
+  if (cache.size >= 200) cache.delete(cache.keys().next().value!);
+  if (key) cache.set(key, { ts: now, result });
   return result;
 }

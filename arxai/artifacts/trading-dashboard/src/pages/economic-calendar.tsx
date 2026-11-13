@@ -539,9 +539,9 @@ export default function EconomicCalendarPage() {
     return Array.from(seen.values()).slice(0, 6);
   }, [allEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Upcoming high-impact beyond today.
+  // Include releases later today; calendar date alone cannot mean past.
   const upcomingHigh = useMemo(
-    () => allEvents.filter((e) => !eventOnDay(e, now) && IMPACT_RANK[e.impactLevel] >= 3).slice(0, 6),
+    () => allEvents.filter((e) => eventPending(e, now.getTime()) && IMPACT_RANK[e.impactLevel] >= 3).slice(0, 6),
     [allEvents], // eslint-disable-line react-hooks/exhaustive-deps
   );
 

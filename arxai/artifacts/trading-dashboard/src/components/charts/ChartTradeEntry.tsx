@@ -144,7 +144,7 @@ export function ChartTradeEntry({
         </CardHeader>
 
         <CardContent className="space-y-3">
-          <HighImpactEventBanner />
+          <HighImpactEventBanner symbol={symbol} />
 
           <div className="flex flex-wrap items-center gap-2">
             <EventImpactBadge symbol={symbol} hoursAhead={2} />

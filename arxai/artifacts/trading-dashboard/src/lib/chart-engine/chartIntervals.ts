@@ -3,23 +3,23 @@
  * is separate: offering an interval never fabricates or resamples its candles. */
 export const CHART_INTERVALS = [
   "M1", "M2", "M3", "M4", "M5", "M6", "M10", "M12", "M15", "M20", "M30",
-  "H1", "H2", "H3", "H4", "H6", "H8", "H12", "D1",
+  "H1", "H2", "H3", "H4", "H6", "H8", "H12", "D1", "W1", "MN1",
 ] as const;
 export type ChartInterval = typeof CHART_INTERVALS[number];
 export const CHART_QUICK_INTERVALS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"] as const;
 export type ChartRequestedInterval = ChartInterval | "W1" | "MN1";
 export const WEEKLY_CHART_LIMITATION = "Weekly charts are unavailable until source-verified week boundaries are supported. Provider weeks cannot be aligned by a fixed epoch offset.";
 export const MONTHLY_CHART_LIMITATION = "Monthly charts are unavailable until source-verified calendar-month boundaries are supported. A month is not a fixed 30 or 31 days.";
-const SECONDS: Record<ChartInterval, number> = {
+const SECONDS: Partial<Record<ChartInterval, number>> = {
   M1:60, M2:120, M3:180, M4:240, M5:300, M6:360, M10:600, M12:720, M15:900, M20:1200, M30:1800,
-  H1:3600, H2:7200, H3:10800, H4:14400, H6:21600, H8:28800, H12:43200, D1:86400,
+  H1:3600, H2:7200, H3:10800, H4:14400, H6:21600, H8:28800, H12:43200, D1:86400, W1:604800,
 };
 export function isChartInterval(value: unknown): value is ChartInterval {
   return typeof value === "string" && (CHART_INTERVALS as readonly string[]).includes(value);
 }
 /** Never guess a duration, including for the calendar-month API code MN1. */
 export function chartIntervalSeconds(value: unknown): number | null {
-  return isChartInterval(value) ? SECONDS[value] : null;
+  return isChartInterval(value) ? SECONDS[value] ?? null : null;
 }
 
 /** Preserve recognized unavailable requests so saved workspaces explain their
@@ -28,7 +28,7 @@ export function restoreChartInterval(value: unknown, fallback: ChartRequestedInt
   return parseChartInterval(value) ?? fallback;
 }
 export function chartIntervalLimitation(value: unknown): string | null {
-  return value === "W1" ? WEEKLY_CHART_LIMITATION : value === "MN1" ? MONTHLY_CHART_LIMITATION : null;
+  return value === "MN1" ? "Calendar-month charts use native month boundaries; fixed-duration research tools are unavailable for this interval." : null;
 }
 
 /** Accept recognized native/API codes and Scanner display IDs without the
@@ -48,4 +48,17 @@ export function parseChartInterval(value: unknown): ChartRequestedInterval | nul
 /** Scanner storage/events use display IDs; native/API context stays uppercase. */
 export function chartIntervalDisplayId(timeframe: ChartRequestedInterval): string {
   return timeframe === "MN1" ? "1mo" : `${timeframe.slice(1)}${timeframe[0]!.toLowerCase()}`;
+}
+
+/** Next boundary in the observed source clock; weekly bars retain the broker's
+ * actual weekday and monthly bars advance by a calendar month. */
+export function chartBarCloseSeconds(open: number, timeframe: unknown): number | null {
+  if (!Number.isFinite(open)) return null;
+  if (timeframe === "MN1") {
+    const d = new Date(open * 1000);
+    if (d.getUTCDate() !== 1 || d.getUTCHours() || d.getUTCMinutes() || d.getUTCSeconds()) return null;
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000;
+  }
+  const duration = chartIntervalSeconds(timeframe);
+  return duration == null ? null : open + duration;
 }

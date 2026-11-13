@@ -332,7 +332,7 @@ async function tryMt5Candles(
             brokerCode: "mt5",
             delayed: false,
             source: "DERIVED",
-            sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}`,
+            sourceId: `mt5_broker:${sourceSymbolKey(symbol)}:${timeframe}${read.historyIdentity ? `:${read.historyIdentity}` : ""}`,
             brokerSymbol,
             bridgeConnectionId: read.bridgeConnectionId,
             userId: read.userId,

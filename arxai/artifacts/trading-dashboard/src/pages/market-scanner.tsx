@@ -1127,17 +1127,9 @@ export default function MarketScanner() {
         />
       )}
 
-      <SectionErrorBoundary section="Chart">
-        <StableScannerChart />
-      </SectionErrorBoundary>
-
-      <SectionErrorBoundary section="Trade Health">
-        <TradeHealthPanel chartSymbol={chartSym} />
-      </SectionErrorBoundary>
-
       <PageTabs
         storageKey="market-scanner"
-        defaultTab="focus"
+        defaultTab="broad-scan"
         variant="pill"
         tabs={[
           { id: "focus",      label: "Focus",      icon: <Target className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
@@ -1146,6 +1138,15 @@ export default function MarketScanner() {
           { id: "symbols",    label: "Symbols",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
         ]}
       />
+
+      <SectionErrorBoundary section="Chart">
+        <StableScannerChart />
+      </SectionErrorBoundary>
+
+      <SectionErrorBoundary section="Trade Health">
+        <TradeHealthPanel chartSymbol={chartSym} />
+      </SectionErrorBoundary>
+
 
       {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">

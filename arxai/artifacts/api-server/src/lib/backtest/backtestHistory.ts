@@ -30,6 +30,7 @@ export async function loadDiagnosticBrokerHistory(args: {
       bridgeId: brokerCandlesTable.bridgeConnectionId,
       brokerSymbol: brokerCandlesTable.brokerSymbol,
       accountNumber: brokerCandlesTable.accountNumber,
+      historyIdentity: brokerCandlesTable.historyIdentity,
     }).from(brokerCandlesTable)
       .where(and(...ownerConds)).limit(2);
     if (identities.length !== 1) return { candles: [], reason: identities.length ? "ambiguous_source" : "unavailable" };
@@ -41,6 +42,7 @@ export async function loadDiagnosticBrokerHistory(args: {
     }).from(brokerCandlesTable)
       .where(and(...ownerConds,
         eq(brokerCandlesTable.bridgeConnectionId, identity.bridgeId),
+        eq(brokerCandlesTable.historyIdentity, identity.historyIdentity),
         eq(brokerCandlesTable.brokerSymbol, identity.brokerSymbol),
         identity.accountNumber == null ? isNull(brokerCandlesTable.accountNumber)
           : eq(brokerCandlesTable.accountNumber, identity.accountNumber)))

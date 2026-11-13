@@ -29,13 +29,15 @@ import { mt5TickVolumeEvidence, type CandleVolumeEvidence } from "./candleVolume
 //     validated server-side via crafted, real-shaped payloads (see the test).
 
 import { z } from "zod/v4";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   brokerCandlesTable,
   brokerCandleBackfillStatusTable,
   type NewBrokerCandle,
 } from "@workspace/db";
+import { brokerHistoryIdentity, advanceHistoryPage } from "./brokerHistoryPolicy.js";
+import { barCloseMs } from "./chart/timeframes.js";
 import type { Candle } from "./types.js";
 import { brokerStampToUtcMs, recordBrokerClockSample } from "../brokerHub/brokerClockOffset.js";
 import { isValidCacheOhlc, upsertCandles, getCacheCoverage } from "./candleCache.js";
@@ -193,6 +195,16 @@ export const BrokerCandleIngestSchema = z.object({
   terminalId: z.string().optional(),
   source: z.string().optional(),
   eaVersion: z.string().optional(),
+  serverName: z.string().min(1).max(200).optional(),
+  clockBasis: z.enum(["broker_server"]).optional(),
+  historyPage: z.object({
+    kind: z.enum(["seed", "backfill"]),
+    requestedEndRawMs: z.number().int().positive().optional(),
+    serverFirstRawMs: z.number().int().nonnegative(),
+    requestedBars: z.number().int().min(1).max(5000),
+    copiedBars: z.number().int().min(1).max(5000),
+    boundaryReached: z.boolean(),
+  }).optional(),
   brokerServerTime: z.union([z.string(), z.number()]).optional(),
   /** EA signals the broker has no older bars beyond this window. */
   brokerLimited: z.boolean().optional(),
@@ -227,6 +239,8 @@ export interface NextBackfillHint {
   oldestStoredAt: string | null;
   /** UTC time the next CopyRates page should END at (one interval before oldest). */
   suggestedEndTimeUtc: string | null;
+  suggestedEndTimeRaw?: string | null;
+  historyIdentity?: string;
   reason: string;
 }
 
@@ -262,6 +276,8 @@ export interface ComputeBackfillInput {
   lastIngestAt: Date | null;
   hadError?: boolean;
   brokerLimited?: boolean;
+  historyComplete?: boolean;
+  lastHistoryPageAt?: Date | null;
   now?: number;
 }
 
@@ -288,18 +304,15 @@ export function computeBackfillStatus(input: ComputeBackfillInput): ComputeBackf
     input.oldestStoredAt && input.newestStoredAt
       ? Math.max(0, (input.newestStoredAt.getTime() - input.oldestStoredAt.getTime()) / MS_PER_DAY)
       : 0;
-  if (coverageDays >= input.targetDays) {
-    return { status: "COMPLETE", reason: "depth_target_met", coverageDays };
-  }
-  if (input.brokerLimited) {
-    return { status: "BROKER_LIMITED", reason: "broker_has_no_older_bars", coverageDays };
+  if (input.historyComplete) {
+    return { status: "COMPLETE", reason: "all_available_native_pages_verified", coverageDays };
   }
   const ingestFresh =
-    input.lastIngestAt != null && now - input.lastIngestAt.getTime() <= BUILDING_FRESH_MS;
+    input.lastHistoryPageAt != null && now - input.lastHistoryPageAt.getTime() <= BUILDING_FRESH_MS;
   if (ingestFresh) {
-    return { status: "BUILDING", reason: "actively_streaming", coverageDays };
+    return { status: "BUILDING", reason: "historical_pages_arriving", coverageDays };
   }
-  return { status: "PARTIAL", reason: "streaming_paused_target_unmet", coverageDays };
+  return { status: "PARTIAL", reason: "older_history_pending", coverageDays };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -328,6 +341,8 @@ function resolveIsClosed(
 interface NormalizedBar {
   openTime: Date;
   closeTime: Date;
+  rawOpenTime: Date;
+  rawCloseTime: Date;
   open: number;
   high: number;
   low: number;
@@ -354,6 +369,7 @@ export interface IngestContext {
   bridgeConnectionId: number;
   /** Account number from the bridge row (provenance fallback). */
   accountNumber?: string | null;
+  serverName?: string | null;
 }
 
 /**
@@ -371,6 +387,13 @@ export async function ingestBrokerCandles(
   ctx: IngestContext,
   opts?: { now?: number },
 ): Promise<BrokerCandleIngestResult> {
+  let publish: (() => Promise<void>) | undefined;
+  const result = await db.transaction(async (tx) => {
+  // Serialize only this native series, preventing out-of-order seed/page
+  // acknowledgements from rewinding a durable cursor or erasing completion.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
+    ctx.bridgeConnectionId, payload.brokerSymbol ?? payload.symbol, payload.timeframe,
+  ])}, 0))`);
   const now = opts?.now ?? Date.now();
   const symbol = payload.symbol.trim().toUpperCase();
   const brokerSymbol = (payload.brokerSymbol ?? payload.symbol).trim();
@@ -391,10 +414,12 @@ export async function ingestBrokerCandles(
     basis: "candle_push",
     nowMs: now,
   });
-  const toUtc = (d: Date): Date => {
-    const c = brokerStampToUtcMs(ctx.bridgeConnectionId, d.getTime(), now);
-    return c ? new Date(c.utcMs) : d;
-  };
+  const serverName = payload.serverName ?? ctx.serverName ?? null;
+  const clockBasis = "broker_server";
+  const historyIdentity = brokerHistoryIdentity({ ...ctx, accountNumber, serverName, clockBasis });
+  // Preserve historical native timestamps. A current clock sample cannot
+  // establish last summer's offset. Raw source time is explicitly persisted.
+  const toUtc = (d: Date): Date => d;
 
   const empty: BrokerCandleIngestResult = {
     ok: true,
@@ -403,6 +428,11 @@ export async function ingestBrokerCandles(
     latestStoredBySymbolTimeframe: [],
     nextBackfillHints: [],
   };
+
+  if ((ctx.accountNumber != null && accountNumber !== ctx.accountNumber)
+    || (ctx.serverName != null && serverName !== ctx.serverName)) {
+    return { ...empty, note: "producer_account_or_server_mismatch" };
+  }
 
   // ── Pinned timeframe enum — reject unknown at ingest ─────────────────────────
   const timeframe = normalizeBrokerTimeframe(payload.timeframe);
@@ -437,11 +467,13 @@ export async function ingestBrokerCandles(
     const openTime = toUtc(openTimeRaw);
     const openMs = openTime.getTime();
     const closeTimeRaw = parseTime(b.closeTime ?? null);
-    const closeTime = closeTimeRaw ? toUtc(closeTimeRaw) : new Date(openMs + tfMs);
-    const isClosedBar = resolveIsClosed(openMs, tfMs, b.isClosed ?? b.isFinal, now);
+    const closeTime = closeTimeRaw ? toUtc(closeTimeRaw) : new Date(barCloseMs(openMs, timeframe));
+    const isClosedBar = resolveIsClosed(openMs, closeTime.getTime() - openMs, b.isClosed ?? b.isFinal, brokerServerTime?.getTime() ?? now);
     byTime.set(openTime.toISOString(), {
       openTime,
       closeTime,
+      rawOpenTime: openTimeRaw,
+      rawCloseTime: closeTimeRaw ?? closeTime,
       open: b.open,
       high: b.high,
       low: b.low,
@@ -467,20 +499,19 @@ export async function ingestBrokerCandles(
   // ── Closed-bar finalization rule (per bar, against the existing stored row) ──
   let accepted = 0;
   const mirrorClosed: Candle[] = [];
+  const scope = and(
+    eq(brokerCandlesTable.userId, ctx.userId),
+    eq(brokerCandlesTable.bridgeConnectionId, ctx.bridgeConnectionId),
+    eq(brokerCandlesTable.historyIdentity, historyIdentity),
+    eq(brokerCandlesTable.brokerSymbol, brokerSymbol),
+    eq(brokerCandlesTable.timeframe, timeframe),
+  );
+  const existing = await tx.select().from(brokerCandlesTable).where(and(scope,
+    inArray(brokerCandlesTable.openTimeUtc, incoming.map(bar => bar.openTime))));
+  const previous = new Map(existing.map(row => [row.openTimeUtc.getTime(), row]));
+  const writes: NewBrokerCandle[] = [];
   for (const bar of incoming) {
-    const existing = await db
-      .select()
-      .from(brokerCandlesTable)
-      .where(
-        and(
-          eq(brokerCandlesTable.bridgeConnectionId, ctx.bridgeConnectionId),
-          eq(brokerCandlesTable.brokerSymbol, brokerSymbol),
-          eq(brokerCandlesTable.timeframe, timeframe),
-          eq(brokerCandlesTable.openTimeUtc, bar.openTime),
-        ),
-      )
-      .limit(1);
-    const prev = existing[0];
+    const prev = previous.get(bar.openTime.getTime());
 
     let qualityStatus: string;
     let qualityReason: string | null;
@@ -513,6 +544,9 @@ export async function ingestBrokerCandles(
       userId: ctx.userId,
       bridgeConnectionId: ctx.bridgeConnectionId,
       accountNumber,
+      historyIdentity, serverName, clockBasis,
+      rawOpenTime: bar.rawOpenTime, rawCloseTime: bar.rawCloseTime,
+      priceBasis: payload.priceBasis ?? null,
       brokerSymbol,
       symbol,
       timeframe,
@@ -534,32 +568,7 @@ export async function ingestBrokerCandles(
       updatedAt: new Date(),
     };
 
-    await db
-      .insert(brokerCandlesTable)
-      .values(row)
-      .onConflictDoUpdate({
-        target: [
-          brokerCandlesTable.bridgeConnectionId,
-          brokerCandlesTable.brokerSymbol,
-          brokerCandlesTable.timeframe,
-          brokerCandlesTable.openTimeUtc,
-        ],
-        set: {
-          open: row.open,
-          high: row.high,
-          low: row.low,
-          close: row.close,
-          closeTimeUtc: row.closeTimeUtc,
-          tickVolume: row.tickVolume,
-          realVolume: row.realVolume,
-          spread: row.spread,
-          isClosedBar: row.isClosedBar,
-          brokerServerTime: row.brokerServerTime,
-          qualityStatus: row.qualityStatus,
-          qualityReason: row.qualityReason,
-          updatedAt: new Date(),
-        },
-      });
+    writes.push(row);
     accepted += 1;
 
     // Only finalized bars are eligible to feed the live read path — a forming
@@ -579,68 +588,82 @@ export async function ingestBrokerCandles(
     }
   }
 
-  // ── Mirror accepted CLOSED bars into the read path (cache + provider) ─────────
-  // This is the existing foundation, NOT a source-priority change: the
-  // "mt5_broker" cache slot and the in-memory provider series already exist and
-  // are read by the chart/scanner router. R4 slice 2: this path KNOWS the
-  // authenticated bridge, so both mirrors carry it — the in-memory provider
-  // partitions the series by bridge (two bridges can never blend), and the
-  // market_candles row is attributed via the nullable bridge_connection_id
-  // column (conflict target unchanged until the migration lands — see
-  // upsertCandles' transitional contract).
-  if (mirrorClosed.length > 0) {
-    await upsertCandles(symbol, timeframe, MT5_BROKER_MIRROR_SOURCE, mirrorClosed, {
-      bridgeConnectionId: ctx.bridgeConnectionId,
-    });
-    const { mergeCandleFromMT5 } = await import("./providers/mt5Provider.js");
-    for (const c of mirrorClosed) {
-      mergeCandleFromMT5(symbol, c, timeframe, {
-        bridgeConnectionId: ctx.bridgeConnectionId,
-        userId: ctx.userId,
+  const insertedTimes: number[] = [];
+  for (let offset = 0; offset < writes.length; offset += 500) {
+    const written = await tx.insert(brokerCandlesTable).values(writes.slice(offset, offset + 500))
+      .onConflictDoUpdate({
+        target: [brokerCandlesTable.bridgeConnectionId, brokerCandlesTable.historyIdentity,
+          brokerCandlesTable.brokerSymbol, brokerCandlesTable.timeframe, brokerCandlesTable.openTimeUtc],
+        set: { open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`, close: sql`excluded.close`,
+          closeTimeUtc: sql`excluded.close_time_utc`, tickVolume: sql`excluded.tick_volume`,
+          realVolume: sql`excluded.real_volume`, spread: sql`excluded.spread`, isClosedBar: sql`excluded.is_closed_bar`,
+          qualityStatus: sql`excluded.quality_status`, qualityReason: sql`excluded.quality_reason`, updatedAt: new Date() },
+        setWhere: sql`NOT ${brokerCandlesTable.isClosedBar} OR (excluded.is_closed_bar
+          AND abs(${brokerCandlesTable.open} - excluded.open) <= greatest(1e-9,abs(excluded.open)*1e-9)
+          AND abs(${brokerCandlesTable.high} - excluded.high) <= greatest(1e-9,abs(excluded.high)*1e-9)
+          AND abs(${brokerCandlesTable.low} - excluded.low) <= greatest(1e-9,abs(excluded.low)*1e-9)
+          AND abs(${brokerCandlesTable.close} - excluded.close) <= greatest(1e-9,abs(excluded.close)*1e-9))`,
+      }).returning({ time: brokerCandlesTable.openTimeUtc });
+    insertedTimes.push(...written.filter(row => !previous.has(row.time.getTime())).map(row => row.time.getTime()));
+    const lost = Math.min(500, writes.length - offset) - written.length;
+    accepted -= lost; rejected += lost;
+  }
+
+  // Publish current closed bars only AFTER the durable transaction commits.
+  // Older backfill never replaces the live window or the shared legacy cache.
+  if (mirrorClosed.length > 0 && rejected === 0 && payload.historyPage?.kind !== "backfill") {
+    publish = async () => {
+      const { mergeCandleFromMT5 } = await import("./providers/mt5Provider.js");
+      for (const c of mirrorClosed) mergeCandleFromMT5(symbol, c, timeframe, {
+        bridgeConnectionId: ctx.bridgeConnectionId, userId: ctx.userId, historyIdentity,
       });
-    }
+    };
   }
-
-  // ── Maintain the per-series backfill status from the full stored extent ───────
-  const extent = await db
-    .select({
-      openTimeUtc: brokerCandlesTable.openTimeUtc,
-    })
-    .from(brokerCandlesTable)
-    .where(
-      and(
-        eq(brokerCandlesTable.bridgeConnectionId, ctx.bridgeConnectionId),
-        eq(brokerCandlesTable.brokerSymbol, brokerSymbol),
-        eq(brokerCandlesTable.timeframe, timeframe),
-      ),
-    );
-  const barsStored = extent.length;
-  let oldest: Date | null = null;
-  let newest: Date | null = null;
-  for (const r of extent) {
-    const t = r.openTimeUtc instanceof Date ? r.openTimeUtc : new Date(r.openTimeUtc);
-    if (!oldest || t < oldest) oldest = t;
-    if (!newest || t > newest) newest = t;
+  const [prior] = await tx.select().from(brokerCandleBackfillStatusTable).where(and(
+    eq(brokerCandleBackfillStatusTable.bridgeConnectionId, ctx.bridgeConnectionId),
+    eq(brokerCandleBackfillStatusTable.historyIdentity, historyIdentity),
+    eq(brokerCandleBackfillStatusTable.brokerSymbol, brokerSymbol),
+    eq(brokerCandleBackfillStatusTable.timeframe, timeframe),
+  ));
+  // Serialized ingestion maintains exact counts incrementally. Counting millions
+  // of historical rows on every live update would starve current chart reads.
+  let barsStored: number, oldest: Date | null, newest: Date | null;
+  if (prior) {
+    barsStored = prior.barsStored + insertedTimes.length;
+    const times = [...insertedTimes, ...(prior.oldestStoredAt ? [prior.oldestStoredAt.getTime()] : []), ...(prior.newestStoredAt ? [prior.newestStoredAt.getTime()] : [])];
+    oldest = times.length ? new Date(Math.min(...times)) : null;
+    newest = times.length ? new Date(Math.max(...times)) : null;
+  } else {
+    const [extent] = await tx.select({ count: sql<number>`count(*)::int`,
+      oldest: sql<string>`min(${brokerCandlesTable.openTimeUtc})`, newest: sql<string>`max(${brokerCandlesTable.openTimeUtc})`,
+    }).from(brokerCandlesTable).where(scope);
+    barsStored = extent?.count ?? 0;
+    oldest = extent?.oldest ? new Date(extent.oldest) : null;
+    newest = extent?.newest ? new Date(extent.newest) : null;
   }
-  const targetDays = depthTargetDaysFor(timeframe);
-  const computed = computeBackfillStatus({
-    barsStored,
-    oldestStoredAt: oldest,
-    newestStoredAt: newest,
-    targetDays,
-    lastIngestAt: new Date(now),
-    brokerLimited: payload.brokerLimited === true,
-    now,
-  });
+  const progress = advanceHistoryPage({ priorCursor: prior?.nextBeforeRaw ?? null,
+    priorComplete: prior?.status === "COMPLETE" && prior.statusReason === "all_available_native_pages_verified",
+    proof: payload.historyPage, oldestRawMs: incoming[0]!.rawOpenTime.getTime(),
+    oldestCloseRawMs: incoming[0]!.rawCloseTime.getTime(), newestRawMs: incoming.at(-1)!.rawOpenTime.getTime(),
+    accepted, rejected, sent: payload.bars.length });
+  const lastHistoryPageAt = progress.advanced ? new Date(now) : prior?.lastHistoryPageAt ?? null;
+  const historyPages = (prior?.historyPages ?? 0) + (progress.advanced ? 1 : 0);
+  const boundaryRaw = progress.complete && payload.historyPage
+    ? new Date(payload.historyPage.serverFirstRawMs) : prior?.boundaryRaw ?? null;
+  const targetDays = depthTargetDaysFor(timeframe); // informational benchmark, never an import ceiling
+  const computed = computeBackfillStatus({ barsStored, oldestStoredAt: oldest, newestStoredAt: newest,
+    targetDays, lastIngestAt: new Date(now), lastHistoryPageAt, historyComplete: progress.complete, now });
 
-  await db
+  await tx
     .insert(brokerCandleBackfillStatusTable)
     .values({
       userId: ctx.userId,
       bridgeConnectionId: ctx.bridgeConnectionId,
+      historyIdentity,
       brokerSymbol,
       symbol,
       timeframe,
+      nextBeforeRaw: progress.cursor, boundaryRaw, lastHistoryPageAt, historyPages,
       status: computed.status,
       statusReason: computed.reason,
       oldestStoredAt: oldest,
@@ -654,12 +677,14 @@ export async function ingestBrokerCandles(
     .onConflictDoUpdate({
       target: [
         brokerCandleBackfillStatusTable.bridgeConnectionId,
+        brokerCandleBackfillStatusTable.historyIdentity,
         brokerCandleBackfillStatusTable.brokerSymbol,
         brokerCandleBackfillStatusTable.timeframe,
       ],
       set: {
         symbol,
-        status: computed.status,
+        nextBeforeRaw: progress.cursor, boundaryRaw, lastHistoryPageAt, historyPages,
+      status: computed.status,
         statusReason: computed.reason,
         oldestStoredAt: oldest,
         newestStoredAt: newest,
@@ -680,20 +705,22 @@ export async function ingestBrokerCandles(
   };
 
   // ── Next-backfill hint: page OLDER only while the series can still grow ───────
-  const needsOlder = computed.status !== "COMPLETE" && computed.status !== "BROKER_LIMITED";
+  const needsOlder = !progress.complete;
   const hint: NextBackfillHint = {
     symbol,
     brokerSymbol,
     timeframe,
     status: computed.status,
     oldestStoredAt: oldest ? oldest.toISOString() : null,
-    suggestedEndTimeUtc:
-      needsOlder && oldest ? new Date(oldest.getTime() - tfMs).toISOString() : null,
+    // Native timestamps deliberately do not claim historical UTC.
+    suggestedEndTimeUtc: null,
+    suggestedEndTimeRaw: progress.cursor?.toISOString() ?? null,
+    historyIdentity,
     reason: needsOlder
       ? "fetch_older_history_ending_before_oldest"
       : computed.status === "BROKER_LIMITED"
         ? "broker_has_no_older_bars"
-        : "depth_target_met",
+        : "all_available_native_pages_verified",
   };
 
   return {
@@ -703,6 +730,9 @@ export async function ingestBrokerCandles(
     latestStoredBySymbolTimeframe: [latestStored],
     nextBackfillHints: [hint],
   };
+  });
+  if (publish) await publish();
+  return result;
 }
 
 // ── Coverage diagnostics (Task #470) ─────────────────────────────────────────
@@ -770,9 +800,8 @@ export async function getBrokerCandleCoverage(opts?: {
   const limit = Math.min(Math.max(opts?.limit ?? 200, 1), 1000);
   const symFilter = opts?.symbol?.trim().toUpperCase();
 
-  const where = symFilter
-    ? eq(brokerCandleBackfillStatusTable.symbol, symFilter)
-    : undefined;
+  const where = and(sql`${brokerCandleBackfillStatusTable.historyIdentity} <> 'legacy'`,
+    symFilter ? eq(brokerCandleBackfillStatusTable.symbol, symFilter) : undefined);
 
   const baseRows = await db
     .select()

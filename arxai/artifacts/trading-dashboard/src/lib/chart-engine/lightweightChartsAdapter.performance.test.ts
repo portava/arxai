@@ -13,7 +13,7 @@ vi.mock("@/lib/chart-engine/arxCanvas", () => ({ createChart: (el: unknown, opti
 import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { sanitizeCandlestickData } from "./candleSanitize";
 import { candleDisplayPrecision } from "./candleReconciliation";
-import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
+import { CHART_INTERVALS, chartIntervalSeconds, chartBarCloseSeconds } from "./chartIntervals";
 const bar = (time: number, close = 1.15) => ({time,open:1.1,high:1.2,low:1.0,close});
 let adapter: ArxCanvasAdapter;
 let chartContainer: HTMLDivElement;
@@ -190,18 +190,19 @@ describe("chart refresh and inspection", () => {
 
 describe("linked view adapter boundaries", () => {
   it.each(CHART_INTERVALS)("uses %s's observed span for crosshair and range linking without bridging missing bars", timeframe => {
-    const seconds=chartIntervalSeconds(timeframe)!, start=Date.parse("2026-10-19T00:00:00Z")/1000;
-    adapter.setTimeframe(timeframe);adapter.setCandles([bar(start),bar(start+seconds*2,1.17)]);
-    adapter.setLinkedCrosshair(start+seconds-1);
+    const start=Date.parse(timeframe === "MN1" ? "2026-07-01T00:00:00Z" : "2026-10-19T00:00:00Z")/1000;
+    const close=chartBarCloseSeconds(start,timeframe)!, next=chartBarCloseSeconds(close,timeframe)!, end=chartBarCloseSeconds(next,timeframe)!;
+    adapter.setTimeframe(timeframe);adapter.setCandles([bar(start),bar(next,1.17)]);
+    adapter.setLinkedCrosshair(close-1);
     expect(mocks.chart.setCrosshairPosition).toHaveBeenLastCalledWith(1.15,start,mocks.series);
-    adapter.setLinkedCrosshair(start+seconds);
+    adapter.setLinkedCrosshair(close);
     expect(mocks.chart.clearCrosshairPosition).toHaveBeenCalled();
     const status=vi.fn();adapter.setViewLinkStatusHandler(status);
     mocks.scale.setVisibleLogicalRange.mockClear();
-    adapter.setLinkedTimeRange({from:start+seconds,to:start+seconds*2-1});
+    adapter.setLinkedTimeRange({from:close,to:next-1});
     expect(mocks.scale.setVisibleLogicalRange).not.toHaveBeenCalled();
     expect(status).toHaveBeenLastCalledWith(expect.stringContaining("has not moved"));
-    adapter.setLinkedTimeRange({from:start+seconds*2+1,to:start+seconds*3-1});
+    adapter.setLinkedTimeRange({from:next+1,to:end-1});
     expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:1,to:1});
     expect(status).toHaveBeenLastCalledWith("");
   });

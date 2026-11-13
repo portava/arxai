@@ -34,6 +34,8 @@ export const brokerCandleBackfillStatusTable = pgTable(
     id: serial("id").primaryKey(),
     userId: integer("user_id").notNull(),
     bridgeConnectionId: integer("bridge_connection_id").notNull(),
+    // Immutable producer/account/clock era; legacy rows remain explicitly unattested.
+    historyIdentity: text("history_identity").notNull().default("legacy"),
     brokerSymbol: text("broker_symbol").notNull(),
     symbol: text("symbol").notNull(),
     timeframe: text("timeframe").notNull(),
@@ -47,6 +49,10 @@ export const brokerCandleBackfillStatusTable = pgTable(
     targetDays: integer("target_days"),
     // Observed coverage (days) between oldest and newest stored bar.
     coverageDays: doublePrecision("coverage_days"),
+    nextBeforeRaw: timestamp("next_before_raw", { withTimezone: true }),
+    boundaryRaw: timestamp("boundary_raw", { withTimezone: true }),
+    lastHistoryPageAt: timestamp("last_history_page_at", { withTimezone: true }),
+    historyPages: integer("history_pages").notNull().default(0),
     retryCount: integer("retry_count").notNull().default(0),
     lastError: text("last_error"),
     lastIngestAt: timestamp("last_ingest_at", { withTimezone: true }),
@@ -56,6 +62,7 @@ export const brokerCandleBackfillStatusTable = pgTable(
   (t) => ({
     uniq: uniqueIndex("broker_candle_backfill_bridge_sym_tf_uq").on(
       t.bridgeConnectionId,
+      t.historyIdentity,
       t.brokerSymbol,
       t.timeframe,
     ),

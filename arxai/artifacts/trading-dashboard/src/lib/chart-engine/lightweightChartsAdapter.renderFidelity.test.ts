@@ -33,7 +33,7 @@ vi.mock("@/lib/chart-engine/arxCanvas", () => {
   const makeLineSeries = () => {
     let rows: Record<string, number>[] = [];
     return { ...pricing, setData: vi.fn((d: Record<string, number>[]) => { rows = d.map(p => ({ ...p, value: p.value + engine.seriesDrift })); }),
-      data: () => rows, applyOptions: vi.fn(), options: () => ({}) };
+      get data() { return rows; }, applyOptions: vi.fn(), options: () => ({}) };
   };
   const makeCandleSeries = () => {
     let rows: Record<string, number>[] = [];
@@ -47,7 +47,7 @@ vi.mock("@/lib/chart-engine/arxCanvas", () => {
         if (i >= 0) rows[i] = store(p); else rows.push(store(p));
       }),
       pop: vi.fn((n: number) => { rows = rows.slice(0, rows.length - n); }),
-      data: () => rows,
+      get data() { return rows; },
       options: () => ({ ...state }),
       applyOptions: vi.fn((c) => Object.assign(state, c)),
       createPriceLine: vi.fn((o: { price: number }) => {

@@ -175,7 +175,7 @@ describe("useChartDeepHistory", () => {
       expect(result.current.analysisCandles).toEqual([]);
       expect(result.current.analysisEvidence).toBeNull();
       expect(result.current.olderCandles[0]!.time).toBe(firstPageOldest);
-      expect(fetchChartHistory.mock.calls[0]![0]).not.toHaveProperty("sourceIdentity");
+      expect(fetchChartHistory.mock.calls[0]![0]).toHaveProperty("sourceIdentity", "opaque-current-source");
 
       await act(async () => result.current.loadOlder(before));
       expect(fetchChartHistory).toHaveBeenCalledTimes(2);
@@ -399,4 +399,21 @@ describe("useChartDeepHistory", () => {
     controller.abort();
     await rejected;
   });
+  it("retries the same empty native cursor while import is pending, then pages to the real boundary", async()=>{
+    const identity="a".repeat(64), native={sourceIdentity:"b".repeat(64),clockBasis:"broker_server",importStatus:"BUILDING",barsStored:200,oldest:before,boundary:null};
+    const clock=vi.spyOn(Date,"now").mockReturnValue(10000);
+    fetchChartHistory.mockResolvedValueOnce({...page({source:"mt5_broker",candles:[],hasMoreHistory:false,nextBefore:null}),nativeHistoryEvidence:native});
+    const {result}=renderHook(()=>useChartDeepHistory("V25_1S","M1",true,"mt5_broker",identity,true));
+    await act(async()=>result.current.loadOlder(before));
+    expect(result.current.hasMore).toBe(true);expect(result.current.providerCapped).toBe(false);
+    expect(fetchChartHistory.mock.calls[0][0].sourceIdentity).toBe(identity);
+    await act(async()=>result.current.loadOlder(before));expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+    clock.mockReturnValue(16000);
+    fetchChartHistory.mockResolvedValueOnce({...page({source:"mt5_broker",candles:[candle(1000)],hasMoreHistory:false,nextBefore:new Date(1000).toISOString(),providerLimitReached:true}),nativeHistoryEvidence:{...native,importStatus:"COMPLETE"}});
+    await act(async()=>result.current.loadOlder(before));
+    expect(fetchChartHistory.mock.calls[1][0].before).toBe(before);
+    expect(result.current.olderCandles).toHaveLength(1);expect(result.current.analysisCandles).toHaveLength(0);
+    expect(result.current.hasMore).toBe(false);clock.mockRestore();
+  });
+
 });

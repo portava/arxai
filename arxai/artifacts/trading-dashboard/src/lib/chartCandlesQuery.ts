@@ -159,6 +159,10 @@ export interface ChartHistoryPage {
   depthTargetMet: boolean;
   sourcePriorityUsed: string[];
   userMessage: string;
+  nativeHistoryEvidence?: {
+    sourceIdentity: string; clockBasis: "broker_server"; importStatus: string;
+    barsStored: number; oldest: string | null; boundary: string | null;
+  } | null;
   historyEvidence?: {
     symbol: string;
     timeframe: string;
@@ -203,7 +207,12 @@ export async function fetchChartHistory(args: {
     && Date.parse(observed.lastClosedCandleAt) <= Date.now()
     && !!args.before && Date.parse(observed.lastClosedCandleAt) <= Date.parse(args.before)
     ? observed as NonNullable<ChartHistoryPage["historyEvidence"]> : null;
+  const native = obj.nativeHistoryEvidence as ChartHistoryPage["nativeHistoryEvidence"];
+  const nativeHistoryEvidence = obj.source === "mt5_broker" && native?.clockBasis === "broker_server"
+    && /^[a-f0-9]{64}$/.test(native.sourceIdentity) && Number.isSafeInteger(native.barsStored)
+    && native.barsStored >= 0 && typeof native.importStatus === "string" ? native : null;
   return {
+    nativeHistoryEvidence,
     ok: Boolean(obj.ok),
     source: (obj.source as string | null) ?? null,
     candles: adaptChartCandles(rawCandles as Array<Record<string, unknown>>),

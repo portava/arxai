@@ -699,6 +699,10 @@ function CommandPaletteLauncher({ open, onOpen }: { open: boolean; onOpen: () =>
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const isRootWorkspace = location === "/market-desk";
+  useEffect(() => {
+    window.scrollTo?.({ top: 0, left: 0, behavior: "instant" });
+    document.getElementById("main-content")?.scrollTo?.({ top: 0, left: 0, behavior: "instant" });
+  }, [location]);
   const { user, isLoading: userLoading } = useCurrentUser();
   const logout = useLogout();
   const { isInvestor } = useProductRole();

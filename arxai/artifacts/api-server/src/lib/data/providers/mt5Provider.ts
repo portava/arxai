@@ -139,6 +139,7 @@ function seriesKey(symbol: string, timeframe: string): string {
  *  every write API so un-threaded legacy call sites keep compiling; a write
  *  without it lands in the unattributed partition, never in a bridge's. */
 export interface Mt5BridgeIdentity {
+  historyIdentity?: string | null;
   bridgeConnectionId: number;
   userId?: number | null;
 }
@@ -152,6 +153,7 @@ function bridgeKeyOf(bridge: Mt5BridgeIdentity | null | undefined): string {
 }
 
 interface CandleSeries {
+  historyIdentity?: string | null;
   candles: Candle[];
   updatedAt: number;
   /** Monotonic write ordinal — the recency ranking. Wall-clock `updatedAt`
@@ -455,9 +457,12 @@ export function updateCandlesFromMT5(
   const partitions = partitionsFor(symbol, timeframe);
   const bKey = bridgeKeyOf(bridge);
   const now = Date.now();
-  const stored = bridge != null ? mergeByBarTime(partitions.get(bKey)?.candles ?? [], candles) : candles;
+  const prior = partitions.get(bKey);
+  const sameEra = !bridge?.historyIdentity || !prior?.historyIdentity || prior.historyIdentity === bridge.historyIdentity;
+  const stored = bridge != null ? mergeByBarTime(sameEra ? prior?.candles ?? [] : [], candles) : candles;
   partitions.set(bKey, {
     candles: stored,
+    historyIdentity: bridge?.historyIdentity ?? prior?.historyIdentity ?? null,
     updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
@@ -520,10 +525,12 @@ export function mergeCandleFromMT5(
   const bKey = bridgeKeyOf(bridge);
   const existing = partitions.get(bKey);
   // Last-write-wins on identical bar time (an idempotent re-send is a no-op).
-  const capped = mergeByBarTime(existing?.candles ?? [], [candle]);
+  const sameEra = !bridge?.historyIdentity || !existing?.historyIdentity || existing.historyIdentity === bridge.historyIdentity;
+  const capped = mergeByBarTime(sameEra ? existing?.candles ?? [] : [], [candle]);
   const now = Date.now();
   partitions.set(bKey, {
     candles: capped,
+    historyIdentity: bridge?.historyIdentity ?? existing?.historyIdentity ?? null,
     updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
@@ -786,6 +793,7 @@ export function __resetMt5ProviderStore(): void {
 // ── Bridge-scoped read (the ONLY candle read path) ───────────────────────────
 
 export interface Mt5CandleRead {
+  historyIdentity?: string | null;
   /** Bars from EXACTLY ONE partition (never blended); [] when absent/stale. */
   candles: Candle[];
   /** Identity of the serving writer; null = unattributed partition served. */
@@ -831,6 +839,7 @@ export function readMt5Candles(
     if (!s || now - s.updatedAt > CANDLE_TTL_MS) return { ...EMPTY_READ };
     return {
       candles: s.candles.slice(-limit),
+      historyIdentity: s.historyIdentity ?? null,
       bridgeConnectionId: s.bridgeConnectionId,
       userId: s.userId,
       contention: false,
@@ -868,6 +877,7 @@ export function readMt5Candles(
 
   return {
     candles: serving.candles.slice(-limit),
+    historyIdentity: serving.historyIdentity ?? null,
     bridgeConnectionId: serving.bridgeConnectionId,
     userId: serving.userId,
     contention,

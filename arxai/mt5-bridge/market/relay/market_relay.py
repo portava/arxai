@@ -1,6 +1,6 @@
 """Allowlisted read-only quote/candle transport. No commands or trading routes."""
 from pathlib import Path
-import concurrent.futures,fcntl,importlib.util,json,logging,os,signal,threading,time,uuid,urllib.request,urllib.error
+import math,concurrent.futures,fcntl,importlib.util,json,logging,os,signal,threading,time,uuid,urllib.request,urllib.error
 from logging.handlers import RotatingFileHandler
 from market_observation_contract import *
 from market_history_schedule import *
@@ -69,9 +69,25 @@ def full_history_payload(series,observation,now_ms):
     # A short local cache is still hydrating. Its oldest aggregated weekly or
     # monthly bar can change as earlier underlying history arrives. Only publish
     # the full requested target or a proven broker history boundary as a seed.
-    if len(payload['bars'])<200 and payload.get('brokerLimited') is not True:
+    wanted=payload.get('historyPage',{}).get('requestedBars',200)
+    if len(payload['bars'])<wanted and not payload.get('historyPage',{}).get('boundaryReached',payload.get('brokerLimited') is True):
         raise ContractError('HISTORY_STILL_HYDRATING')
     return payload
+
+def persist_backfill_request(spool,payload,result):
+    # Server policy owns the cursor; transport accepts only the same series.
+    for hint in result.get('nextBackfillHints',[]):
+        if any(hint.get(k)!=payload.get(k) for k in ('symbol','brokerSymbol','timeframe')):continue
+        identity=hint.get('historyIdentity','')
+        if len(identity)!=64 or any(c not in '0123456789abcdef' for c in identity):continue
+        raw=hint.get('suggestedEndTimeRaw')
+        cursor=timestamp_ms(raw) if raw is not None else 0
+        if not math.isfinite(cursor) or cursor<0:continue
+        if cursor and cursor>=payload.get('brokerServerTime',payload['sentAt']):continue
+        if not cursor and hint.get('status')!='COMPLETE':continue
+        target=spool/('backfill-request-'+payload['symbol']+'-'+payload['timeframe']+'.txt')
+        calendar.atomic_write(target,str(int(cursor/1000)).encode())
+
 
 def run():
     os.umask(0o077)
@@ -109,20 +125,25 @@ def run():
             for series in observation.get('series',[]):
                 if stop.is_set():break
                 series_key=str(series.get('canonical'))+'|'+str(series.get('timeframe'))
-                with mutex:state.setdefault('historyCoverage',{})[series_key]={'observedBars':max(0,series.get('copyCount',0)),'requestedBars':200,'collectorError':series.get('error'),'fullRequestCount':series.get('fullRequestCount'),'fullRequestError':series.get('fullRequestError'),'brokerHistoryBoundaryReached':series.get('brokerHistoryBoundaryReached'),'localFirstHistoryServer':series.get('localFirstHistoryServer'),'serverFirstHistoryServer':series.get('serverFirstHistoryServer'),'status':'unavailable' if series.get('copyCount',0)<=0 or series.get('error')!=0 else 'partial' if series['copyCount']<200 else 'complete','at':calendar.now_iso()}
+                with mutex:state.setdefault('historyCoverage',{})[series_key]={'observedBars':max(0,series.get('copyCount',0)),'requestedBars':series.get('requestedHistoryBars',200),'collectorError':series.get('error'),'fullRequestCount':series.get('fullRequestCount'),'fullRequestError':series.get('fullRequestError'),'brokerHistoryBoundaryReached':series.get('brokerHistoryBoundaryReached'),'localFirstHistoryServer':series.get('localFirstHistoryServer'),'serverFirstHistoryServer':series.get('serverFirstHistoryServer'),'status':'unavailable' if series.get('copyCount',0)<=0 or series.get('error')!=0 else 'partial' if series['copyCount']<200 else 'seed_ready','at':calendar.now_iso()}
                 try:payload=full_history_payload(series,observation,now)
                 except ContractError as exc:
                     with mutex:state['historyCoverage'][series_key]['validationError']=str(exc)
                     continue
                 with mutex:mark=history_marks.get(series_key)
                 # Reseed after process restart and every five minutes, retaining original observation time.
-                full=needs_full_history(mark,len(payload['bars']),payload.get('brokerLimited'),time.monotonic())
+                backfill=payload.get('historyPage',{}).get('kind')=='backfill'
+                if backfill:
+                    request=SPOOL/('backfill-request-'+payload['symbol']+'-'+payload['timeframe']+'.txt')
+                    if int(calendar.read_regular(request).strip())*1000!=payload['historyPage']['requestedEndRawMs']:continue
+                full=backfill or needs_full_history(mark,len(payload['bars']),payload.get('brokerLimited'),time.monotonic())
                 if not full:continue
                 status,result=deliver(opener(),token,CANDLE_ROUTE,payload)
                 accepted=status==200 and result.get('ok') is True and result.get('acceptedBars')==len(payload['bars']) and result.get('rejectedBars')==0
                 with mutex:
                     state['historySeries'][series_key]={'http':status,'accepted':accepted,'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'sentBars':len(payload['bars']),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'at':calendar.now_iso()}
                     if accepted:
+                        persist_backfill_request(SPOOL,payload,result)
                         history_marks[series_key]=(payload['bars'][-1]['openTime'],time.monotonic(),len(payload['bars']),payload.get('brokerLimited') is True)
                         if full:calendar.atomic_write(evidence/(payload['symbol']+'-'+payload['timeframe']+'.json'),json.dumps({'acceptedAt':calendar.now_iso(),'http':status,'result':result,'payload':payload}).encode())
                 logger.info('history symbol=%s timeframe=%s http=%s accepted=%s bars=%s',payload['symbol'],payload['timeframe'],status,accepted,result.get('acceptedBars'))
@@ -203,7 +224,7 @@ def run():
                     else:
                         with mutex:state.update(lastQuoteAccepted=False,lastQuoteRejected=rejected)
                     last_quote=identity
-                with mutex:paths=ordered_history_paths(list(SPOOL.glob('history-extra-*.json')),history_marks,attempts)
+                with mutex:paths=ordered_history_paths(list(SPOOL.glob('history-extra-*.json'))+list(SPOOL.glob('backfill-extra-*.json')),history_marks,attempts)
                 for path in paths:
                     with mutex:
                         stamp=path.stat().st_mtime_ns

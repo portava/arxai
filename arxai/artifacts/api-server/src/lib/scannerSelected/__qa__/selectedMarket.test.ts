@@ -134,7 +134,7 @@ test("empty feed yields an honest WAITING envelope and never the simulator", asy
   );
   assert.equal(env.ok, true);
   if (!env.ok) return;
-  assert.equal(env.dataSource, "LIVE_FEED");
+  assert.equal(env.dataSource, "AWAITING_FEED");
   assert.notEqual(env.dataSource, "SIMULATOR");
   assert.equal(env.dataState, "UNAVAILABLE");
   assert.equal(env.highlights.bias, "WAIT");
