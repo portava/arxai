@@ -1751,9 +1751,11 @@ export function ARXNativeChart({
   const openDrawingTools = () => {
     setAdvancedToolsMounted(true);
     setAdvancedToolsOpen(true);
-    window.requestAnimationFrame(() => {
+    const reveal = () => {
       document.getElementById("arx-chart-workbench-tools")?.scrollIntoView?.({ block: "nearest" });
-    });
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
+    else reveal();
   };
   const compactQuickTools = compactDesktopWorkspace ? (
     <div

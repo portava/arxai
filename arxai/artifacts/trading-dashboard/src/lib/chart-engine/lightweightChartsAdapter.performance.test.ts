@@ -16,14 +16,20 @@ import { candleDisplayPrecision } from "./candleReconciliation";
 import { CHART_INTERVALS, chartIntervalSeconds } from "./chartIntervals";
 const bar = (time: number, close = 1.15) => ({time,open:1.1,high:1.2,low:1.0,close});
 let adapter: ArxCanvasAdapter;
+let chartContainer: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("ResizeObserver", class { observe(){} disconnect(){} });
   mocks.scale.getVisibleLogicalRange.mockReturnValue({from:0,to:1});
   adapter = new ArxCanvasAdapter();
-  adapter.init({container:document.createElement("div"),height:400});
+  chartContainer = document.createElement("div");
+  adapter.init({container:chartContainer,height:400});
 });
 afterEach(() => {adapter.destroy();vi.useRealTimers();});
+function panChartToRecordUserNavigation() {
+  chartContainer.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 1, clientY: 1 }));
+  chartContainer.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, buttons: 1, clientX: 8, clientY: 1 }));
+}
 describe("chart refresh and inspection", () => {
   it("avoids all series work for identical polls; tail edits and appends use update", () => {
     adapter.setCandles([bar(100),bar(200),bar(300)]);
@@ -55,11 +61,21 @@ describe("chart refresh and inspection", () => {
     const candles = Array.from({length:100},(_,i)=>bar(100+i*60));
     adapter.setCandles(candles.slice(0,10));
     mocks.scale.getVisibleLogicalRange.mockReturnValue({from:0,to:3});
+    panChartToRecordUserNavigation();
     adapter.setCandles(candles.slice(0,50));
     expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:0,to:3});
     mocks.scale.getVisibleLogicalRange.mockReturnValue({from:40,to:55});
     adapter.setCandles(candles);
     expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:90,to:105});
+  });
+  it("preserves a user-selected viewport through a same-chart source reset", () => {
+    const candles = Array.from({length:100},(_,i)=>bar(100+i*60));
+    adapter.setCandles(candles);
+    mocks.scale.getVisibleLogicalRange.mockReturnValue({from:30,to:70});
+    panChartToRecordUserNavigation();
+    adapter.resetDataContext();
+    adapter.setCandles(candles);
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:30,to:70});
   });
   it("a shortened but revised prefix cannot use tail removal", () => {
     adapter.setCandles([bar(100),bar(200),bar(300)]);

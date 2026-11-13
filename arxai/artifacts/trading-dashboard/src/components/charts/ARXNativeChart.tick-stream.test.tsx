@@ -279,6 +279,11 @@ function renderChart() {
     <ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />,
   );
 }
+function renderCompactChart() {
+  return render(
+    <ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} compactWorkspace />,
+  );
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -298,6 +303,40 @@ afterEach(() => {
 });
 
 describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
+  it("keeps Drawing tools, all 18 layers and an honest timer control visible in compact mode", async () => {
+    currentCandleResponse = makeResponse(liveFeedStatus());
+    renderCompactChart();
+    expect(screen.getByTestId("arx-native-compact-tools")).toBeTruthy();
+    expect(screen.getByTestId("arx-native-drawing-tools")).toBeTruthy();
+    const layers = screen.getByTestId("chart-layers-menu");
+    expect(layers.textContent).toContain("/18");
+    expect(screen.getByTestId("arx-native-candle-timer").textContent).toMatch(/Waiting for live candle/);
+
+    fireEvent.click(layers);
+    expect(await screen.findByText("Show all")).toBeTruthy();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(18);
+
+    fireEvent.click(screen.getByTestId("arx-native-drawing-tools"));
+    const details = screen.getByTestId("arx-native-advanced-details");
+    await waitFor(() => expect(details.hasAttribute("hidden")).toBe(false));
+    expect(screen.getByTestId("arx-chart-workbench-tools")).toBeTruthy();
+  });
+
+  it("shows a server-timed candle countdown only after an accepted forming-bar frame", () => {
+    currentCandleResponse = makeResponse(liveFeedStatus());
+    renderCompactChart();
+    const now = Date.now();
+    const openTimeMs = Math.floor(now / M5_MS) * M5_MS;
+    act(() => openedStreams[0]!.emit(formingBarEvent({
+      openTimeMs,
+      open: 1.1,
+      high: 1.102,
+      low: 1.099,
+      close: 1.101,
+    })));
+    expect(screen.getByTestId("scanner-chart-countdown").textContent).toMatch(/closes in/);
+  });
+
   it("states the chart time zone (the axis is UTC) with the shared label", async () => {
     // "Times: UTC" is only stated when every candle carries original-UTC clock
     // evidence (the Smart Chart's source-clock rule); this feed's bars do.

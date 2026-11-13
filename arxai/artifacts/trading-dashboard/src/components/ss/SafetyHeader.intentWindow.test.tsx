@@ -57,6 +57,15 @@ describe("readIntentQueueCount", () => {
 });
 
 describe("SafetyHeader intent pill", () => {
+  it("renders as a compact accessible header region without repeating the selected symbol", () => {
+    stubQueue({ status: 200, body: nonAdmin });
+    render(<SafetyHeader compact />);
+    const region = screen.getByRole("region", { name: "Trading safety status" });
+    expect(region.className).toContain("arx-safety-header-compact");
+    expect(region.querySelector(".sr-only")?.textContent).toMatch(/Education & demo testing only/);
+    expect(screen.queryByText(/EURUSD/)).toBeNull();
+  });
+
   it("350 stored, newest 100 counted → '100+ Intents', not '100 Intents'", async () => {
     stubQueue({ status: 200, body: admin(100, true) });
     render(<SafetyHeader />);

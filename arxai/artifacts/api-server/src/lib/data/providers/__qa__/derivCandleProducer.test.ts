@@ -11,6 +11,7 @@ mock.module("../derivFeedClient.js", { namedExports: {
   getDerivFeedClient: () => {
     const mode = selectedMode;
     return { getMode: () => mode, configured: () => configured, ensureConnection: () => {},
+      subscribeTicks: async () => null,
       getCandles: async () => { capturedMode = mode; return new Promise(resolve => { resolveRead = resolve; }); } };
   },
 } });

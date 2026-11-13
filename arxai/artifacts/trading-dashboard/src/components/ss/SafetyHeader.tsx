@@ -15,7 +15,7 @@ type Defer = { deferred: boolean; systemState: string; bannerText: string; broke
 // T003: reads the unified mode envelope via useTradingMode() so every page
 // agrees with this badge. The previous direct /api/me/trading/mode read
 // was ambiguous (DEMO and LIVE both lit "Live Execution Armed").
-export function SafetyHeader() {
+export function SafetyHeader({ compact = false }: { compact?: boolean }) {
   const unlocks = useAllUnlocks();
   const mode = useTradingMode();
   const [defer, setDefer] = useState<Defer | null>(null);
@@ -56,18 +56,18 @@ export function SafetyHeader() {
 
   return (
     <div
-      className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      className={compact ? "arx-safety-header-compact" : "sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"}
       role="region"
       aria-label="Trading safety status"
     >
-      <div className="mx-auto max-w-[1600px] px-3 md:px-6 py-1.5 text-[11px] md:text-xs">
+      <div className={compact ? "arx-safety-header-inner" : "mx-auto max-w-[1600px] px-3 md:px-6 py-1.5 text-[11px] md:text-xs"}>
         {/* Mobile: horizontal scroll strip. Desktop: wraps freely.
             Backend execution permission is enforced server-side regardless
             of any label shown here. */}
-        <div className="flex md:flex-wrap items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-500/15 text-slate-600 border border-slate-500/30 px-2 py-0.5 font-mono" title="Selected chart symbol">
+        <div className={compact ? "arx-safety-header-items" : "flex md:flex-wrap items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1"}>
+          {!compact && <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-500/15 text-slate-600 border border-slate-500/30 px-2 py-0.5 font-mono" title="Selected chart symbol">
             <Target className="h-3 w-3" /> {chartSymbol}
-          </span>
+          </span>}
           {/* T025 — the live/demo/off mode pill was removed here to avoid a
               second live indicator. The single source of truth for account
               mode is now the compact LiveModeBadge chip in the header row. */}
@@ -115,7 +115,8 @@ export function SafetyHeader() {
             </span>
           )}
         </div>
-        {unlocks.mt5 && (
+        {compact && <span className="sr-only">{testerBanner}</span>}
+        {unlocks.mt5 && !compact && (
           <div className="hidden md:block mt-1 text-muted-foreground truncate">{testerBanner}</div>
         )}
       </div>

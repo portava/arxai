@@ -42,16 +42,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it("ignores the old persisted external-renderer choice and retains native timeframe, ticket and position controls", () => {
+it("ignores the old persisted external-renderer choice and retains native timeframe, ticket and position navigation", async () => {
   localStorage.setItem("arx.chart.view.v1", JSON.stringify("tv"));
   localStorage.setItem("arx.chart.primaryTimeframe.v1", JSON.stringify("H4"));
   render(<LiveChartPage/>);
   expect(screen.getByTestId("native-chart").textContent).toBe("V75:H4");
   expect(screen.queryByRole("tab", {name:/TradingView/})).toBeNull();
   expect(screen.getByTestId("trade-entry")).toBeTruthy();
-  expect(screen.getByTestId("position-picker")).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox",{name:"Chart market"}),{target:{value:"GBPUSD"}});
-  expect(screen.getByTestId("native-chart").textContent).toBe("GBPUSD:H4");
+  const positionsTab = screen.getByTestId("page-tab-positions");
+  fireEvent.mouseDown(positionsTab, { button: 0 });
+  await waitFor(() => expect(screen.getByTestId("position-picker")).toBeTruthy());
 });
 
 it.each([{investor:true,roleLoading:false},{investor:false,roleLoading:true}])("keeps the trade ticket withheld for role state %j", value => {

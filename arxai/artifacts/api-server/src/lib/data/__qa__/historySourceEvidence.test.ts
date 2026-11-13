@@ -32,6 +32,8 @@ mock.module("../marketDataRouter.js", { namedExports: {
 } });
 mock.module("../providers/derivFeedClient.js", { namedExports: { derivMarketDataSource: () => sourceMode } });
 mock.module("../providers/derivProvider.js", { namedExports: {
+  isDerivSyntheticSymbol: (symbol: string) => symbol === "V75",
+  resolveDerivFeedSymbol: (symbol: string) => symbol === "V75" ? { symbol: "V75", derivId: "R_75" } : null,
   getDerivCandles: async () => {
     assert.equal(permitProviderFetch, true, "Unexpected provider request in cached fixture");
     sourceMode = "deriv";

@@ -151,7 +151,7 @@ export default function LiveChartPage() {
       : null;
   return (
     <div
-      className="mx-auto w-full max-w-[1600px] space-y-3 p-2 sm:p-3 md:p-4 pb-24 md:pb-4"
+      className="mx-auto w-full max-w-[1600px] space-y-2 p-1 sm:p-2 pb-24 md:pb-2"
       data-testid="smart-chart-primary-workspace"
     >
       <h1 className="sr-only">Smart Chart</h1>

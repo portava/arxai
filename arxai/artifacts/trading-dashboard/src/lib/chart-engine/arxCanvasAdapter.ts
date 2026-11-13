@@ -79,6 +79,35 @@ export function defaultVisibleBarsForWidth(plotWidth: number, mobile = false): n
   return Math.max(min, Math.min(max, Math.floor(width / targetBarWidth)));
 }
 
+export function shouldRefitSparseInitialWindow(args: {
+  userInteracted: boolean;
+  linked: boolean;
+  fitted: boolean;
+  previousBars: number;
+  nextBars: number;
+}): boolean {
+  return !args.userInteracted && !args.linked && args.fitted
+    && args.previousBars > 0 && args.previousBars <= 32
+    && args.nextBars >= Math.max(24, args.previousBars * 4);
+}
+
+export function rebaseUserVisibleRange(
+  range: { from: number; to: number },
+  previousLength: number,
+  nextLength: number,
+): { from: number; to: number } | null {
+  const span = range.to - range.from;
+  if (![range.from, range.to, previousLength, nextLength, span].every(Number.isFinite)
+    || previousLength < 1 || nextLength < 8 || span < 8
+    || nextLength < Math.min(32, Math.ceil(span * 0.6))) return null;
+  const previousLast = previousLength - 1;
+  const nextLast = nextLength - 1;
+  return {
+    from: nextLast - (previousLast - range.from),
+    to: nextLast - (previousLast - range.to),
+  };
+}
+
 const CAPABILITIES: ChartEngineCapabilities = {
   id: "arx-canvas",
   label: "ARX Canvas",
@@ -514,14 +543,17 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
   resetDataContext(): void {
     const visibleRange = this.ownsRange ? this.chart?.timeScale().getVisibleLogicalRange() : null;
-    this.pendingUserRange = visibleRange && this.candles.length
-      ? {
+    if (visibleRange && this.candles.length) {
+      this.pendingUserRange = {
           range: { ...visibleRange },
           previousLength: this.candles.length,
           symbol: this.symbol,
           intervalSeconds: this.intervalSeconds,
-        }
-      : null;
+        };
+    } else if (this.pendingUserRange &&
+      (this.pendingUserRange.symbol !== this.symbol || this.pendingUserRange.intervalSeconds !== this.intervalSeconds)) {
+      this.pendingUserRange = null;
+    }
     this.setFeedState({livePriceAffordance:false,source:null});
     this.setDrawingHandler(null);
     this.setDrawingInteraction(null);
@@ -590,7 +622,15 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       if (!this.didFit && sanitized.length > 0) {
         if (!this.restorePendingUserRange(sanitized.length)) this.applyDefaultVisibleRange();
         this.didFit = true;
-      } else if (this.isUntouchedInitialWindowExpansion(previous.length, sanitized.length)) {
+      } else if (this.pendingUserRange && this.restorePendingUserRange(sanitized.length)) {
+        this.didFit = true;
+      } else if (shouldRefitSparseInitialWindow({
+        userInteracted: this.ownsRange,
+        linked: this.linkedRange != null,
+        fitted: this.didFit,
+        previousBars: previous.length,
+        nextBars: sanitized.length,
+      })) {
         // Some feeds start with only a few recent bars and then deliver the
         // requested window on the next poll. Refit that untouched initial
         // viewport instead of shifting the sparse range to the new right edge.
@@ -984,6 +1024,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
   private takeRangeOwnership(): void {
     this.ownsRange = true;
+    this.pendingUserRange = null;
     this.linkedRange = null;
     this.viewLinkStatusHandler?.("");
   }
@@ -1335,6 +1376,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
 
   setSymbol(symbol: string): void {
+    if (this.pendingUserRange && this.pendingUserRange.symbol !== symbol) this.pendingUserRange = null;
     this.symbol = symbol;
     this.applyPricePrecision();
     // The shell resets context-owned data before changing this identifier;
@@ -1342,7 +1384,9 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
 
   setTimeframe(timeframe: string): void {
-    this.intervalSeconds = chartIntervalSeconds(timeframe) ?? 0;
+    const intervalSeconds = chartIntervalSeconds(timeframe) ?? 0;
+    if (this.pendingUserRange && this.pendingUserRange.intervalSeconds !== intervalSeconds) this.pendingUserRange = null;
+    this.intervalSeconds = intervalSeconds;
   }
 
   setReachStartHandler(handler: (() => void) | null, thresholdBars?: number): void {
@@ -1423,7 +1467,10 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       return;
     }
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const plotWidth = chart.timeScale().width();
+    const timeScale = chart.timeScale();
+    const plotWidth = typeof timeScale.width === "function"
+      ? timeScale.width()
+      : this.container?.clientWidth ?? 0;
     const configuredVisible = isMobile ? this.visibleMobile : this.visibleDesktop;
     const defaultVisible = Math.min(configuredVisible, defaultVisibleBarsForWidth(plotWidth, isMobile));
     try {
@@ -1438,28 +1485,17 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     } catch { /* ignore */ }
   }
 
-  private isUntouchedInitialWindowExpansion(previousLength: number, nextLength: number): boolean {
-    return !this.ownsRange && !this.linkedRange && this.didFit
-      && previousLength > 0 && previousLength <= 32
-      && nextLength >= Math.max(24, previousLength * 4);
-  }
-
   private restorePendingUserRange(nextLength: number): boolean {
     const pending = this.pendingUserRange;
-    this.pendingUserRange = null;
     if (!pending || !this.chart || pending.symbol !== this.symbol
-      || pending.intervalSeconds !== this.intervalSeconds || nextLength < 8) return false;
-    const span = pending.range.to - pending.range.from;
-    if (!Number.isFinite(span) || span < 8 || nextLength < Math.min(32, Math.ceil(span * 0.6))) return false;
-    const previousLast = pending.previousLength - 1;
-    const fromOffset = previousLast - pending.range.from;
-    const toOffset = previousLast - pending.range.to;
-    const range = {
-      from: nextLength - 1 - fromOffset,
-      to: nextLength - 1 - toOffset,
-    };
-    if (!Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to - range.from < 8) return false;
+      || pending.intervalSeconds !== this.intervalSeconds) {
+      this.pendingUserRange = null;
+      return false;
+    }
+    const range = rebaseUserVisibleRange(pending.range, pending.previousLength, nextLength);
+    if (!range) return false;
     this.chart.timeScale().setVisibleLogicalRange(range);
+    this.pendingUserRange = null;
     this.ownsRange = true;
     return true;
   }

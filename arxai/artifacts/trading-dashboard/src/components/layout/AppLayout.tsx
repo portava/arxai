@@ -869,6 +869,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   </div>;
 
   const shellHeaderActions = <div className="arx-shell-actions-main">
+    {!isRootWorkspace && <div className="arx-shell-inline-safety" data-testid="shell-inline-safety">
+      <span data-testid="shell-header-live-mode"><LiveModeBadge /></span>
+      <span data-testid="shell-header-notifications"><NotificationCenter /></span>
+      <SafetyHeader compact />
+    </div>}
     {!isRootWorkspace && !isInvestor && <>
       <div className="arx-shell-symbol-picker"><SymbolPicker /></div>
       <ViewModeSwitch />
@@ -899,12 +904,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const eyebrow = isRootWorkspace
     ? <>ARX · MARKET DESK · <time>{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></>
     : `ARX · ${isInvestor ? "INVESTOR" : "TRADING"} WORKSPACE`;
-  const safetyNotice = !isRootWorkspace
-    ? <div className="arx-shell-status-strip">
-        <div className="arx-shell-status-components"><LiveModeBadge /><NotificationCenter /></div>
-        <SafetyHeader />
-      </div>
-    : undefined;
   const workspaceAccess = {
     isInvestor,
     isAdmin: viewMode.effectiveIsAdmin,
@@ -932,6 +931,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   </RouteAccessGuard>;
   const shellContent = <div className={isRootWorkspace
     ? "arx-root-main-content min-w-0 w-full p-2 sm:p-3 md:p-3"
+    : location === "/live-chart"
+      ? "arx-page-content min-w-0 mx-auto w-full max-w-[1600px] p-1 sm:p-2"
     : "arx-page-content min-w-0 mx-auto w-full max-w-[1600px] p-3 sm:p-4 md:p-6"}>
     {guardedRoute}
   </div>;
@@ -949,7 +950,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     allToolsOpen,
     onAllToolsOpenChange: setAllToolsOpen,
     layoutMenuContent,
-    safetyNotice,
     sectionNavigation: workspaceSectionNavigation,
     children: shellContent,
     mobileToolsOpen,
