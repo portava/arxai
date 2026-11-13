@@ -219,12 +219,20 @@ def run():
         while not stop.is_set():
             try:
                 paths=list(SPOOL.glob('history-extra-*.json'))+list(SPOOL.glob('backfill-extra-*.json'))
-                with mutex:paths=ordered_history_paths(paths,history_marks,attempts)
+                now_ms=int(time.time()*1000);stamps={}
+                for path in paths:
+                    try:stamp=path.stat().st_mtime_ns
+                    except FileNotFoundError:continue
+                    if history_file_recent(stamp,now_ms):stamps[path]=stamp
+                with mutex:
+                    state['historyDispatchRecentFiles']=len(stamps)
+                    state['historyDispatchSkippedOldFiles']=len(paths)-len(stamps)
+                    paths=ordered_history_paths(stamps,history_marks,attempts)
                 for path in paths:
                     if stop.is_set():break
                     with mutex:
                         if len(pending)>=HISTORY_PENDING_LIMIT:break
-                    stamp=path.stat().st_mtime_ns;now=time.monotonic()
+                    stamp=stamps[path];now=time.monotonic()
                     with mutex:
                         if not history_dispatch_ready(path,stamp,pending,scheduled,history_retry_after,now):continue
                         pending.add(path);scheduled[path]=stamp;attempts[path]=now

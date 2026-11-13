@@ -2,6 +2,10 @@ import unittest
 from pathlib import Path
 from market_history_schedule import *
 class HistorySchedulingTests(unittest.TestCase):
+ def test_old_spool_file_is_not_admitted_ahead_of_fresh_work(self):
+  self.assertFalse(history_file_recent(100000000000,220001))
+  self.assertTrue(history_file_recent(100000000000,220000))
+  self.assertTrue(history_file_recent(220000000000,220001))
  def test_dispatch_retries_unchanged_snapshot_after_transient_cooldown(self):
   p=Path('backfill-extra-EURUSD-M1.json');retry={p:(9,103.)}
   self.assertFalse(history_dispatch_ready(p,9,set(),{},retry,102.9))

@@ -5,6 +5,14 @@ import math
 
 HISTORY_PENDING_LIMIT=3
 HISTORY_RETRY_SECONDS=3
+HISTORY_FILE_ADMISSION_AGE_MS=120000
+
+def history_file_recent(stamp_ns,now_ms):
+    # Atomic collector writes occur after the native observation. An already
+    # old file cannot become a current observation by waiting in this queue.
+    # This is only an admission filter; workers still verify the original
+    # header clock, identity and read-only guards before every delivery.
+    return stamp_ns/1000000>=now_ms-HISTORY_FILE_ADMISSION_AGE_MS
 
 def history_dispatch_ready(path,stamp,pending,scheduled,retry_after,now):
     if path in pending or len(pending)>=HISTORY_PENDING_LIMIT or scheduled.get(path)==stamp:return False
