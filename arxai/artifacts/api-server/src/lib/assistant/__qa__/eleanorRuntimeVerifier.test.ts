@@ -81,6 +81,21 @@ test("fail closed: if the checker throws, the segment is withheld, never shown u
   assert.equal(gate.failedClosed, true);
 });
 
+test("live timestamp and suggestion formats remain identical through chunked streaming", () => {
+  const tools = [{name:"getRiskUtilization", result:{openTrades:2,maxOpenTrades:5,observedAt:"2026-11-09T14:32:05.000Z",riskReward:2}}];
+  const answer = "Observed at 2026-11-09T14:32:05.000Z. You have 2 open trades out of a 5-trade limit. Reward to risk is 2:1. Type the direct command exactly as: `buy EURUSD 0.1`. Send the action ID, like: `142` or `action 142`. Without confirmed live candle context, any “BTC is bullish/bearish” answer would be guesswork.";
+  for (const size of [1,2,7,31]) {
+    const gate = new ClaimGate(buildEvidenceIndex(tools));
+    let visible = "";
+    for (let i=0; i<answer.length; i+=size) visible += gate.push(answer.slice(i,i+size));
+    visible += gate.end() + gate.footer();
+    assert.equal(visible, answer, `chunk ${size}`);
+  }
+  const wrong = verifyAnswer(answer.replace("14:32:05.000Z", "14:32:06.000Z"), tools);
+  assert.equal(wrong.findings.length, 1);
+  assert.match(wrong.text, /14:32:06\.000Z \[unverified\]/);
+});
+
 test("after verification, nothing ungrounded remains unmarked (invariant over many answers)", () => {
   const answers = [
     "EURUSD is 1.0852 live. Bid 1.0851. Ticket 99999 filled at 1.0853 on 2026-11-10 at 09:15 UTC.",

@@ -110,7 +110,7 @@ const ORDINAL_WORD_RE = /\b(?:option|step|rule|tier|phase|part|section|item|slic
 const DENOMINATOR_RE = /(\d)\s*\/\s*(10|100|5)\b/g;
 const RATIO_LEFT_RE = /\b1\s*:\s*(?=\d)/g;
 // The "1" of "2:1" / "3 : 1" (a reward-to-risk ratio), never a clock minute.
-const RATIO_RIGHT_RE = /(?<=\b\d+(?:\.\d+)?\s*:\s*)1(?![\d.:])/g;
+const RATIO_RIGHT_RE = /(?<=\b\d+(?:\.\d+)?\s*:\s*)1(?!\d|:|\.\d)/g;
 // A list size the model offers ("rescan for the top 5 setups"), not a fact.
 const TOP_N_RE = /\b(?:top|best)\s+\d+\b/gi;
 // The size of a proposed answer is not a count of existing market setups.
@@ -119,9 +119,10 @@ const OFFERED_OPTIONS_RE = /\bI\s+(?:can|could)(?:\s+also)?\s+(?:give|show|offer
 // #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
 // Segment-local so the streaming verifier and speech gate judge it the same.
 const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send|try|type|reply with|ask(?: me)?)`;
-const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)`, "gi");
+const EXAMPLE_QUOTE = String.raw`(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)(?:\*\*)?`;
+const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*${EXAMPLE_QUOTE}(?:\s+or\s+${EXAMPLE_QUOTE})*`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
-const EXAMPLE_COMMAND_RE = /\b(?:type|send|try)\s+the\s+(?:direct\s+)?command\s+(?:exactly\s+)?as:\s*\*\*[^*\n]{1,200}\*\*/gi;
+const EXAMPLE_COMMAND_RE = new RegExp(String.raw`\b(?:type|send|try)\s+the\s+(?:direct\s+)?command\s+(?:exactly\s+)?as:\s*(?:\*\*[^*\n]{1,200}\*\*|${EXAMPLE_QUOTE})`, "gi");
 // A bullet whose whole content is one quotation is a suggested phrasing.
 const QUOTED_BULLET_RE = /^\s*(?:[-*•]|\d{1,2}[.)])\s+(?:\*\*)?[“"][^”"\n]{1,200}[”"](?:\*\*)?[.,;]?\s*$/;
 
@@ -140,6 +141,7 @@ function mask(s: string, re: RegExp, keep?: (m: RegExpExecArray) => boolean): st
 const TICKET_RE = /#\s?(\d{3,})\b|\b(?:ticket|order|position|deal|action|command)\s*(?:id|no\.?|number|#)?\s*(?:is|was|=)?\s*:?\s*#?(\d{3,})\b/gi;
 const TIME_RE = /\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?(?:\s?(UTC|GMT|Z)\b)?/g;
 const ISO_DATE_RE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+const ISO_TIMESTAMP_RE = /\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?(?![\w:])/g;
 const DAY_MONTH_RE = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS})\\b|\\b(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "gi");
 const NUMBER_RE = /(?<![\w.])([-−+]?)\s?([$€£])?\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s?(k|K|bn)(?![A-Za-z]))?(\s?%)?/g;
 const UNIT_AFTER_RE = /^\s*(ms|milliseconds?|s\b|secs?|seconds?|mins?|minutes?|h\b|hrs?|hours?|days?|d\b|pips?|points?|pts)\b/i;
@@ -180,7 +182,7 @@ function labelTokensBefore(segText: string, localStart: number): { tokens: Set<s
   const cut = Math.max(pre.lastIndexOf(","), pre.lastIndexOf(";"), pre.lastIndexOf(":"), pre.lastIndexOf("("), pre.lastIndexOf("\n"), pre.lastIndexOf(" and "), pre.lastIndexOf(" with "), pre.lastIndexOf(" vs "));
   if (cut >= 0) pre = pre.slice(cut + 1);
   // "2 of 5" / "2 out of 5": the second number is a capacity, not the first's field.
-  if (/\d\s+(?:out\s+)?of\s*$/i.test(pre)) return { tokens: new Set(), derived: true, denominator: true };
+  if (/\d\s+(?:out\s+)?of\s*$/i.test(pre) || /\bout\s+of\s+(?:an?\s+)?$/i.test(pre)) return { tokens: new Set(), derived: true, denominator: true };
   // Stop at a previous number: its label is not ours.
   const lastNum = pre.search(/\d[^\d]*$/);
   if (lastNum >= 0) pre = pre.slice(lastNum + 1);
@@ -308,7 +310,6 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     work = mask(work, re);
   }
   work = mask(work, INSTRUMENT_RE);
-  work = mask(work, MIXED_TOKEN_RE, (m) => UNIT_SUFFIX_OK.test(m[0]));
   work = work.replace(LIST_MARKER_RE, (m, sp: string, d: string, p: string) => sp + " ".repeat(d.length) + p);
   work = work.replace(BULLET_RE, (m, sp: string) => sp + " ");
   work = mask(work, ORDINAL_WORD_RE);
@@ -327,6 +328,23 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     claims.push(claim);
     return claim;
   };
+
+  // Check a timestamp as one exact instant before mixed-token masking can
+  // split its T/Z components into unrelated numeric fragments. A zone is a
+  // clock-basis assertion too; source-clock strings cannot prove UTC.
+  for (const m of work.matchAll(ISO_TIMESTAMP_RE)) {
+    const literal = m[0].replace(" ", "T");
+    const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/.test(literal);
+    const wall = literal.replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+    const wallDate = new Date(wall + "Z");
+    const valid = Number.isFinite(wallDate.getTime()) && wallDate.toISOString().startsWith(wall);
+    const instant = Date.parse(literal + (zoned ? "" : "Z"));
+    const proof = valid ? idx.times.filter(t => (!zoned || t.utc) && Date.parse(t.iso) === instant) : [];
+    const claim = pushClaim({kind:"time", text:m[0], grounded:proof.length > 0, groundedBy:proof.map(t => t.tool), localStart:m.index!, localEnd:m.index! + m[0].length});
+    if (!claim.grounded) findings.push({kind:"FABRICATION", claim, detail:"Timestamp or its clock basis is not supported by this turn's evidence"});
+  }
+  work = mask(work, ISO_TIMESTAMP_RE);
+  work = mask(work, MIXED_TOKEN_RE, (m) => UNIT_SUFFIX_OK.test(m[0]));
 
   // Tickets.
   for (const m of work.matchAll(TICKET_RE)) {
@@ -397,7 +415,7 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
       ?? [...clause.after.matchAll(ticketPattern)][0]?.[1];
     const entityMatches = (e: EvidenceNumber) => (!symbol || !!e.entities?.includes(symbol)) && (!ticket || !!e.entities?.includes(ticket));
     const requestedRiskCheck = /\bI\s+(?:can|could)\b/i.test(raw)
-      && /\b(?:run|do)\s+(?:a\s+)?risk check\s+for\s*$/i.test(clause.before)
+      && /\b(?:run|do)\s+(?:a\s+)?risk (?:check|preview)\s+for\s*$/i.test(clause.before)
       && (!symbol || namedSymbols(idx.userText, idx).includes(symbol));
     const conditionalUserId = Number.isInteger(value) && value >= 100
       && /\bif\s*$/i.test(clause.before)
@@ -447,6 +465,13 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
 
     // Labelled figure that disagrees with the field of that name.
     const before = labelTokensBefore(raw, localStart);
+    // A capacity must match a capacity field, even when the count happens to
+    // have the same value. Keep invented denominators as fabrication findings.
+    const capacities = before.denominator ? candidates.filter(e => e.source === "tool" && e.keyTokens.some(t => /^(max|maximum|limit|capacity)$/.test(t))) : [];
+    if (matches.length && capacities.length && !capacities.some(e => matchesValue(nc, e))) {
+      findings.push({kind:"WRONG_NUMBER", claim, detail:"Capacity differs from the tool's maximum/limit", expected:capacities.map(e => e.value)});
+      continue;
+    }
     // What follows labels it too ("3 open positions", "0.1 lots").
     // A decimal takes only the word right after it as a label (its unit),
     // unless the sentence names it: "3.65 is the profit target".

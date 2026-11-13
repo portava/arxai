@@ -48,6 +48,20 @@ test("times and dates must be in the evidence (UTC)", () => {
   assert.deepEqual(kinds("Observed on 2026-11-08.", [snap()]), ["FABRICATION"]);
 });
 
+test("full ISO timestamps are exact clock claims, not fragments of numbers", () => {
+  for (const timestamp of ["2026-11-09T14:32:05.000Z", "2026-11-09T15:32:05+01:00", "2026-11-09 14:32:05Z"]) {
+    const checked = checkClaims(`Observed at ${timestamp}.`, [snap()]);
+    assert.deepEqual(checked.findings, [], timestamp);
+    assert.equal(checked.claims.length, 1);
+  }
+  for (const timestamp of ["2026-11-08T14:32:05.000Z", "2026-11-09T14:32:06.000Z", "2026-11-09T14:32:05.001Z", "2026-11-09T15:32:05Z", "2026-11-09T14:32:05+01:00", "2026-02-30T14:32:05Z"]) {
+    assert.deepEqual(kinds(`Observed at ${timestamp}.`, [snap()]), ["FABRICATION"], timestamp);
+  }
+  const source = [{ name:"readChartStructure", result:{observedTimeBasis:"source_clock", observedAt:"2026-11-09T14:32:05.000Z"} }];
+  assert.deepEqual(kinds("Observed at 2026-11-09T14:32:05.000Z.", source), ["FABRICATION"]);
+  assert.deepEqual(kinds("Observed at 2026-11-09T14:32:05 source clock.", source), []);
+});
+
 test("a source-clock chart read cannot be relabelled UTC by Eleanor", () => {
   for (const clock of [{ observedTimeBasis: "source_clock" }, { clockBasis: "broker_server" }, { timeBasisEvidence: { kind: "unavailable", basis: "BROKER_SERVER" } }]) {
     const output=[{name:"readChartStructure",result:{chartRead:{symbol:"EURUSD",observedAt:"2026-11-09T14:32:00.000Z",...clock}}}];
@@ -183,6 +197,34 @@ test("live run: 'N out of M' reads M as the capacity, not the count", () => {
   assert.deepEqual(kinds("You're using 40% of your open-trade capacity right now: 2 open trades out of 5.", liveRisk), []);
   assert.deepEqual(kinds("2 open trades out of 7.", liveRisk), ["FABRICATION"], "an invented capacity is still caught");
   assert.deepEqual(kinds("You have 5 open trades.", liveRisk), ["WRONG_NUMBER"], "the capacity quoted as the count is still wrong");
+});
+
+test("live evaluation: capacity articles and hyphenated trade units preserve field identity", () => {
+  assert.deepEqual(kinds("You have 2 open trades out of a 5-trade limit.", liveRisk), []);
+  assert.deepEqual(kinds("You have 2 open trades out of a 2-trade limit.", liveRisk), ["WRONG_NUMBER"]);
+  assert.deepEqual(kinds("You have 2 open trades out of a 9-trade limit.", liveRisk), ["FABRICATION"]);
+});
+
+test("live evaluation: terminal ratio punctuation does not invent a unit denominator", () => {
+  const chart = [{name:"readChartStructure", result:{riskReward:2}}];
+  assert.deepEqual(kinds("Reward to risk is 2:1.", chart), []);
+  assert.ok(kinds("Reward to risk is 3:1.", chart).length);
+  assert.ok(kinds("Observed at 12:01.", chart).length);
+});
+
+test("live evaluation: formatted command alternatives and offered risk preview are suggestions", () => {
+  assert.deepEqual(kinds("Type the direct command exactly as: `buy EURUSD 0.1`.", []), []);
+  assert.deepEqual(kinds("I can either analyze EURUSD first, run a risk preview for 0.1 lots, or walk you through confirmation.", [], "Buy 0.1 EURUSD"), []);
+  assert.ok(kinds("I can run a risk preview for 0.2 lots.", [], "Buy 0.1 EURUSD").length);
+  assert.ok(kinds("I can run a risk preview for 0.1 GBPUSD.", [], "Buy 0.1 EURUSD").length);
+  assert.deepEqual(kinds("Send just the action ID, like: `142` or `action 142`.", []), []);
+  assert.ok(kinds("Send just the action ID, like: `142`, but your order is `action 142`.", []).length);
+});
+
+test("live evaluation: a quoted direction explicitly called guesswork is not asserted", () => {
+  assert.deepEqual(kinds("Without confirmed live candle context, any “BTC is bullish/bearish” answer would be guesswork.", []), []);
+  assert.ok(kinds("The read says “BTC is bullish”.", []).includes("UNSUPPORTED_MARKET_STATE"));
+  assert.ok(kinds("Any “BTC is bullish” answer would be guesswork, but BTC is bullish.", []).includes("UNSUPPORTED_MARKET_STATE"));
 });
 
 test("live run: the 1 of a 2:1 ratio and an offered 'top 5' are not claims", () => {

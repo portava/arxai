@@ -68,7 +68,8 @@ const patterns: Array<{kind: MarketStateKind; regex: RegExp}> = [
 /** Ignore reported/illustrative quotations, but do not let quotation marks
  * around a claimed present fact evade checking. Keep offsets unchanged. */
 function discussionText(text: string): string {
-  return text.replace(/\b(?:you said|you wrote|the user said|the phrase|the example|for example|say|suppose|imagine)\s*:?\s*["“`][^"”`]*["”`]/gi, value => " ".repeat(value.length));
+  return text.replace(/\b(?:you said|you wrote|the user said|the phrase|the example|for example|say|suppose|imagine)\s*:?\s*["“`][^"”`]*["”`]/gi, value => " ".repeat(value.length))
+    .replace(/\bany\s+["“`][^"”`\n]{1,200}["”`]\s+(?:answer|claim|statement)\s+would\s+be\s+(?:guesswork|unverified|unsupported)\b/gi, value => " ".repeat(value.length));
 }
 function isScenario(text: string, start: number, end: number): boolean {
   // A new "but"/semicolon starts a separate assertion; unrelated negation or
