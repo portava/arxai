@@ -1,0 +1,3912 @@
+[
+  {
+    "symbol": "V75",
+    "bars": 7999,
+    "first": 1794033360000,
+    "last": 1794513300000,
+    "sha256": "33024564a05ef22e8fd9b58574e3d6a93ae93d76a0ac58cb05aae6d6c0e9723c",
+    "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa",
+    "fitMs": 1480.102958,
+    "gates": {
+      "geometry": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": 0.00013395297292767796,
+        "lowerGain": -0.015205363222647978,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "confirmation": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": -0.10930773628789178,
+        "lowerGain": -0.18935851802985518,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "prebreak": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 0.75,
+        "n": 61,
+        "gain": 0.009845287327199656,
+        "lowerGain": -0.01867021358587945,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 269,
+        "first": 1794040560000,
+        "last": 1794281760000
+      },
+      "selection": {
+        "n": 71,
+        "first": 1794286260000,
+        "last": 1794349260000
+      },
+      "gate": {
+        "n": 71,
+        "first": 1794353760000,
+        "last": 1794416760000
+      },
+      "holdout": {
+        "n": 75,
+        "first": 1794421260000,
+        "last": 1794509460000
+      }
+    },
+    "dataQuality": {
+      "inputBars": 7999,
+      "acceptedEpisodes": 498,
+      "rejectedWindows": 24
+    },
+    "eligibleHoldout": 70,
+    "pathAvailability": {
+      "UP_FIRST": 75,
+      "DOWN_FIRST": 75,
+      "NEITHER": 33
+    },
+    "byHorizon": [
+      {
+        "horizon": 1,
+        "n": 75,
+        "brier": 0.09586158790883921,
+        "baselineBrier": 0.09586158790883921,
+        "logLoss": 0.17844559455781572,
+        "counts": [
+          3,
+          1,
+          71
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 75,
+            "confidence": 0.9953345610804174,
+            "accuracy": 0.9466666666666667
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": null,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 3,
+        "n": 75,
+        "brier": 0.3183231108767116,
+        "baselineBrier": 0.3183231108767116,
+        "logLoss": 0.5955379116238497,
+        "counts": [
+          11,
+          3,
+          61
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 75,
+            "confidence": 0.7953633663552981,
+            "accuracy": 0.8133333333333334
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 5,
+        "n": 75,
+        "brier": 0.48370622117523304,
+        "baselineBrier": 0.48370622117523304,
+        "logLoss": 0.8399324690831109,
+        "counts": [
+          15,
+          9,
+          51
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 75,
+            "confidence": 0.6667551545140928,
+            "accuracy": 0.68
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 15,
+        "n": 75,
+        "brier": 0.6319013659992412,
+        "baselineBrier": 0.6319013659992412,
+        "logLoss": 1.0390428053580398,
+        "counts": [
+          30,
+          32,
+          13
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 75,
+            "confidence": 0.4345272040874812,
+            "accuracy": 0.4
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 30,
+          "precision": 0.4,
+          "recall": 0.4838709677419355,
+          "falseDirectionFraction": 0.6,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 26,
+          "precision": 0.37142857142857144,
+          "recall": 0.45614035087719296,
+          "falseDirectionFraction": 0.6285714285714286,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 4,
+          "precision": 0.8,
+          "recall": 0.8,
+          "falseDirectionFraction": 0.2,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 30,
+        "n": 75,
+        "brier": 0.5149533952112222,
+        "baselineBrier": 0.5149533952112222,
+        "logLoss": 0.7591562795099139,
+        "counts": [
+          37,
+          37,
+          1
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5268399728254871,
+            "accuracy": 0.49333333333333335
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 37,
+          "precision": 0.49333333333333335,
+          "recall": 0.5,
+          "falseDirectionFraction": 0.5066666666666667,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 33,
+          "precision": 0.4714285714285714,
+          "recall": 0.4782608695652174,
+          "falseDirectionFraction": 0.5285714285714286,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 4,
+          "precision": 0.8,
+          "recall": 0.8,
+          "falseDirectionFraction": 0.2,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 60,
+        "n": 75,
+        "brier": 0.5009835025633448,
+        "baselineBrier": 0.5009835025633448,
+        "logLoss": 0.6941329095912395,
+        "counts": [
+          38,
+          37,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5298225671254718,
+            "accuracy": 0.5066666666666667
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 38,
+          "precision": 0.5066666666666667,
+          "recall": 0.5066666666666667,
+          "falseDirectionFraction": 0.49333333333333335,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 34,
+          "precision": 0.4857142857142857,
+          "recall": 0.4857142857142857,
+          "falseDirectionFraction": 0.5142857142857142,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 4,
+          "precision": 0.8,
+          "recall": 0.8,
+          "falseDirectionFraction": 0.2,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      }
+    ],
+    "verdict": "EXPLORATORY_REAL_FEED_REPLAY_NOT_MARKET_EDGE_VALIDATION"
+  },
+  {
+    "symbol": "V75_1S",
+    "bars": 7999,
+    "first": 1794033360000,
+    "last": 1794513300000,
+    "sha256": "d3b4b9e118894595f8010af9ff6af1a07cefdf85f0c2dc72567582af4de68057",
+    "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa",
+    "fitMs": 2250.4410829999997,
+    "gates": {
+      "geometry": {
+        "accepted": true,
+        "blend": 1,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": 0.02802492335685015,
+        "lowerGain": 0.006477846719740598,
+        "reason": "INDEPENDENT_GATE_ACCEPTED"
+      },
+      "confirmation": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": -0.0016152844857801399,
+        "lowerGain": -0.014238973857061422,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "prebreak": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 65,
+        "gain": 0.051992630398805695,
+        "lowerGain": -0.03967458164576132,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 269,
+        "first": 1794040560000,
+        "last": 1794281760000
+      },
+      "selection": {
+        "n": 71,
+        "first": 1794286260000,
+        "last": 1794349260000
+      },
+      "gate": {
+        "n": 71,
+        "first": 1794353760000,
+        "last": 1794416760000
+      },
+      "holdout": {
+        "n": 75,
+        "first": 1794421260000,
+        "last": 1794509460000
+      }
+    },
+    "dataQuality": {
+      "inputBars": 7999,
+      "acceptedEpisodes": 498,
+      "rejectedWindows": 24
+    },
+    "eligibleHoldout": 67,
+    "pathAvailability": {
+      "UP_FIRST": 75,
+      "DOWN_FIRST": 75,
+      "NEITHER": 0
+    },
+    "byHorizon": [
+      {
+        "horizon": 1,
+        "n": 75,
+        "brier": 0.16822866393758612,
+        "baselineBrier": 0.16822866393758612,
+        "logLoss": 0.3122004883981093,
+        "counts": [
+          2,
+          5,
+          68
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 75,
+            "confidence": 0.9929281767955803,
+            "accuracy": 0.9066666666666666
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": null,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 3,
+        "n": 75,
+        "brier": 0.4128711110323465,
+        "baselineBrier": 0.3211839620023852,
+        "logLoss": 0.7499871466302066,
+        "counts": [
+          4,
+          10,
+          61
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 35,
+            "confidence": 0.5805826087246709,
+            "accuracy": 0.8857142857142857
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 32,
+            "confidence": 0.6306273567512563,
+            "accuracy": 0.90625
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 8,
+            "confidence": 0.7735049141078881,
+            "accuracy": 0.125
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": -0.11938260904989093,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 5,
+        "n": 75,
+        "brier": 0.5845301549447667,
+        "baselineBrier": 0.4358207427673515,
+        "logLoss": 0.9782996813154489,
+        "counts": [
+          7,
+          13,
+          55
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 14,
+            "confidence": 0.3919429909369873,
+            "accuracy": 0.7142857142857143
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 50,
+            "confidence": 0.43541273830756166,
+            "accuracy": 0.82
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 3,
+            "confidence": 0.5255427586061235,
+            "accuracy": 1
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 8,
+            "confidence": 0.6450008419720091,
+            "accuracy": 0.125
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": -0.19501418033813583,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 15,
+        "n": 75,
+        "brier": 0.7225920205695565,
+        "baselineBrier": 0.6647782430739122,
+        "logLoss": 1.2788388262687127,
+        "counts": [
+          21,
+          32,
+          22
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 61,
+            "confidence": 0.4763071625670482,
+            "accuracy": 0.4426229508196721
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 14,
+            "confidence": 0.5080477935251146,
+            "accuracy": 0.35714285714285715
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": -0.10127667374354,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 32,
+          "precision": 0.4266666666666667,
+          "recall": 0.6037735849056604,
+          "falseDirectionFraction": 0.5733333333333334,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 27,
+          "precision": 0.40298507462686567,
+          "recall": 0.5869565217391305,
+          "falseDirectionFraction": 0.5970149253731343,
+          "medianConfirmationLeadMinutes": 8,
+          "medianFirstBreakLeadMinutes": 7,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 5,
+          "precision": 0.625,
+          "recall": 0.7142857142857143,
+          "falseDirectionFraction": 0.375,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 30,
+        "n": 75,
+        "brier": 0.5150143907628442,
+        "baselineBrier": 0.5075445118030308,
+        "logLoss": 0.8291473090764864,
+        "counts": [
+          29,
+          44,
+          2
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 5,
+            "confidence": 0.498762851807771,
+            "accuracy": 0.6
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 70,
+            "confidence": 0.5285006611544317,
+            "accuracy": 0.5857142857142857
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": -0.040250122225587645,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 44,
+          "precision": 0.5866666666666667,
+          "recall": 0.6027397260273972,
+          "falseDirectionFraction": 0.41333333333333333,
+          "medianConfirmationLeadMinutes": 10,
+          "medianFirstBreakLeadMinutes": 9,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 38,
+          "precision": 0.5671641791044776,
+          "recall": 0.5846153846153846,
+          "falseDirectionFraction": 0.43283582089552236,
+          "medianConfirmationLeadMinutes": 12,
+          "medianFirstBreakLeadMinutes": 11,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 6,
+          "precision": 0.75,
+          "recall": 0.75,
+          "falseDirectionFraction": 0.25,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 60,
+        "n": 75,
+        "brier": 0.4872480748909872,
+        "baselineBrier": 0.47785413915136826,
+        "logLoss": 0.6803624892720563,
+        "counts": [
+          29,
+          46,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5290885307457571,
+            "accuracy": 0.6133333333333333
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": -0.04328722347659452,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 46,
+          "precision": 0.6133333333333333,
+          "recall": 0.6133333333333333,
+          "falseDirectionFraction": 0.38666666666666666,
+          "medianConfirmationLeadMinutes": 12,
+          "medianFirstBreakLeadMinutes": 11,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 40,
+          "precision": 0.5970149253731343,
+          "recall": 0.5970149253731343,
+          "falseDirectionFraction": 0.40298507462686567,
+          "medianConfirmationLeadMinutes": 13,
+          "medianFirstBreakLeadMinutes": 12,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 6,
+          "precision": 0.75,
+          "recall": 0.75,
+          "falseDirectionFraction": 0.25,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      }
+    ],
+    "verdict": "EXPLORATORY_REAL_FEED_REPLAY_NOT_MARKET_EDGE_VALIDATION"
+  },
+  {
+    "symbol": "V50",
+    "bars": 7999,
+    "first": 1794033360000,
+    "last": 1794513300000,
+    "sha256": "bd3b31053ad26bddc902021081afcae7471ffc8c4941d93420f6ef93258b2ec5",
+    "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa",
+    "fitMs": 1312.0219589999997,
+    "gates": {
+      "geometry": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": 0.0344352623562763,
+        "lowerGain": 0.00038817456025324297,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "confirmation": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": -0.13825554445527102,
+        "lowerGain": -0.21799417417960318,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "prebreak": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 64,
+        "gain": -0.024305694176647484,
+        "lowerGain": -0.06396901322031166,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 269,
+        "first": 1794040560000,
+        "last": 1794281760000
+      },
+      "selection": {
+        "n": 71,
+        "first": 1794286260000,
+        "last": 1794349260000
+      },
+      "gate": {
+        "n": 71,
+        "first": 1794353760000,
+        "last": 1794416760000
+      },
+      "holdout": {
+        "n": 75,
+        "first": 1794421260000,
+        "last": 1794509460000
+      }
+    },
+    "dataQuality": {
+      "inputBars": 7999,
+      "acceptedEpisodes": 498,
+      "rejectedWindows": 24
+    },
+    "eligibleHoldout": 70,
+    "pathAvailability": {
+      "UP_FIRST": 75,
+      "DOWN_FIRST": 75,
+      "NEITHER": 0
+    },
+    "byHorizon": [
+      {
+        "horizon": 1,
+        "n": 75,
+        "brier": 0.12179784680746188,
+        "baselineBrier": 0.12179784680746188,
+        "logLoss": 0.23381755555667552,
+        "counts": [
+          2,
+          3,
+          70
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 75,
+            "confidence": 0.9960712093308778,
+            "accuracy": 0.9333333333333333
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": null,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 3,
+        "n": 75,
+        "brier": 0.26783151422814466,
+        "baselineBrier": 0.26783151422814466,
+        "logLoss": 0.5328596576667063,
+        "counts": [
+          5,
+          6,
+          64
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 75,
+            "confidence": 0.7880743798643762,
+            "accuracy": 0.8533333333333334
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 5,
+        "n": 75,
+        "brier": 0.521256855166727,
+        "baselineBrier": 0.521256855166727,
+        "logLoss": 0.8907503649361881,
+        "counts": [
+          10,
+          17,
+          48
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 75,
+            "confidence": 0.6415225609755313,
+            "accuracy": 0.64
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 15,
+        "n": 75,
+        "brier": 0.6321018011247247,
+        "baselineBrier": 0.6321018011247247,
+        "logLoss": 1.054342933287578,
+        "counts": [
+          20,
+          38,
+          17
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 75,
+            "confidence": 0.4798681295309428,
+            "accuracy": 0.5066666666666667
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 38,
+          "precision": 0.5066666666666667,
+          "recall": 0.6551724137931034,
+          "falseDirectionFraction": 0.49333333333333335,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 35,
+          "precision": 0.5,
+          "recall": 0.660377358490566,
+          "falseDirectionFraction": 0.5,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 3,
+          "precision": 0.6,
+          "recall": 0.6,
+          "falseDirectionFraction": 0.4,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 30,
+        "n": 75,
+        "brier": 0.534098068496767,
+        "baselineBrier": 0.534098068496767,
+        "logLoss": 0.9727951084186361,
+        "counts": [
+          24,
+          46,
+          5
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5686642009091427,
+            "accuracy": 0.6133333333333333
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 46,
+          "precision": 0.6133333333333333,
+          "recall": 0.6571428571428571,
+          "falseDirectionFraction": 0.38666666666666666,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 43,
+          "precision": 0.6142857142857143,
+          "recall": 0.6615384615384615,
+          "falseDirectionFraction": 0.38571428571428573,
+          "medianConfirmationLeadMinutes": 10,
+          "medianFirstBreakLeadMinutes": 9,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 3,
+          "precision": 0.6,
+          "recall": 0.6,
+          "falseDirectionFraction": 0.4,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 60,
+        "n": 75,
+        "brier": 0.46637419841787436,
+        "baselineBrier": 0.46637419841787436,
+        "logLoss": 0.6593247900434176,
+        "counts": [
+          26,
+          49,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5714907380797429,
+            "accuracy": 0.6533333333333333
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 49,
+          "precision": 0.6533333333333333,
+          "recall": 0.6533333333333333,
+          "falseDirectionFraction": 0.3466666666666667,
+          "medianConfirmationLeadMinutes": 10,
+          "medianFirstBreakLeadMinutes": 9,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 70,
+          "directionalCalls": 70,
+          "correct": 46,
+          "precision": 0.6571428571428571,
+          "recall": 0.6571428571428571,
+          "falseDirectionFraction": 0.34285714285714286,
+          "medianConfirmationLeadMinutes": 10,
+          "medianFirstBreakLeadMinutes": 9,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 5,
+          "directionalCalls": 5,
+          "correct": 3,
+          "precision": 0.6,
+          "recall": 0.6,
+          "falseDirectionFraction": 0.4,
+          "medianConfirmationLeadMinutes": 1,
+          "medianFirstBreakLeadMinutes": 0,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      }
+    ],
+    "verdict": "EXPLORATORY_REAL_FEED_REPLAY_NOT_MARKET_EDGE_VALIDATION"
+  },
+  {
+    "symbol": "V50_1S",
+    "bars": 8000,
+    "first": 1794033360000,
+    "last": 1794513360000,
+    "sha256": "5b90ba4b782b1f2e000790618ccc062f9ac8465f0e9c79ae1cf8eef03b46193f",
+    "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa",
+    "fitMs": 1461.5600410000006,
+    "gates": {
+      "geometry": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 0,
+        "n": 71,
+        "gain": null,
+        "lowerGain": null,
+        "reason": "SELECTION_RETAINED_BASELINE"
+      },
+      "confirmation": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 0,
+        "n": 71,
+        "gain": null,
+        "lowerGain": null,
+        "reason": "SELECTION_RETAINED_BASELINE"
+      },
+      "prebreak": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 67,
+        "gain": -0.007720973691100526,
+        "lowerGain": -0.05999327097789682,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 269,
+        "first": 1794040560000,
+        "last": 1794281760000
+      },
+      "selection": {
+        "n": 71,
+        "first": 1794286260000,
+        "last": 1794349260000
+      },
+      "gate": {
+        "n": 71,
+        "first": 1794353760000,
+        "last": 1794416760000
+      },
+      "holdout": {
+        "n": 75,
+        "first": 1794421260000,
+        "last": 1794509460000
+      }
+    },
+    "dataQuality": {
+      "inputBars": 8000,
+      "acceptedEpisodes": 498,
+      "rejectedWindows": 24
+    },
+    "eligibleHoldout": 71,
+    "pathAvailability": {
+      "UP_FIRST": 75,
+      "DOWN_FIRST": 75,
+      "NEITHER": 0
+    },
+    "byHorizon": [
+      {
+        "horizon": 1,
+        "n": 75,
+        "brier": 0.04633241647984788,
+        "baselineBrier": 0.04633241647984788,
+        "logLoss": 0.08607735163832894,
+        "counts": [
+          0,
+          2,
+          73
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 4,
+            "confidence": 0.8968692449355433,
+            "accuracy": 0.5
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 71,
+            "confidence": 1,
+            "accuracy": 1
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": null,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 3,
+        "n": 75,
+        "brier": 0.35890180811590794,
+        "baselineBrier": 0.35890180811590794,
+        "logLoss": 0.667299176967271,
+        "counts": [
+          8,
+          8,
+          59
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 75,
+            "confidence": 0.7695176252689113,
+            "accuracy": 0.7866666666666666
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 5,
+        "n": 75,
+        "brier": 0.5385154239673188,
+        "baselineBrier": 0.5385154239673188,
+        "logLoss": 0.9198946499463896,
+        "counts": [
+          12,
+          16,
+          47
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 75,
+            "confidence": 0.6589399306245074,
+            "accuracy": 0.6266666666666667
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 15,
+        "n": 75,
+        "brier": 0.6250485003585172,
+        "baselineBrier": 0.6250485003585172,
+        "logLoss": 1.0308135956944078,
+        "counts": [
+          27,
+          35,
+          13
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 75,
+            "confidence": 0.4260980877430612,
+            "accuracy": 0.4666666666666667
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 35,
+          "precision": 0.4666666666666667,
+          "recall": 0.5645161290322581,
+          "falseDirectionFraction": 0.5333333333333333,
+          "medianConfirmationLeadMinutes": 6,
+          "medianFirstBreakLeadMinutes": 5,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 71,
+          "correct": 31,
+          "precision": 0.43661971830985913,
+          "recall": 0.5344827586206896,
+          "falseDirectionFraction": 0.5633802816901409,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 4,
+          "correct": 4,
+          "precision": 1,
+          "recall": 1,
+          "falseDirectionFraction": 0,
+          "medianConfirmationLeadMinutes": 4,
+          "medianFirstBreakLeadMinutes": 3,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 30,
+        "n": 75,
+        "brier": 0.48898612432654487,
+        "baselineBrier": 0.48898612432654487,
+        "logLoss": 0.6874245427829841,
+        "counts": [
+          29,
+          46,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5251098247123734,
+            "accuracy": 0.6133333333333333
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 46,
+          "precision": 0.6133333333333333,
+          "recall": 0.6133333333333333,
+          "falseDirectionFraction": 0.38666666666666666,
+          "medianConfirmationLeadMinutes": 8,
+          "medianFirstBreakLeadMinutes": 7,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 71,
+          "correct": 42,
+          "precision": 0.5915492957746479,
+          "recall": 0.5915492957746479,
+          "falseDirectionFraction": 0.4084507042253521,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 4,
+          "correct": 4,
+          "precision": 1,
+          "recall": 1,
+          "falseDirectionFraction": 0,
+          "medianConfirmationLeadMinutes": 4,
+          "medianFirstBreakLeadMinutes": 3,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 60,
+        "n": 75,
+        "brier": 0.48921537738518217,
+        "baselineBrier": 0.48921537738518217,
+        "logLoss": 0.6823528062183888,
+        "counts": [
+          29,
+          46,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5270075724805994,
+            "accuracy": 0.6133333333333333
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 46,
+          "precision": 0.6133333333333333,
+          "recall": 0.6133333333333333,
+          "falseDirectionFraction": 0.38666666666666666,
+          "medianConfirmationLeadMinutes": 8,
+          "medianFirstBreakLeadMinutes": 7,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 71,
+          "directionalCalls": 71,
+          "correct": 42,
+          "precision": 0.5915492957746479,
+          "recall": 0.5915492957746479,
+          "falseDirectionFraction": 0.4084507042253521,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 4,
+          "directionalCalls": 4,
+          "correct": 4,
+          "precision": 1,
+          "recall": 1,
+          "falseDirectionFraction": 0,
+          "medianConfirmationLeadMinutes": 4,
+          "medianFirstBreakLeadMinutes": 3,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      }
+    ],
+    "verdict": "EXPLORATORY_REAL_FEED_REPLAY_NOT_MARKET_EDGE_VALIDATION"
+  },
+  {
+    "symbol": "V25_1S",
+    "bars": 7999,
+    "first": 1794033420000,
+    "last": 1794513360000,
+    "sha256": "a6e1c70c4a93862537cb0b6bbd9de78039feb4b2c9ac4da3bede871fedfdaf7a",
+    "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa",
+    "fitMs": 1476.4280829999989,
+    "gates": {
+      "geometry": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": 0.013536133655389785,
+        "lowerGain": -0.001960947164720308,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "confirmation": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 71,
+        "gain": -0.07986431643829718,
+        "lowerGain": -0.16427390260134186,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      },
+      "prebreak": {
+        "accepted": false,
+        "blend": 0,
+        "selectedBlend": 1,
+        "n": 62,
+        "gain": 0.01355095669449138,
+        "lowerGain": -0.030666083655844764,
+        "reason": "INDEPENDENT_GATE_REJECTED"
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 269,
+        "first": 1794040620000,
+        "last": 1794281820000
+      },
+      "selection": {
+        "n": 71,
+        "first": 1794286320000,
+        "last": 1794349320000
+      },
+      "gate": {
+        "n": 71,
+        "first": 1794353820000,
+        "last": 1794416820000
+      },
+      "holdout": {
+        "n": 75,
+        "first": 1794421320000,
+        "last": 1794509520000
+      }
+    },
+    "dataQuality": {
+      "inputBars": 7999,
+      "acceptedEpisodes": 498,
+      "rejectedWindows": 24
+    },
+    "eligibleHoldout": 67,
+    "pathAvailability": {
+      "UP_FIRST": 75,
+      "DOWN_FIRST": 75,
+      "NEITHER": 0
+    },
+    "byHorizon": [
+      {
+        "horizon": 1,
+        "n": 75,
+        "brier": 0.11957569241657029,
+        "baselineBrier": 0.11957569241657029,
+        "logLoss": 0.23171473105648374,
+        "counts": [
+          4,
+          1,
+          70
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 75,
+            "confidence": 0.9917495395948436,
+            "accuracy": 0.9333333333333333
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": null,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 3,
+        "n": 75,
+        "brier": 0.3421627470110748,
+        "baselineBrier": 0.3421627470110748,
+        "logLoss": 0.6432768016358898,
+        "counts": [
+          7,
+          8,
+          60
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 75,
+            "confidence": 0.762448678345839,
+            "accuracy": 0.8
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 5,
+        "n": 75,
+        "brier": 0.46332741832809743,
+        "baselineBrier": 0.46332741832809743,
+        "logLoss": 0.8178293344842407,
+        "counts": [
+          9,
+          13,
+          53
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 75,
+            "confidence": 0.6482112945047778,
+            "accuracy": 0.7066666666666667
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 0,
+          "correct": 0,
+          "precision": null,
+          "recall": 0,
+          "falseDirectionFraction": null,
+          "medianConfirmationLeadMinutes": null,
+          "medianFirstBreakLeadMinutes": null,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 15,
+        "n": 75,
+        "brier": 0.6792949431129284,
+        "baselineBrier": 0.6792949431129284,
+        "logLoss": 1.1254859005149238,
+        "counts": [
+          24,
+          29,
+          22
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 75,
+            "confidence": 0.43067435300890017,
+            "accuracy": 0.38666666666666666
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 29,
+          "precision": 0.38666666666666666,
+          "recall": 0.5471698113207547,
+          "falseDirectionFraction": 0.6133333333333333,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 27,
+          "precision": 0.40298507462686567,
+          "recall": 0.5869565217391305,
+          "falseDirectionFraction": 0.5970149253731343,
+          "medianConfirmationLeadMinutes": 7,
+          "medianFirstBreakLeadMinutes": 6,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 2,
+          "precision": 0.25,
+          "recall": 0.2857142857142857,
+          "falseDirectionFraction": 0.75,
+          "medianConfirmationLeadMinutes": 3,
+          "medianFirstBreakLeadMinutes": 2,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 30,
+        "n": 75,
+        "brier": 0.5525262755584315,
+        "baselineBrier": 0.5525262755584315,
+        "logLoss": 0.9153547406009039,
+        "counts": [
+          35,
+          36,
+          4
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5198058443631047,
+            "accuracy": 0.48
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 36,
+          "precision": 0.48,
+          "recall": 0.5070422535211268,
+          "falseDirectionFraction": 0.52,
+          "medianConfirmationLeadMinutes": 8,
+          "medianFirstBreakLeadMinutes": 7,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 34,
+          "precision": 0.5074626865671642,
+          "recall": 0.53125,
+          "falseDirectionFraction": 0.4925373134328358,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 2,
+          "precision": 0.25,
+          "recall": 0.2857142857142857,
+          "falseDirectionFraction": 0.75,
+          "medianConfirmationLeadMinutes": 3,
+          "medianFirstBreakLeadMinutes": 2,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      },
+      {
+        "horizon": 60,
+        "n": 75,
+        "brier": 0.5005337159449234,
+        "baselineBrier": 0.5005337159449234,
+        "logLoss": 0.6936817842972484,
+        "counts": [
+          37,
+          38,
+          0
+        ],
+        "calibration": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 75,
+            "confidence": 0.5243104308950988,
+            "accuracy": 0.5066666666666667
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "lowerMeanBrierGain": 0,
+        "all": {
+          "n": 75,
+          "directionalCalls": 75,
+          "correct": 38,
+          "precision": 0.5066666666666667,
+          "recall": 0.5066666666666667,
+          "falseDirectionFraction": 0.49333333333333335,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "prebreak": {
+          "n": 67,
+          "directionalCalls": 67,
+          "correct": 35,
+          "precision": 0.5223880597014925,
+          "recall": 0.5223880597014925,
+          "falseDirectionFraction": 0.47761194029850745,
+          "medianConfirmationLeadMinutes": 9,
+          "medianFirstBreakLeadMinutes": 8,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        },
+        "confirmation": {
+          "n": 8,
+          "directionalCalls": 8,
+          "correct": 3,
+          "precision": 0.375,
+          "recall": 0.375,
+          "falseDirectionFraction": 0.625,
+          "medianConfirmationLeadMinutes": 3,
+          "medianFirstBreakLeadMinutes": 2,
+          "decisionRule": "argmax directional class, descriptive only; not a calibrated warning threshold"
+        }
+      }
+    ],
+    "verdict": "EXPLORATORY_REAL_FEED_REPLAY_NOT_MARKET_EDGE_VALIDATION"
+  }
+]

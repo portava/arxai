@@ -1,0 +1,20 @@
+{
+  "id": "structural-14e9111fd04610ded0e110542ad91aaafc7e96fc9dd1cd155d7af44fc94b4d0d",
+  "resolvedAt": 1794515163998,
+  "waitMs": 34062,
+  "scores": [
+    {
+      "evaluationVersion": "arx-v6.7-implementation-1:scoring-1",
+      "horizon": 1,
+      "observedThrough": 1794515160000,
+      "outcome": "NEITHER",
+      "event": null,
+      "brier": 0,
+      "baselineBrier": 0,
+      "logLoss": 0
+    }
+  ],
+  "immutable": true,
+  "orders": 0,
+  "limitation": "One prospective one-minute observation; no market-edge claim."
+}

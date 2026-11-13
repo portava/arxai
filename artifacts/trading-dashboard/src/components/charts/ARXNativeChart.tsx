@@ -9,6 +9,8 @@ import {
   type ChartIntelligenceResponse,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StructuralForecastPanel } from "./StructuralForecastPanel";
+import type { GhostPath } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -387,6 +389,8 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
+  const [ghostState, setGhostState] = useState<{ symbol: string; paths: GhostPath[] }>({ symbol: "", paths: [] });
+  const receiveGhostPaths = useCallback((paths: GhostPath[]) => setGhostState({ symbol: resolvedSymbol, paths }), [resolvedSymbol]);
   // Newest bar time (Unix seconds) currently on screen. The poll keeps this in
   // sync with the authoritative closed window; the SSE tick handler reads it to
   // reject an out-of-order forming tip (one behind the newest bar).
@@ -439,6 +443,15 @@ export function ARXNativeChart({
   }, [resolvedSymbol, timeframe, effectiveHeight]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
+  useEffect(() => {
+    const colors = { UP_FIRST: "rgba(52,211,153,0.38)", DOWN_FIRST: "rgba(248,113,113,0.38)", NEITHER: "rgba(148,163,184,0.38)" };
+    adapterRef.current?.setGhostPaths?.(timeframe === "M1" && ghostState.symbol === resolvedSymbol ? ghostState.paths.map(path => ({
+      id: path.scenario, color: colors[path.scenario], candles: path.candles.map(b => ({
+        time: b.openTime / 1000, open: b.open, high: b.high, low: b.low, close: b.close,
+      })),
+    })) : []);
+  }, [ghostState, resolvedSymbol, timeframe, chartEpoch]);
+
   const resetScale = useCallback(() => {
     adapterRef.current?.resetScale();
   }, []);
@@ -1234,6 +1247,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
+      {timeframe === "M1" && <StructuralForecastPanel key={resolvedSymbol} symbol={resolvedSymbol} onPaths={receiveGhostPaths} />}
     </Card>
   );
 }
