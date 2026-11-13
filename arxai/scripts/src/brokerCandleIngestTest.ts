@@ -10,7 +10,8 @@
 //   Pure unit (no HTTP):
 //     - normalizeBrokerTimeframe maps aliases to the full 21 MT5 tfs; rejects M7/bare-12
 //     - computeBackfillStatus covers every branch
-//       (ERROR / NOT_STARTED / COMPLETE / BROKER_LIMITED / BUILDING / PARTIAL)
+//       (ERROR / NOT_STARTED / COMPLETE / BUILDING / PARTIAL); target days and
+//       the legacy brokerLimited flag never prove an exhausted native history
 //   Endpoint (in-process app harness):
 //     Auth (bridgeAuthPerUserOnly):
 //       - missing token -> 401 ; garbage token -> 401 ; valid token -> 200
@@ -55,14 +56,18 @@ import {
   MAX_BARS_PER_INGEST_BATCH,
 } from "../../artifacts/api-server/src/lib/data/brokerCandleStore.js";
 import { routeCandles } from "../../artifacts/api-server/src/lib/data/marketDataRouter.js";
-import { __resetMt5ProviderStore } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import { __resetMt5ProviderStore, readMt5Candles } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import { readBrokerHistory } from "../../artifacts/api-server/src/lib/data/brokerHistoryRead.js";
+import { brokerHistoryIdentity } from "../../artifacts/api-server/src/lib/data/brokerHistoryPolicy.js";
+import { fixedFeedScope, runWithFeedScope } from "../../artifacts/api-server/src/lib/data/feedScope.js";
+import { upsertCandles } from "../../artifacts/api-server/src/lib/data/candleCache.js";
 import { getSharedBaseUrl, isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
 const EMAIL_PREFIX = "qa+broker-candle-ingest";
 const BRIDGE_EMAIL = `${EMAIL_PREFIX}-bridge@arx.test`;
 const SYM = `QBC${randomBytes(2).toString("hex").toUpperCase()}`;
-// A second synthetic symbol carrying FRESH durable history, to prove the router
-// prefers broker-native bars over fallback providers when fresh + sufficient.
+// A second synthetic symbol carrying fresh native history, to prove durable
+// owner/account-era reads survive an empty in-memory live feed.
 const SYM_FRESH = `QBF${randomBytes(2).toString("hex").toUpperCase()}`;
 // A third synthetic symbol carrying one closed bar per NEW (Task #484) timeframe,
 // proving the extended 21-value enum ingests + persists end-to-end.
@@ -199,20 +204,28 @@ function runUnit(): void {
     "backfill NOT_STARTED when no bars",
   );
   assert(
-    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 400 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), now }).status === "COMPLETE",
-    "backfill COMPLETE when coverage >= target",
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), historyComplete: true, now }).status === "COMPLETE",
+    "backfill COMPLETE requires verified native-page completion, even below a target-day benchmark",
   );
   assert(
-    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), brokerLimited: true, now }).status === "BROKER_LIMITED",
-    "backfill BROKER_LIMITED when broker has no older bars",
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 400 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), now }).status === "PARTIAL",
+    "coverage beyond target days cannot establish full native history",
   );
   assert(
-    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), now }).status === "BUILDING",
-    "backfill BUILDING when recent ingest + target unmet",
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), brokerLimited: true, now }).status === "PARTIAL",
+    "legacy brokerLimited claim cannot prove a native boundary",
   );
   assert(
-    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now - 60 * 60_000), now }).status === "PARTIAL",
-    "backfill PARTIAL when stale ingest + target unmet",
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), lastHistoryPageAt: new Date(now), now }).status === "BUILDING",
+    "backfill BUILDING when acknowledged historical pages are arriving",
+  );
+  assert(
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), now }).status === "PARTIAL",
+    "fresh live ingest alone cannot claim historical backfill progress",
+  );
+  assert(
+    computeBackfillStatus({ barsStored: 100, oldestStoredAt: new Date(now - 10 * day), newestStoredAt: new Date(now), targetDays: 365, lastIngestAt: new Date(now), lastHistoryPageAt: new Date(now - 60 * 60_000), now }).status === "PARTIAL",
+    "backfill PARTIAL when historical pages stop, even while live ingest is fresh",
   );
 }
 
@@ -247,6 +260,7 @@ export async function run(): Promise<CiTestResultLike> {
         tokenLast4: rawToken.slice(-4),
         tokenCreatedAt: new Date(),
         accountNumber: "9999001",
+        serverName: "QA-native-history-server",
       })
       .returning();
     if (!conn) throw new Error("connection creation failed");
@@ -365,6 +379,8 @@ export async function run(): Promise<CiTestResultLike> {
     assert(mixed.status === 200, `mixed push -> 200 (got ${mixed.status})`);
     assert(mixed.body.acceptedBars === 2, `2 valid distinct bars accepted (got ${mixed.body.acceptedBars})`);
     assert((mixed.body.rejectedBars ?? 0) >= 1, `impossible OHLC rejected (got ${mixed.body.rejectedBars})`);
+    assert(readMt5Candles(SYM, "M5", 100, { bridgeConnectionId: conn.id }).candles.length === 0,
+      "a partially rejected batch persists valid rows but cannot publish a live mirror");
     assert(
       !!mixed.body.latestStoredBySymbolTimeframe?.[0] && mixed.body.latestStoredBySymbolTimeframe[0].barsStored === 2,
       `latestStoredBySymbolTimeframe reports 2 stored (got ${mixed.body.latestStoredBySymbolTimeframe?.[0]?.barsStored})`,
@@ -430,18 +446,25 @@ export async function run(): Promise<CiTestResultLike> {
     assert(bf.length === 1, `one backfill_status row for the series (got ${bf.length})`);
     assert(!!bf[0] && bf[0].barsStored === 3, `backfill_status barsStored=3 (got ${bf[0]?.barsStored})`);
 
-    // Mirror: accepted closed bars reached the read-path cache (mt5_broker slot).
+    // Closed observations are mirrored only into the producing bridge's live
+    // partition. The shared, unattributed legacy cache must remain empty.
     const mirrored = await db
       .select({ id: marketCandlesTable.id })
       .from(marketCandlesTable)
       .where(and(eq(marketCandlesTable.symbol, SYM), eq(marketCandlesTable.source, "mt5_broker")));
-    assert(mirrored.length === 3, `accepted closed bars mirrored to market_candles mt5_broker slot (got ${mirrored.length})`);
+    assert(mirrored.length === 0, `native ingest never populates shared market_candles (got ${mirrored.length})`);
+    const ownerMirror = readMt5Candles(SYM, "M5", 100, { bridgeConnectionId: conn.id });
+    assert(ownerMirror.candles.length === 1 && ownerMirror.candles[0]?.close === 2.04 &&
+      Date.parse(ownerMirror.candles[0]?.time ?? "") === Date.parse(TF) &&
+      ownerMirror.userId === bridgeUser.id && ownerMirror.bridgeConnectionId === conn.id,
+      `only the fully accepted finalized bar reaches its owner/bridge mirror (got ${ownerMirror.candles.length})`);
+    assert(readMt5Candles(SYM, "M5", 100, { bridgeConnectionId: -conn.id }).candles.length === 0,
+      "another bridge cannot read the owner's live mirror");
 
-    // ── DURABLE-READ PREFERENCE (Task #470) ─────────────────────────────────────
-    // The router must prefer fresh + sufficient durable broker history over the
-    // fallback providers, and fall through HONESTLY when the durable series is
-    // stale. The in-memory provider is empty here (the batch ingest never feeds
-    // it), but reset it explicitly so the durable path is unambiguous.
+    // ── OWNER-BOUND NATIVE HISTORY ──────────────────────────────────────────
+    // A restart removes live memory, not durable owner/account-era history.
+    // Raw broker-clock bars remain historical_only, never a fabricated live
+    // shared feed or a declaration of historical UTC authority.
     __resetMt5ProviderStore();
 
     // FRESH case: ingest >= 30 fresh closed M5 bars ending at the most recent
@@ -461,23 +484,60 @@ export async function run(): Promise<CiTestResultLike> {
     assert(freshIngest.status === 200 && (freshIngest.body.acceptedBars ?? 0) === FRESH_COUNT,
       `fresh series ingested ${FRESH_COUNT} bars (got ${freshIngest.body.acceptedBars})`);
 
+    const liveRoute = await routeCandles(SYM_FRESH, "M5", 100, { bridgeConnectionId: conn.id });
+    assert(liveRoute.ok && liveRoute.candles.length === FRESH_COUNT && liveRoute.provenance?.userId === bridgeUser.id,
+      "fresh ingest is available through its attributed live partition");
     __resetMt5ProviderStore();
     const freshRoute = await routeCandles(SYM_FRESH, "M5", 100);
-    assert(freshRoute.primaryProvider === "mt5_broker",
-      `router prefers durable broker history when fresh+sufficient (got ${freshRoute.primaryProvider})`);
-    assert(freshRoute.ok && freshRoute.candles.length >= 30,
-      `durable broker serve returns the stored bars (ok=${freshRoute.ok}, n=${freshRoute.candles.length})`);
+    assert(freshRoute.primaryProvider !== "mt5_broker" && freshRoute.candles.length === 0,
+      "restart does not promote native archive rows into an unattributed shared live feed");
+    const ownerRead = (symbol: string, limit = 100, before?: string) => runWithFeedScope(fixedFeedScope(conn.id, bridgeUser.id),
+      () => readBrokerHistory({ userId: bridgeUser.id, symbol, timeframe: "M5", limit, before }));
+    const native = await ownerRead(SYM_FRESH);
+    const identity = brokerHistoryIdentity({ userId: bridgeUser.id, bridgeConnectionId: conn.id,
+      accountNumber: "9999001", serverName: conn.serverName, clockBasis: "broker_server" });
+    assert(native.ok && native.candles.length === FRESH_COUNT && native.status === "historical_only",
+      `owner-bound native archive survives restart (ok=${native.ok}, n=${native.candles.length})`);
+    assert(native.nativeHistoryEvidence?.sourceIdentity === identity && native.nativeHistoryEvidence.clockBasis === "broker_server" && native.historyEvidence === null,
+      "native archive retains exact account-era identity without inventing historical UTC evidence");
+    assert(!native.depthTargetMet && !native.providerLimitReached,
+      "stored bars without a verified terminal page cannot claim complete available history");
+    const firstPage = await ownerRead(SYM_FRESH, 10);
+    const olderPage = await ownerRead(SYM_FRESH, 10, firstPage.nextBefore ?? undefined);
+    assert(firstPage.hasMoreHistory && olderPage.candles.length === 10 &&
+      Date.parse(olderPage.newest ?? "") < Date.parse(firstPage.oldest ?? ""),
+      "native pagination advances strictly to older bars without overlap");
 
-    // STALE case: SYM only has 2026-06-07 M5 bars (days old). The durable read
-    // must REJECT them as stale and the mt5_broker attempt must say so, so the
-    // router falls through instead of serving a stale broker series as live.
+    // Old rows are still valid archive data. They do not make a live feed
+    // active, and their age does not prevent the owner from paging history.
     __resetMt5ProviderStore();
     const staleRoute = await routeCandles(SYM, "M5", 100);
     const staleMt5Attempt = staleRoute.attempts.find((a) => a.provider === "mt5_broker");
     assert(staleRoute.primaryProvider !== "mt5_broker",
       `router does NOT prefer a stale durable broker series (primary=${staleRoute.primaryProvider})`);
-    assert(!!staleMt5Attempt && staleMt5Attempt.reason === "MT5_BROKER_HISTORY_STALE",
-      `stale durable series surfaces MT5_BROKER_HISTORY_STALE (got ${staleMt5Attempt?.reason})`);
+    assert(!!staleMt5Attempt && staleMt5Attempt.reason === "MT5_BROKER_FEED_NOT_ACTIVE",
+      `no live partition reports FEED_NOT_ACTIVE (got ${staleMt5Attempt?.reason})`);
+    const oldNative = await ownerRead(SYM);
+    assert(oldNative.ok && oldNative.candles.length === 3 && oldNative.status === "historical_only",
+      "old native candles remain available to their owner as historical data");
+
+    // A legacy shared cache row must neither replace native data nor confer
+    // permission to another reader. Its distinct price makes mixing visible.
+    await upsertCandles(SYM_FRESH, "M5", "mt5_broker", [{ time: freshBars.at(-1)!.openTime,
+      open: 9, high: 10, low: 8, close: 9.5 }]);
+    const withLegacy = await ownerRead(SYM_FRESH);
+    assert(withLegacy.ok && withLegacy.candles.length === FRESH_COUNT && withLegacy.candles.every((c) => c.close === 1.11),
+      "native owner read ignores conflicting legacy shared-cache prices");
+    const noScope = await readBrokerHistory({ userId: bridgeUser.id, symbol: SYM_FRESH, timeframe: "M5" });
+    assert(!noScope.ok && noScope.candles.length === 0, "a user id without its bound bridge scope cannot read native history");
+    const [otherUser] = await db.insert(usersTable).values({ email: `${EMAIL_PREFIX}-other@arx.test`, role: "USER", isSystemUser: true }).returning();
+    if (!otherUser) throw new Error("other reader creation failed");
+    const otherRead = await runWithFeedScope(fixedFeedScope(conn.id, otherUser.id),
+      () => readBrokerHistory({ userId: otherUser.id, symbol: SYM_FRESH, timeframe: "M5" }));
+    assert(!otherRead.ok && otherRead.candles.length === 0, "another user cannot borrow the producing bridge or shared cache");
+    await db.update(mt5ConnectionTable).set({ serverName: "QA-different-account-era" }).where(eq(mt5ConnectionTable.id, conn.id));
+    const differentEra = await ownerRead(SYM_FRESH);
+    assert(!differentEra.ok && differentEra.candles.length === 0, "changed account/server era cannot read the old native series");
   } finally {
     await cleanup();
   }
