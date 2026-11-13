@@ -694,7 +694,7 @@ export interface ChartReadReasoningInput {
   reason?: string | null;
   /**
    * The read is older than its timeframe's candle budget (or its time is
-   * unknown). `asOf` is its newest closed candle ("HH:MM UTC") when known.
+   * unknown). `asOf` is its newest closed candle's source-clock time when known.
    */
   expired?: boolean;
   asOf?: string | null;

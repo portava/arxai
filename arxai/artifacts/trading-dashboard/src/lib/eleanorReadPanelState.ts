@@ -96,12 +96,12 @@ export function chartReadExpiresAtMs(
   return t + candleIntervalMs;
 }
 
-/** "HH:MM UTC" for a read's observedAt, or null when unknown. */
+/** Source-clock time; an ISO transport stamp alone does not prove UTC mapping. */
 export function chartReadAsOfLabel(read: EleanorReadServerState | null | undefined): string | null {
   const t = typeof read?.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
   if (!Number.isFinite(t)) return null;
   const d = new Date(t);
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} source clock`;
 }
 
 /**

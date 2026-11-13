@@ -447,13 +447,14 @@ function observedAtOf(
   return typeof t === "string" && Number.isFinite(Date.parse(t)) ? t : null;
 }
 
-function fmtUtcMinute(iso: string | null): string | null {
+// The wire timestamp may encode raw broker time; ISO syntax is not UTC evidence.
+function fmtSourceMinute(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return null;
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${hh}:${mm} UTC`;
+  return `${hh}:${mm} source clock`;
 }
 
 export async function buildEleanorStructuralRead(
@@ -832,7 +833,7 @@ export async function buildEleanorStructuralRead(
     withheldBy = "sufficiency";
     closedBarLagOnly =
       eleanorCtx.sufficiency.reasonCode === "stale_feed" && feedStatusClean && !clientFeedUnconfirmed;
-    const at = fmtUtcMinute(observedAt);
+    const at = fmtSourceMinute(observedAt);
     withheldReason = closedBarLagOnly
       ? `Read uses closed candles only${at ? ` — newest closed candle ${at}` : ""}; the current candle isn't confirmed for entry.`
       : eleanorCtx.sufficiency.humanReason;

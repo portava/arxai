@@ -143,7 +143,8 @@ test("owner's case: closed-bar sufficiency delayed + clean forming-tip feed → 
   assert.ok(withheld, "structural read carries the withheld caution");
   assert.doesNotMatch(withheld!, /Live feed is delayed/, "the page's feed status is clean — the read must not call the feed delayed");
   assert.match(withheld!, /closed candles only/i);
-  assert.match(withheld!, /16:03 UTC/);
+  assert.match(withheld!, /16:03 source clock/);
+  assert.doesNotMatch(withheld!, /UTC/);
   assert.equal(cautions.filter((c) => /closed candles only/i.test(c)).length, 1, "the closed-candle limitation is stated once");
   assert.equal(read.blockedReason, withheld!.replace("Exact entry, stop, and target levels withheld — ", ""), "blockedReason (the panel's primary reason) matches the caution");
   assert.deepEqual(findInternalLeaks(JSON.stringify(narrativeOnly(read))), [], "narrative strings stay scrubbed");

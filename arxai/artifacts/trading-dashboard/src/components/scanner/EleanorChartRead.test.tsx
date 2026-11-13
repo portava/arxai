@@ -928,7 +928,8 @@ describe("EleanorChartRead — read data time and expiry", () => {
     mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: FRESH(), bias: "Bullish" } as EleanorReadServerState;
     render(<EleanorChartRead symbol="V75" timeframe="1m" draft={null} />);
     const asOf = screen.getByTestId("eleanor-chart-read-asof").textContent ?? "";
-    expect(asOf).toMatch(/newest closed candle \d\d:\d\d UTC/);
+    expect(asOf).toMatch(/newest closed candle \d\d:\d\d source clock/);
+    expect(asOf).not.toContain("UTC");
     expect(asOf).not.toContain("expired");
     expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
   });
