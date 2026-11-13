@@ -103,6 +103,22 @@ test("live timestamp and suggestion formats remain identical through chunked str
   assert.match(wrong.text, /14:32:06\.000Z \[unverified\]/);
 });
 
+test("minute precision and explicit UTC basis survive every stream boundary", () => {
+  const answer = "Observed at 2026-11-09 14:32 UTC.";
+  for (const sourceClock of [false, true]) {
+    const tools = [{name:"readChartStructure",result:{observedAt:"2026-11-09T14:32:05.000Z",...(sourceClock ? {observedTimeBasis:"source_clock"} : {})}}];
+    const expected = verifyAnswer(answer, tools);
+    assert.equal(expected.findings.length, sourceClock ? 1 : 0);
+    for (const size of [1,2,7,31]) {
+      const gate = new ClaimGate(buildEvidenceIndex(tools));
+      let visible = "";
+      for (let i=0; i<answer.length; i+=size) visible += gate.push(answer.slice(i,i+size));
+      visible += gate.end() + gate.footer();
+      assert.equal(visible, expected.text, `sourceClock=${sourceClock}, chunk=${size}`);
+    }
+  }
+});
+
 test("after verification, nothing ungrounded remains unmarked (invariant over many answers)", () => {
   const answers = [
     "EURUSD is 1.0852 live. Bid 1.0851. Ticket 99999 filled at 1.0853 on 2026-11-10 at 09:15 UTC.",

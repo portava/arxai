@@ -69,6 +69,26 @@ test("a source-clock chart read cannot be relabelled UTC by Eleanor", () => {
     assert.deepEqual(kinds("Observed at 14:32 UTC.",output),["FABRICATION"]);
   }
 });
+test("full timestamp precision may be shortened without changing its clock basis", () => {
+  for (const timestamp of ["2026-11-09 14:32 UTC", "2026-11-09T14:32Z", "2026-11-09T15:32+01:00"]) {
+    assert.deepEqual(kinds(`Observed at ${timestamp}.`, [snap()]), [], timestamp);
+  }
+  for (const timestamp of ["2026-11-09 14:33 UTC", "2026-11-08 14:32 UTC", "2026-11-09T15:32Z", "2026-11-09T14:32+01:00"]) {
+    assert.deepEqual(kinds(`Observed at ${timestamp}.`, [snap()]), ["FABRICATION"], timestamp);
+  }
+});
+test("a UTC word after a full timestamp still requires UTC evidence", () => {
+  for (const evidence of [
+    {observedTimeBasis:"source_clock", observedAt:"2026-11-09T14:32:05.000Z"},
+    {observedAt:"2026-11-09T14:32:05"},
+  ]) {
+    const out = [{name:"readChartStructure", result:evidence}];
+    for (const timestamp of ["2026-11-09 14:32:05 UTC", "2026-11-09 14:32 GMT", "2026-11-09T14:32Z"]) {
+      assert.deepEqual(kinds(`Observed at ${timestamp}.`, out), ["FABRICATION"], timestamp);
+    }
+    assert.deepEqual(kinds("Observed at 2026-11-09 14:32 source clock.", out), []);
+  }
+});
 test("offset wall-clock and zoneless timestamps never qualify as UTC as written",()=>{
   const offset=[{name:"getMarketSnapshot",result:{observedAt:"2026-11-09T15:32:00+01:00"}}];
   assert.deepEqual(kinds("Observed at 14:32 UTC.",offset),[]);

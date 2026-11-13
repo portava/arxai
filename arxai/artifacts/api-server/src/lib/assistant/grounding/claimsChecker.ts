@@ -335,17 +335,22 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     return claim;
   };
 
-  // Check a timestamp as one exact instant before mixed-token masking can
+  // Check a timestamp at its stated precision before mixed-token masking can
   // split its T/Z components into unrelated numeric fragments. A zone is a
   // clock-basis assertion too; source-clock strings cannot prove UTC.
   for (const m of work.matchAll(ISO_TIMESTAMP_RE)) {
     const literal = m[0].replace(" ", "T");
     const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/.test(literal);
+    const utcLabel = /^\s*(?:UTC|GMT)\b/i.test(work.slice(m.index! + m[0].length));
     const wall = literal.replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
     const wallDate = new Date(wall + "Z");
     const valid = Number.isFinite(wallDate.getTime()) && wallDate.toISOString().startsWith(wall);
     const instant = Date.parse(literal + (zoned ? "" : "Z"));
-    const proof = valid ? idx.times.filter(t => (!zoned || t.utc) && Date.parse(t.iso) === instant) : [];
+    // Omitting seconds means the containing minute, not an invented :00
+    // instant. Explicit seconds/milliseconds retain their exact checks.
+    const minutePrecision = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(wall);
+    const proof = valid ? idx.times.filter(t => (!(zoned || utcLabel) || t.utc)
+      && (minutePrecision ? Math.floor(Date.parse(t.iso) / 60_000) === Math.floor(instant / 60_000) : Date.parse(t.iso) === instant)) : [];
     const claim = pushClaim({kind:"time", text:m[0], grounded:proof.length > 0, groundedBy:proof.map(t => t.tool), localStart:m.index!, localEnd:m.index! + m[0].length});
     if (!claim.grounded) findings.push({kind:"FABRICATION", claim, detail:"Timestamp or its clock basis is not supported by this turn's evidence"});
   }
