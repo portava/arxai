@@ -39,7 +39,7 @@ export interface ChartDrawing { pivotLevelOrigin?:PivotLevelOrigin; fibonacciOri
  * never saved in or applied by a template. Daily timeframes (D1/W1/MN1) always
  * display UTC. Stored anchors, links and data requests stay Unix UTC seconds.
  */
-export interface ChartPreferences { style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; priceOnlyScale?: boolean; studies: ChartStudy[]; timeZone?: ChartTimeZone }
+export interface ChartPreferences { style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; priceOnlyScale?: boolean; volumePane?: boolean; studies: ChartStudy[]; timeZone?: ChartTimeZone }
 export const DEFAULT_PREFERENCES: ChartPreferences = { style: "candles", scale: "linear", studies: [] };
 export const MAX_DRAWINGS = 40;
 const color = (v: unknown): v is string => typeof v === "string" && /^#[a-f\d]{6}$/i.test(v);
@@ -97,7 +97,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(["atr", "envelopes"].includes(s.kind) && s.method ? { method: s.method } : {}),
     });
   }
-  return { style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), ...(v.priceOnlyScale === true ? {priceOnlyScale:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
+  return { style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), ...(v.priceOnlyScale === true ? {priceOnlyScale:true} : {}), ...(v.volumePane === false ? {volumePane:false} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
 }
 function validateFibonacciOrigin(value: unknown): FibonacciOrigin | null {
   const p=value as Partial<FibonacciOrigin>|null;

@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // Truth regression: the PNG export header must describe the feed, not stamp a
 // placeholder ("Display only") or a render-time "Live at capture" verdict, and
 // must carry the data time of the newest bar rather than only the wall clock.
@@ -31,7 +32,7 @@ vi.mock("@/lib/chart-engine", () => ({
 
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     loading: false,
     hasMore: false,
     providerCapped: false,

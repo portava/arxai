@@ -1,4 +1,5 @@
-import { db, brokerCandlesTable, brokerCandleBackfillStatusTable, mt5ConnectionTable } from "@workspace/db";
+import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { getUserConnection } from "../brokerHub/connections.js";
 import { and, desc, eq, lt } from "drizzle-orm";
 import { brokerHistoryIdentity } from "./brokerHistoryPolicy.js";
 import { currentFeedScopeBridge } from "./feedScope.js";
@@ -20,10 +21,10 @@ export async function readBrokerHistory(args: GetCandleHistoryArgs): Promise<Can
   const refuse = (reason: string) => ({ ...base, userMessage: reason, providerMessage: reason, limitationReason: reason });
   const bridge = await currentFeedScopeBridge();
   if (!timeframe || !args.userId || !bridge) return refuse("Sign in with the chart's broker connection to load its history.");
-  const [connection] = await db.select({ accountNumber: mt5ConnectionTable.accountNumber, serverName: mt5ConnectionTable.serverName })
-    .from(mt5ConnectionTable).where(and(eq(mt5ConnectionTable.id, bridge), eq(mt5ConnectionTable.userId, args.userId)));
+  const connection = await getUserConnection(args.userId, bridge);
   if (!connection?.accountNumber || !connection.serverName) return refuse("The chart's broker account identity is unavailable.");
-  const identity = brokerHistoryIdentity({ userId: args.userId, bridgeConnectionId: bridge, ...connection, clockBasis: "broker_server" });
+  const identity = brokerHistoryIdentity({ userId: args.userId, bridgeConnectionId: bridge,
+    accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server" });
   if (args.expectedSourceIdentity) {
     const routed = await routeCandles(symbol, timeframe, 2, { bridgeConnectionId: bridge });
     if (scannerSourceIdentity(routed) !== args.expectedSourceIdentity || routed.primaryProvider !== "mt5_broker"

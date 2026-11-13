@@ -7,7 +7,7 @@ import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
-import { chartVolumeEvidence, observedTickVolume, observedTradeVolume } from "@/lib/chart-engine/chartVolume";
+import { chartVolumeEvidence, observedTickVolume, observedTradeVolume, chartDisplayStudies, candleVolumeLabel } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
@@ -391,7 +391,7 @@ export function ARXNativeChart({
     // caller shows the same text.
     const ha = bar ? adapterRef.current?.getDisplayCandle?.(bar.time) ?? null : null;
     legendRef.current.textContent = bar
-      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${px(bar.open)}  H ${px(bar.high)}  L ${px(bar.low)}  C ${px(bar.close)}${ha ? `  ·  HA (averaged, not tradable) O ${px(ha.open)}  H ${px(ha.high)}  L ${px(ha.low)}  C ${px(ha.close)}` : ""}`
+      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${px(bar.open)}  H ${px(bar.high)}  L ${px(bar.low)}  C ${px(bar.close)}  ·  Range H−L ${px(bar.high - bar.low)}  ·  ${candleVolumeLabel(bar.volumeEvidence)}${ha ? `  ·  HA (averaged, not tradable) O ${px(ha.open)}  H ${px(ha.high)}  L ${px(ha.low)}  C ${px(ha.close)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -958,10 +958,6 @@ export function ARXNativeChart({
   useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
 
   useLayoutEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
-  useEffect(() => {
-    adapterRef.current?.setStudies?.(preferences.studies);
-    updateLegend(inspectedCandleRef.current);
-  }, [preferences.studies, chartEpoch, updateLegend]);
 
   // Only explicit selected-pane ownership binds the existing local registry.
   // Retained callbacks recheck ownership and the actual renderer context.
@@ -1053,8 +1049,13 @@ export function ARXNativeChart({
 
   const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
   const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
-  const tradeVolumeSelected = preferences.studies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
-  const tickVolumeSelected = preferences.studies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
+  const displayStudies = useMemo(() => chartDisplayStudies(preferences.studies, preferences.volumePane !== false, hasQualifiedTickVolume, hasQualifiedTradeVolume), [preferences.studies, preferences.volumePane, hasQualifiedTickVolume, hasQualifiedTradeVolume]);
+  const tradeVolumeSelected = displayStudies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
+  const tickVolumeSelected = displayStudies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
+  useEffect(() => {
+    adapterRef.current?.setStudies?.(displayStudies);
+    updateLegend(inspectedCandleRef.current);
+  }, [displayStudies, chartEpoch, updateLegend]);
 
   // Oldest bar currently on screen as an ISO string — the cursor seed the
   // reach-start handler pages behind. Held in a ref so the (stable) handler
@@ -1791,6 +1792,7 @@ export function ARXNativeChart({
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
     else reveal();
   };
+  const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
   const compactQuickTools = compactDesktopWorkspace ? (
     <div
       className="flex min-w-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-2 py-1.5"
@@ -1811,6 +1813,7 @@ export function ARXNativeChart({
         Drawing tools
       </Button>
       {layersMenu}
+      {volumeToggle}
       <div className="ml-auto flex min-w-0 items-center" aria-label="Candle close timer">
         {compactTimer}
       </div>
@@ -1831,6 +1834,7 @@ export function ARXNativeChart({
           {/* Browser settings survive feed rebinding; actual chart selection still closes the library. */}
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
           {!compactDesktopWorkspace && layersMenu}
+          {!compactDesktopWorkspace && volumeToggle}
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>
@@ -1842,9 +1846,6 @@ export function ARXNativeChart({
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       {hasCandles && <div className="px-3 pt-1"><RenderVerdictChip verdict={renderVerdict} /></div>}
-      <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
-        Move the crosshair over a candle to inspect it
-      </output>
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
   </Fragment>;
 
@@ -2240,6 +2241,9 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
+      <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 overflow-x-auto whitespace-nowrap border-t border-zinc-800 px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
+        Move the crosshair over a candle to inspect its prices, range and volume
+      </output>
       {/* Detailed tools stay mounted after the plot on every viewport. Source
           and safety notices above it remain visible before any candle. */}
       {compactWorkspace ? (

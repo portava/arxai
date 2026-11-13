@@ -4,7 +4,7 @@
  *
  * Boots the real api-server and the dashboard's Vite dev server in-process,
  * opens Chromium on e2e/render-evidence.html, and lets the dashboard's REAL
- * chart engine (LightweightChartsAdapter on real lightweight-charts canvas —
+ * chart engine (ArxCanvasAdapter on the first-party ARX canvas —
  * not jsdom, not a mock) draw a deterministic candle feed served by this test
  * in OHLC candles, OHLC bars, close line, hollow and Heikin Ashi styles with
  * six drawings. The REAL reporter posts the engine's own measurement through
@@ -207,15 +207,13 @@ async function main(): Promise<void> {
     }, [email, password] as const);
     assert(login === 200, `Sign-in for the render test user returned ${login}.`);
 
-    // Engine identity: this is real lightweight-charts painting to a canvas.
+    // Engine identity: this is the first-party ARX renderer painting to a canvas.
     const run = async (cfg: Partial<HarnessRun>): Promise<{ result: HarnessResult; verdict: RenderEvidenceVerdict }> => {
       const full: HarnessRun = { symbol: SYMBOL, timeframe: TIMEFRAME, source: SOURCE, style: "candles", drawings: DRAWINGS, ...cfg };
-      const posted = page.waitForResponse(
+      const [response, result] = await Promise.all([page.waitForResponse(
         (r) => new URL(r.url()).pathname === "/api/me/chart/render-evidence" && r.request().method() === "POST",
         { timeout: 30_000 },
-      );
-      const result = await page.evaluate((c) => (globalThis as HarnessGlobal).__arxRenderHarness!.run(c), full);
-      const response = await posted;
+      ), page.evaluate((c) => (globalThis as HarnessGlobal).__arxRenderHarness!.run(c), full)]);
       assert(response.status() === 200, `POST render-evidence returned ${response.status()}: ${await response.text()}`);
       const sent = response.request().postDataJSON() as Record<string, unknown>;
       assert(sent["source"] === SOURCE && sent["symbol"] === SYMBOL, "The posted evidence is not bound to the fixture chart.");
@@ -231,7 +229,7 @@ async function main(): Promise<void> {
       const { result, verdict } = await run({ style });
       const f = result.fidelity;
       assert(f, `${style}: the engine reported no measurement.`);
-      assert(await canvases(page) > 0, `${style}: lightweight-charts did not paint a canvas.`);
+      assert(await canvases(page) > 0, `${style}: ARX did not paint a canvas.`);
       assert(f.barsCompared === BARS && f.mismatchedBars === 0 && f.droppedBars === 0, `${style}: bars ${JSON.stringify(f)}`);
       assert(f.visibleBarsRoundTripped > 20 && f.priceRoundTripOk && f.timeRoundTripOk === true, `${style}: axes ${JSON.stringify(f)}`);
       assert(f.drawings.checked === DRAWINGS.length && f.drawings.failed === 0 && f.drawings.unplaced === 0,

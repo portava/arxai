@@ -55,7 +55,7 @@ import { EMPTY_DRAWING_FIDELITY, mergeDrawingFidelity, type DrawingFidelity } fr
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
-import { crosshairTimeLabel, tickMarkLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
+import { crosshairTimeLabel, marketAxisTimeLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
 
 // The chart adapter's tick types mirror the app's tick-mark classifications.
 const TICK_MARK_TYPES_MATCH: Record<TickMarkType, ChartTickMarkType> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4 } satisfies Record<ChartTickMarkType, ChartTickMarkType>;
@@ -266,7 +266,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   // the user's selected display locale.
   private locale = typeof navigator !== "undefined" ? navigator.language : "";
   private readonly timeLabel = (time: Time): string => typeof time === "number" ? crosshairTimeLabel(time, this.displayZone, this.locale) : String(time);
-  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
+  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? marketAxisTimeLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -334,7 +334,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         // candles rather than the entire loaded history, eliminating the
         // "compressed flat line" symptom on H4/D1 views.
         autoScale: true,
-        scaleMargins: { top: 0.08, bottom: 0.08 },
+        scaleMargins: { top: 0.04, bottom: 0.04 },
       },
     });
 

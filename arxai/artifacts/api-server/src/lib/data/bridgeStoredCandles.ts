@@ -10,7 +10,8 @@
 // Read side only; no schema change. Closed bars only, one broker symbol only
 // (series are never blended).
 
-import { db, brokerCandlesTable, mt5ConnectionTable } from "@workspace/db";
+import { db, brokerCandlesTable } from "@workspace/db";
+import { getConnection } from "../brokerHub/connections.js";
 import { and, desc, eq } from "drizzle-orm";
 import { normalizeBrokerTimeframe, TIMEFRAME_MS } from "./brokerCandleStore.js";
 import { brokerHistoryIdentity } from "./brokerHistoryPolicy.js";
@@ -33,7 +34,7 @@ export async function readBridgeStoredCandles(
 ): Promise<BridgeStoredCandles | null> {
   const tf = normalizeBrokerTimeframe(timeframe);
   if (!tf || !Number.isFinite(limit) || limit <= 0) return null;
-  const [connection] = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, bridgeConnectionId));
+  const connection = await getConnection(bridgeConnectionId);
   if (!connection || connection.userId == null) return null;
   const identity = brokerHistoryIdentity({ userId: connection.userId, bridgeConnectionId, accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server" });
   const rows = await db

@@ -218,6 +218,18 @@ export function tickMarkLabel(sec: number, type: ChartTickMarkType, zone: ChartT
   }
 }
 
+/** Compact terminal-style labels retain the date beside intraday times. */
+export function marketAxisTimeLabel(sec: number, type: ChartTickMarkType, zone: ChartTimeZone, locale: string): string | null {
+  if (!Number.isFinite(sec)) return null;
+  const p = wallParts(wholeSecondMs(sec), resolveTimeZone(zone));
+  const month = shortMonth(p.year, p.month, locale);
+  if (type === 0) return String(p.year);
+  if (type === 1) return `${month} ${p.year}`;
+  const date = `${pad(p.day)} ${month}`;
+  if (type === 2) return `${date} ${p.year}`;
+  return `${date} ${pad(p.hour)}:${pad(p.minute)}${type === 4 ? `:${pad(p.second)}` : ""}`;
+}
+
 /** Default crosshair date ("dd MMM 'yy"), replicated
  * replacement for replacement (dev.mjs formatDate). */
 function libraryDate(p: WallParts, locale: string): string {

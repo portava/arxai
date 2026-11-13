@@ -1,5 +1,21 @@
 import type { CandleVolumeEvidence } from "@workspace/api-client-react";
+import type { ChartStudy } from "./chartStudies";
 export type { CandleVolumeEvidence } from "@workspace/api-client-react";
+
+/** Volume is visible by default; saved study settings remain intact when hidden. */
+export function chartDisplayStudies(studies: ChartStudy[], enabled: boolean, hasTicks: boolean, hasTrades: boolean): ChartStudy[] {
+  const isVolume = (study: ChartStudy) => study.kind === "tick_volume" || study.kind === "trade_volume";
+  if (!enabled) return studies.filter(study => !isVolume(study));
+  if (studies.some(study => isVolume(study) && study.lineStyles?.[0]?.visible !== false)) return studies;
+  return [...studies, { id: "arx-default-volume", kind: hasTrades && !hasTicks ? "trade_volume" : "tick_volume", period: 1, color: "#22c55e" }];
+}
+
+export function candleVolumeLabel(evidence: unknown): string {
+  const ticks = observedTickVolume(evidence);
+  if (ticks != null) return `Tick volume ${ticks.toLocaleString("en-US")}`;
+  const trades = observedTradeVolume(evidence);
+  return trades ? `Trade volume ${trades.quantity.toLocaleString("en-US")} units` : "Volume unavailable";
+}
 /** A count is not traded size. Other units are deliberately unsupported here. */
 export function observedTickVolume(evidence: unknown): number | null {
   if (!evidence || typeof evidence !== "object") return null;

@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // Truth regression: the header last-price badge must not read as a live price
 // when the board itself has graded the feed not live (stale / invalid), and its
 // digit count must match the axis (candleDisplayPrecision), not a magnitude guess.
@@ -31,7 +32,7 @@ vi.mock("@/lib/chart-engine", () => ({
 
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     loading: false,
     hasMore: false,
     providerCapped: false,

@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // Live Chart real-time ticking — client-wiring acceptance test (Task #508).
 //
 // WHAT THIS LOCKS
@@ -83,7 +84,7 @@ vi.mock("@/lib/chart-engine", () => ({
 // the component renders without any /api/chart/history fetch.
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     loading: false,
     hasMore: false,
     providerCapped: false,
@@ -310,7 +311,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     expect(screen.getByTestId("arx-native-drawing-tools")).toBeTruthy();
     const layers = screen.getByTestId("chart-layers-menu");
     expect(layers.textContent).toContain("/18");
-    expect(screen.getByTestId("arx-native-candle-timer").textContent).toMatch(/Waiting for live candle/);
+    expect(screen.getByTestId("arx-native-candle-timer").textContent).toMatch(/waiting for a verified candle-close timestamp/);
 
     fireEvent.click(layers);
     expect(await screen.findByText("Show all")).toBeTruthy();
@@ -723,7 +724,7 @@ describe("Smart Chart view controls", () => {
   it("changes viewport and scale without restarting the renderer or stream", () => {
     const view = renderChart();
     fireEvent.click(view.getByRole("button", {name:"Latest",exact:true}));
-    fireEvent.click(view.getByRole("button", {name:"Fit history",exact:true}));
+    fireEvent.click(view.getByRole("button", {name:"Fit all loaded chart history",exact:true}));
     fireEvent.change(view.getByLabelText("Price scale"), {target:{value:"log"}});
     expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
     expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();

@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistant";
 import { runCausalResearchV2 } from "@workspace/domain/backtest/research";
 const researchRunner=vi.hoisted(()=>({run:vi.fn(),cancel:vi.fn()}));
@@ -65,7 +66,7 @@ vi.mock("@/lib/chart-engine", () => ({ createChartEngineAdapter: () => { failIfD
 
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [], loading: false, hasMore: false, providerCapped: false, limitationReason: null,
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null, loading: false, hasMore: false, providerCapped: false, limitationReason: null,
     coverageDays: 0, depthTargetDays: 0, loadedAny: false, loadOlder: vi.fn(), reset: vi.fn(),
   }),
 }));
@@ -170,6 +171,23 @@ afterEach(() => {
 });
 
 describe("initial responsive chart height", () => {
+  it("keeps OHLC, high–low range and qualified volume visible below the compact chart", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    candleResponse = liveResponse("EURUSD", "H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" compactWorkspace showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const inspector = screen.getByTestId("chart-candle-inspector");
+    expect(inspector.closest("[hidden]")).toBeNull();
+    const engine = created[0]!;
+    const crosshair = engine.setCrosshairHandler.mock.lastCall![0] as (bar: unknown) => void;
+    act(() => crosshair({time:OPEN_MS / 1000,open:1.1,high:1.104,low:1.099,close:1.102,volumeEvidence:{kind:"tick_count",unit:"ticks",quantity:53,reason:null}}));
+    expect(inspector.textContent).toContain("Range H−L 0.005");
+    expect(inspector.textContent).toContain("Tick volume 53");
+    expect(engine.setStudies.mock.lastCall![0]).toEqual(expect.arrayContaining([expect.objectContaining({kind:"tick_volume"})]));
+    fireEvent.click(screen.getByTestId("chart-volume-toggle"));
+    expect(screen.getByTestId("chart-volume-toggle").getAttribute("aria-pressed")).toBe("false");
+    expect(engine.setStudies.mock.lastCall![0]).toEqual([]);
+    expect(inspector.closest("[hidden]")).toBeNull();
+  });
   it.each([
     {width:390,height:520,mobileHeight:360,expected:360},
     {width:767,height:520,mobileHeight:360,expected:360},
@@ -440,7 +458,7 @@ describe("deferred comparison engine init", () => {
       expect(screen.getByRole("button",{name:`${timeframe} timeframe`,exact:true}).getAttribute("aria-pressed")).toBe("true");
     } else expect((screen.getByLabelText("More chart intervals") as HTMLSelectElement).value).toBe(timeframe);
   });
-  it("selects additional intervals without remounting canvas, saves them and leaves source-dependent calendar intervals unavailable", () => {
+  it("selects additional intervals without remounting canvas, saves them and supports native calendar intervals", () => {
     render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
     const canvas=screen.getByTestId("arx-native-canvas"), select=screen.getByLabelText("More chart intervals") as HTMLSelectElement;
     for (const timeframe of CHART_INTERVALS.filter(tf=>!(CHART_QUICK_INTERVALS as readonly string[]).includes(tf))) {
@@ -450,37 +468,36 @@ describe("deferred comparison engine init", () => {
       expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe(timeframe);
       expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
     }
-    expect([...select.options].find(option=>option.value==="MN1")?.disabled).toBe(true);
+    expect([...select.options].find(option=>option.value==="MN1")?.disabled).toBe(false);
     fireEvent.change(select,{target:{value:"MN1"}});
-    expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe("H12");
+    expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe("MN1");
     expect(inits()).toHaveLength(1);
   });
-  it.each(["W1", "MN1"] as const)("withholds requested %s responses, cached intelligence and Truth queries", timeframe => {
+  it.each(["W1", "MN1"] as const)("loads requested native %s candles and their own Truth context", timeframe => {
     candleResponse=liveResponse("EURUSD",timeframe);
     intelligenceResponse={state:{symbol:"EURUSD",timeframe}};
     const onIntelligenceChange=vi.fn();
     render(<ARXNativeChart symbol="EURUSD" timeframe={timeframe} showFeedStatus={false} overlays={NO_OVERLAYS} onIntelligenceChange={onIntelligenceChange}/>);
-    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
-    expect(created[0]!.setCandles.mock.calls.every(([bars])=>bars.length===0)).toBe(true);
-    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
-    expect(truthSymbols.every(symbol=>symbol==="")).toBe(true);
-    expect(streams).toHaveLength(0);
-    expect(onIntelligenceChange).not.toHaveBeenCalled();
+    expect(screen.queryByText(/charts are unavailable until source-verified/)).toBeNull();
+    expect(created[0]!.setCandles.mock.calls.some(([bars])=>bars.length>0)).toBe(true);
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
+    expect(truthSymbols).toContain("EURUSD");
+    expect(streams).toHaveLength(1);
   });
-  it.each(["W1", "MN1"] as const)("keeps saved native %s visible with its refusal", timeframe => {
+  it.each(["W1", "MN1"] as const)("loads the saved native %s interval", timeframe => {
     localStorage.setItem("arx.nativeChart.timeframe",timeframe);
     render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
     expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
-    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
-    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
+    expect(screen.queryByText(/charts are unavailable until source-verified/)).toBeNull();
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
     expect(localStorage.getItem("arx.nativeChart.timeframe")).toBe(timeframe);
   });
-  it.each(["W1", "MN1"] as const)("keeps saved comparison %s visible with its refusal", timeframe => {
+  it.each(["W1", "MN1"] as const)("loads the saved comparison %s interval", timeframe => {
     localStorage.setItem(CHART_LAYOUT_KEY,JSON.stringify({count:2,comparisons:[{timeframe}]}));
     render(<SmartChartLayout symbol="EURUSD"><p>Primary placeholder</p></SmartChartLayout>);
     expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
-    expect(screen.getByText(/charts are unavailable until source-verified/)).toBeTruthy();
-    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:false});
+    expect(screen.queryByText(/charts are unavailable until source-verified/)).toBeNull();
+    expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
     expect(JSON.parse(localStorage.getItem(CHART_LAYOUT_KEY)!).comparisons[0].timeframe).toBe(timeframe);
   });
   it("builds the primary engine in the mounting commit", () => {
@@ -541,7 +558,7 @@ describe("deferred comparison engine init", () => {
     engine.getDisplayCandle = vi.fn(() => ({ time: bar.time, open: 1.1005, high: 1.104, low: 1.099, close: 1.10125 }));
     act(() => handler(bar));
     expect(engine.getDisplayCandle).toHaveBeenCalledWith(bar.time);
-    expect(legend.textContent).toMatch(/O 1\.10000 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10200 {2}· {2}HA \(averaged, not tradable\) O 1\.10050 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10125$/);
+    expect(legend.textContent).toMatch(/O 1\.10000 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10200 {2}· {2}Range H−L 0\.00500 {2}· {2}Volume unavailable {2}· {2}HA \(averaged, not tradable\) O 1\.10050 {2}H 1\.10400 {2}L 1\.09900 {2}C 1\.10125$/);
     engine.getDisplayCandle = vi.fn(() => null);
     act(() => handler(bar));
     expect(legend.textContent).not.toContain("HA");
@@ -1023,11 +1040,11 @@ describe("deferred comparison engine init", () => {
     // One instrument precision (lib/instrumentPriceFormat): no server-declared
     // precision here, so the loaded quotes' own digits (3) decide — the legend
     // prints what the axis and header print, not a fiat-pair guess.
-    expect(inspector.textContent).toBe("2023-11-14 22:13 UTC  ·  O 1.101  H 1.103  L 1.100  C 1.102");
+    expect(inspector.textContent).toBe("2023-11-14 22:13 UTC  ·  O 1.101  H 1.103  L 1.100  C 1.102  ·  Range H−L 0.003  ·  Volume unavailable");
     const zoneCalls = engine.setDisplayTimeZone.mock.calls.length;
     fireEvent.change(screen.getByLabelText("Display time zone"), { target: { value: "Asia/Tokyo" } });
     expect(engine.setDisplayTimeZone.mock.calls.slice(zoneCalls)).toEqual([["Asia/Tokyo"]]);
-    expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.101  H 1.103  L 1.100  C 1.102");
+    expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.101  H 1.103  L 1.100  C 1.102  ·  Range H−L 0.003  ·  Volume unavailable");
     // Daily bars keep UTC whatever the stored zone.
     cleanup();
     candleResponse=liveResponse("EURUSD","D1");
@@ -1053,7 +1070,7 @@ describe("current chart assistant binding",()=>{
     act(()=>{reply=requestChartStudy("show RSI");});
     expect(reply).toContain("RSI: 63.25");
     expect(reply).toContain("EURUSD · H1");
-    expect(primary.setStudies).toHaveBeenLastCalledWith([expect.objectContaining({kind:"rsi",period:14})]);
+    expect(primary.setStudies).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({kind:"rsi",period:14})]));
     expect(localStorage.getItem("arx.chart.preferences.v1")).toContain('"rsi"');
     view.unmount();
     expect(requestChartStudy("show RSI")).toContain("Select a ready");
@@ -1130,7 +1147,7 @@ describe("original candle clock disclosure",()=>{
   expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
   expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("source clock (UTC unverified)");
-  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.101  H 1.103  L 1.100  C 1.102");
+  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.101  H 1.103  L 1.100  C 1.102  ·  Range H−L 0.003  ·  Volume unavailable");
   expect(engine.setCandles).toHaveBeenCalled();expect(engine.destroy).not.toHaveBeenCalled();
  });
 });
@@ -1147,7 +1164,7 @@ describe("explicit native comparison chart assistant",()=>{
   const stockCard=screen.getAllByTestId('arx-native-chart')[1]!;
   fireEvent.click(within(stockCard).getByTestId('chart-assistant-activate'));
   let reply:string|null=null;act(()=>{reply=requestChartStudy('show RSI');});
-  expect(reply).toContain('AAPL · H1');expect(reply).toContain('63.25');expect(aapl.setStudies).toHaveBeenLastCalledWith([expect.objectContaining({kind:'rsi'})]);expect(eur.setStudies).not.toHaveBeenCalled();
+  expect(reply).toContain('AAPL · H1');expect(reply).toContain('63.25');expect(aapl.setStudies).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({kind:'rsi'})]));expect(eur.setStudies).not.toHaveBeenCalled();
   expect(localStorage.getItem('arx.chart.preferences.v1:comparison')).toContain('rsi');expect(localStorage.getItem('arx.chart.preferences.v1')??'').not.toContain('rsi');
   view.rerender(app('b'.repeat(64)));eur.setStudies.mockClear();aapl.setStudies.mockClear();
   expect(requestChartStudy('show RSI')).toContain('Select a ready');expect(eur.setStudies).not.toHaveBeenCalled();expect(aapl.setStudies).not.toHaveBeenCalled();

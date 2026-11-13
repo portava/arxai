@@ -16,7 +16,15 @@ export type TickMarkFormatter = (time: Time, type: TickMarkType, locale: string)
 
 export function adaptiveTimeTickCount(plotWidth: number, labelWidth = 42): number {
   const width = Number.isFinite(plotWidth) ? Math.max(0, plotWidth) : 0;
-  return Math.max(2, Math.floor(width / Math.max(76, labelWidth + 18)));
+  return Math.max(1, Math.floor(width / Math.max(64, labelWidth + 12)));
+}
+
+/** Tick detail follows the viewport, even with years of offscreen history. */
+export function visibleTimeTickType(times: readonly number[], range: { from: number; to: number }): TickMarkType {
+  const first = times[Math.max(0, Math.min(times.length - 1, Math.ceil(range.from)))];
+  const last = times[Math.max(0, Math.min(times.length - 1, Math.floor(range.to)))];
+  const span = Math.max(0, (last ?? 0) - (first ?? 0));
+  return span > 86400 * 365 ? 1 : span > 86400 * 3 ? 2 : span > 600 ? 3 : 4;
 }
 
 export function niceLinearPriceTicks(low: number, high: number, targetCount: number): number[] {
@@ -24,13 +32,14 @@ export function niceLinearPriceTicks(low: number, high: number, targetCount: num
   const rawStep = (high - low) / targetCount;
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
   const normalized = rawStep / magnitude;
-  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  const factor = [1, 2, 2.5, 5, 10].reduce((best, value) =>
+    Math.abs(value - normalized) < Math.abs(best - normalized) ? value : best);
   const step = factor * magnitude;
   if (!Number.isFinite(step) || step <= 0) return [];
   const firstIndex = Math.ceil(low / step);
   const lastIndex = Math.floor(high / step);
   const ticks: number[] = [];
-  for (let index = firstIndex; index <= lastIndex && ticks.length < 20; index++) {
+  for (let index = firstIndex; index <= lastIndex && ticks.length < 128; index++) {
     const value = index * step;
     if (Number.isFinite(value)) ticks.push(value);
   }
@@ -556,7 +565,7 @@ export class CanvasChart {
     return Math.max(1, this.width - 82);
   }
   private plotHeight() {
-    return Math.max(1, this.height - 32);
+    return Math.max(1, this.height - 24);
   }
   private indexAt(x: number) {
     return (
@@ -662,11 +671,15 @@ export class CanvasChart {
               autoscale(() => ({ priceRange: { minValue: p.value, maxValue: p.value } })) !== null;
             const value = this.toScaleValue(p.value, pane);
             if (included && Number.isFinite(value)) values.push(value);
+            if (included && s.kind === "Histogram") {
+              const base = this.toScaleValue(Number(s.options().base) || 0, pane);
+              if (Number.isFinite(base)) values.push(base);
+            }
           }
         }
       let low = values.length ? Math.min(...values) : 0;
       let high = values.length ? Math.max(...values) : 1;
-      const pad = Math.max((high - low) * 0.12, Math.abs(high) * 0.00002, 0.000001);
+      const pad = Math.max((high - low) * 0.04, Math.abs(high) * 0.00002, 0.000001);
       low -= pad;
       high += pad;
       this.paneRanges.set(pane, { low, high });
@@ -897,15 +910,17 @@ export class CanvasChart {
     c.clearRect(0, 0, this.width, this.height);
     c.fillStyle = background;
     c.fillRect(0, 0, this.width, this.height);
-    c.font = "11px ui-monospace, SFMono-Regular, monospace";
+    c.font = "11px Arial, sans-serif";
     c.textBaseline = "middle";
     c.strokeStyle = grid;
     c.lineWidth = 1;
     c.setLineDash([]);
     for (let pane = 0; pane < this.panes().length; pane++) {
       const top = paneTop(pane), paneH = paneHeight(pane), range = this.paneRange(pane);
+      const paneSeries = this.series.find(series => series.paneIndex === pane && series.options().visible !== false);
+      const paneFormat = paneSeries?.priceFormatter();
       const margins = this.scaleMargins(pane);
-      const tickCount = Math.max(4, Math.min(8, Math.floor(paneH / 56)));
+      const tickCount = Math.max(2, Math.floor(paneH * margins.available / 40));
       const priceTicks = this.priceMode(pane) === 0
         ? niceLinearPriceTicks(range.low, range.high, tickCount)
         : Array.from({ length: tickCount + 1 }, (_, i) =>
@@ -921,7 +936,7 @@ export class CanvasChart {
         const y = top + paneH * (margins.top + margins.available * inverted);
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
         c.fillStyle = text;
-        c.fillText(fmt(price), w + 9, y);
+        c.fillText(pane > 0 && paneFormat ? paneFormat.format(price) : fmt(price), w + 5, y);
       }
       if (pane > 0) {
         c.strokeStyle = dark ? "#31445c" : "#cad3de";
@@ -929,25 +944,40 @@ export class CanvasChart {
         c.strokeStyle = grid;
       }
     }
-    const timeTicks = adaptiveTimeTickCount(w);
+    const tickType = visibleTimeTickType(this.times, this.range);
+    const formatter = this.chartOptions.timeScale?.tickMarkFormatter as TickMarkFormatter | undefined;
+    const formatTime = (time: number) => formatter?.(time, tickType, this.chartOptions.localization?.locale ?? navigator.language) ??
+      new Date(time * 1000).toLocaleString("en-GB", {
+        timeZone: "UTC", day: "2-digit", month: "short",
+        ...(tickType < 2 ? { year: "numeric" as const } : {}),
+        ...(tickType >= 3 ? { hour: "2-digit" as const, minute: "2-digit" as const } : {}),
+      });
+    const samples = [this.range.from, (this.range.from + this.range.to) / 2, this.range.to]
+      .map(index => this.times[Math.max(0, Math.min(this.times.length - 1, Math.round(index)))])
+      .filter((time): time is number => time != null);
+    const labelWidth = Math.max(42, ...samples.map(time => c.measureText(formatTime(time)).width));
+    const timeTicks = adaptiveTimeTickCount(w, labelWidth);
+    let lastLabelRight = -12;
+    let lastTickIndex = -1;
     for (let i = 0; i <= timeTicks; i++) {
-      const x = (w * i) / timeTicks;
+      const index = Math.round(this.indexAt((w * i) / timeTicks));
+      const time = this.times[index];
+      if (time == null || index === lastTickIndex) continue;
+      lastTickIndex = index;
+      const x = this.x(index);
+      if (x < 0 || x > w) continue;
       c.beginPath();
       c.moveTo(x, 0);
       c.lineTo(x, h);
       c.stroke();
-      const time = this.times[Math.round(this.indexAt(x))];
-      if (time) {
-        const date = new Date(time * 1000);
-        const span = this.times.at(-1)! - this.times[0]!;
-        const tickType: TickMarkType = span > 86400 * 365 ? 0 : span > 86400 * 60 ? 1 : span > 86400 * 3 ? 2 : span > 3600 ? 3 : 4;
-        const formatter = this.chartOptions.timeScale?.tickMarkFormatter as TickMarkFormatter | undefined;
-        const stamp = formatter?.(time, tickType, this.chartOptions.localization?.locale ?? navigator.language) ??
-          (span > 86400 * 3
-            ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
-            : date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }));
+      {
+        const stamp = formatTime(time);
+        const width = c.measureText(stamp).width;
+        const left = Math.max(3, Math.min(w - width - 3, x - width / 2));
+        if (left < lastLabelRight + 10 || width > w - 6) continue;
         c.fillStyle = text;
-        c.fillText(stamp, Math.min(w - 42, Math.max(4, x - 18)), h + 17);
+        c.fillText(stamp, left, h + 12);
+        lastLabelRight = left + width;
       }
     }
     c.save();

@@ -57,6 +57,7 @@
 //
 // Run: pnpm --filter @workspace/scripts run test:broker-candle-coverage-route
 
+import { brokerHistoryIdentity } from "../../artifacts/api-server/src/lib/data/brokerHistoryPolicy.js";
 import { randomBytes, createHash } from "node:crypto";
 import { inArray, like } from "drizzle-orm";
 import {
@@ -259,17 +260,19 @@ export async function run(): Promise<CiTestResultLike> {
       .returning();
     if (!conn2) throw new Error("connection #2 creation failed");
 
+    const history1 = brokerHistoryIdentity({ userId: bridgeUser.id, bridgeConnectionId: conn.id, accountNumber: "9991001", serverName: conn.serverName, clockBasis: "broker_server" });
+    const history2 = brokerHistoryIdentity({ userId: bridgeUser2.id, bridgeConnectionId: conn2.id, accountNumber: "9992002", serverName: conn2.serverName, clockBasis: "broker_server" });
     // ── Seed broker_candles (a few rows, for fidelity / provenance) ───────────
     await db.insert(brokerCandlesTable).values([
       {
-        userId: bridgeUser.id, bridgeConnectionId: conn.id, accountNumber: "9991001",
+        userId: bridgeUser.id, bridgeConnectionId: conn.id, historyIdentity: history1, accountNumber: "9991001",
         brokerSymbol: SYM_A, symbol: SYM_A, timeframe: "M5",
         openTimeUtc: A_OLDEST, closeTimeUtc: new Date(A_OLDEST.getTime() + 5 * 60_000),
         open: 1.10, high: 1.12, low: 1.09, close: 1.11, isClosedBar: true, source: "mt5_ea",
         qualityStatus: "accepted", qualityReason: "new_closed",
       },
       {
-        userId: bridgeUser.id, bridgeConnectionId: conn.id, accountNumber: "9991001",
+        userId: bridgeUser.id, bridgeConnectionId: conn.id, historyIdentity: history1, accountNumber: "9991001",
         brokerSymbol: SYM_A, symbol: SYM_A, timeframe: "M5",
         openTimeUtc: A_NEWEST, closeTimeUtc: new Date(A_NEWEST.getTime() + 5 * 60_000),
         open: 1.11, high: 1.13, low: 1.10, close: 1.12, isClosedBar: true, source: "mt5_ea",
@@ -280,15 +283,15 @@ export async function run(): Promise<CiTestResultLike> {
     // ── Seed broker_candle_backfill_status (the rows the endpoint projects) ───
     await db.insert(brokerCandleBackfillStatusTable).values([
       {
-        userId: bridgeUser.id, bridgeConnectionId: conn.id,
+        userId: bridgeUser.id, bridgeConnectionId: conn.id, historyIdentity: history1,
         brokerSymbol: SYM_A, symbol: SYM_A, timeframe: "M5",
-        status: "COMPLETE", statusReason: "depth_target_met",
+        status: "COMPLETE", statusReason: "all_available_native_pages_verified",
         oldestStoredAt: A_OLDEST, newestStoredAt: A_NEWEST,
         barsStored: A_BARS_STORED, targetDays: 365, coverageDays: 365,
         lastIngestAt: A_NEWEST,
       },
       {
-        userId: bridgeUser.id, bridgeConnectionId: conn.id,
+        userId: bridgeUser.id, bridgeConnectionId: conn.id, historyIdentity: history1,
         brokerSymbol: SYM_B, symbol: SYM_B, timeframe: "H1",
         status: "BUILDING", statusReason: "actively_streaming",
         oldestStoredAt: B_OLDEST, newestStoredAt: B_NEWEST,
@@ -300,7 +303,7 @@ export async function run(): Promise<CiTestResultLike> {
     // ── Seed SYM_C under the SECOND bridge user (isolation fixture) ───────────
     await db.insert(brokerCandlesTable).values([
       {
-        userId: bridgeUser2.id, bridgeConnectionId: conn2.id, accountNumber: "9992002",
+        userId: bridgeUser2.id, bridgeConnectionId: conn2.id, historyIdentity: history2, accountNumber: "9992002",
         brokerSymbol: SYM_C, symbol: SYM_C, timeframe: "M15",
         openTimeUtc: C_OLDEST, closeTimeUtc: new Date(C_OLDEST.getTime() + 15 * 60_000),
         open: 2.20, high: 2.25, low: 2.18, close: 2.22, isClosedBar: true, source: "mt5_ea",
@@ -309,9 +312,9 @@ export async function run(): Promise<CiTestResultLike> {
     ]);
     await db.insert(brokerCandleBackfillStatusTable).values([
       {
-        userId: bridgeUser2.id, bridgeConnectionId: conn2.id,
+        userId: bridgeUser2.id, bridgeConnectionId: conn2.id, historyIdentity: history2,
         brokerSymbol: SYM_C, symbol: SYM_C, timeframe: "M15",
-        status: "COMPLETE", statusReason: "depth_target_met",
+        status: "COMPLETE", statusReason: "all_available_native_pages_verified",
         oldestStoredAt: C_OLDEST, newestStoredAt: C_NEWEST,
         barsStored: C_BARS_STORED, targetDays: 365, coverageDays: 365,
         lastIngestAt: C_NEWEST,

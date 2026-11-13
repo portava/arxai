@@ -153,15 +153,6 @@ export const ALLOWLIST: PinEntry[] = [
       "all bridges — acceptable for a notification, revisit with multi-bridge.",
   },
   {
-    file: "artifacts/api-server/src/lib/data/chart/sessionProfile.ts",
-    count: 1,
-    reason:
-      "Weekly presence-profile cache (which weekly slots have bars) used for " +
-      "session-aware completeness display. Statistical metadata, not served " +
-      "bars. NOTE: built from broker_candles across all bridges of a symbol — " +
-      "a completeness heuristic, never a price source.",
-  },
-  {
     file: "artifacts/api-server/src/lib/data/chart/formingBarComposer.ts",
     count: 1,
     reason:

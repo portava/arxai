@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // ARXNativeChart — every header / mirror-layer / empty-state label must
 // describe what was actually observed (truth upgrade, 2026-10-28).
 //
@@ -60,7 +61,7 @@ vi.mock("@/lib/chart-engine", () => ({
 
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     analysisEvidence: null,
     loading: false,
     hasMore: false,

@@ -94,6 +94,7 @@ jobs:
     env:
       DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/arx_ci
       ARX_REQUIRE_INTEGRATION_DB: "true"
+      ARX_STRUCTURAL_TEST_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/arx_structural_pr150_ci
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
@@ -120,4 +121,8 @@ jobs:
           echo "ARX_TEST_PG_BIN=$bin" >> "$GITHUB_ENV"
       - name: Install Chromium for the browser session test
         run: pnpm --filter @workspace/scripts exec playwright install --with-deps chromium
+      - name: Provision isolated structural receipt database
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE arx_structural_pr150_ci'
+          DATABASE_URL="$ARX_STRUCTURAL_TEST_DATABASE_URL" pnpm --filter @workspace/db run push-force
       - run: pnpm run ci:integration

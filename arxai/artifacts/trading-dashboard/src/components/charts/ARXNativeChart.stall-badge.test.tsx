@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // THEME C3.5 — a stalled tick-stream must SAY it is stalled.
 //
 // The whole failure mode being fixed in C3 is a chart that has stopped
@@ -48,7 +49,7 @@ vi.mock("@/lib/chart-engine", () => ({
 
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     loading: false,
     hasMore: false,
     providerCapped: false,

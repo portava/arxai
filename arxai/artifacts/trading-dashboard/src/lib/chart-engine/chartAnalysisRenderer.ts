@@ -89,7 +89,7 @@ export class ChartAnalysisRenderer {
     }
     // Set proportions only after all panes exist; inserting a later pane must
     // not collapse the first oscillator to the library minimum height.
-    this.chart.panes().forEach((p, i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+    this.resizeStudyPanes();
     this.refresh(candles, 0, true);
     if (range) this.chart.timeScale().setVisibleLogicalRange(range);
   }
@@ -163,7 +163,7 @@ export class ChartAnalysisRenderer {
       exact = this.matchRebuildLayout();
     } finally { this.rendering = false; }
     if (!exact) { this.rebuildStudies(valid, key, candles, range); return true; }
-    this.chart.panes().forEach((p, i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+    this.resizeStudyPanes();
     // Kept calculators continue from the first input that differs from what
     // they consumed; new calculators start at 0 (calculate clamps to them).
     for (const study of this.studies) study.calculator.calculate(candles, dirty, false);
@@ -183,6 +183,13 @@ export class ChartAnalysisRenderer {
     } finally { this.rendering = false; }
     if (range) this.chart.timeScale().setVisibleLogicalRange(range);
     return true;
+  }
+  private resizeStudyPanes(): void {
+    const paneStudies = this.studies.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    this.chart.panes().forEach((pane, index) => {
+      const kind = paneStudies[index - 1]?.calculator.config.kind;
+      pane.setStretchFactor(index === 0 ? 3 : kind === "tick_volume" || kind === "trade_volume" ? 0.55 : 1);
+    });
   }
   /** After a patch: the panes must be the rebuild's panes, and pane 0 must
    * draw the overlay studies last in study order, as freshly added series. */

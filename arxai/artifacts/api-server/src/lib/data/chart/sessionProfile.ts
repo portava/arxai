@@ -24,10 +24,11 @@
 //
 // SAFETY: read-only telemetry. Never an execution gate. Never fabricates a bar.
 
+import { getConnection } from "../../brokerHub/connections.js";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { currentFeedScopeBridge } from "../feedScope.js";
 import { brokerHistoryIdentity } from "../brokerHistoryPolicy.js";
-import { db, brokerCandlesTable, mt5ConnectionTable } from "@workspace/db";
+import { db, brokerCandlesTable } from "@workspace/db";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -236,7 +237,7 @@ export async function getSessionProfile(
   now: number = Date.now(),
 ): Promise<WeeklyPresenceProfile | null> {
   const bridge = await currentFeedScopeBridge();
-  const [connection] = bridge == null ? [] : await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, bridge));
+  const connection = bridge == null ? null : await getConnection(bridge);
   const identity = connection?.userId != null ? brokerHistoryIdentity({userId: connection.userId, bridgeConnectionId: bridge!, accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server"}) : null;
   if (bridge != null && !identity) return null;
   const key = `${symbol.toUpperCase()}|${timeframe}|${bridge}|${identity}`;

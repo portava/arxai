@@ -55,9 +55,15 @@ async function run(cfg: HarnessRun): Promise<HarnessResult> {
 
   if (cfg.corruptBarIndex != null) {
     const surface = adapter.getScannerOverlaySurface()!;
-    const rows = [...(surface.series as unknown as { data(): readonly Record<string, number>[] }).data()];
+    const rows = [...(surface.series as unknown as { data: readonly Record<string, number>[] }).data];
     const row = { ...rows[cfg.corruptBarIndex]! };
-    if ("value" in row) row["value"]! += 0.001; else row["close"]! += 0.001;
+    if ("value" in row) row["value"]! += 0.001;
+    else {
+      row["close"]! += 0.001;
+      // Preserve valid OHLC so the native engine retains the one corrupted
+      // bar; otherwise its input validator drops it and shifts later indices.
+      row["high"] = Math.max(row["high"]!, row["close"]!);
+    }
     rows[cfg.corruptBarIndex] = row;
     (surface.series as unknown as { setData(d: unknown[]): void }).setData(rows);
   }

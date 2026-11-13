@@ -1,3 +1,4 @@
+const EMPTY_HISTORY: never[] = [];
 // ARX Native Chart structural trendline overlay — render-proof acceptance test
 // (Task #669).
 //
@@ -72,7 +73,7 @@ vi.mock("@/lib/chart-engine", () => ({
 // Deep-history scroll-back is irrelevant here — inert, empty hook.
 vi.mock("@/lib/useChartDeepHistory", () => ({
   useChartDeepHistory: () => ({
-    olderCandles: [],
+    olderCandles: EMPTY_HISTORY, analysisCandles: EMPTY_HISTORY, archiveCandles: EMPTY_HISTORY, nativeHistory: null,
     loading: false,
     hasMore: false,
     providerCapped: false,

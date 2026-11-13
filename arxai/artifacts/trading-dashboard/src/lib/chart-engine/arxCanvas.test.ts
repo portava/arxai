@@ -1,4 +1,5 @@
 import { ArxCanvasAdapter } from "./arxCanvasAdapter";
+import { marketAxisTimeLabel } from "./chartTimeZone";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import {
   createChart,
@@ -12,6 +13,7 @@ import {
   PriceScaleMode,
   cleanPoints,
   adaptiveTimeTickCount,
+  visibleTimeTickType,
   niceLinearPriceTicks,
   zoomRange,
 } from "./arxCanvas";
@@ -44,6 +46,15 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(adaptiveTimeTickCount(1000)).toBeGreaterThan(adaptiveTimeTickCount(320));
     expect(niceLinearPriceTicks(12_401, 61_999, 5)).toEqual([20_000, 30_000, 40_000, 50_000, 60_000]);
     expect(niceLinearPriceTicks(5, 5, 5)).toEqual([]);
+  });
+  it("keeps intraday time labels when older years are loaded offscreen", () => {
+    const start = Date.UTC(2026, 10, 13, 12) / 1000;
+    const times = [Date.UTC(2020, 0, 1) / 1000, ...Array.from({ length: 180 }, (_, i) => start + i * 60)];
+    expect(visibleTimeTickType(times, { from: 1, to: 180 })).toBe(3);
+    expect(visibleTimeTickType(times, { from: 0, to: 180 })).toBe(1);
+    expect(marketAxisTimeLabel(start, 3, "UTC", "en-US")).toBe("13 Nov 12:00");
+    expect(marketAxisTimeLabel(start, 3, "America/New_York", "en-US")).toBe("13 Nov 07:00");
+    expect(adaptiveTimeTickCount(320, 110)).toBeLessThan(adaptiveTimeTickCount(320, 42));
   });
   it("rejects invalid OHLC, deduplicates and orders observations without creating bars", () => {
     const clean = cleanPoints(
