@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
+import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "@/lib/chart-engine/arxCanvas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -474,7 +474,7 @@ export function ScannerChartPanel() {
   const prevOldestSecRef = useRef<number | null>(null);
   // Newest bar time (sec) currently in the series. The real-time forming-tip SSE
   // (Task #496) only ever calls series.update() with a time >= this value, so a
-  // late/out-of-order tick can never throw lightweight-charts' ordering error.
+  // late/out-of-order tick can never throw ARX Canvas' ordering error.
   const newestBarSecRef = useRef<number | null>(null);
   // Latest deepHistory.loadOlder, held in a ref so the reach-start handler (bound
   // ONCE per chart rebuild) always calls the CURRENT closure. The hook recreates
@@ -493,7 +493,7 @@ export function ScannerChartPanel() {
   // Last-known price stamp (Task #524). Separate from priceLinesRef so the
   // muted dotted axis label survives independently of the draft/overlay lines.
   const lastKnownLineRef = useRef<IPriceLine | null>(null);
-  // News event markers (Task #197). lightweight-charts v5 surfaces markers via
+  // News event markers (Task #197). ARX Canvas surfaces markers via
   // the standalone createSeriesMarkers(series, markers) plugin (the v4
   // series.setMarkers() was removed). We keep the plugin handle so events can be
   // re-drawn without recreating the chart, and detach it on rebuild.
@@ -1104,7 +1104,7 @@ export function ScannerChartPanel() {
   //    SEPARATE data effect below pushes bars incrementally with setData, which
   //    preserves the visible range. We only recreate when the symbol/timeframe
   //    changes, or when the FIRST candles arrive (hasCandles flips true once).
-  //    Mirrors the proven PositionMiniChart lightweight-charts v5 pattern.
+  //    Mirrors the proven PositionMiniChart ARX Canvas pattern.
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !hasCandles) return;
@@ -1117,9 +1117,6 @@ export function ScannerChartPanel() {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#a1a1aa",
         fontSize: 11,
-        // ARX-native renderer: suppress the lightweight-charts TradingView
-        // attribution logo so no third-party watermark sits on our chart.
-        attributionLogo: false,
       },
       grid: {
         vertLines: { color: "rgba(63, 63, 70, 0.25)" },
@@ -1144,7 +1141,7 @@ export function ScannerChartPanel() {
       },
     });
 
-    // lightweight-charts v5: series are created with addSeries(SeriesDefinition,
+    // ARX Canvas: series are created with addSeries(SeriesDefinition,
     // options). The legacy v4 `addCandlestickSeries()` was removed and throws at
     // runtime (it is undefined on the chart instance) — see the chart-lib note in
     // .agents/memory. Do NOT cast back to a synthetic addCandlestickSeries shape.
@@ -1236,7 +1233,7 @@ export function ScannerChartPanel() {
     if (!series || !chart || mergedCandles.length === 0) return;
 
     // Drop any malformed bar (missing / null / NaN OHLC) before setData: the
-    // lightweight-charts candlestick colorer reads bar color data during paint
+    // ARX Canvas candlestick colorer reads bar color data during paint
     // via ensureNotNull and throws "Value is null" on the next repaint otherwise.
     const mapped = sanitizeCandlestickData(
       mergedCandles.map((c) => ({
@@ -1376,7 +1373,7 @@ export function ScannerChartPanel() {
       // Use Number.isFinite (NOT typeof === "number") so a NaN/Infinity OHLC can
       // never reach series.update(): typeof NaN === "number" passes, but a NaN
       // bar becomes a whitespace point whose candlestick colorer throws
-      // "Value is null" deep in lightweight-charts on the next repaint —
+      // "Value is null" deep in ARX Canvas on the next repaint —
       // uncatchable here. This mirrors the chart-engine adapter's guard.
       if (
         typeof b.openTimeMs !== "number" || !Number.isFinite(b.openTimeMs) ||
@@ -1387,7 +1384,7 @@ export function ScannerChartPanel() {
       )
         return;
       const tipSec = Math.floor(b.openTimeMs / 1000);
-      // Never feed an out-of-order time to lightweight-charts (it would throw).
+      // Never feed an out-of-order time to ARX Canvas (it would throw).
       if (newestBarSecRef.current != null && tipSec < newestBarSecRef.current) return;
       series.update({
         time: tipSec as UTCTimestamp,
@@ -1565,7 +1562,7 @@ export function ScannerChartPanel() {
       lastSec + inferBarSeconds(candles.slice(-2).map((c) => c.time)) * NEWS_MARKER_LOOKAHEAD_BARS;
     // The ascending open-times (epoch seconds) of the candles ACTUALLY in the
     // series — sanitized identically to setData so a marker can only ever anchor
-    // to a bar that exists. lightweight-charts throws "Value is null" if a marker
+    // to a bar that exists. ARX Canvas throws "Value is null" if a marker
     // resolves to a missing bar (findBar → null), so every marker time below is
     // snapped onto one of these real bars.
     const candleSecsAsc = sanitizeCandlestickData(
@@ -1600,7 +1597,7 @@ export function ScannerChartPanel() {
       });
     }
     if (markers.length === 0) return;
-    // lightweight-charts requires markers sorted ascending by time.
+    // ARX Canvas requires markers sorted ascending by time.
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     newsMarkersApiRef.current = createSeriesMarkers(series, markers);
     // Deterministic teardown: detach the marker layer on unmount / re-run so the
@@ -1663,7 +1660,7 @@ export function ScannerChartPanel() {
 
     // Snap every structure marker onto a real bar present in the series. The
     // engine intends bar-anchored times, but a marker whose time doesn't EXACTLY
-    // match a loaded bar makes lightweight-charts' findBar() return null and the
+    // match a loaded bar makes ARX Canvas' findBar() return null and the
     // candlestick colorer throw "Value is null" on repaint — so we enforce
     // bar-membership here against the SAME sanitized open-times fed to setData,
     // rather than trusting the upstream alignment.
@@ -1709,7 +1706,7 @@ export function ScannerChartPanel() {
     // and cleared across a symbol/timeframe switch. `candles` MUST be a dep: the
     // markers above are snapped onto the bars in the series at draw time, and the
     // poll's setData slides the fixed-size window forward (oldest bars roll off) —
-    // a marker left anchored to a dropped bar makes lightweight-charts' findBar()
+    // a marker left anchored to a dropped bar makes ARX Canvas' findBar()
     // return null and the candlestick colorer throw "Value is null" on the next
     // repaint (uncatchable here), which crashed the Scanner page when the chart
     // sat open across candle refreshes. Re-running on every candle window keeps

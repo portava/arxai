@@ -10,7 +10,7 @@ import {
   type ISeriesApi,
   type IPriceLine,
   type SeriesMarker,
-} from "lightweight-charts";
+} from "@/lib/chart-engine/arxCanvas";
 import {
   type ChartOverlay,
   overlayColor,
@@ -36,22 +36,22 @@ const DEFAULT_VISIBLE_DESKTOP = 150;
 const DEFAULT_VISIBLE_MOBILE = 80;
 
 const CAPABILITIES: ChartEngineCapabilities = {
-  id: "lightweight-charts",
-  label: "ARX Native (lightweight-charts v5)",
+  id: "arx-canvas",
+  label: "ARX Canvas",
   available: true,
   candles: true,
   priceLines: true,
   markers: true,
   zones: true,
   coordinateApi: true,
-  // Staged for later tasks — lightweight-charts has no built-in drawing tools
+  // Staged for later tasks — ARX Canvas has no built-in drawing tools
   // or draggable order handles, so we advertise them as unsupported today.
   drawingTools: false,
   draggableOrders: false,
 };
 
 /**
- * lightweight-charts v5 implementation of the ARX chart-engine contract.
+ * ARX Canvas implementation of the ARX chart-engine contract.
  *
  * This class is the SINGLE owner of the imperative chart engine: chart/series
  * lifecycle, candle data, the live-price affordance, read-only overlays
@@ -64,12 +64,12 @@ const CAPABILITIES: ChartEngineCapabilities = {
  * are consumed as the shared read-only `ChartOverlay` model. Candles are
  * supplied pre-normalized by the caller — this class never fabricates bars.
  *
- * lightweight-charts v5 note: series are created with
+ * ARX Canvas note: series are created with
  * `addSeries(CandlestickSeries, options)`. The legacy v4 `addCandlestickSeries()`
  * / `series.setMarkers()` methods were REMOVED and throw at runtime — never cast
  * a call to re-introduce them (markers go through `createSeriesMarkers`).
  */
-export class LightweightChartsAdapter implements ChartEngineAdapter {
+export class ArxCanvasAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
   private chart: IChartApi | null = null;
@@ -83,12 +83,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private structureSeries: ISeriesApi<"Line">[] = [];
   private ghostSeries: ISeriesApi<"Candlestick">[] = [];
   private structureMarkersApi: { detach: () => void } | null = null;
-  // Raw (un-snapped) structural overlay as last handed to setStructureLines, so
-  // the markers can be RE-SNAPPED onto real bars whenever setCandles slides the
-  // window. A marker left anchored to a bar that rolled off the series makes
-  // lightweight-charts' findBar() return null and the candlestick colorer throw
-  // "Value is null" on the next repaint — uncatchable at any call site — so the
-  // adapter self-heals its own anchors instead of trusting the caller to redraw.
   private structureLinesRaw: ChartStructureLine[] = [];
   private structureMarkersRaw: ChartStructureMarker[] = [];
   // Snapped marker times of the currently-applied structure draw, used to skip
@@ -101,7 +95,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private candles: ChartEngineCandle[] = [];
   // Newest bar time (Unix seconds) the series currently holds. Tracks both
   // setCandles (authoritative closed window) and updateActiveCandle (live tip)
-  // so a streaming tip can never feed lightweight-charts an out-of-order time.
+  // so a streaming tip can never feed ARX Canvas an out-of-order time.
   private newestSeriesTime: number | null = null;
   private didFit = false;
   private feedState: ChartEngineFeedState = { livePriceAffordance: false };
@@ -160,8 +154,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       },
     });
 
-    // lightweight-charts v5: addSeries(SeriesDefinition, options). The legacy v4
-    // addCandlestickSeries() was removed and throws at runtime. Do NOT cast.
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#10b981",
       downColor: "#ef4444",
@@ -259,7 +251,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!series) return;
 
     // Detect how many bars were PREPENDED (older history loaded at the front).
-    // lightweight-charts' setData preserves the visible range by bar INDEX, so a
+    // ARX Canvas' setData preserves the visible range by bar INDEX, so a
     // prepend would shift the user's view rightward; we counter-shift the logical
     // range by the prepended count to keep the same bars on screen.
     const prevOldest = this.candles[0]?.time;
@@ -274,10 +266,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         : null;
 
     this.candles = candles;
-    // Drop any malformed bar (missing / null / NaN OHLC) BEFORE handing data to
-    // lightweight-charts: its candlestick colorer reads the bar's color data
-    // during PAINT via ensureNotNull and throws "Value is null" on the next
-    // repaint otherwise — uncatchable at this call site.
     const sanitized = sanitizeCandlestickData(
       candles.map((c) => ({
         time: c.time as UTCTimestamp,
@@ -293,11 +281,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       sanitized.length > 0 ? (sanitized[sanitized.length - 1]!.time as number) : null;
     series.setData(sanitized);
 
-    // Re-anchor any structural markers onto the NEW bar set. When the fixed-size
-    // window slides forward (oldest bars roll off), a marker still pointing at a
-    // dropped bar makes the candlestick colorer throw "Value is null" on the
-    // next repaint — so the anchors are re-snapped in the same tick as setData,
-    // before the library can paint.
     if (this.structureMarkersRaw.length > 0 || this.structureSnappedTimes.length > 0) {
       this.applyStructureFromRaw(false);
     }
@@ -363,10 +346,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.markersApi = null;
 
     const markerOverlays = overlays.filter((o) => o.type === "marker" && o.marker);
-    // Snap the anchor onto a bar that is ACTUALLY in the series: the caller
-    // derives latestBarTime from its own candle state, but if that bar was
-    // dropped by sanitization (or the states are momentarily out of step) a
-    // marker on a missing bar throws "Value is null" on the next repaint.
     const anchorSec =
       latestBarTime != null
         ? snapSecToCandle(latestBarTime, this.sanitizedBarSecsAsc())
@@ -402,7 +381,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       series.setData(sanitizeCandlestickData(path.candles).map(c => ({ ...c, time: c.time as UTCTimestamp })));
       this.ghostSeries.push(series);
     }
-    if (this.ghostSeries.length) this.chart.timeScale().fitContent();
+    // Preserve user pan and zoom when scenario overlays refresh.
   }
 
   setStructureLines(
@@ -505,7 +484,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   updateActiveCandle(candle: ChartEngineCandle): void {
     const series = this.series;
     if (!series) return;
-    // Defensive out-of-order guard: lightweight-charts' series.update throws if
+    // Defensive out-of-order guard: ARX Canvas' series.update throws if
     // given a time older than the newest point. Drop any tip whose time is
     // behind the newest bar/tip already on screen so a late or reordered frame
     // can never crash the chart or rewind a bar. An equal time updates the
@@ -529,11 +508,15 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         close: candle.close,
       });
       this.newestSeriesTime = candle.time;
+      const last = this.candles.at(-1);
+      if (last?.time === candle.time) this.candles = [...this.candles.slice(0, -1), candle];
+      else this.candles = [...this.candles, candle];
+      this.applyLivePriceAffordance();
     } catch { /* ignore a bad streaming update */ }
   }
 
   setSymbol(_symbol: string): void {
-    // Informational only. lightweight-charts has no instrument concept; the
+    // Informational only. ARX Canvas has no instrument concept; the
     // Shell rebuilds the engine (init) on a symbol change so overlays/levels
     // never bleed across instruments.
   }

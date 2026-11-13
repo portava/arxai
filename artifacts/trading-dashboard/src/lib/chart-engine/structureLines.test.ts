@@ -34,7 +34,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { createSeriesMarkersMock } = vi.hoisted(() => ({
   createSeriesMarkersMock: vi.fn(() => ({ detach: vi.fn() })),
 }));
-vi.mock("lightweight-charts", () => ({
+vi.mock("@/lib/chart-engine/arxCanvas", () => ({
   LineSeries: { __kind: "LineSeries" },
   LineStyle: { Solid: 0, Dashed: 2 },
   createSeriesMarkers: (...args: unknown[]) => createSeriesMarkersMock(...args),

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders, Target, Layers, Wand2 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { SetupQualityBadge } from "@/components/trading/SetupQualityBadge";
 import { RubySetupReason } from "@/components/scanner/RubySetupReason";
 import { ScannerTimingBadges, type ScannerTimingContext } from "@/components/scanner/ScannerTimingBadges";
@@ -29,6 +29,7 @@ import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 import { resolveSymbol } from "@/lib/symbolRegistry";
+import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useViewMode } from "@/hooks/useViewMode";
 import { RubyScalpFocusCard } from "@/components/scanner/RubyScalpFocusCard";
 import { RubyScalpRanking } from "@/components/scanner/RubyScalpRanking";
@@ -209,6 +210,8 @@ export function scalpResultToSignal(r: ScalpResult) {
  * one Ruby read, no chip walls.
  */
 export default function MarketScanner() {
+  const [,navigate] = useLocation();
+  const [,setSharedTimeframe] = useScannerTimeframe();
   const [universe, setUniverse] = useState<UniverseId>("all");
   const [universes, setUniverses] = useState<UniverseInfo[]>([]);
   const [status, setStatus] = useState<{
@@ -528,7 +531,9 @@ export default function MarketScanner() {
   const handleScalpPick = (r: ScalpResult) => {
     const bare = bareSymbol(r.symbol).toUpperCase();
     const canonical = resolveSymbol(bare)?.canonicalSymbol ?? r.symbol;
+    setSharedTimeframe("5m");
     setChartSymbol(canonical);
+    navigate("/live-chart");
   };
 
   // Load a symbol (by name) onto the shared chart bus (canonicalised).
@@ -536,6 +541,7 @@ export default function MarketScanner() {
     const bare = bareSymbol(symbol).toUpperCase();
     const canonical = resolveSymbol(bare)?.canonicalSymbol ?? symbol;
     setChartSymbol(canonical);
+    navigate("/live-chart");
   };
 
   // ---------- Tab contents -------------------------------------------------
@@ -543,6 +549,8 @@ export default function MarketScanner() {
   const focusTab = (
     <div className="space-y-4">
       <MasterLiveAccessBanner />
+      <SectionErrorBoundary section="Selected chart"><ScannerChartPanel /></SectionErrorBoundary>
+      <SectionErrorBoundary section="Trade Health"><TradeHealthPanel chartSymbol={chartSym} /></SectionErrorBoundary>
       <HighImpactEventBanner />
       <GlobalMarketHeatCard />
       <SelectedMarketPanel />
@@ -558,6 +566,7 @@ export default function MarketScanner() {
 
   const scalpBuilderTab = (
     <div className="space-y-4">
+      <RubyScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
       <RubyScalpBuilder onBuild={openScalpTrade} />
     </div>
   );
@@ -698,6 +707,7 @@ export default function MarketScanner() {
                 {o.timingContext && (
                   <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} />
                 )}
+                <Button variant="outline" className="w-full" onClick={()=>handleSymbolPick(o.symbol)} data-testid={`scanner-chart-${o.symbol}`}>Open chart · {o.symbol}</Button>
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
                   <Button
                     size="sm"
@@ -763,7 +773,7 @@ export default function MarketScanner() {
       </p>
       <SymbolExplorer
         activeSymbol={symbolsTabActive}
-        onSelect={(canonical) => setChartSymbol(canonical)}
+        onSelect={handleSymbolPick}
       />
     </div>
   );
@@ -825,8 +835,6 @@ export default function MarketScanner() {
         </CardContent>
       </Card>
 
-      <RubyScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
-
       <BroadScanOpportunityMap
         marketGroup={opportunityMapGroup(universe)}
         selectedSymbol={symbolsTabActive}
@@ -882,7 +890,8 @@ export default function MarketScanner() {
         the floating Ruby orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary running={Boolean(status?.running)} />
+      <div className="workspace-page-heading"><div><span className="workspace-eyebrow">DISCOVER SETUPS</span><h1>Market scanner</h1><p>Scan for potential buys, sells and scalp setups. Review a market in Chart before building a trade.</p></div><Button variant="outline" onClick={()=>navigate("/live-chart")}>Open selected chart</Button></div>
+      <CollapsibleSection title="Selected market status" description="Data freshness, trading readiness and the current market read." storageKey="scanner.truthDetails" testId="scanner-truth-details"><ScannerHeaderSummary running={Boolean(status?.running)} /></CollapsibleSection>
 
       {err && (
         <CompactAlert
@@ -906,23 +915,16 @@ export default function MarketScanner() {
         />
       )}
 
-      <SectionErrorBoundary section="Chart">
-        <ScannerChartPanel />
-      </SectionErrorBoundary>
-
-      <SectionErrorBoundary section="Trade Health">
-        <TradeHealthPanel chartSymbol={chartSym} />
-      </SectionErrorBoundary>
-
+      {busy&&<div className="workspace-scan-progress" role="status" aria-live="polite"><span/>Scanning the selected markets…</div>}
       <PageTabs
-        storageKey="market-scanner"
-        defaultTab="focus"
+        storageKey="market-scanner-workspace"
+        defaultTab="broad-scan"
         variant="pill"
         tabs={[
-          { id: "focus",      label: "Focus",      icon: <Target className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
           { id: "broad-scan", label: "Broad Scan", icon: <Radar className="h-3.5 w-3.5" />,  content: <SectionErrorBoundary section="Broad Scan">{broadScanTab}</SectionErrorBoundary> },
-          { id: "scalp-builder", label: "Scalp Builder", icon: <Wand2 className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
-          { id: "symbols",    label: "Symbols",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
+          { id: "scalp-builder", label: "Scalps", icon: <Wand2 className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
+          { id: "focus", label: "Market detail", icon: <Target className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
+          { id: "symbols",    label: "Markets",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
         ]}
       />
 

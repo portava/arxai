@@ -5,9 +5,7 @@ import type { ChartOverlay } from "@/lib/chart-overlays";
 //
 // The Smart Chart Shell (live-chart page) owns ALL chart state and intelligence.
 // The actual on-screen RENDERER lives behind this adapter interface, so the
-// engine can be swapped (lightweight-charts today; a licensed TradingView
-// Advanced Charts engine, or another renderer, later) WITHOUT the Shell ever
-// touching engine-specific code.
+// engine can be swapped without the Shell touching engine-specific code.
 //
 // HONESTY / SAFETY:
 //  - This contract is purely a VIEW contract. No adapter may place, modify, or
@@ -18,7 +16,7 @@ import type { ChartOverlay } from "@/lib/chart-overlays";
 //    contract. An adapter never fabricates bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
+export type ChartEngineId = "arx-canvas";
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
@@ -116,7 +114,7 @@ export interface ChartStructureMarker {
 
 /**
  * The renderer-agnostic engine contract. The Smart Chart Shell drives the chart
- * ONLY through these methods. lightweight-charts is the first implementation;
+ * ONLY through these methods. ARX Canvas is the first implementation;
  * any future engine implements the same surface.
  */
 export interface ChartEngineAdapter {

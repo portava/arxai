@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown } from "lucide-react";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
+import { ARXNativeChart } from "@/components/charts/ARXNativeChart";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 
 type SubmitResp = {
@@ -226,7 +226,7 @@ export default function LiveManualPage() {
             )}
           </div>
         </div>
-        <TradingViewLiveChart defaultSymbol={symbol} height={620} compact />
+        <ARXNativeChart symbol={symbol} height={620} />
       </div>
     </div>
   );

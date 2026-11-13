@@ -56,21 +56,20 @@ import {
 //
 // Renders clean candlesticks from the Level 1 normalized contract
 // (GET /api/chart/candles via the generated useGetChartCandles hook). This is a
-// reusable, self-contained chart placed BESIDE the TradingView embed so the
-// native pipeline can be proven before becoming the default.
+// reusable chart shell backed by the first-party ARX Canvas renderer.
 //
 // HONESTY / SAFETY:
 //  - Candles come ONLY from the normalized /api/chart/candles contract, which is
 //    itself built over the existing market-data router. We NEVER fabricate bars.
 //    When the contract returns an honest empty/unavailable state we show a clear
-//    "no native candles" message (with an optional TradingView fallback) — never
+//    "no native candles" message — never
 //    a blank or fake chart.
 //  - This is a view-only chart: it has no order-placement surface. Trade actions
 //    live elsewhere (the gated instant-trade router).
 //  - Level 3 feed confidence: the header renders a FeedConfidenceBadge driven by
 //    the contract's embedded feedStatus (source/live/stale/latency/last update/
 //    missing-candle count/AI-usable/warning). When the feed is stale or poor a
-//    prominent banner offers the TradingView fallback, and when aiUsable=false
+//    prominent banner identifies the feed issue, and when aiUsable=false
 //    the chart is visibly marked "not AI-confirmed" so Level 5 overlays respect it.
 //
 // Phase 2 additions:
@@ -195,10 +194,6 @@ export interface ARXNativeChartProps {
   mobileHeight?: number;
   /** Show the minimal honest quality chip (default true). Level 3 owns the rich badge. */
   showFeedStatus?: boolean;
-  /** Render a "Use TradingView" button in the empty/error state. */
-  showFallbackToggle?: boolean;
-  /** Called when the user asks to fall back to the TradingView reference chart. */
-  onRequestFallback?: () => void;
   /** Max candles to request (default 300; contract caps at 5000). */
   limit?: number;
   /**
@@ -246,8 +241,6 @@ export function ARXNativeChart({
   height = 520,
   mobileHeight,
   showFeedStatus = true,
-  showFallbackToggle = false,
-  onRequestFallback,
   limit = 300,
   overlays = [],
   onChartContextChange,
@@ -387,7 +380,7 @@ export function ARXNativeChart({
   const containerRef = useRef<HTMLDivElement | null>(null);
   // The chart RENDERER lives behind the swappable chart-engine adapter (Task
   // #373). This component owns React state, data, feed-status and UI; the
-  // imperative engine (lightweight-charts v5) is driven only through the adapter.
+  // imperative engine (ARX Canvas) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const [ghostState, setGhostState] = useState<{ symbol: string; paths: GhostPath[] }>({ symbol: "", paths: [] });
   const receiveGhostPaths = useCallback((paths: GhostPath[]) => setGhostState({ symbol: resolvedSymbol, paths }), [resolvedSymbol]);
@@ -421,7 +414,7 @@ export function ARXNativeChart({
   //    these keys preserves the user's zoom/scroll across data polls and
   //    guarantees overlays/levels never bleed across instruments. The actual
   //    chart engine is created behind the adapter — this component never touches
-  //    lightweight-charts directly (Task #373).
+  //    the renderer directly (Task #373).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -927,8 +920,6 @@ export function ARXNativeChart({
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
                 aiUsableResolved={badgeAiUsableResolved}
-                showFallback={showFallbackToggle}
-                onRequestFallback={onRequestFallback}
               />
             )}
             {showNotAiConfirmed && (
@@ -1032,7 +1023,7 @@ export function ARXNativeChart({
         {/* Mirror state detail */}
         {mirrorStatus === "Conflict" && (
           <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
-            Data integrity failed — use TradingView for reference
+            Data integrity failed — analysis paused
           </span>
         )}
         {mirrorStatus === "Stale" && (
@@ -1132,17 +1123,7 @@ export function ARXNativeChart({
                 {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
               </div>
             </div>
-            {showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 border-red-500/40 px-2 text-xs text-red-200 hover:bg-red-950/60"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-safemode"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
+
           </div>
         )}
 
@@ -1185,17 +1166,7 @@ export function ARXNativeChart({
             {query.isFetching && !query.isLoading && (
               <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
             )}
-            {conf.suggestFallback && showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-stale"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
+
           </div>
         )}
 
@@ -1216,11 +1187,7 @@ export function ARXNativeChart({
               <Button size="sm" variant="outline" onClick={() => void query.refetch()} data-testid="arx-native-retry">
                 Retry
               </Button>
-              {showFallbackToggle && onRequestFallback && (
-                <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-error">
-                  <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-                </Button>
-              )}
+
             </div>
           </div>
         )}
@@ -1235,15 +1202,11 @@ export function ARXNativeChart({
             </p>
             <p className="max-w-md text-xs text-muted-foreground">
               {feedStatus?.quality === "unavailable"
-                ? "Waiting for a live feed to connect. Try again in a moment or use TradingView for reference."
+                ? "Waiting for a live feed to connect. Use Refresh to check again."
                 : warning ||
                   `No native candles available for ${resolvedSymbol} on ${timeframe} right now.`}
             </p>
-            {showFallbackToggle && onRequestFallback && (
-              <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-empty">
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView reference
-              </Button>
-            )}
+
           </div>
         )}
       </CardContent>

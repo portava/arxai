@@ -70,7 +70,7 @@ vi.mock("@/lib/symbolRegistry", () => ({
   resolveSymbol: (s: string) => ({ canonicalSymbol: s }),
 }));
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ realIsAdmin: false }) }));
-vi.mock("wouter", () => ({ Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
+vi.mock("wouter", () => ({ useLocation: () => ["/market-scanner", vi.fn()], Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
 
 // Enumerated lucide icons used by the page + the (real) CompactAlert.
 vi.mock("lucide-react", () => {
@@ -177,12 +177,12 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-describe("Market Scanner — degraded banner on the Focus tab", () => {
-  it("shows the honest 'Scanner error' banner on the default Focus tab during an outage", async () => {
+describe("Market Scanner — degraded banner on the Broad Scan tab", () => {
+  it("shows the honest 'Scanner error' banner on the default Broad Scan tab during an outage", async () => {
     render(<MarketScanner />);
 
-    // The default tab is Focus…
-    expect((await screen.findByTestId("active-tab")).textContent).toBe("focus");
+    // The default tab is Broad Scan…
+    expect((await screen.findByTestId("active-tab")).textContent).toBe("broad-scan");
 
     // …and the page-scoped degraded banner appears with the honest copy.
     const banner = await screen.findByTestId("scanner-error");
@@ -203,8 +203,8 @@ describe("Market Scanner — degraded banner on the Focus tab", () => {
     setVisibility(false);
 
     await waitFor(() => expect(screen.queryByTestId("scanner-error")).toBeNull());
-    // Still on the Focus tab after recovery.
-    expect(screen.getByTestId("active-tab").textContent).toBe("focus");
+    // Still on the Broad Scan tab after recovery.
+    expect(screen.getByTestId("active-tab").textContent).toBe("broad-scan");
   });
 
   it("offers a 'Retry now' action that re-runs load() and clears on success", async () => {

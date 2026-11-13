@@ -83,7 +83,7 @@ vi.mock("@/lib/symbolRegistry", () => ({
 // non-admin tests. Reset to false in beforeEach.
 let mockRealIsAdmin = false;
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ realIsAdmin: mockRealIsAdmin }) }));
-vi.mock("wouter", () => ({ Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
+vi.mock("wouter", () => ({ useLocation: () => ["/market-scanner", vi.fn()], Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a> }));
 
 // Enumerated lucide icons used by the page.
 vi.mock("lucide-react", () => {

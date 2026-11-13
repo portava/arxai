@@ -14,14 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Topbar, MobileMenuTrigger } from "./Topbar";
-import { MobileBottomNav } from "./MobileBottomNav";
+import { WorkspaceHeader } from "./WorkspaceHeader";
 import { Footer } from "./Footer";
 import { ARXLogoMark, ARXBrandLockup } from "@/components/brand/ARXLogo";
 import { FloatingActionPanel } from "@/components/trading/FloatingActionPanel";
 import { SafetyHeader } from "@/components/ss/SafetyHeader";
-import { LiveModeBadge } from "@/components/live/LiveModeBadge";
-import NotificationCenter from "@/components/NotificationCenter";
 import { CommandPalette } from "./CommandPalette";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -557,92 +554,23 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
   );
 }
 
-const COLLAPSE_KEY = "highroll.sidebarCollapsed";
-
-
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const hideGlobalHeader = location === "/" || location === "/trade-command-room";
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(COLLAPSE_KEY) === "1";
-  });
-
-  useEffect(() => {
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("theme", "dark");
-  }, []);
-
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      const next = !c;
-      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      return next;
-    });
-  };
-
+  const [theme,setTheme]=useState<"light"|"dark">(()=>{try{return localStorage.getItem("arx.workspace.theme")==="light"?"light":"dark";}catch{return "dark";}});
+  useEffect(()=>{document.documentElement.classList.toggle("dark",theme==="dark");try{localStorage.setItem("arx.workspace.theme",theme);}catch{/* private storage */}},[theme]);
   return (
-    <div className="min-h-screen flex bg-background text-foreground font-sans overflow-x-clip">
-      {/* SS — skip-to-content link for keyboard/screen-reader users */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-primary focus:text-primary-foreground focus:px-3 focus:py-1.5 focus:rounded-md focus:text-sm focus:font-semibold"
-      >
-        Skip to main content
-      </a>
-      {/* Desktop sidebar (collapsible) */}
-      <aside className={cn("hidden md:block shrink-0 sticky top-0 h-screen relative transition-all duration-200", collapsed ? "w-16" : "w-60")}>
-        <SidebarContent collapsed={collapsed} />
-        <button
-          onClick={toggleCollapsed}
-          className="absolute -right-3 top-20 z-20 w-6 h-6 rounded-full bg-card border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          data-testid="button-sidebar-collapse"
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-      </aside>
-
-      {/* Main column */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {!hideGlobalHeader && (
-        <Topbar
-          onMobileMenu={
-            <MobileMenuTrigger>
-              {(close) => <SidebarContent onNavigate={close} />}
-            </MobileMenuTrigger>
-          }
-        />
-        )}
-        {/* T025 — single compact status row: one LIVE chip (left) + alerts
-            bell (right). The full-width billboard banner (mode label + user
-            message + "Real money risk") was removed; live mode and any
-            blocked/kill-switch state now surface only through the compact
-            LiveModeBadge chip, whose tooltip carries the longer detail. */}
-        {!hideGlobalHeader && (
-        <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-zinc-900 bg-zinc-950/60">
-          <LiveModeBadge />
-          <NotificationCenter />
-        </div>
-        )}
-        {/* Legacy SS safety header — kept for operator-facing context until
-            Phase 3 ships and the broker placement layer replaces it. */}
-        {!hideGlobalHeader && <SafetyHeader />}
-        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-clip pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]" tabIndex={-1}>
-          <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
-            <RouteAccessGuard>{children}</RouteAccessGuard>
-          </div>
-          <Footer />
-        </main>
-      </div>
-
-      {/* Mobile bottom nav + universal floating action panel */}
-      <MobileBottomNav />
+    <div className="arx-workspace min-h-screen flex flex-col bg-background text-foreground font-sans">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-primary focus:text-primary-foreground focus:px-3 focus:py-2 focus:rounded-md">Skip to main content</a>
+      <WorkspaceHeader theme={theme} onThemeChange={()=>setTheme(t=>t==="light"?"dark":"light")} menu={close=><SidebarContent onNavigate={close}/>}/>
+      {!hideGlobalHeader && <SafetyHeader />}
+      <main id="main-content" className="workspace-main flex-1 min-w-0" tabIndex={-1}>
+        <div className="min-w-0 p-3 sm:p-5 md:p-6 max-w-[1600px] mx-auto w-full"><RouteAccessGuard>{children}</RouteAccessGuard></div>
+        <Footer />
+      </main>
       <FloatingActionPanel />
       <CommandPalette />
-      <Suspense fallback={null}>
-        <ArxAssistantLivePanel />
-      </Suspense>
+      <Suspense fallback={null}><ArxAssistantLivePanel /></Suspense>
     </div>
   );
 }
