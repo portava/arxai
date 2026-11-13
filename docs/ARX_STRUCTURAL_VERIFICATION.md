@@ -34,8 +34,8 @@ node build.mjs
 
 The DB suite requires an explicitly created disposable database with existing
 Drizzle schema. It refuses other hosts/names, cleans only its own receipt rows,
-and skips if no dedicated test URL is provided. The final reported run did not
-skip. Never point this command or the schema test setup at production.
+and skips locally if no dedicated test URL is provided. In CI/release contexts,
+a missing dedicated URL is a hard failure. The final reported run did not skip. Never point this command or the schema test setup at production.
 
 From `artifacts/trading-dashboard`:
 
@@ -77,17 +77,32 @@ this user's receipt. Concurrent writes and original-snapshot equality pass.
 
 ## Environment and evidence limits
 
-A fresh `pnpm install --offline --frozen-lockfile --ignore-scripts` fails on the
-repository's pre-existing workspace-overrides/lockfile mismatch. Verification
-used cached external dependencies with every workspace link remapped to this
-checkout. Two absent macOS native build packages (`lightningcss-darwin-arm64`
-1.31.1, `@tailwindcss/oxide-darwin-arm64` 4.2.1) were installed in the task's
-scratch directory and exposed with NODE_PATH; no manifest or lockfile was
-changed for that repair. A clean frozen installation is still not a passed check.
+The initial implementation checks used cached dependencies after a clean frozen
+install exposed the existing workspace-overrides/lockfile mismatch. The release
+follow-up fixes that mismatch: native platform exclusions were removed and the
+lockfile regenerated for the two existing loader/esbuild overrides. A separate
+source checkout with fresh node_modules now passes `pnpm install --frozen-lockfile`,
+both production builds and all four `typecheck:ci` units, without NODE_PATH or
+scratch native packages. All 87 repository guards pass. The first clean CI
+attempt used an archive without Git metadata; after restoring the exact source
+history, the Git-aware guards pass.
 
-The feature builds and has targeted local coverage. The entire 7,043-file
-application suite, deployed DB permissions/retention, authenticated broker
-session E2E, long-running live operation and prediction edge are not certified.
+The new API, HTTP and chart tests are registered in root CI, and real PostgreSQL
+receipt persistence is registered in the integration lane. Set both DATABASE_URL
+and ARX_STRUCTURAL_TEST_DATABASE_URL to a separately provisioned local disposable
+database named arx_structural_pr150_*. The root aggregate also contains legacy
+HTTP tests requiring BASE_URL; it is not fully offline despite older comments.
+Release verification uses a loopback Express fixture with broker credentials
+excluded. The standalone integration lane uses a different disposable DB.
+
+The post-merge hook now installs dependencies only; it no longer runs an
+unconditional schema push. Its two success/failure-path tests and the seven
+existing production-environment checks pass. No migration is needed by this
+feature. Full aggregate results are recorded in `ARX_STRUCTURAL_RELEASE_CHECK.md`.
+
+The feature builds and has targeted local coverage. Deployed DB permissions and
+retention, authenticated broker session E2E, long-running live operation and
+prediction edge are not certified.
 The temporary browser fixture was removed from application source after review.
 All earlier mathematical research files and execution/risk/permission files are
 unchanged by the implementation.

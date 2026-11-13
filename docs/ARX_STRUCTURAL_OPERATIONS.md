@@ -52,8 +52,8 @@ outside these statistical candidate gates; no forecast is connected to orders.
 Next work, in order: independent longer data capture and prospective soak;
 regime/shift and latency/abstention diagnostics; versioned higher-timeframe
 features and active FVG lifecycle; calibrated path distributions; durable
-model registry, retention and background outcome catch-up. Fix the repository's
-pre-existing frozen-lockfile mismatch before claiming a clean reproducible release.
+model registry, retention and background outcome catch-up. The release follow-up
+repairs the frozen-lockfile mismatch and verifies a clean install and builds.
 
 ## DEMO economic evaluation protocol — not executed
 
@@ -70,5 +70,9 @@ Local feature integration is demonstrated. Trading promotion is not ready:
 prebreak gates rejected all five markets; the accepted geometry head degraded
 on untouched holdout; the capture spans only about 5.5 days; original arrival
 replay is unavailable; unattended operational reliability and calibrated paths
-are unproven. Production broker E2E, load/retention controls and clean-install CI
-remain necessary. No merge or deployment is included in PR #150 implementation.
+are unproven. Production broker E2E and load/retention controls remain necessary. The owner
+authorized merging PR #150 and will handle deployment on Replit separately.
+The post-merge hook installs dependencies only and does not change the schema.
+Preserve the Replit deployment configuration and existing workspace hardening
+when synchronizing the reviewed GitHub changes; the deployed app uses a nested
+`arx/` source directory rather than this repository at workspace root.

@@ -20,7 +20,7 @@ measured forecasting skill and production readiness remain separate judgments.
 | 10 — Improvement lifecycle | Candidate fitting, gates, manifests and brake implemented | Chronological selection/acceptance, OOD fallback, latched prior-outcome brake, versioned reproducibility. No production approval registry or automatic trade promotion. |
 | 11 — ARX integration | Working authenticated API and chart integration | POST/GET `/api/me/structural/forecasts`; typed read-only domain contracts. Execution, scanner trading decisions and risk gates unchanged. |
 | 12 — DEMO economics | Not authorized or performed | Protocol in `ARX_STRUCTURAL_OPERATIONS.md`; no orders or P&L claim. |
-| 13 — LIVE readiness | Not ready for promotion; not deployed | Build and local tests pass. Broader validation, fresh reproducible install, runtime feed E2E, retention/load controls and owner release approval remain. |
+| 13 — LIVE readiness | Not ready for promotion; not deployed | Clean frozen install, builds, four TypeScript units and all 87 guards pass. All 312 CI commands and 133 integration groups passed; details in `ARX_STRUCTURAL_RELEASE_CHECK.md`. Runtime feed E2E and retention/load controls remain; owner authorized merge and will deploy separately. |
 | 14 — Maintenance | Backlog and versioning documented | `ARX_STRUCTURAL_OPERATIONS.md`; preserved V6.4–V6.7 reports. |
 
 See `ARX_STRUCTURAL_VERIFICATION.md` for commands, failures and final checks.

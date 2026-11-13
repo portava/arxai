@@ -4,6 +4,9 @@ import { fitStructuralModel, forecastStructural, type DataOrigin, type Structura
 
 // This suite refuses every database except the named disposable local DB.
 const testUrl = process.env.ARX_STRUCTURAL_TEST_DATABASE_URL;
+if (!testUrl && (process.env.CI || process.env.ARX_REQUIRE_INTEGRATION_DB)) {
+  throw new Error("ARX_STRUCTURAL_TEST_DATABASE_URL_REQUIRED_FOR_RELEASE");
+}
 if (testUrl) {
   const parsed = new URL(testUrl);
   if (!(["localhost", "127.0.0.1"].includes(parsed.hostname)) || !parsed.pathname.startsWith("/arx_structural_pr150_")) throw new Error("DISPOSABLE_LOCAL_DATABASE_REQUIRED");
