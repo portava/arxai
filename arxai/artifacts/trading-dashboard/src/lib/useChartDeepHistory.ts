@@ -16,8 +16,12 @@ import { fetchChartHistory, type ChartHistoryPage } from "@/lib/chartCandlesQuer
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 
 export interface ChartDeepHistoryState {
-  /** Older candles accumulated in front of the newest window (epoch-ms, ascending). */
+  /** All older candles loaded for display (epoch-ms, ascending). */
   olderCandles: Candle[];
+  /** Older candles with matching producer evidence, safe to bind into research. */
+  analysisCandles: Candle[];
+  /** Older candles retained only as a visibly separate, unverified archive. */
+  archiveCandles: Candle[];
   /** Actual producer evidence retained for optional historical analysis. */
   analysisEvidence: ChartHistoryPage["historyEvidence"];
   /** True while a back-page fetch is in flight. */
@@ -59,6 +63,19 @@ function dedupeAscending(older: Candle[], incoming: Candle[]): Candle[] {
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
+function validPageBeforeCursor(candles: Candle[], before: string): boolean {
+  const beforeMs = Date.parse(before);
+  if (!Number.isFinite(beforeMs)) return false;
+  for (let i = 0; i < candles.length; i++) {
+    const bar = candles[i]!;
+    if (!Number.isFinite(bar.time) || bar.time >= beforeMs
+      || ![bar.open, bar.high, bar.low, bar.close].every(value => Number.isFinite(value) && value > 0)
+      || bar.high < Math.max(bar.open, bar.close) || bar.low > Math.min(bar.open, bar.close)
+      || (i > 0 && bar.time <= candles[i - 1]!.time)) return false;
+  }
+  return true;
+}
+
 export function useChartDeepHistory(
   symbol: string,
   apiTf: string,
@@ -69,6 +86,8 @@ export function useChartDeepHistory(
 ): ChartDeepHistoryState {
   const sourceIdentity = JSON.stringify([source, evidenceIdentity, requireEvidence]);
   const [olderCandles, setOlderCandles] = useState<Candle[]>([]);
+  const [analysisCandles, setAnalysisCandles] = useState<Candle[]>([]);
+  const [archiveCandles, setArchiveCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [providerCapped, setProviderCapped] = useState(false);
@@ -105,6 +124,8 @@ export function useChartDeepHistory(
     inFlightRef.current = false;
     setStateIdentity(identityRef.current);
     setOlderCandles([]);
+    setAnalysisCandles([]);
+    setArchiveCandles([]);
     setLoading(false);
     setHasMore(true);
     setProviderCapped(false);
@@ -140,12 +161,6 @@ export function useChartDeepHistory(
       if (!hasMore) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
-      if (requireEvidence && (!source || !evidenceIdentity)) {
-        setHasMore(false);
-        setProviderCapped(true);
-        setLimitationReason("Older history is unavailable until the chart's data-source identity can be verified.");
-        return;
-      }
       inFlightRef.current = true;
       const generation = generationRef.current;
       const controller = new AbortController();
@@ -161,7 +176,9 @@ export function useChartDeepHistory(
             limit: 500,
             before,
             source: sourceRef.current,
-            ...(evidenceIdentity ? { sourceIdentity: evidenceIdentity } : {}),
+            ...(sourceRef.current === "deriv_public" && evidenceIdentity
+              ? { sourceIdentity: evidenceIdentity }
+              : {}),
             signal: controller.signal,
           });
           if (!isCurrent()) return;
@@ -171,46 +188,71 @@ export function useChartDeepHistory(
             setLimitationReason("Older history did not match the chart's data source.");
             return;
           }
-          if ((requireEvidence || evidenceIdentity != null) && (!page.historyEvidence
-            || page.historyEvidence.symbol !== symbol || page.historyEvidence.timeframe !== apiTf
-            || page.historyEvidence.source !== source || page.historyEvidence.sourceIdentity !== evidenceIdentity)) {
+          if (!page.ok) {
+            setHasMore(false);
+            setProviderCapped(page.providerLimitReached);
+            setLimitationReason(page.limitationReason ?? page.providerMessage ?? "The history source did not return an older page.");
+            return;
+          }
+          if (page.candles.length > 0 && !validPageBeforeCursor(page.candles, before)) {
             setHasMore(false);
             setProviderCapped(true);
-            setLimitationReason(page.limitationReason ?? "Older history could not verify the chart's original data source.");
+            setLimitationReason("Older history was not strictly ordered before the requested candle; the page was not added.");
             return;
+          }
+          const nextCursorMs = page.nextBefore == null ? NaN : Date.parse(page.nextBefore);
+          const pageOldestMs = page.candles[0]?.time;
+          const cursorAdvanced = page.candles.length === 0
+            ? !page.hasMoreHistory || (Number.isFinite(nextCursorMs) && nextCursorMs < Date.parse(before))
+            : Number.isFinite(nextCursorMs) && Number.isFinite(pageOldestMs)
+              && Math.abs(nextCursorMs - pageOldestMs!) <= 1
+              && nextCursorMs < Date.parse(before);
+          if (page.hasMoreHistory && !cursorAdvanced) {
+            setHasMore(false);
+            setProviderCapped(true);
+            setLimitationReason("The history cursor did not advance; paging stopped to avoid repeating bars.");
           }
           if (page.source) sourceRef.current = page.source;
           // Retain producer evidence, never stamp the newest feed's identity
-          // onto an earlier page. Unattested pages remain display-only.
+          // onto an earlier page. Unattested pages remain display-only in a
+          // separate archive series and never enter the verified analysis bars.
           if (page.candles.length > 0) {
             const observed = page.historyEvidence;
             const unit = apiTf.match(/^(M|H|D|W)(\d+)$/);
             const interval = apiTf === "MN1" ? 2592000 : unit ? Number(unit[2]) * ({M:60,H:3600,D:86400,W:604800}[unit[1] as "M"] ?? 0) : 0;
             const closedThrough = observed ? Date.parse(observed.lastClosedCandleAt) : NaN;
+            const evidenceMatches = !!observed && !!evidenceIdentity
+              && observed.symbol === symbol && observed.timeframe === apiTf
+              && observed.source === "deriv_public" && observed.source === page.source
+              && observed.sourceIdentity === evidenceIdentity && observed.scope === "public_provider";
             let disagreement = false;
             for (let i=0;i<page.candles.length;i++) {
               const bar=page.candles[i]!, value=JSON.stringify([bar.open,bar.high,bar.low,bar.close]);
               const previous=analysisObservations.current.get(bar.time);
               if (!Number.isFinite(bar.time) || bar.time+interval*1000>closedThrough
                 || (i>0 && bar.time<=page.candles[i-1]!.time) || (previous!=null && previous!==value)) disagreement=true;
-              analysisObservations.current.set(bar.time,value);
+              if (evidenceMatches) analysisObservations.current.set(bar.time,value);
             }
-            if (!observed || observed.scope !== "public_provider" || !interval || !Number.isFinite(closedThrough)
+            const verifiedPage = evidenceMatches && !analysisRefused.current && !disagreement
+              && !!interval && Number.isFinite(closedThrough)
               || closedThrough>Date.now() || disagreement) {
+            if (verifiedPage) {
+              setAnalysisEvidence(previous => previous && Date.parse(previous.lastClosedCandleAt) > Date.parse(observed.lastClosedCandleAt) ? previous : observed);
+              setAnalysisCandles(previous => isCurrent() ? dedupeAscending(previous, page.candles) : previous);
+            } else {
               analysisRefused.current = true;
               setAnalysisEvidence(null);
-            } else if (!analysisRefused.current) {
-              setAnalysisEvidence(previous => previous && Date.parse(previous.lastClosedCandleAt) > Date.parse(observed.lastClosedCandleAt) ? previous : observed);
+              setArchiveCandles(previous => isCurrent() ? dedupeAscending(previous, page.candles) : previous);
             }
           }
-          cursorRef.current = page.nextBefore;
+          cursorRef.current = cursorAdvanced ? page.nextBefore : null;
           if (page.candles.length > 0) {
             setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
             setLoadedAny(true);
           }
-          setHasMore(page.hasMoreHistory && page.nextBefore != null);
+          setHasMore(page.hasMoreHistory && cursorAdvanced && page.nextBefore != null);
           setProviderCapped(page.providerLimitReached);
-          setLimitationReason(page.limitationReason ?? page.providerMessage);
+          if (!page.hasMoreHistory || cursorAdvanced) setLimitationReason(page.limitationReason ?? page.providerMessage);
           if (page.coverageDays != null) setCoverageDays(page.coverageDays);
           if (page.depthTargetDays > 0) setDepthTargetDays(page.depthTargetDays);
         } catch {
@@ -237,6 +279,8 @@ export function useChartDeepHistory(
   const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf && stateIdentity.sourceIdentity === sourceIdentity;
   return {
     olderCandles: currentState ? olderCandles : [],
+    analysisCandles: currentState ? analysisCandles : [],
+    archiveCandles: currentState ? archiveCandles : [],
     analysisEvidence: currentState ? analysisEvidence : null,
     loading: currentState ? loading : false,
     hasMore: currentState ? hasMore : true,
