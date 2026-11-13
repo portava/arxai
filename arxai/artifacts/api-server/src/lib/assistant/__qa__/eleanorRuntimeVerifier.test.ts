@@ -52,6 +52,26 @@ test("a clean answer is returned byte-for-byte with no footer", () => {
   assert.equal(r.findings.length, 0);
 });
 
+test("live-evaluation follow-ups survive every streaming boundary without hiding factual errors", () => {
+  const cases = [
+    { user: "Read R_75 M15", answer: "Next: if you want, I can also give you 2–3 trade options for R_75 M15." },
+    { user: "Buy 0.1 EURUSD", answer: "Type the direct command exactly as: **buy EURUSD 0.1** in the trade command flow. Next: I can run a risk check for 0.1 EURUSD." },
+    { user: "Status of 5124?", answer: "Next: If 5124 was rejected or failed, I can explain the blocker once the action record is available." },
+  ];
+  for (const { user, answer } of cases) {
+    for (const size of [1, 2, 7, 31]) {
+      const gate = new ClaimGate(buildEvidenceIndex([], user));
+      let visible = "";
+      for (let i = 0; i < answer.length; i += size) visible += gate.push(answer.slice(i, i + size));
+      visible += gate.end() + gate.footer();
+      assert.equal(visible, answer, `chunk ${size}: ${answer}`);
+    }
+    const checked = verifyAnswer(`${answer} Your order was filled at 1.9999.`, [], user);
+    assert.ok(checked.findings.some(f => f.kind === "EXECUTION_UNCONFIRMED"));
+    assert.ok(!checked.text.includes("Your order was filled"));
+  }
+});
+
 test("fail closed: if the checker throws, the segment is withheld, never shown unchecked", () => {
   const broken = { numbers: null, times: [], strings: [], executions: [], symbols: new Set(), toolNames: [] } as unknown as EvidenceIndex;
   const gate = new ClaimGate(broken);

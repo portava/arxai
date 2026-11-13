@@ -113,12 +113,15 @@ const RATIO_LEFT_RE = /\b1\s*:\s*(?=\d)/g;
 const RATIO_RIGHT_RE = /(?<=\b\d+(?:\.\d+)?\s*:\s*)1(?![\d.:])/g;
 // A list size the model offers ("rescan for the top 5 setups"), not a fact.
 const TOP_N_RE = /\b(?:top|best)\s+\d+\b/gi;
+// The size of a proposed answer is not a count of existing market setups.
+const OFFERED_OPTIONS_RE = /\bI\s+(?:can|could)(?:\s+also)?\s+(?:give|show|offer|list|compare)(?:\s+you)?\s+\d{1,2}(?:\s*[–-]\s*\d{1,2})?\s+(?:trade\s+)?(?:options|scenarios|examples)\b/gi;
 // A phrasing the model suggests the user type ("send something like “action
 // #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
 // Segment-local so the streaming verifier and speech gate judge it the same.
 const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send|try|type|reply with|ask(?: me)?)`;
 const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
+const EXAMPLE_COMMAND_RE = /\b(?:type|send|try)\s+the\s+(?:direct\s+)?command\s+(?:exactly\s+)?as:\s*\*\*[^*\n]{1,200}\*\*/gi;
 // A bullet whose whole content is one quotation is a suggested phrasing.
 const QUOTED_BULLET_RE = /^\s*(?:[-*•]|\d{1,2}[.)])\s+(?:\*\*)?[“"][^”"\n]{1,200}[”"](?:\*\*)?[.,;]?\s*$/;
 
@@ -313,8 +316,10 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   work = mask(work, RATIO_LEFT_RE);
   work = mask(work, RATIO_RIGHT_RE);
   work = mask(work, TOP_N_RE);
+  work = mask(work, OFFERED_OPTIONS_RE);
   work = mask(work, EXAMPLE_QUOTED_RE);
   work = mask(work, EXAMPLE_ID_RE);
+  work = mask(work, EXAMPLE_COMMAND_RE);
   if (QUOTED_BULLET_RE.test(raw)) work = " ".repeat(work.length);
 
   const pushClaim = (c: Omit<Claim, "start" | "end"> & { localStart: number; localEnd: number }): Claim => {
@@ -391,7 +396,15 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     const ticket = [...clause.before.matchAll(ticketPattern)].at(-1)?.[1]
       ?? [...clause.after.matchAll(ticketPattern)][0]?.[1];
     const entityMatches = (e: EvidenceNumber) => (!symbol || !!e.entities?.includes(symbol)) && (!ticket || !!e.entities?.includes(ticket));
-    const candidates = idx.numbers.filter(e => e.source === "user" ? /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw) : entityMatches(e));
+    const requestedRiskCheck = /\bI\s+(?:can|could)\b/i.test(raw)
+      && /\b(?:run|do)\s+(?:a\s+)?risk check\s+for\s*$/i.test(clause.before)
+      && (!symbol || namedSymbols(idx.userText, idx).includes(symbol));
+    const conditionalUserId = Number.isInteger(value) && value >= 100
+      && /\bif\s*$/i.test(clause.before)
+      && /^\s+(?:was|is|has been)\s+(?:rejected|failed|pending|cancelled|canceled)\b/i.test(clause.after);
+    const userEcho = /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw)
+      || requestedRiskCheck || conditionalUserId;
+    const candidates = idx.numbers.filter(e => e.source === "user" ? userEcho : entityMatches(e));
     const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({
       kind: "number", text: raw.slice(localStart, localEnd).trim(), value: (m[1] === "-" || m[1] === "−" ? -1 : 1) * value,

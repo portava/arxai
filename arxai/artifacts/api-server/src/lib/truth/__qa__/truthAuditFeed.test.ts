@@ -134,14 +134,19 @@ test("actual chart producer: a series the producer observed future-stamped never
   assert.equal(chart.feedStatus.aiUsable, false);
 });
 
-test("actual chart producer: a current series with a forming bar is still live/clean", async () => {
-  f = marketFixture({ forming: true });
+test("actual chart producer: a current series with a forming bar is still live/clean", async (t) => {
+  const now = Date.UTC(2026, 10, 10, 12);
+  t.mock.method(Date, "now", () => now);
+  f = marketFixture({ now, forming: true });
   const chart = await getChartCandles("EURUSD", "M15", 80, false);
   assert.equal(chart.feedStatus.quality, "clean"); assert.equal(chart.feedStatus.isLive, true);
 });
 
-test("actual chart producer: a current series is still live/clean", async () => {
-  f = marketFixture();
+test("actual chart producer: a current series is still live/clean", async (t) => {
+  // This is the open-market control, regardless of the runner's weekday.
+  const now = Date.UTC(2026, 10, 10, 12);
+  t.mock.method(Date, "now", () => now);
+  f = marketFixture({ now });
   const chart = await getChartCandles("EURUSD", "M15", 80, false);
   assert.equal(chart.feedStatus.quality, "clean"); assert.equal(chart.feedStatus.isLive, true);
 });

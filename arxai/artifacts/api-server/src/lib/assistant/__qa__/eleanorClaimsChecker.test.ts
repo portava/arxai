@@ -85,6 +85,30 @@ test("user-provided numbers may be echoed", () => {
   assert.deepEqual(kinds("You asked to risk 1.5% with a stop at 1.0800.", [], "risk 1.5% stop 1.0800"), []);
 });
 
+test("live evaluation: requested risk-check size remains a request, not a market fact", () => {
+  const request = "Buy 0.1 EURUSD";
+  assert.deepEqual(kinds("Next: if you want, I can help you preview the setup, run a risk check for 0.1 EURUSD, or read EURUSD structure before you submit anything.", [], request), []);
+  assert.ok(kinds("I can run a risk check for 0.2 EURUSD.", [], request).length);
+  assert.ok(kinds("I can run a risk check for 0.1 GBPUSD.", [], request).length);
+  assert.ok(kinds("EURUSD is currently trading at 0.1.", [], request).length, "a user-supplied size cannot prove a live price");
+  assert.ok(kinds("I can run a risk check for 0.1 EURUSD, but the entry is 1.2500.", [], request).length, "a separate factual assertion remains checked");
+});
+
+test("live evaluation: a supplied action identifier in a conditional is not a status assertion", () => {
+  assert.deepEqual(kinds("Next: If 5124 was rejected or failed, I can explain the blocker once the action record is available.", [], "Status of 5124?"), []);
+  assert.ok(kinds("If 5125 was rejected or failed, I can explain the blocker.", [], "Status of 5124?").length);
+  assert.ok(kinds("Your order 5124 was filled.", [], "Status of 5124?").includes("EXECUTION_UNCONFIRMED"));
+  assert.ok(kinds("The fill price is 5124.", [], "Status of 5124?").length);
+});
+
+test("live evaluation: proposed response size and suggested command are not observed trading facts", () => {
+  assert.deepEqual(kinds("Next: if you want, I can also give you 2–3 trade options for R_75 M15.", []), []);
+  assert.deepEqual(kinds("If you want to use the guarded flow, type the direct command exactly as: **buy EURUSD 0.1** in the trade command flow.", []), []);
+  assert.ok(kinds("The scanner found 3 trade options for R_75 M15.", []).length);
+  assert.ok(kinds("I can show you 3 trade options with an entry of 41250.", []).length);
+  assert.ok(kinds("Your order is **buy EURUSD 0.1**.", []).length);
+});
+
 test("stale data presented as live is flagged; disclosed staleness is not", () => {
   const stale = [snap({ stale: true, isLive: false, freshness: "STALE", quote: null })];
   assert.deepEqual(kinds("EURUSD is trading live at 1.0852 right now.", stale), ["STALE_AS_LIVE"]);

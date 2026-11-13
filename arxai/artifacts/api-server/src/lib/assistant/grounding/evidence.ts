@@ -64,6 +64,8 @@ export interface ExecutionEvidence {
 }
 
 export interface EvidenceIndex {
+  /** User input is authority for requested parameters, never market facts. */
+  userText: string;
   marketStates: MarketStateFact[];
   numbers: EvidenceNumber[];
   times: EvidenceTime[];
@@ -231,7 +233,7 @@ function executionOf(obj: Record<string, unknown>, tool: string, path: string, f
 const SYMBOL_KEYS = /^(symbol|displaySymbol|instrument|market|name|ticker|pair)$/;
 
 export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): EvidenceIndex {
-  const idx: EvidenceIndex = { numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name), marketStates: collectMarketStateFacts(outputs) };
+  const idx: EvidenceIndex = { userText, numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name), marketStates: collectMarketStateFacts(outputs) };
   const seen = new WeakSet<object>();
 
   const walk = (v: unknown, key: string, path: string, tool: string, frame: Frame, depth: number): void => {
