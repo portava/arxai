@@ -65,6 +65,7 @@ export function ChartHistoryControls({
         {nativeHistory.barsStored.toLocaleString()} stored · since {nativeHistory.oldest?.slice(0,10) ?? "pending"} · {nativeHistory.importStatus === "COMPLETE" ? "all available history imported" : "importing older history"}
       </span>}
       <Button
+        type="button"
         size="sm"
         variant="outline"
         className="h-7 px-2 text-[11px]"
@@ -78,6 +79,7 @@ export function ChartHistoryControls({
         {loading ? "Loading…" : "Load older"}
       </Button>
       <Button
+        type="button"
         size="sm"
         variant="outline"
         className="h-7 px-2 text-[11px]"

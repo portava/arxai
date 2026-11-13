@@ -32,6 +32,8 @@ describe("compact chart history controls", () => {
     expect(screen.getByTestId("chart-archive-display-only").textContent).toContain("identity unverified");
     fireEvent.click(screen.getByRole("button", { name: "Load older candles" }));
     fireEvent.click(screen.getByRole("button", { name: "Fit all loaded chart history" }));
+    expect(screen.getByRole("button", { name: "Load older candles" }).getAttribute("type")).toBe("button");
+    expect(screen.getByRole("button", { name: "Fit all loaded chart history" }).getAttribute("type")).toBe("button");
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
     expect(onFitHistory).toHaveBeenCalledTimes(1);
   });
