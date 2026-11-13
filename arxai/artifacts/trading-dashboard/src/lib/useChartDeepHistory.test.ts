@@ -188,7 +188,6 @@ describe("useChartDeepHistory", () => {
       expect(result.current.hasMore).toBe(false);
     },
   );
-  });
 
   it.each([null,
     { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "different-account-or-source" },
@@ -297,10 +296,10 @@ describe("useChartDeepHistory", () => {
     expect(result.current.coverageDays).toBeNull();
     act(() => result.current.loadOlder(before));
     expect(fetchChartHistory).toHaveBeenCalledTimes(2);
-    await act(async () => current.resolve(page({ source: "current-feed", candles: [candle(200)], nextBefore: "current-cursor" })));
+    await act(async () => current.resolve(page({ source: "current-feed", candles: [candle(200)], nextBefore: new Date(200).toISOString() })));
     expect(result.current.olderCandles).toEqual([candle(200)]);
     act(() => result.current.loadOlder(before));
-    expect(fetchChartHistory.mock.calls[2]![0]).toMatchObject({ ...next, before: "current-cursor", source: "current-feed" });
+    expect(fetchChartHistory.mock.calls[2]![0]).toMatchObject({ ...next, before: new Date(200).toISOString(), source: "current-feed" });
     await waitFor(() => expect(result.current.loading).toBe(false));
   });
 

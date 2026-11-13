@@ -39,9 +39,9 @@ describe("compact chart history controls", () => {
   it("prevents repeated loads while busy or when the source reports no more pages", () => {
     const onLoadOlder = vi.fn();
     const { rerender } = render(<ChartHistoryControls {...base} loading onLoadOlder={onLoadOlder} />);
-    expect(screen.getByRole("button", { name: "Loading older candles" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Loading older candles" })).toHaveProperty("disabled", true);
     rerender(<ChartHistoryControls {...base} hasMore={false} onLoadOlder={onLoadOlder} />);
-    expect(screen.getByRole("button", { name: "Load older candles" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Load older candles" })).toHaveProperty("disabled", true);
     expect(onLoadOlder).not.toHaveBeenCalled();
   });
 });

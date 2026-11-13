@@ -857,7 +857,7 @@ export class CanvasChart {
   }
   private fitContent() {
     this.setRange({
-      from: Math.max(-1, this.times.length - (this.width < 600 ? 65 : 150)),
+      from: -1, // Explicit fit includes every loaded candle; the adapter owns the initial recent-bar view.
       to:
         this.times.length +
             Math.max(3, Number(this.chartOptions.timeScale?.rightOffset) || 5),
