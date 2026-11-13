@@ -214,7 +214,8 @@ test("Closed market: H4 at Sat 02:00 UTC whose newest bar opened Fri 20:00 is no
   assert.equal(out.feedStatus.isLive, false);
   assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
   assert.match(out.feedStatus.message, /market closed/i);
-  assert.match(out.feedStatus.message, /2026-10-30 20:00 UTC/);
+  assert.match(out.feedStatus.message, /2026-10-30 20:00 source clock \(UTC unverified\)/);
+  assert.match(out.feedStatus.message, /scheduled weekend close \(2026-10-30 22:00 UTC\)/);
 });
 
 test("Closed market: D1 at Sat 10:00 UTC whose newest bar opened Fri 00:00 is not live", async () => {

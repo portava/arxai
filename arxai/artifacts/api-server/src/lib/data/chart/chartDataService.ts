@@ -654,6 +654,8 @@ async function buildChartFeed(
     durableMirror,
     storedHistory,
     newestOpenTime: lastCandle?.openTime ?? null,
+    newestOpenUtc: lastCandle?.timeBasisEvidence?.kind === "original_utc"
+      && lastCandle.timeBasisEvidence.basis === "UTC",
     marketClosedAtMs,
     alwaysOpen: session.alwaysOpen,
     trailingIntervals: verdict.trailingIntervals,
@@ -662,7 +664,7 @@ async function buildChartFeed(
   // stored bars are usually old) is described as history; bars that failed
   // their checks are described as that failure, never as readable history.
   const historyMessage = storedHistory && readableNotLiveQuality(quality)
-    ? storedHistoryMessage(source, displaySymbol, lastCandle?.openTime ?? null, now)
+    ? storedHistoryMessage(source, displaySymbol, messageCtx, now)
     : null;
   const message = historyMessage ?? buildMessage(quality, source, displaySymbol, messageCtx);
   // The shared verdict's lag warning cannot see the session: never let it
@@ -711,13 +713,16 @@ async function buildChartFeed(
     seriesAttribution: result.ok ? seriesAttributionFrom(result.provenance) : null };
 }
 
-function storedHistoryMessage(source: string | null, symbol: string, opened: string | null, now: number): string {
+function storedHistoryMessage(source: string | null, symbol: string, ctx: MessageContext, now: number): string {
+  const opened = ctx.newestOpenTime;
   const ms = opened == null ? NaN : Date.parse(opened);
   const mins = Number.isFinite(ms) ? Math.max(0, Math.floor((now - ms) / 60_000)) : null;
   const age = mins == null ? "unknown age" : mins < 60 ? `${mins} min ago`
     : mins < 2880 ? `${Math.floor(mins / 60)} h ago` : `${Math.floor(mins / 1440)} days ago`;
-  const utc = Number.isFinite(ms) ? new Date(ms).toISOString().replace("T", " ").replace(".000Z", " UTC") : "unknown";
-  return `Showing stored ${friendlyFeedSource(source)} candles for ${symbol} up to the last bar (opened ${utc}, ${age}). No live feed is available right now, so this is history, not live data.`;
+  // A source-clock coordinate cannot be subtracted from the UTC wall clock
+  // to claim an elapsed age. Only qualified original UTC may carry that age.
+  const ageLabel = ctx.newestOpenUtc ? `, ${age}` : "";
+  return `Showing stored ${friendlyFeedSource(source)} candles for ${symbol} up to the last bar (opened ${candleStamp(ctx)}${ageLabel}). No live feed is available right now, so this is history, not live data.`;
 }
 
 /**
@@ -748,6 +753,8 @@ interface MessageContext {
   storedHistory?: boolean;
   /** Newest provider bar's open time (ISO), before any display tip. */
   newestOpenTime: string | null;
+  /** Qualified original bar time; ISO formatting alone does not establish UTC. */
+  newestOpenUtc: boolean;
   /** Scheduled weekend close (epoch ms) the series predates, or null. */
   marketClosedAtMs: number | null;
   /** The instrument trades 24/7 (it never has a session close). */
@@ -768,13 +775,13 @@ interface MessageContext {
 function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
   if (quality !== "stale" && quality !== "delayed") return null;
   if (ctx.marketClosedAtMs != null) {
-    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${candleStamp(ctx)}. Not a feed fault, and not live data.`;
   }
   if (quality === "stale" && ctx.alwaysOpen === false) {
     const gap = typeof ctx.trailingIntervals === "number" && Number.isFinite(ctx.trailingIntervals) ? ctx.trailingIntervals : null;
     if (gap == null || gap >= 2) {
       const behind = gap == null ? "" : ` (${gap} bars behind the current bar)`;
-      return `No new ${displaySymbol} bar since one opened ${utcStamp(ctx.newestOpenTime)}${behind}. The market may be closed or the feed delayed; this is not live data.`;
+      return `No new ${displaySymbol} bar since one opened ${candleStamp(ctx)}${behind}. The market may be closed or the feed delayed; this is not live data.`;
     }
     // Bars are current but the live tick stream that forms the newest bar
     // went silent (forming-tip path).
@@ -793,6 +800,13 @@ function utcStamp(iso: string | null): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "an unknown time";
   return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+function candleStamp(ctx: MessageContext): string {
+  if (ctx.newestOpenUtc) return utcStamp(ctx.newestOpenTime);
+  const ms = ctx.newestOpenTime == null ? NaN : Date.parse(ctx.newestOpenTime);
+  if (!Number.isFinite(ms)) return "an unknown source-clock time";
+  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} source clock (UTC unverified)`;
 }
 
 /**
@@ -818,16 +832,16 @@ function buildMessage(
   ctx: MessageContext,
 ): string {
   if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
-    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${candleStamp(ctx)}. No live data until the market reopens.`;
   }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
-    return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
+    return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${candleStamp(ctx)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
   }
   switch (quality) {
     case "clean":
       return ctx.isLive
         ? `Live feed active for ${displaySymbol} (${friendlyFeedSource(source)}).`
-        : `Candles for ${displaySymbol} from ${friendlyFeedSource(source)} are complete but not confirmed live (newest bar opened ${utcStamp(ctx.newestOpenTime)}).`;
+        : `Candles for ${displaySymbol} from ${friendlyFeedSource(source)} are complete but not confirmed live (newest bar opened ${candleStamp(ctx)}).`;
     case "delayed":
       return `Feed for ${displaySymbol} is delayed / not yet confirmed real-time.`;
     case "stale":

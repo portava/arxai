@@ -128,6 +128,7 @@ test("Stored MT5 mirror (no bridge pushing): the briefing says stored history, n
   mt5Bars(H1, Math.floor(TUE / H1) * H1 - H1, TUE, "durable_mirror");
   const chart = await withNow(TUE, () => getChartCandles("EURUSD", "H1", 200));
   assert.match(chart.feedStatus.message, /^Showing stored MetaTrader 5 broker candles/);
+  assert.match(chart.feedStatus.message, /newest bar opened .*source clock \(UTC unverified\)/);
   const snap = await withNow(TUE, () => getSymbolSnapshot("EURUSD", "H1"));
   assert.equal(snap.notLiveReason, "stored_history");
   const line = briefingFeedLine(marketFeedFromSnapshot(snap));

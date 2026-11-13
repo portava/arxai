@@ -85,7 +85,8 @@ test("gold: no feed displays exactly the stored bars, not live or AI-usable, wit
   assert.equal(out.aiUsable, false);
   assert.equal(out.feedStatus.aiUsable, false);
   assert.equal(out.feedStatus.notLiveReason, "stored_history");
-  assert.match(out.feedStatus.message, /Showing stored .*candles for XAUUSD up to the last bar \(opened .*UTC, .*ago\)/);
+  assert.match(out.feedStatus.message, /Showing stored .*candles for XAUUSD up to the last bar \(opened .*source clock \(UTC unverified\)\)/);
+  assert.doesNotMatch(out.feedStatus.message, /\d{2}:\d{2} UTC|\d+ (?:min|h|days) ago/);
   assert.match(out.feedStatus.message, /history, not live data/);
   assert.equal(out.warning, out.feedStatus.message);
   assert.equal(out.marketEvidence, null);
