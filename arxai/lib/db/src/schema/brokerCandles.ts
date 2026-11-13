@@ -76,6 +76,9 @@ export const brokerCandlesTable = pgTable(
     low: doublePrecision("low").notNull(),
     close: doublePrecision("close").notNull(),
     tickVolume: doublePrecision("tick_volume"),
+    // Only true when this row's producer explicitly supplied a valid tickVolume.
+    // Older tick_volume values may be legacy generic-volume aliases.
+    tickVolumeObserved: boolean("tick_volume_observed").notNull().default(false),
     realVolume: doublePrecision("real_volume"),
     spread: doublePrecision("spread"),
     // Producer label — "mt5_ea" for EA CopyRates pushes.

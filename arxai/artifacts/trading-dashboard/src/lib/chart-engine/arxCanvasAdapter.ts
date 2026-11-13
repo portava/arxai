@@ -728,6 +728,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       // The next source reset clears this display-only series.
       this.archiveCandles = [];
     }
+    this.analysis?.setArchiveTickVolume(this.archiveCandles);
     if (this.hoveredCandle) this.hoveredCandle = this.findDisplayCandle(this.hoveredCandle.time);
     this.queueLegendUpdate();
   }

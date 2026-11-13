@@ -72,7 +72,7 @@ jobs:
         env:
           ARX_REQUIRE_INTEGRATION_DB: "true"
         run: |
-          pnpm --dir artifacts/api-server exec node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/fullHistoryRepair.test.ts src/lib/data/chart/__qa__/fullHistoryRepair.postgres.test.ts
+          pnpm --dir artifacts/api-server exec node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/fullHistoryRepair.test.ts src/lib/data/chart/__qa__/fullHistoryRepair.postgres.test.ts src/lib/data/__qa__/brokerHistoryVolume.test.ts src/lib/data/__qa__/brokerHistoryVolume.postgres.test.ts
           pnpm --dir artifacts/trading-dashboard exec vitest run src/lib/useChartDeepHistory.test.ts src/lib/chart-engine/arxCanvas.test.ts src/lib/chart-engine/chartReplay.test.ts src/lib/chart-engine/lightweightChartsAdapter.renderFidelity.test.ts src/components/news/HighImpactEventBanner.dateOnly.test.tsx
           python3 -m unittest discover -s mt5-bridge/market/relay -p "test_*.py"
       - run: pnpm run ci

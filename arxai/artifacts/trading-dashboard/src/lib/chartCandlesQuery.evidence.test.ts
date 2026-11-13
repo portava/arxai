@@ -3,6 +3,28 @@ import { fetchChartCandles, fetchChartHistory } from "./chartCandlesQuery";
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("native archive tick-volume transport", () => {
+  const native = { sourceIdentity: "b".repeat(64), clockBasis: "broker_server", importStatus: "BUILDING", barsStored: 5000, oldest: null, boundary: null };
+  const ticks = { kind: "tick_count", quantity: 60, unit: "ticks", reason: null };
+  const candle = { time: "2020-06-01T00:00:00Z", open: 100, high: 102, low: 99, close: 101, source: "mt5_broker", volume: 60, volumeEvidence: ticks };
+  const args = { symbol: "V25_1S", apiTf: "M1", source: "mt5_broker", before: "2026-01-01T00:00:00Z" };
+  function reply(nativeHistoryEvidence: unknown, bars: unknown[]) {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, source: "mt5_broker", nativeHistoryEvidence, candles: bars }) })));
+  }
+  it("retains explicitly observed native ticks, including actual zero", async () => {
+    reply(native, [candle, { ...candle, time: "2020-06-01T00:01:00Z", volumeEvidence: { ...ticks, quantity: 0 } }]);
+    const page = await fetchChartHistory(args);
+    expect(page.candles.map(c => c.volumeEvidence?.quantity)).toEqual([60, 0]);
+    expect(page.historyEvidence).toBeNull(); // still no historical UTC/research authority
+  });
+  it("withholds legacy, unqualified and unattributed numeric volume", async () => {
+    reply(native, [{ ...candle, volumeEvidence: undefined }, { ...candle, source: "synthetic_mock" }]);
+    expect((await fetchChartHistory(args)).candles.every(c => c.volumeEvidence == null)).toBe(true);
+    reply(null, [candle]);
+    expect((await fetchChartHistory(args)).candles[0]?.volumeEvidence).toBeUndefined();
+  });
+});
+
 describe("chart history identity transport", () => {
   const evidence = { symbol: "V75", timeframe: "M15", source: "mt5_broker", sourceIdentity: "opaque-account-one", lastClosedCandleAt: "2026-10-26T18:00:00Z" };
   function reply(marketEvidence: unknown) {

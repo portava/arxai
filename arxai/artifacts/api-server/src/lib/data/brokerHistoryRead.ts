@@ -7,6 +7,7 @@ import { barCloseMs, normalizeChartTimeframe } from "./chart/timeframes.js";
 import { classifySymbol, routeCandles } from "./marketDataRouter.js";
 import { scannerSourceIdentity } from "../scannerInputIntegrity.js";
 import type { CandleHistoryResult, GetCandleHistoryArgs } from "./candleHistoryService.js";
+import { brokerHistoryCandle } from "./brokerHistoryCandle.js";
 
 /** Read one immutable native account era, under the authenticated owner. Raw
  * broker time is retained as source-clock history, never relabelled UTC. */
@@ -49,8 +50,7 @@ export async function readBrokerHistory(args: GetCandleHistoryArgs): Promise<Can
   const complete = progress.status === "COMPLETE" && progress.statusReason === "all_available_native_pages_verified";
   const message = complete ? "All available native history imported." : "Older native history is importing. Retry to load newly received pages.";
   return { ...base, ok: true, status: "historical_only", cacheHit: true,
-    candles: page.map(row => ({ time: row.rawOpenTime!.toISOString(), brokerSymbol: row.brokerSymbol,
-      open: row.open, high: row.high, low: row.low, close: row.close, volume: row.tickVolume ?? 0 })),
+    candles: page.map(brokerHistoryCandle),
     returnedCount: page.length, oldest: page[0]?.openTimeUtc.toISOString() ?? null,
     newest: page.at(-1)?.openTimeUtc.toISOString() ?? null, hasMoreHistory: hasMore,
     nextBefore: page[0]?.openTimeUtc.toISOString() ?? null,

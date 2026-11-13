@@ -69,6 +69,18 @@ describe("useChartDeepHistory", () => {
   beforeEach(() => {
     fetchChartHistory.mockReset();
   });
+  it("preserves observed archive ticks for display while excluding native-clock pages from verified research", async () => {
+    const time = Date.parse("2020-06-01T00:00:00Z");
+    const volumeEvidence = { kind: "tick_count", quantity: 60, unit: "ticks", reason: null };
+    const archived = { ...candle(time), volumeEvidence };
+    fetchChartHistory.mockResolvedValueOnce({ ...page({ source: "mt5_broker", candles: [archived] }),
+      nativeHistoryEvidence: { sourceIdentity: "b".repeat(64), clockBasis: "broker_server", importStatus: "BUILDING", barsStored: 5000, oldest: null, boundary: null } });
+    const { result } = renderHook(() => useChartDeepHistory("V25_1S", "M1", true, "mt5_broker", "a".repeat(64), true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.archiveCandles[0]?.volumeEvidence).toEqual(volumeEvidence);
+    expect(result.current.olderCandles[0]?.volumeEvidence).toEqual(volumeEvidence);
+    expect(result.current.analysisCandles).toEqual([]); expect(result.current.analysisEvidence).toBeNull();
+  });
 
   it("retains only observed public history evidence and masks it on a source change",async()=>{
     const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);

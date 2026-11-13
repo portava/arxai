@@ -1035,10 +1035,11 @@ export function ARXNativeChart({
       const time = Math.floor(candle.time / 1000);
       if (!Number.isFinite(time) || mainTimes.has(time)
         || ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)) continue;
-      byTime.set(time, { time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
+      byTime.set(time, { time, open: candle.open, high: candle.high, low: candle.low, close: candle.close,
+        volumeEvidence: deepHistory.nativeHistory ? candle.volumeEvidence : undefined });
     }
     return [...byTime.values()].sort((a, b) => a.time - b.time);
-  }, [deepHistory.archiveCandles, mergedEngineCandles]);
+  }, [deepHistory.archiveCandles, deepHistory.nativeHistory, mergedEngineCandles]);
 
   const displayEngineCandles = useMemo(() => {
     const byTime = new Map<number, ChartEngineCandle>();
@@ -1047,7 +1048,7 @@ export function ARXNativeChart({
     return [...byTime.values()].sort((a, b) => a.time - b.time);
   }, [archiveEngineCandles, mergedEngineCandles]);
 
-  const hasQualifiedTickVolume = useMemo(() => mergedEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
+  const hasQualifiedTickVolume = useMemo(() => displayEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [displayEngineCandles]);
   const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
   const displayStudies = useMemo(() => chartDisplayStudies(preferences.studies, preferences.volumePane !== false, hasQualifiedTickVolume, hasQualifiedTradeVolume), [preferences.studies, preferences.volumePane, hasQualifiedTickVolume, hasQualifiedTradeVolume]);
   const tradeVolumeSelected = displayStudies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
@@ -2241,7 +2242,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
-      <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 whitespace-normal break-words border-t border-zinc-800 px-3 py-2 font-mono text-[11px] leading-5 text-zinc-300" data-testid="chart-candle-inspector">
+      <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 whitespace-normal break-words border-t border-zinc-800 pl-3 pr-20 py-2 font-mono text-[11px] leading-5 text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect its prices, range and volume
       </output>
       {/* Detailed tools stay mounted after the plot on every viewport. Source

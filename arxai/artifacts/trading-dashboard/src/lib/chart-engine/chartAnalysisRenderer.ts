@@ -3,7 +3,7 @@ import type {VwapAnchor} from './chartStudies';
 import {ChartVolumeProfilePrimitive} from "./chartVolumeProfilePrimitive";
 import type {VolumeProfileInspection} from "./chartVolumeProfile";
 import {studyId} from "./chartStudies";
-import { volumeInputQuantity, observedTradeVolumeIdentity } from "./chartVolume";
+import { volumeInputQuantity, observedTradeVolumeIdentity, observedTickVolume } from "./chartVolume";
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "./arxCanvas";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
@@ -35,10 +35,14 @@ export class ChartAnalysisRenderer {
   private inputVolumeIdentities:(string|null)[]=[];
   private inputFinality:(string|undefined)[]=[];
   private inputClock:(string|null|undefined)[]=[];
+  // Display-only native tick observations. No archive OHLC enters calculators,
+  // research, VWAP, volume profiles or the current-feed input snapshots.
+  private archiveTickPoints: StudyPoint[] = [];
   private onViewport = () => {
     if (this.rendering || !this.studies.length) return;
     const window = this.nextWindow();
-    if (window !== this.displayWindow) this.renderWindow(window);
+    if (window !== this.displayWindow || (this.archiveTickPoints.length > 0
+      && this.studies.some(study => study.calculator.config.kind === "tick_volume"))) this.renderWindow(window);
   };
   constructor(private chart: IChartApi, private price: PriceSeries) {
     chart.timeScale().subscribeVisibleLogicalRangeChange(this.onViewport);
@@ -78,6 +82,25 @@ export class ChartAnalysisRenderer {
     // exactly (reorder, insertion before a kept study, unexpected panes or a
     // manually scaled oscillator pane) takes the full rebuild instead.
     if (!this.patchStudies(valid, key, candles, range)) this.rebuildStudies(valid, key, candles, range);
+  }
+  setArchiveTickVolume(candles: ChartEngineCandle[]): void {
+    const next = candles.map(candle => ({ time: candle.time, values: [observedTickVolume(candle.volumeEvidence)] }));
+    if (samePoints(next, this.archiveTickPoints)) return;
+    this.archiveTickPoints = next;
+    if (this.studies.some(study => study.calculator.config.kind === "tick_volume")) this.renderWindow(this.nextWindow());
+  }
+  private visibleStudyPoints(study: StudyHandle, window: { from: number; to: number }): StudyPoint[] {
+    const points = study.calculator.points;
+    if (study.calculator.config.kind !== "tick_volume" || !this.archiveTickPoints.length) return points.slice(window.from, window.to);
+    // The current window wins on overlaps, including an unavailable current
+    // quantity. Archive observations are never substituted into that window.
+    let lo = 0, hi = this.archiveTickPoints.length;
+    const firstCurrent = points[0]?.time ?? Infinity;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.archiveTickPoints[mid]!.time < firstCurrent) lo = mid + 1; else hi = mid; }
+    const count = lo;
+    const visible = studyDisplayWindow(count + points.length, this.chart.timeScale().getVisibleLogicalRange(), null);
+    return [...this.archiveTickPoints.slice(visible.from, Math.min(visible.to, count)),
+      ...points.slice(Math.max(0, visible.from - count), Math.max(0, visible.to - count))];
   }
   private rebuildStudies(valid: ChartStudy[], key: string, candles: ChartEngineCandle[], range: LogicalRange | null): void {
     this.cancelPending();
@@ -175,7 +198,7 @@ export class ChartAnalysisRenderer {
     this.rendering = true;
     try {
       for (const study of this.studies) {
-        const visible = study.calculator.points.slice(window.from, window.to);
+        const visible = this.visibleStudyPoints(study, window);
         const unchanged = samePoints(study.rendered, visible);
         study.rendered = visible;
         if (!unchanged) study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
@@ -262,7 +285,7 @@ export class ChartAnalysisRenderer {
     this.rendering = true;
     try {
       for (const study of this.studies) {
-        const next = study.calculator.points.slice(window.from, window.to);
+        const next = this.visibleStudyPoints(study, window);
         const previous = study.rendered;
         let same = 0;
         while (same < previous.length && same < next.length && sameStudyPoint(previous[same]!, next[same]!)) same++;
@@ -309,7 +332,7 @@ export class ChartAnalysisRenderer {
     this.rendering = true;
     try {
       for (const study of this.studies) {
-        const visible = study.calculator.points.slice(window.from, window.to);
+        const visible = this.visibleStudyPoints(study, window);
         study.rendered = visible;
         study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
       }
@@ -349,6 +372,14 @@ export class ChartAnalysisRenderer {
         const point = calculator.points[mid]!;
         if (point.time === time) { values = point.values; reason=point.reason; break; }
         if (point.time < time) lo = mid + 1; else hi = mid - 1;
+      }
+      if (!values.length && calculator.config.kind === "tick_volume" && time < (calculator.points[0]?.time ?? Infinity)) {
+        lo = 0; hi = this.archiveTickPoints.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >>> 1, point = this.archiveTickPoints[mid]!;
+          if (point.time === time) { values = point.values; break; }
+          if (point.time < time) lo = mid + 1; else hi = mid - 1;
+        }
       }
       return {
         label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),

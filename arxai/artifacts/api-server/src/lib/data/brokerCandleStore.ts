@@ -527,6 +527,17 @@ export async function ingestBrokerCandles(
       qualityReason = "finalized";
     } else if (prev.isClosedBar && bar.isClosedBar) {
       if (ohlcEqual(prev, bar)) {
+        const previousTicks = prev.tickVolumeObserved ? mt5TickVolumeEvidence(prev.tickVolume) : null;
+        if (previousTicks?.kind === "tick_count") {
+          if (bar.volumeEvidence.kind === "tick_count" && bar.volumeEvidence.quantity !== previousTicks.quantity) {
+            rejected += 1;
+            continue;
+          }
+          // A generic/absent volume on an idempotent push cannot erase an
+          // earlier explicit observation or replace it with an ambiguous alias.
+          bar.tickVolume = previousTicks.quantity;
+          bar.volumeEvidence = previousTicks;
+        }
         qualityStatus = "idempotent";
         qualityReason = "idempotent";
       } else {
@@ -557,6 +568,7 @@ export async function ingestBrokerCandles(
       low: bar.low,
       close: bar.close,
       tickVolume: bar.tickVolume,
+      tickVolumeObserved: bar.volumeEvidence.kind === "tick_count",
       realVolume: bar.realVolume,
       spread: bar.spread,
       source,
@@ -596,13 +608,16 @@ export async function ingestBrokerCandles(
           brokerCandlesTable.brokerSymbol, brokerCandlesTable.timeframe, brokerCandlesTable.openTimeUtc],
         set: { open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`, close: sql`excluded.close`,
           closeTimeUtc: sql`excluded.close_time_utc`, tickVolume: sql`excluded.tick_volume`,
+          tickVolumeObserved: sql`excluded.tick_volume_observed`,
           realVolume: sql`excluded.real_volume`, spread: sql`excluded.spread`, isClosedBar: sql`excluded.is_closed_bar`,
           qualityStatus: sql`excluded.quality_status`, qualityReason: sql`excluded.quality_reason`, updatedAt: new Date() },
         setWhere: sql`NOT ${brokerCandlesTable.isClosedBar} OR (excluded.is_closed_bar
           AND abs(${brokerCandlesTable.open} - excluded.open) <= greatest(1e-9,abs(excluded.open)*1e-9)
           AND abs(${brokerCandlesTable.high} - excluded.high) <= greatest(1e-9,abs(excluded.high)*1e-9)
           AND abs(${brokerCandlesTable.low} - excluded.low) <= greatest(1e-9,abs(excluded.low)*1e-9)
-          AND abs(${brokerCandlesTable.close} - excluded.close) <= greatest(1e-9,abs(excluded.close)*1e-9))`,
+          AND abs(${brokerCandlesTable.close} - excluded.close) <= greatest(1e-9,abs(excluded.close)*1e-9)
+          AND (NOT ${brokerCandlesTable.tickVolumeObserved} OR (excluded.tick_volume_observed
+            AND ${brokerCandlesTable.tickVolume} = excluded.tick_volume)))`,
       }).returning({ time: brokerCandlesTable.openTimeUtc });
     insertedTimes.push(...written.filter(row => !previous.has(row.time.getTime())).map(row => row.time.getTime()));
     const lost = Math.min(500, writes.length - offset) - written.length;

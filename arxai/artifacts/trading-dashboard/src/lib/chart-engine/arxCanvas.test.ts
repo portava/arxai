@@ -200,3 +200,20 @@ it("measures the real native canvas array instead of calling a library-specific 
   expect(measured?.visibleBarsRoundTripped).toBeGreaterThan(0);
   adapter.destroy();
 });
+
+it("carries archive tick evidence through the actual canvas adapter without changing current-feed analysis", () => {
+  Object.defineProperty(container, "clientWidth", { value: 900 });
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container, height: 400 }); adapter.setCandles(bars);
+  adapter.setStudies([{ kind: "tick_volume", period: 1, color: "#22c55e" }, { kind: "sma", period: 2, color: "#ffffff" }]);
+  const archived = { ...bars[0]!, time: 400, volumeEvidence: { kind: "tick_count" as const, quantity: 60, unit: "ticks" as const, reason: null } };
+  adapter.setArchiveCandles([archived]);
+  expect(adapter.getStudyValues(400)[0]!.values[0]!.value).toBe(60);
+  expect(adapter.getStudyValues(400)[1]!.values[0]!.value).toBeNull();
+  expect(adapter.getVisibleCandles().some(c => c.time === 400)).toBe(false);
+  expect(adapter.measureRenderFidelity()?.barsCompared).toBe(100);
+  adapter.resetDataContext(); adapter.setCandles(bars);
+  expect(adapter.getStudyValues(400)[0]!.values[0]!.value).toBeNull();
+  adapter.destroy();
+});

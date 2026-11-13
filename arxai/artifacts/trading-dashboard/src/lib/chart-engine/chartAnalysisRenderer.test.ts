@@ -64,6 +64,42 @@ function fixture(count = 10000) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("study viewport rendering and streaming", () => {
+  it("plots qualified archive ticks without feeding archive OHLC into analysis studies", () => {
+    const f = fixture(3);
+    const ticks = (quantity: number) => ({ kind: "tick_count" as const, quantity, unit: "ticks" as const, reason: null });
+    const current = f.candles.map(c => ({ ...c, volumeEvidence: ticks(60) }));
+    f.renderer.setStudies([{ kind: "tick_volume", period: 1, color: "#22c55e" }, { kind: "sma", period: 2, color: "#ffffff" }], current);
+    const priorSma = f.renderer.inspect(current[1]!.time)[1]!.values[0]!.value;
+    f.renderer.setArchiveTickVolume([
+      { ...current[0]!, time: -80, volumeEvidence: ticks(0) },
+      { ...current[0]!, time: -20, volumeEvidence: undefined },
+      { ...current[0]!, time: 40, volumeEvidence: ticks(1250) },
+      { ...current[0]!, volumeEvidence: ticks(999) }, // current window wins
+    ]);
+    expect(f.handles[0].data.find((p: any) => p.time === -80)).toMatchObject({ value: 0 });
+    expect(f.handles[0].data.find((p: any) => p.time === -20)).not.toHaveProperty("value");
+    expect(f.handles[0].data.find((p: any) => p.time === 40)).toMatchObject({ value: 1250 });
+    expect(f.handles[0].data.find((p: any) => p.time === 100)).toMatchObject({ value: 60 });
+    expect(f.renderer.inspect(40)[0]!.values[0]!.value).toBe(1250);
+    expect(f.renderer.inspect(40)[1]!.values[0]!.value).toBeNull();
+    expect(f.renderer.inspect(current[1]!.time)[1]!.values[0]!.value).toBe(priorSma);
+    expect(f.handles[1].data.every((p: any) => p.time >= 100)).toBe(true);
+    f.renderer.setArchiveTickVolume([{ ...current[0]!, time: 40, volumeEvidence: undefined }]);
+    expect(f.renderer.inspect(40)[0]!.values[0]!.value).toBeNull();
+    expect(f.handles[0].data.find((p: any) => p.time === 40)).not.toHaveProperty("value");
+  });
+  it("bounds archive volume geometry and refreshes it when panning within older history", () => {
+    const f = fixture(3);
+    f.renderer.setStudies([{ kind: "tick_volume", period: 1, color: "#22c55e" }], f.candles);
+    const archive = Array.from({ length: 1000 }, (_, i) => ({ ...f.candles[0]!, time: 100 - (1000 - i) * 60,
+      volumeEvidence: { kind: "tick_count" as const, quantity: i, unit: "ticks" as const, reason: null } }));
+    f.view(0, 20); f.renderer.setArchiveTickVolume(archive);
+    expect(f.handles[0].data.length).toBeLessThan(500);
+    expect(f.handles[0].data[0].time).toBe(archive[0]!.time);
+    f.move(700, 710);
+    expect(f.handles[0].data.find((p: any) => p.time === archive[700]!.time)).toMatchObject({ value: 700 });
+    expect(f.handles[0].data.length).toBeLessThan(500);
+  });
   it("retains full calculations while limiting render geometry, and restores exact past values on pan", () => {
     const { renderer, handles, candles, move } = fixture();
     renderer.setStudies(STUDY_DEFAULTS.slice(0, 1), candles);

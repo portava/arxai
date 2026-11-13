@@ -215,7 +215,9 @@ export async function fetchChartHistory(args: {
     nativeHistoryEvidence,
     ok: Boolean(obj.ok),
     source: (obj.source as string | null) ?? null,
-    candles: adaptChartCandles(rawCandles as Array<Record<string, unknown>>),
+    candles: adaptChartCandles((rawCandles as Array<Record<string, unknown>>).map(candle =>
+      candle.source === "mt5_broker" && !nativeHistoryEvidence
+        ? { ...candle, volumeEvidence: undefined } : candle)),
     status: (obj.status as ChartHistoryStatus) ?? "unavailable",
     returnedCount: Number(obj.returnedCount ?? 0),
     oldest: (obj.oldest as string | null) ?? null,

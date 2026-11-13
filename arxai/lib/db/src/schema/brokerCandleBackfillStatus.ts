@@ -21,9 +21,8 @@ import {
 //                    is not yet met.
 //   PARTIAL        — some history stored, target not met, and no recent ingest
 //                    (streaming appears paused).
-//   COMPLETE       — stored coverage meets/exceeds the per-timeframe depth target.
-//   BROKER_LIMITED — the EA reported the broker has no older bars available, so
-//                    the series is as deep as it can ever get (honest ceiling).
+//   COMPLETE       — contiguous native pages reach the broker's proven first bar.
+//   BROKER_LIMITED — legacy boundary state; not proof of complete native history.
 //   ERROR          — an ingest error was recorded; needs operator attention.
 //
 // SAFETY SCOPE: MARKET-DATA / TELEMETRY ONLY. Never touches execution, the
@@ -45,7 +44,7 @@ export const brokerCandleBackfillStatusTable = pgTable(
     oldestStoredAt: timestamp("oldest_stored_at", { withTimezone: true }),
     newestStoredAt: timestamp("newest_stored_at", { withTimezone: true }),
     barsStored: integer("bars_stored").notNull().default(0),
-    // The per-timeframe depth target (days) used to judge COMPLETE.
+    // Legacy depth target for progress context; never proves COMPLETE.
     targetDays: integer("target_days"),
     // Observed coverage (days) between oldest and newest stored bar.
     coverageDays: doublePrecision("coverage_days"),
