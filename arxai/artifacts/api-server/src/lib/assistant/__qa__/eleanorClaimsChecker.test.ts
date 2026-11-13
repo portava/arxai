@@ -308,6 +308,16 @@ test("live evaluation: send-me and try-asking quoted examples retain their instr
   assert.ok(kinds("Send me “action #123”, but your order #123 was executed.", []).includes("EXECUTION_UNCONFIRMED"));
 });
 
+test("requested commands and identifier lookups remain requests across line breaks", () => {
+  assert.deepEqual(kinds("Type the direct command exactly as:\n**buy EURUSD 0.10**", [], "Buy 0.1 EURUSD"), []);
+  for (const command of ["buy EURUSD 0.20", "sell EURUSD 0.10", "buy GBPUSD 0.10", "EURUSD is trading at 0.10"]) {
+    assert.ok(kinds(command, [], "Buy 0.1 EURUSD").length, command);
+  }
+  assert.deepEqual(kinds("Next: you can also open the Action Center and look up action **5124** there for its current status.", [], "Status of 5124?"), []);
+  assert.ok(kinds("Look up action **5125** there.", [], "Status of 5124?").length);
+  assert.ok(kinds("Check action **5124**, but your order was filled.", [], "Status of 5124?").includes("EXECUTION_UNCONFIRMED"));
+});
+
 
 test("nested instruments replace parent scope and unscoped numbers cannot prove a scoped price", () => {
   const outputs = [{ name: "getMarketSnapshot", result: { symbol: "EURUSD", lastPrice: 1.08, count: 2, related: { symbol: "GBPUSD", lastPrice: 1.28 } } }];

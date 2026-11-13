@@ -423,8 +423,16 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     const conditionalUserId = Number.isInteger(value) && value >= 100
       && /\bif\s*$/i.test(clause.before)
       && /^\s+(?:was|is|has been)\s+(?:rejected|failed|pending|cancelled|canceled)\b/i.test(clause.after);
+    // A standalone imperative may follow its example cue on the preceding
+    // line. Only repeat the user's own side, instrument and size; never infer
+    // an observed price or an execution from that requested command.
+    const command = /^\s*(?:\*\*|`)?(buy|sell)\s+[A-Z][A-Z0-9_/-]*\s+\d+(?:\.\d+)?(?:\*\*|`)?[.!]?\s*$/i.exec(raw);
+    const requestedCommand = !!command && !!symbol && namedSymbols(idx.userText, idx).includes(symbol)
+      && new RegExp(`\\b${command[1]}\\b`, "i").test(idx.userText);
+    const requestedIdLookup = Number.isInteger(value) && value >= 100
+      && /\b(?:look up|check|search for)\s+(?:the\s+)?(?:action|order|ticket)\s*(?:\*\*)?\s*$/i.test(clause.before);
     const userEcho = /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw)
-      || requestedRiskCheck || conditionalUserId;
+      || requestedRiskCheck || conditionalUserId || requestedCommand || requestedIdLookup;
     const candidates = idx.numbers.filter(e => e.source === "user" ? userEcho : entityMatches(e));
     const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({

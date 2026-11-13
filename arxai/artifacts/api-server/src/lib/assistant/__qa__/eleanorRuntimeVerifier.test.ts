@@ -61,6 +61,8 @@ test("live-evaluation follow-ups survive every streaming boundary without hiding
     { user: "Did it fill?", answer: "If this was meant to be a filled order, I won’t claim it went through without a confirmed execution result." },
     { user: "Status of 5124?", answer: "Next: try asking **“did my order execute for 5124?”** again in a moment." },
     { user: "Did my buy go in?", answer: "If you have the action number, send me “did action #123 execute” and I’ll check the exact status." },
+    { user: "Buy 0.1 EURUSD", answer: "Type the direct command exactly as:\n**buy EURUSD 0.10**\nThat still won’t execute without confirmation." },
+    { user: "Status of 5124?", answer: "Next: you can also open the Action Center and look up action **5124** there for its current status." },
   ];
   for (const { user, answer } of cases) {
     for (const size of [1, 2, 7, 31]) {
