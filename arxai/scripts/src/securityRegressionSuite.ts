@@ -513,13 +513,47 @@ async function main(): Promise<void> {
     const resetLink = `https://arx.example/reset-password?token=${resetToken}`;
     const email = buildPasswordResetEmail({ resetLink, expiresAt: new Date(Date.now() + 30 * 60_000) });
     const emailBody = `${email.subject}\n${email.html}\n${email.text}`;
+    // Always scan the ORIGINAL body for actual credential values, including
+    // env secrets. The one intended reset URL is exempt only from the generic
+    // shape check: "new password:\n\n<URL>" correctly looks like a credential
+    // assignment to the log redactor. Keep that production redactor strict.
     const emailLeaks = scanSecretValues(emailBody);
     const linkPresent = email.html.includes(resetLink) && email.text.includes(resetLink);
-    const noSecretShapes = redactSecretString(emailBody) === emailBody;
+    const escapedResetLink = resetLink.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const exactResetLink = new RegExp(`(^|[\\s"'<>])${escapedResetLink}(?=$|[\\s"'<>])`, "g");
+    const noUnexpectedEmailSecretShapes = (body: string): boolean => {
+      // A semicolon terminates an assignment value; a word placeholder would
+      // itself be interpreted as the value of "new password:". Match whole
+      // URL occurrences, never a prefix of a different/extended URL.
+      const scoped = body.replace(exactResetLink, "$1;");
+      return redactSecretString(scoped) === scoped;
+    };
+    const noSecretShapes = noUnexpectedEmailSecretShapes(emailBody);
     check(
       "04f_reset_email_body_carries_no_secrets",
       emailLeaks.length === 0 && linkPresent && noSecretShapes,
       emailLeaks.length ? emailLeaks.join(", ") : `linkPresent=${linkPresent} noSecretShapes=${noSecretShapes}`,
+    );
+    // Negative controls: exempting the exact intended link must not exempt a
+    // malicious key elsewhere, a longer link, or an embedded lookalike link.
+    for (const [label, payload] of [
+      ["api_key", "API_KEY=opaqueSecretFixture"],
+      ["password", "password=otherPasswordFixture"],
+      ["quoted_key", JSON.stringify({ apiKey: "quotedSecretFixture" })],
+      ["provider_key", "sk-abcdefghijklmnopqrstuvwx"],
+      ["jwt", jwtShape],
+      ["connection_string", "postgres://fixture:fake@localhost/audit"],
+      ["extended_reset_url", `password:\n\n${resetLink}-not-the-approved-token`],
+      ["embedded_reset_url", `password:\n\nhttps://other.example/?redirect=${resetLink}`],
+    ]) {
+      check(`04f_negative_${label}`, !noUnexpectedEmailSecretShapes(`${emailBody}\n${payload}`), "unexpected credential rejected");
+    }
+    const configuredEnvSecrets = ENV_SECRET_NAMES.filter((name) => (process.env[name] ?? "").trim());
+    check(
+      "04f_original_body_secret_value_scan_retained",
+      scanSecretValues(`${emailBody}\n${userA.password}`).includes("USER_A_PASSWORD") &&
+        configuredEnvSecrets.every((name) => scanSecretValues(`${emailBody}\n${process.env[name]!.trim()}`).includes(name)),
+      `seeded password checked; configured env secrets checked=${configuredEnvSecrets.length}`,
     );
 
     // 04g — EMAIL: the expiring-registration-keys admin digest body carries only
