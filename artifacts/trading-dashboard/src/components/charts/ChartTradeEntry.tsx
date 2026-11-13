@@ -1,4 +1,4 @@
-// Chart-side trade entry panel — sits next to the TradingView chart and
+// Chart-side trade entry panel — sits next to the ARX chart and
 // lets the user pre-stage a live order ticket from the symbol the chart
 // is currently showing.
 //
@@ -13,8 +13,16 @@
 //    the ticket.
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Info } from "lucide-react";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
@@ -43,7 +51,9 @@ export interface ChartTradePrefill {
   sourceNote?: string | null;
 }
 
-export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | null } = {}) {
+export function ChartTradeEntry({
+  prefill,
+}: { prefill?: ChartTradePrefill | null } = {}) {
   // Pulls from the shared chart-symbol bus — the SAME source of truth
   // the chart, scanner focus panel, AI assist card, ticket and ruby
   // explanation all read from. Picking a symbol in any of them flips
@@ -63,9 +73,39 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
   // ticket's one-click auto-confirm is suppressed so a drawing can never
   // auto-dispatch — the user must click Confirm explicitly.
   const [openedFromPrefill, setOpenedFromPrefill] = useState(false);
+  const [stopLossDraft, setStopLossDraft] = useState("");
+  const [takeProfitDraft, setTakeProfitDraft] = useState("");
+  const [ticketLevels, setTicketLevels] = useState<{
+    token: number;
+    stopLoss: number | null;
+    takeProfit: number | null;
+  } | null>(null);
+  const invalidLevels = [stopLossDraft, takeProfitDraft].some(
+    (value) =>
+      value !== "" && (!Number.isFinite(Number(value)) || Number(value) <= 0),
+  );
+  useEffect(() => {
+    setStopLossDraft("");
+    setTakeProfitDraft("");
+    setTicketLevels(null);
+  }, [symbol]);
 
   const openTicket = (s: "BUY" | "SELL", fromPrefill = false) => {
     if (accessLoading) return; // wait until access resolves; button disabled below
+    if (!fromPrefill && invalidLevels) return;
+    setTicketLevels({
+      token: Date.now(),
+      stopLoss: fromPrefill
+        ? (prefill?.stopLoss ?? null)
+        : stopLossDraft
+          ? Number(stopLossDraft)
+          : null,
+      takeProfit: fromPrefill
+        ? (prefill?.takeProfit ?? null)
+        : takeProfitDraft
+          ? Number(takeProfitDraft)
+          : null,
+    });
     setSide(s);
     setOpenedAsShared(access.canTrade === true);
     setOpenedFromPrefill(fromPrefill);
@@ -95,7 +135,11 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
             </div>
             <div className="flex items-center gap-2">
               <ChartFeedConfidence symbol={symbol} />
-              <Badge variant="outline" className="font-mono" data-testid="text-chart-trade-symbol">
+              <Badge
+                variant="outline"
+                className="font-mono"
+                data-testid="text-chart-trade-symbol"
+              >
                 {symbol}
               </Badge>
             </div>
@@ -109,12 +153,47 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
             <EventImpactBadge symbol={symbol} hoursAhead={2} />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="chart-stop-loss">Stop loss</Label>
+              <Input
+                id="chart-stop-loss"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Set price"
+                value={stopLossDraft}
+                onChange={(e) => setStopLossDraft(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="chart-take-profit">Take profit</Label>
+              <Input
+                id="chart-take-profit"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Set price"
+                value={takeProfitDraft}
+                onChange={(e) => setTakeProfitDraft(e.target.value)}
+              />
+            </div>
+          </div>
+          {invalidLevels && (
+            <p role="alert" className="text-xs text-rose-400">
+              Enter positive prices for the protective levels.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Set size and order type in the review ticket. Levels are checked
+            against the selected direction before confirmation.
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="default"
               className="bg-emerald-600 hover:bg-emerald-500 text-white"
               onClick={() => openTicket("BUY")}
-              disabled={accessLoading}
+              disabled={accessLoading || invalidLevels}
               data-testid="btn-chart-open-buy"
             >
               <TrendingUp className="h-4 w-4 mr-2" />
@@ -124,7 +203,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
               variant="default"
               className="bg-rose-600 hover:bg-rose-500 text-white"
               onClick={() => openTicket("SELL")}
-              disabled={accessLoading}
+              disabled={accessLoading || invalidLevels}
               data-testid="btn-chart-open-sell"
             >
               <TrendingDown className="h-4 w-4 mr-2" />
@@ -138,13 +217,15 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
               data-testid="chart-trade-prefill-source"
             >
               <Info className="h-3 w-3 mt-0.5 shrink-0" />
-              {prefill.sourceNote}. Levels are pre-filled for review only — confirm in the ticket to place.
+              {prefill.sourceNote}. Levels are pre-filled for review only —
+              confirm in the ticket to place.
             </p>
           )}
 
           <p className="text-xs text-muted-foreground flex items-start gap-1.5">
             <Info className="h-3 w-3 mt-0.5 shrink-0" />
-            Use the chart's symbol picker to switch markets. The trade ticket will inherit it.
+            Use the chart's symbol picker to switch markets. The trade ticket
+            will inherit it.
           </p>
         </CardContent>
       </Card>
@@ -160,8 +241,8 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
           onOpenChange={setOpen}
           defaultSymbol={symbol}
           defaultSide={side}
-          prefillSltp={prefill ? { token: prefill.token, stopLoss: prefill.stopLoss, takeProfit: prefill.takeProfit } : null}
-          suppressAutoConfirm={openedFromPrefill}
+          prefillSltp={ticketLevels}
+          suppressAutoConfirm
         />
       ) : (
         <LiveTradeTicket
@@ -170,7 +251,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
           defaultSymbol={symbol}
           defaultSide={side}
           sourcePage="LIVE_CHART_TRADE_ENTRY"
-          prefillSltp={prefill ? { token: prefill.token, stopLoss: prefill.stopLoss, takeProfit: prefill.takeProfit } : null}
+          prefillSltp={ticketLevels}
         />
       )}
     </>

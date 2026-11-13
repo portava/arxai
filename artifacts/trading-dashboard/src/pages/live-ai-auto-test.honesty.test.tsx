@@ -19,9 +19,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { isNormalUserAllowedPath } from "@/lib/routeAccess";
 
-// TradingViewLiveChart is heavy (charting lib) — stub it.
-vi.mock("@/components/charts/TradingViewLiveChart", () => ({
-  default: () => <div data-testid="chart-stub" />,
+// ARXNativeChart is heavy (charting lib) — stub it.
+vi.mock("@/components/charts/ARXNativeChart", () => ({
+  ARXNativeChart: () => <div data-testid="chart-stub" />,
 }));
 
 vi.mock("lucide-react", () => {

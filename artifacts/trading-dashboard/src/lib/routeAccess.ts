@@ -85,6 +85,7 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/performance-scorecard",
   "/analytics",
   "/trade-logs",
+  "/journal", // Existing per-user journal; matches the navigation and requireUser backend.
   "/shadow-journal",
   "/scalp-journal",
   // ── Account & Control (visible nav group) ──

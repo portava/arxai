@@ -24,7 +24,7 @@ const { createSeriesMarkersMock } = vi.hoisted(() => ({
   createSeriesMarkersMock: vi.fn(() => ({ detach: vi.fn() })),
 }));
 
-vi.mock("lightweight-charts", () => {
+vi.mock("@/lib/chart-engine/arxCanvas", () => {
   const makeLineSeries = () => ({ setData: vi.fn() });
   const makeCandleSeries = () => ({
     setData: vi.fn(),
@@ -63,8 +63,8 @@ vi.mock("lightweight-charts", () => {
   };
 });
 
-import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
-import { createChart } from "lightweight-charts";
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
+import { createChart } from "@/lib/chart-engine/arxCanvas";
 import type { ChartEngineCandle, ChartStructureMarker } from "./types";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
@@ -77,7 +77,7 @@ class FakeResizeObserver {
 vi.stubGlobal("ResizeObserver", FakeResizeObserver);
 
 it("ghost candles occupy three separate series and clearing them preserves real bars", () => {
-  const adapter = new LightweightChartsAdapter();
+  const adapter = new ArxCanvasAdapter();
   adapter.init({ container: document.createElement("div"), height: 400 });
   adapter.setCandles([bar(60), bar(120)]);
   const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
@@ -108,8 +108,8 @@ function lastMarkerTimes(): number[] {
   return markers.map((m) => m.time);
 }
 
-function makeAdapter(): LightweightChartsAdapter {
-  const adapter = new LightweightChartsAdapter();
+function makeAdapter(): ArxCanvasAdapter {
+  const adapter = new ArxCanvasAdapter();
   adapter.init({ container: document.createElement("div"), height: 300 });
   return adapter;
 }
@@ -118,7 +118,7 @@ beforeEach(() => {
   createSeriesMarkersMock.mockClear();
 });
 
-describe("LightweightChartsAdapter marker re-anchoring (repaint-crash lock)", () => {
+describe("ArxCanvasAdapter marker re-anchoring (repaint-crash lock)", () => {
   it("re-snaps structure markers when setCandles slides the window past their bar", () => {
     const adapter = makeAdapter();
     adapter.setCandles([bar(100), bar(200), bar(300)]);

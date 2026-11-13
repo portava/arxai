@@ -129,7 +129,5 @@
     "zod": "catalog:",
     "@workspace/markets": "workspace:*"
   },
-  "dependencies": {
-    "lightweight-charts": "^5.2.0"
-  }
+  "dependencies": {}
 }

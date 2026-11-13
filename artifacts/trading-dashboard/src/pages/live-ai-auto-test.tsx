@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Bot, Play, Pause, Square, ShieldAlert, FlaskConical } from "lucide-react";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
+import { ARXNativeChart } from "@/components/charts/ARXNativeChart";
 
 type Outcome =
   | "AUDIT_CAPTURED"      // backend captured the intent for audit (accepted=false by design)
@@ -294,7 +294,7 @@ export default function LiveAiAutoTestPage() {
         </CardContent>
       </Card>
 
-      <TradingViewLiveChart defaultSymbol="FX:EURUSD" height={520} compact />
+      <ARXNativeChart symbol="EURUSD" height={520} />
     </div>
   );
 }

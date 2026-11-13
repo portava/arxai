@@ -28,7 +28,7 @@ import type { LucideIcon } from "lucide-react";
 // A compact-when-clean / prominent-when-poor chip that surfaces the real
 // backend feed status (source, live/stale, latency, last update times,
 // missing-candle count, AI-usable, warning). The chip opens a popover with the
-// full readout, and when the feed can't be trusted it offers the TradingView
+// full readout, and identifies feed issues without an external chart
 // fallback. The component is purely presentational — it never gates anything.
 
 const DOT: Record<FeedSeverity, string> = {
@@ -81,9 +81,6 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export interface FeedConfidenceBadgeProps {
   feedStatus: ChartFeedStatus | null | undefined;
-  /** Render a "Use TradingView" action inside the detail popover. */
-  showFallback?: boolean;
-  onRequestFallback?: () => void;
   /**
    * Optional RESOLVED verdict that overrides the raw-feed verdict (Task #506).
    * When provided, the badge consumes this instead of the socket-level feed
@@ -109,8 +106,6 @@ export interface FeedConfidenceBadgeProps {
 
 export function FeedConfidenceBadge({
   feedStatus,
-  showFallback = false,
-  onRequestFallback,
   aiUsableResolved,
   showTrailingGap = false,
 }: FeedConfidenceBadgeProps) {
@@ -251,16 +246,7 @@ export function FeedConfidenceBadge({
           <p className="text-xs text-amber-300" data-testid="arx-feed-warning">{fs.warning}</p>
         ) : null}
 
-        {conf.suggestFallback && showFallback && onRequestFallback ? (
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={onRequestFallback}
-            data-testid="arx-feed-fallback"
-          >
-            <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView reference
-          </Button>
-        ) : null}
+
       </PopoverContent>
     </Popover>
   );

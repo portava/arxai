@@ -1,3 +1,4 @@
+import type { ChartDrawing, DrawingTool } from "./drawings";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5,9 +6,7 @@ import type { ChartOverlay } from "@/lib/chart-overlays";
 //
 // The Smart Chart Shell (live-chart page) owns ALL chart state and intelligence.
 // The actual on-screen RENDERER lives behind this adapter interface, so the
-// engine can be swapped (lightweight-charts today; a licensed TradingView
-// Advanced Charts engine, or another renderer, later) WITHOUT the Shell ever
-// touching engine-specific code.
+// engine can be swapped without the Shell touching engine-specific code.
 //
 // HONESTY / SAFETY:
 //  - This contract is purely a VIEW contract. No adapter may place, modify, or
@@ -18,7 +17,7 @@ import type { ChartOverlay } from "@/lib/chart-overlays";
 //    contract. An adapter never fabricates bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
+export type ChartEngineId = "arx-canvas";
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
@@ -30,7 +29,11 @@ export interface ChartEngineCandle {
   close: number;
 }
 
-export interface ChartGhostPath { id: string; color: string; candles: ChartEngineCandle[] }
+export interface ChartGhostPath {
+  id: string;
+  color: string;
+  candles: ChartEngineCandle[];
+}
 
 /**
  * Feed truth the engine needs to render honestly. Today this is just the
@@ -79,7 +82,7 @@ export interface ChartEngineCapabilities {
   zones: boolean;
   /** Price↔coordinate API for DOM overlays (e.g. floating P/L bubbles). */
   coordinateApi: boolean;
-  /** User drawing tools (trendlines, rays, etc.). Staged — not built yet. */
+  /** User annotation tools. Purely visual; never order placement. */
   drawingTools: boolean;
   /** Draggable order/SL/TP handles. Staged — not built yet. */
   draggableOrders: boolean;
@@ -116,11 +119,19 @@ export interface ChartStructureMarker {
 
 /**
  * The renderer-agnostic engine contract. The Smart Chart Shell drives the chart
- * ONLY through these methods. lightweight-charts is the first implementation;
+ * ONLY through these methods. ARX Canvas is the first implementation;
  * any future engine implements the same surface.
  */
 export interface ChartEngineAdapter {
   readonly capabilities: ChartEngineCapabilities;
+  setDrawingsVisible?(visible: boolean): void;
+  setDrawingTool?(tool: DrawingTool): void;
+  setDrawings?(drawings: ChartDrawing[]): void;
+  onDrawingsChange?(
+    listener: ((drawings: ChartDrawing[], canUndo: boolean) => void) | null,
+  ): void;
+  undoDrawing?(): void;
+  clearDrawings?(): void;
 
   /** Mount the engine into the container. Resets all internal render state. */
   init(options: ChartEngineInitOptions): void;
@@ -169,5 +180,8 @@ export interface ChartEngineAdapter {
    * history. Pass null to clear. The handler may fire repeatedly; the Shell must
    * guard against concurrent loads. View-only — fetching history places no trade.
    */
-  setReachStartHandler?(handler: (() => void) | null, thresholdBars?: number): void;
+  setReachStartHandler?(
+    handler: (() => void) | null,
+    thresholdBars?: number,
+  ): void;
 }

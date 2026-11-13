@@ -8,11 +8,13 @@ const labels: Record<Scenario, string> = { UP_FIRST: "Bullish first", DOWN_FIRST
 const allScenarios: Scenario[] = ["UP_FIRST", "DOWN_FIRST", "NEITHER"];
 const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
-export function StructuralForecastPanel({ symbol, onPaths }: { symbol: string; onPaths(paths: GhostPath[]): void }) {
+export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, onSelectedScenariosChange }: { symbol: string; onPaths(paths: GhostPath[]): void; selectedScenarios?:Scenario[]; onSelectedScenariosChange?:(next:Scenario[])=>void }) {
   const canonicalSymbol = resolveArxMarket(symbol)?.canonicalSymbol ?? symbol;
   const [row, setRow] = useState<Row | null>(null);
   const [history, setHistory] = useState<Row[]>([]);
-  const [selected, setSelected] = useState<Scenario[]>(allScenarios);
+  const [internalSelected, setInternalSelected] = useState<Scenario[]>(allScenarios);
+  const selected=selectedScenarios??internalSelected;
+  const setSelected=(next:Scenario[])=>{setInternalSelected(next);onSelectedScenariosChange?.(next);};
   const [horizon, setHorizon] = useState(60);
   const [cohort, setCohort] = useState("all");
   const [auto, setAuto] = useState(false);
@@ -81,7 +83,7 @@ export function StructuralForecastPanel({ symbol, onPaths }: { symbol: string; o
       </div>
       <div className="my-2 flex flex-wrap gap-4"><span>60m ghost paths:</span>{row.forecast.paths.map(path => <label key={path.scenario} className="flex items-center gap-2">
         <input type="checkbox" checked={selected.includes(path.scenario)} disabled={!path.candles.length}
-          onChange={e => setSelected(old => e.target.checked ? [...old, path.scenario] : old.filter(s => s !== path.scenario))} />
+          onChange={e => setSelected(e.target.checked ? [...selected, path.scenario] : selected.filter(s => s !== path.scenario))} />
         <span>{labels[path.scenario]} ({(path.probability * 100).toFixed(1)}% at 60m){!path.candles.length && " · path unavailable"}</span>
       </label>)}</div>
       <p className="text-amber-200">Ghost candles are illustrative scenarios, not calibrated price predictions. “Neither” means no confirmed structural break; prices can still move.</p>

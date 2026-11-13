@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Brain, ThumbsUp, ThumbsDown, ShieldAlert, Loader2, WifiOff } from "lucide-react";
-import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
+import { ARXNativeChart } from "@/components/charts/ARXNativeChart";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
@@ -130,7 +130,6 @@ export default function LiveAiAssistPage() {
   }
 
   const card = feed.kind === "card" ? feed.card : null;
-  const tvSymbol = SYMBOLS.find(s => s.value === symbol)?.tv ?? "FX:EURUSD";
 
   async function approve() {
     if (!card) return;
@@ -270,7 +269,7 @@ export default function LiveAiAssistPage() {
             </Card>
           )}
         </div>
-        <TradingViewLiveChart defaultSymbol={tvSymbol} height={620} compact />
+        <ARXNativeChart symbol={symbol} height={620} />
       </div>
       {card && (
         <LiveSharedTradeTicket

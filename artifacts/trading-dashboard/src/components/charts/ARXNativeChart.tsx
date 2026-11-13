@@ -1,3 +1,7 @@
+import {ChartLayersMenu} from "./ChartLayersMenu";
+import {allLayers,visibleOverlays,overlayLayer,structureMarkerLayer,SCENARIO_LAYERS,type ChartLayerVisibility,type ChartLayerId} from "@/lib/chart-engine/layers";
+import {ChartDrawingToolbar} from "./ChartDrawingToolbar";
+import {CandleCloseTimer} from "./CandleCloseTimer";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   useGetChartCandles,
@@ -56,21 +60,20 @@ import {
 //
 // Renders clean candlesticks from the Level 1 normalized contract
 // (GET /api/chart/candles via the generated useGetChartCandles hook). This is a
-// reusable, self-contained chart placed BESIDE the TradingView embed so the
-// native pipeline can be proven before becoming the default.
+// reusable chart shell backed by the first-party ARX Canvas renderer.
 //
 // HONESTY / SAFETY:
 //  - Candles come ONLY from the normalized /api/chart/candles contract, which is
 //    itself built over the existing market-data router. We NEVER fabricate bars.
 //    When the contract returns an honest empty/unavailable state we show a clear
-//    "no native candles" message (with an optional TradingView fallback) — never
+//    "no native candles" message — never
 //    a blank or fake chart.
 //  - This is a view-only chart: it has no order-placement surface. Trade actions
 //    live elsewhere (the gated instant-trade router).
 //  - Level 3 feed confidence: the header renders a FeedConfidenceBadge driven by
 //    the contract's embedded feedStatus (source/live/stale/latency/last update/
 //    missing-candle count/AI-usable/warning). When the feed is stale or poor a
-//    prominent banner offers the TradingView fallback, and when aiUsable=false
+//    prominent banner identifies the feed issue, and when aiUsable=false
 //    the chart is visibly marked "not AI-confirmed" so Level 5 overlays respect it.
 //
 // Phase 2 additions:
@@ -195,10 +198,6 @@ export interface ARXNativeChartProps {
   mobileHeight?: number;
   /** Show the minimal honest quality chip (default true). Level 3 owns the rich badge. */
   showFeedStatus?: boolean;
-  /** Render a "Use TradingView" button in the empty/error state. */
-  showFallbackToggle?: boolean;
-  /** Called when the user asks to fall back to the TradingView reference chart. */
-  onRequestFallback?: () => void;
   /** Max candles to request (default 300; contract caps at 5000). */
   limit?: number;
   /**
@@ -246,8 +245,6 @@ export function ARXNativeChart({
   height = 520,
   mobileHeight,
   showFeedStatus = true,
-  showFallbackToggle = false,
-  onRequestFallback,
   limit = 300,
   overlays = [],
   onChartContextChange,
@@ -264,6 +261,10 @@ export function ARXNativeChart({
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
 
+  const [drawingCount,setDrawingCount]=useState(0);
+  const [layers,setLayers]=useState<ChartLayerVisibility>(()=>allLayers(true));
+  const drawnOverlays=useMemo(()=>visibleOverlays(overlays,layers),[overlays,layers]);
+  const scenarios=useMemo(()=>Object.entries(SCENARIO_LAYERS).filter(([,key])=>layers[key]).map(([scenario])=>scenario as 'UP_FIRST'|'DOWN_FIRST'|'NEITHER'),[layers]);
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
   // as "mirrored" with the rest of the UI. When off, an inspection-mode
   // indicator shows. This is visual state only; the symbol/timeframe come from
@@ -372,7 +373,7 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetMeChartIntelligenceQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0 && onIntelligenceChange != null,
+        enabled: resolvedSymbol.length > 0,
         refetchInterval: 8000,
         staleTime: 4000,
       },
@@ -387,7 +388,7 @@ export function ARXNativeChart({
   const containerRef = useRef<HTMLDivElement | null>(null);
   // The chart RENDERER lives behind the swappable chart-engine adapter (Task
   // #373). This component owns React state, data, feed-status and UI; the
-  // imperative engine (lightweight-charts v5) is driven only through the adapter.
+  // imperative engine (ARX Canvas) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
   const [ghostState, setGhostState] = useState<{ symbol: string; paths: GhostPath[] }>({ symbol: "", paths: [] });
   const receiveGhostPaths = useCallback((paths: GhostPath[]) => setGhostState({ symbol: resolvedSymbol, paths }), [resolvedSymbol]);
@@ -421,7 +422,7 @@ export function ARXNativeChart({
   //    these keys preserves the user's zoom/scroll across data polls and
   //    guarantees overlays/levels never bleed across instruments. The actual
   //    chart engine is created behind the adapter — this component never touches
-  //    lightweight-charts directly (Task #373).
+  //    the renderer directly (Task #373).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -445,12 +446,14 @@ export function ARXNativeChart({
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   useEffect(() => {
     const colors = { UP_FIRST: "rgba(52,211,153,0.38)", DOWN_FIRST: "rgba(248,113,113,0.38)", NEITHER: "rgba(148,163,184,0.38)" };
-    adapterRef.current?.setGhostPaths?.(timeframe === "M1" && ghostState.symbol === resolvedSymbol ? ghostState.paths.map(path => ({
+    adapterRef.current?.setGhostPaths?.(timeframe === "M1" && ghostState.symbol === resolvedSymbol ? ghostState.paths.filter(path=>layers[SCENARIO_LAYERS[path.scenario]]).map(path => ({
       id: path.scenario, color: colors[path.scenario], candles: path.candles.map(b => ({
         time: b.openTime / 1000, open: b.open, high: b.high, low: b.low, close: b.close,
       })),
     })) : []);
-  }, [ghostState, resolvedSymbol, timeframe, chartEpoch]);
+  }, [ghostState, resolvedSymbol, timeframe, chartEpoch,layers]);
+
+  useEffect(()=>{adapterRef.current?.setDrawingsVisible?.(layers.drawings);},[layers.drawings,chartEpoch]);
 
   const resetScale = useCallback(() => {
     adapterRef.current?.resetScale();
@@ -689,16 +692,16 @@ export function ARXNativeChart({
       lastCandle && Number.isFinite(new Date(lastCandle.openTime).getTime())
         ? Math.floor(new Date(lastCandle.openTime).getTime() / 1000)
         : null;
-    adapter.setOverlays(overlays, lastTime);
-  }, [overlays, candles, chartEpoch]);
+    adapter.setOverlays(drawnOverlays, lastTime);
+  }, [drawnOverlays, candles, chartEpoch]);
 
   // ── Level 4 — track P/L bubble coordinates. Overlays whose metadata carries a
   //    finite `pnl` get a floating bubble anchored to their price; we recompute
   //    the Y coordinate on a light loop so it follows zoom / scroll / resize.
   useEffect(() => {
-    const pnlOverlays = overlays.filter(
+    const pnlOverlays = layers.pnl ? overlays.filter(
       (o) => o.price != null && overlayMetaNumber(o, "pnl") !== null,
-    );
+    ) : [];
     if (pnlOverlays.length === 0) {
       setBubbles([]);
       return;
@@ -749,7 +752,7 @@ export function ARXNativeChart({
       if (timer != null) clearTimeout(timer);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [overlays, chartEpoch]);
+  }, [overlays, layers.pnl, chartEpoch]);
 
   const positionCount = useMemo(
     () => overlays.filter((o) => o.metadata?.primary === true).length,
@@ -814,7 +817,7 @@ export function ARXNativeChart({
             ? "#f59e0b"
             : "#94a3b8";
 
-    const lines: ChartStructureLine[] = overlay.lines.map((ln) => ({
+    const lines: ChartStructureLine[] = overlay.lines.filter(ln=>ln.id.endsWith(":rail")?layers.channels:layers.trendlines).map((ln) => ({
       id: ln.id,
       start: { time: ln.start.time, price: ln.start.price },
       end: { time: ln.end.time, price: ln.end.price },
@@ -825,7 +828,7 @@ export function ARXNativeChart({
       width: ln.dominant ? 2 : 1,
     }));
 
-    const markers: ChartStructureMarker[] = overlay.markers.map((m) => ({
+    const markers: ChartStructureMarker[] = overlay.markers.filter(m=>layers[structureMarkerLayer(m.kind)]).map((m) => ({
       time: m.time,
       // Anchor side by bias (support breaks below, resistance above); the dot
       // sits on the bar — never at an arbitrary price (engine rule).
@@ -838,7 +841,7 @@ export function ARXNativeChart({
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
     // `conf.aiUsable`; chartEpoch re-runs this after a rebuild so structure is
     // redrawn onto the fresh engine and cleared across a symbol/timeframe switch.
-  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch]);
+  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch,layers]);
 
   // Phase 2 — mirror status derived from feed quality + fetch state.
   const mirrorStatus = getMirrorStatus(
@@ -894,6 +897,10 @@ export function ARXNativeChart({
   // The contract returns 200 with an honest empty list when no feed is available.
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
+  const layerAvailability:Partial<Record<ChartLayerId,number>>={drawings:drawingCount};
+  for(const overlay of overlays){const key=overlayLayer(overlay);layerAvailability[key]=(layerAvailability[key]??0)+1;if(overlayMetaNumber(overlay,"pnl")!==null)layerAvailability.pnl=(layerAvailability.pnl??0)+1;}
+  if(intelligenceState?.trendlineOverlay?.visible&&conf.aiUsable&&isLivePriceAffordance){for(const line of intelligenceState.trendlineOverlay.lines){const key=line.id.endsWith(":rail")?'channels':'trendlines';layerAvailability[key]=(layerAvailability[key]??0)+1;}for(const marker of intelligenceState.trendlineOverlay.markers){const key=structureMarkerLayer(marker.kind);layerAvailability[key]=(layerAvailability[key]??0)+1;}}
+  if(timeframe==='M1'&&ghostState.symbol===resolvedSymbol)for(const path of ghostState.paths)layerAvailability[SCENARIO_LAYERS[path.scenario]]=path.candles.length?1:0;
   return (
     <Card data-testid="arx-native-chart" className="overflow-hidden border-zinc-800 bg-zinc-950/40">
       <CardHeader className="py-3 px-3 md:px-4">
@@ -927,8 +934,6 @@ export function ARXNativeChart({
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
                 aiUsableResolved={badgeAiUsableResolved}
-                showFallback={showFallbackToggle}
-                onRequestFallback={onRequestFallback}
               />
             )}
             {showNotAiConfirmed && (
@@ -991,6 +996,7 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
+            <CandleCloseTimer timeframe={timeframe} barOpen={candles.length?new Date(candles[candles.length-1].openTime).getTime():null} live={isLivePriceAffordance} closed={!!marketFrozen}/>
             {hasCandles && (
               <Button
                 size="sm"
@@ -1006,6 +1012,7 @@ export function ARXNativeChart({
           </div>
         </CardTitle>
       </CardHeader>
+      <div className="flex items-start gap-2 border-y border-border bg-card/70 pr-3"><div className="min-w-0 flex-1"><ChartDrawingToolbar adapterRef={adapterRef} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} disabled={!hasCandles} onCountChange={setDrawingCount} onDraw={()=>setLayers(old=>({...old,drawings:true}))}/></div><div className="pt-2"><ChartLayersMenu value={layers} onChange={setLayers} availability={layerAvailability}/></div></div>
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
@@ -1032,7 +1039,7 @@ export function ARXNativeChart({
         {/* Mirror state detail */}
         {mirrorStatus === "Conflict" && (
           <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
-            Data integrity failed — use TradingView for reference
+            Data integrity failed — analysis paused
           </span>
         )}
         {mirrorStatus === "Stale" && (
@@ -1132,17 +1139,7 @@ export function ARXNativeChart({
                 {warning || "Candle integrity checks failed. This chart is not confirmed for AI analysis or live decisions."}
               </div>
             </div>
-            {showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 border-red-500/40 px-2 text-xs text-red-200 hover:bg-red-950/60"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-safemode"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
+
           </div>
         )}
 
@@ -1185,17 +1182,7 @@ export function ARXNativeChart({
             {query.isFetching && !query.isLoading && (
               <RefreshCw className="h-3 w-3 animate-spin opacity-60" />
             )}
-            {conf.suggestFallback && showFallbackToggle && onRequestFallback && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                onClick={onRequestFallback}
-                data-testid="arx-native-fallback-stale"
-              >
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-              </Button>
-            )}
+
           </div>
         )}
 
@@ -1216,11 +1203,7 @@ export function ARXNativeChart({
               <Button size="sm" variant="outline" onClick={() => void query.refetch()} data-testid="arx-native-retry">
                 Retry
               </Button>
-              {showFallbackToggle && onRequestFallback && (
-                <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-error">
-                  <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView
-                </Button>
-              )}
+
             </div>
           </div>
         )}
@@ -1235,19 +1218,15 @@ export function ARXNativeChart({
             </p>
             <p className="max-w-md text-xs text-muted-foreground">
               {feedStatus?.quality === "unavailable"
-                ? "Waiting for a live feed to connect. Try again in a moment or use TradingView for reference."
+                ? "Waiting for a live feed to connect. Use Refresh to check again."
                 : warning ||
                   `No native candles available for ${resolvedSymbol} on ${timeframe} right now.`}
             </p>
-            {showFallbackToggle && onRequestFallback && (
-              <Button size="sm" onClick={onRequestFallback} data-testid="arx-native-fallback-empty">
-                <BarChart3 className="mr-1 h-3.5 w-3.5" /> Use TradingView reference
-              </Button>
-            )}
+
           </div>
         )}
       </CardContent>
-      {timeframe === "M1" && <StructuralForecastPanel key={resolvedSymbol} symbol={resolvedSymbol} onPaths={receiveGhostPaths} />}
+      {timeframe === "M1" && <StructuralForecastPanel key={resolvedSymbol} symbol={resolvedSymbol} onPaths={receiveGhostPaths} selectedScenarios={scenarios} onSelectedScenariosChange={next=>setLayers(old=>({...old,bullish:next.includes('UP_FIRST'),bearish:next.includes('DOWN_FIRST'),neither:next.includes('NEITHER')}))} />}
     </Card>
   );
 }

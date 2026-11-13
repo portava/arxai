@@ -94,7 +94,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   );
 }
 
-function ViewModeSwitch() {
+export function ViewModeSwitch() {
   const { canToggle, viewMode, setViewMode } = useViewMode();
   if (!canToggle) return null;
   const isAdminView = viewMode === "admin";
@@ -115,7 +115,7 @@ function ViewModeSwitch() {
   );
 }
 
-function UserMenu() {
+export function UserMenu() {
   const { user } = useCurrentUser();
   const logout = useLogout();
   if (!user) return null;
