@@ -1,3 +1,4 @@
+import type {ChartDrawing,DrawingTool} from "./drawings";
 import {
   createChart,
   CandlestickSeries,
@@ -44,9 +45,8 @@ const CAPABILITIES: ChartEngineCapabilities = {
   markers: true,
   zones: true,
   coordinateApi: true,
-  // Staged for later tasks — ARX Canvas has no built-in drawing tools
-  // or draggable order handles, so we advertise them as unsupported today.
-  drawingTools: false,
+  // User annotations are supported; draggable order modification is separate.
+  drawingTools: true,
   draggableOrders: false,
 };
 
@@ -71,6 +71,12 @@ const CAPABILITIES: ChartEngineCapabilities = {
  */
 export class ArxCanvasAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
+  setDrawingsVisible(visible:boolean){this.chart?.setDrawingsVisible(visible);}
+  setDrawingTool(tool:DrawingTool){this.chart?.setDrawingTool(tool);}
+  setDrawings(drawings:ChartDrawing[]){this.chart?.setDrawings(drawings);}
+  onDrawingsChange(listener:((drawings:ChartDrawing[],canUndo:boolean)=>void)|null){this.chart?.onDrawingsChange(listener);}
+  undoDrawing(){this.chart?.undoDrawing();}
+  clearDrawings(){this.chart?.clearDrawings();}
 
   private chart: IChartApi | null = null;
   private series: ISeriesApi<"Candlestick"> | null = null;
@@ -369,6 +375,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
 
   setGhostPaths(paths: ChartGhostPath[]): void {
     if (!this.chart) return;
+    const hadPaths = this.ghostSeries.length > 0;
     for (const series of this.ghostSeries) this.chart.removeSeries(series);
     this.ghostSeries = [];
     for (const path of paths.slice(0, 3)) {
@@ -381,7 +388,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
       series.setData(sanitizeCandlestickData(path.candles).map(c => ({ ...c, time: c.time as UTCTimestamp })));
       this.ghostSeries.push(series);
     }
-    // Preserve user pan and zoom when scenario overlays refresh.
+    // Fit an explicitly enabled scenario once; refreshing it preserves pan/zoom.
+    if (!hadPaths && this.ghostSeries.length) this.chart.timeScale().setVisibleLogicalRange({from:Math.max(0,this.candles.length-80),to:this.candles.length+Math.max(...paths.map(p=>p.candles.length))+5});
   }
 
   setStructureLines(

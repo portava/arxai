@@ -1,3 +1,7 @@
+import {ChartLayersMenu} from "./ChartLayersMenu";
+import {allLayers,visibleOverlays,overlayLayer,structureMarkerLayer,SCENARIO_LAYERS,type ChartLayerVisibility,type ChartLayerId} from "@/lib/chart-engine/layers";
+import {ChartDrawingToolbar} from "./ChartDrawingToolbar";
+import {CandleCloseTimer} from "./CandleCloseTimer";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   useGetChartCandles,
@@ -257,6 +261,10 @@ export function ARXNativeChart({
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
 
+  const [drawingCount,setDrawingCount]=useState(0);
+  const [layers,setLayers]=useState<ChartLayerVisibility>(()=>allLayers(true));
+  const drawnOverlays=useMemo(()=>visibleOverlays(overlays,layers),[overlays,layers]);
+  const scenarios=useMemo(()=>Object.entries(SCENARIO_LAYERS).filter(([,key])=>layers[key]).map(([scenario])=>scenario as 'UP_FIRST'|'DOWN_FIRST'|'NEITHER'),[layers]);
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
   // as "mirrored" with the rest of the UI. When off, an inspection-mode
   // indicator shows. This is visual state only; the symbol/timeframe come from
@@ -365,7 +373,7 @@ export function ARXNativeChart({
     {
       query: {
         queryKey: getGetMeChartIntelligenceQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
-        enabled: resolvedSymbol.length > 0 && onIntelligenceChange != null,
+        enabled: resolvedSymbol.length > 0,
         refetchInterval: 8000,
         staleTime: 4000,
       },
@@ -438,12 +446,14 @@ export function ARXNativeChart({
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   useEffect(() => {
     const colors = { UP_FIRST: "rgba(52,211,153,0.38)", DOWN_FIRST: "rgba(248,113,113,0.38)", NEITHER: "rgba(148,163,184,0.38)" };
-    adapterRef.current?.setGhostPaths?.(timeframe === "M1" && ghostState.symbol === resolvedSymbol ? ghostState.paths.map(path => ({
+    adapterRef.current?.setGhostPaths?.(timeframe === "M1" && ghostState.symbol === resolvedSymbol ? ghostState.paths.filter(path=>layers[SCENARIO_LAYERS[path.scenario]]).map(path => ({
       id: path.scenario, color: colors[path.scenario], candles: path.candles.map(b => ({
         time: b.openTime / 1000, open: b.open, high: b.high, low: b.low, close: b.close,
       })),
     })) : []);
-  }, [ghostState, resolvedSymbol, timeframe, chartEpoch]);
+  }, [ghostState, resolvedSymbol, timeframe, chartEpoch,layers]);
+
+  useEffect(()=>{adapterRef.current?.setDrawingsVisible?.(layers.drawings);},[layers.drawings,chartEpoch]);
 
   const resetScale = useCallback(() => {
     adapterRef.current?.resetScale();
@@ -682,16 +692,16 @@ export function ARXNativeChart({
       lastCandle && Number.isFinite(new Date(lastCandle.openTime).getTime())
         ? Math.floor(new Date(lastCandle.openTime).getTime() / 1000)
         : null;
-    adapter.setOverlays(overlays, lastTime);
-  }, [overlays, candles, chartEpoch]);
+    adapter.setOverlays(drawnOverlays, lastTime);
+  }, [drawnOverlays, candles, chartEpoch]);
 
   // ── Level 4 — track P/L bubble coordinates. Overlays whose metadata carries a
   //    finite `pnl` get a floating bubble anchored to their price; we recompute
   //    the Y coordinate on a light loop so it follows zoom / scroll / resize.
   useEffect(() => {
-    const pnlOverlays = overlays.filter(
+    const pnlOverlays = layers.pnl ? overlays.filter(
       (o) => o.price != null && overlayMetaNumber(o, "pnl") !== null,
-    );
+    ) : [];
     if (pnlOverlays.length === 0) {
       setBubbles([]);
       return;
@@ -742,7 +752,7 @@ export function ARXNativeChart({
       if (timer != null) clearTimeout(timer);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [overlays, chartEpoch]);
+  }, [overlays, layers.pnl, chartEpoch]);
 
   const positionCount = useMemo(
     () => overlays.filter((o) => o.metadata?.primary === true).length,
@@ -807,7 +817,7 @@ export function ARXNativeChart({
             ? "#f59e0b"
             : "#94a3b8";
 
-    const lines: ChartStructureLine[] = overlay.lines.map((ln) => ({
+    const lines: ChartStructureLine[] = overlay.lines.filter(ln=>ln.id.endsWith(":rail")?layers.channels:layers.trendlines).map((ln) => ({
       id: ln.id,
       start: { time: ln.start.time, price: ln.start.price },
       end: { time: ln.end.time, price: ln.end.price },
@@ -818,7 +828,7 @@ export function ARXNativeChart({
       width: ln.dominant ? 2 : 1,
     }));
 
-    const markers: ChartStructureMarker[] = overlay.markers.map((m) => ({
+    const markers: ChartStructureMarker[] = overlay.markers.filter(m=>layers[structureMarkerLayer(m.kind)]).map((m) => ({
       time: m.time,
       // Anchor side by bias (support breaks below, resistance above); the dot
       // sits on the bar — never at an arbitrary price (engine rule).
@@ -831,7 +841,7 @@ export function ARXNativeChart({
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
     // `conf.aiUsable`; chartEpoch re-runs this after a rebuild so structure is
     // redrawn onto the fresh engine and cleared across a symbol/timeframe switch.
-  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch]);
+  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch,layers]);
 
   // Phase 2 — mirror status derived from feed quality + fetch state.
   const mirrorStatus = getMirrorStatus(
@@ -887,6 +897,10 @@ export function ARXNativeChart({
   // The contract returns 200 with an honest empty list when no feed is available.
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
+  const layerAvailability:Partial<Record<ChartLayerId,number>>={drawings:drawingCount};
+  for(const overlay of overlays){const key=overlayLayer(overlay);layerAvailability[key]=(layerAvailability[key]??0)+1;if(overlayMetaNumber(overlay,"pnl")!==null)layerAvailability.pnl=(layerAvailability.pnl??0)+1;}
+  if(intelligenceState?.trendlineOverlay?.visible&&conf.aiUsable&&isLivePriceAffordance){for(const line of intelligenceState.trendlineOverlay.lines){const key=line.id.endsWith(":rail")?'channels':'trendlines';layerAvailability[key]=(layerAvailability[key]??0)+1;}for(const marker of intelligenceState.trendlineOverlay.markers){const key=structureMarkerLayer(marker.kind);layerAvailability[key]=(layerAvailability[key]??0)+1;}}
+  if(timeframe==='M1'&&ghostState.symbol===resolvedSymbol)for(const path of ghostState.paths)layerAvailability[SCENARIO_LAYERS[path.scenario]]=path.candles.length?1:0;
   return (
     <Card data-testid="arx-native-chart" className="overflow-hidden border-zinc-800 bg-zinc-950/40">
       <CardHeader className="py-3 px-3 md:px-4">
@@ -982,6 +996,7 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
+            <CandleCloseTimer timeframe={timeframe} barOpen={candles.length?new Date(candles[candles.length-1].openTime).getTime():null} live={isLivePriceAffordance} closed={!!marketFrozen}/>
             {hasCandles && (
               <Button
                 size="sm"
@@ -997,6 +1012,7 @@ export function ARXNativeChart({
           </div>
         </CardTitle>
       </CardHeader>
+      <div className="flex items-start gap-2 border-y border-border bg-card/70 pr-3"><div className="min-w-0 flex-1"><ChartDrawingToolbar adapterRef={adapterRef} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} disabled={!hasCandles} onCountChange={setDrawingCount} onDraw={()=>setLayers(old=>({...old,drawings:true}))}/></div><div className="pt-2"><ChartLayersMenu value={layers} onChange={setLayers} availability={layerAvailability}/></div></div>
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
@@ -1210,7 +1226,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
-      {timeframe === "M1" && <StructuralForecastPanel key={resolvedSymbol} symbol={resolvedSymbol} onPaths={receiveGhostPaths} />}
+      {timeframe === "M1" && <StructuralForecastPanel key={resolvedSymbol} symbol={resolvedSymbol} onPaths={receiveGhostPaths} selectedScenarios={scenarios} onSelectedScenariosChange={next=>setLayers(old=>({...old,bullish:next.includes('UP_FIRST'),bearish:next.includes('DOWN_FIRST'),neither:next.includes('NEITHER')}))} />}
     </Card>
   );
 }

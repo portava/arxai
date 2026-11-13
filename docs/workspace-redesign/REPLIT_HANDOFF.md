@@ -26,15 +26,18 @@ Publishing remains separate. This handoff does not merge the draft PR or republi
 - Dark graphite/cyan styling, short page/tab transitions, a scan progress animation, and reduced-motion support. Mobile puts the order panel before the chart.
 - Visible Buy and Sell controls with SL/TP fields; size and order type stay in the existing gated confirmation ticket. Switching markets clears the draft protective levels. Chart-originated shared tickets always require explicit review.
 - First-party ARX Canvas chart renderer for the main chart, scanner chart, position previews, manual/AI-assist pages and operator test page. No TradingView widget, renderer selector, logo, script, or lightweight-charts dependency remains in the shipped frontend bundle.
+- Drawing toolbar: trend lines, horizontal levels, rectangles and Fibonacci retracements, with keyboard placement, Undo/Clear and per-user/market/timeframe browser persistence. These are annotations, never execution actions.
+- Visible candle-close timer; delayed feeds use a labeled scheduled interval clock, and closed markets pause it.
+- Layers menu: 18 independent switches, Show all/Hide all, and honest data availability. Covers structure lines/channels/events, FVGs, scanner and AI zones, setup drawings, position/pending/P&L layers, all three illustrative scenarios and user annotations. Existing feed confirmation still governs whether smart overlays may draw.
 - Renderer supports observed OHLC bars, pointer/keyboard pan and zoom, pinch, crosshair readout, price lines, markers, structural lines and illustrative scenario overlays. Existing data quality, AI eligibility and execution gates remain in their original controllers.
 
 ## Validation
 
-151 targeted tests across 17 suites pass. Type checking and production Vite build pass. Existing large-chunk advisory remains (largest chunk approximately 806 kB before gzip).
+164 targeted tests across 20 suites pass. Type checking and production Vite build pass. Existing large-chunk advisory remains (largest chunk approximately 806 kB before gzip).
 
 The browser preview uses a separate localhost-only read-only fixture server: `tools/workspace-preview/server.mjs`. It serves the built real application; sample data is labeled and all non-GET API requests are rejected. It does not proxy to production or ship as the production application entrypoint. Calendar/journal/positions use empty fixtures; scanner discovery APIs are not connected in the preview.
 
-Browser checks cover all five primary routes, Broad Scan/Scalps navigation, the tools drawer, chart rendering, protective-level handoff into the disabled review ticket, and desktop/mobile layouts. Live broker execution, real scanner service results, account authentication on Replit, and deployment are not validated by these local fixture checks.
+Browser checks cover all five primary routes, Broad Scan/Scalps navigation, the tools drawer, chart rendering, protective-level handoff into the disabled review ticket, and desktop/mobile layouts. Follow-up checks covered live countdown updates, keyboard trend-line creation, persistence after reload, clear/undo, and individual/master layer switches. Live broker execution, real scanner service results, account authentication on Replit, and deployment are not validated by these local fixture checks.
 
 ## Reproduce local checks
 

@@ -110,3 +110,18 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(chart.series).toHaveLength(0);
   });
 });
+
+describe('User chart annotations',()=>{
+ it('places a two-point keyboard drawing, preserves its market anchors through zoom, and supports undo after clear',()=>{
+  const chart=createChart(container,{width:900,height:400});chart.addSeries(CandlestickSeries).setData(bars);
+  chart.setDrawingTool('trend');const key=(key:string)=>chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}));
+  key('Enter');key('ArrowRight');key('ArrowUp');key('Enter');
+  const drawings=chart.getDrawings();expect(drawings).toHaveLength(1);expect(drawings[0].end.time).toBeGreaterThan(drawings[0].start.time);expect(drawings[0].end.price).toBeGreaterThan(drawings[0].start.price);
+  chart.timeScale().setVisibleLogicalRange({from:30,to:60});expect(chart.getDrawings()).toEqual(drawings);
+  chart.clearDrawings();expect(chart.getDrawings()).toEqual([]);chart.undoDrawing();expect(chart.getDrawings()).toEqual(drawings);chart.undoDrawing();expect(chart.getDrawings()).toEqual([]);chart.remove();
+ });
+ it('creates a horizontal level with one action and cancels an unfinished shape',()=>{
+  const chart=createChart(container,{width:900,height:400});chart.addSeries(CandlestickSeries).setData(bars);chart.setDrawingTool('horizontal');chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));expect(chart.getDrawings()).toHaveLength(1);
+  chart.setDrawingTool('rectangle');chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));chart.canvas.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));expect(chart.getDrawings()).toHaveLength(1);chart.remove();
+ });
+});

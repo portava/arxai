@@ -1,3 +1,10 @@
+import {
+  validDrawings,
+  fibonacciLevels,
+  type ChartDrawing,
+  type DrawingTool,
+  type DrawingAnchor,
+} from "./drawings";
 /** ARX's first-party Canvas2D renderer. No remote scripts or chart vendors.
  * The small imperative API keeps existing feed gates and overlay controllers intact.
  * All prices and times come from caller-supplied observations or labelled overlays.
@@ -146,6 +153,103 @@ class CanvasChart {
   private rangeListeners = new Set<(r: Range | null) => void>();
   private crosshairListeners = new Set<(p: any) => void>();
   private cleanups: (() => void)[] = [];
+  private drawingsVisible = true;
+  setDrawingsVisible(visible: boolean) {
+    this.drawingsVisible = visible;
+    this.paintSoon();
+  }
+  private drawingTool: DrawingTool = "cursor";
+  private drawings: ChartDrawing[] = [];
+  private drawingStart: DrawingAnchor | null = null;
+  private undoStack: ChartDrawing[][] = [];
+  private drawingListener:
+    | ((drawings: ChartDrawing[], canUndo: boolean) => void)
+    | null = null;
+  setDrawingTool(tool: DrawingTool) {
+    this.drawingTool = tool;
+    this.drawingStart = null;
+    this.canvas.style.cursor = tool === "cursor" ? "crosshair" : "crosshair";
+    this.canvas.style.touchAction = tool === "cursor" ? "pan-y" : "none";
+    this.paintSoon();
+  }
+  setDrawings(drawings: ChartDrawing[]) {
+    this.drawings = validDrawings(drawings);
+    this.undoStack = [];
+    this.emitDrawings();
+  }
+  getDrawings() {
+    return validDrawings(this.drawings);
+  }
+  onDrawingsChange(
+    listener: ((drawings: ChartDrawing[], canUndo: boolean) => void) | null,
+  ) {
+    this.drawingListener = listener;
+  }
+  undoDrawing() {
+    const prev = this.undoStack.pop();
+    if (prev) {
+      this.drawings = prev;
+      this.drawingStart = null;
+      this.emitDrawings();
+    }
+  }
+  clearDrawings() {
+    if (this.drawings.length) {
+      this.rememberDrawings();
+      this.drawings = [];
+      this.drawingStart = null;
+      this.emitDrawings();
+    }
+  }
+  private rememberDrawings() {
+    this.undoStack.push(this.getDrawings());
+    if (this.undoStack.length > 50) this.undoStack.shift();
+  }
+  private emitDrawings() {
+    this.canvas.dataset.drawingCount = String(this.drawings.length);
+    this.drawingListener?.(this.getDrawings(), this.undoStack.length > 0);
+    this.paintSoon();
+  }
+  private anchorAt(point: { x: number; y: number }): DrawingAnchor | null {
+    if (!this.times.length || point.x < 0 || point.x > this.plotWidth())
+      return null;
+    const price = this.coordinateToPrice(point.y);
+    if (price == null) return null;
+    const index = this.indexAt(point.x),
+      lo = Math.floor(index),
+      fraction = index - lo;
+    const step =
+      this.times.length > 1 ? this.times.at(-1)! - this.times.at(-2)! : 60;
+    const timeAt = (i: number) =>
+      i < 0
+        ? this.times[0] + i * step
+        : i >= this.times.length
+          ? this.times.at(-1)! + (i - this.times.length + 1) * step
+          : this.times[i];
+    return {
+      time: timeAt(lo) + (timeAt(lo + 1) - timeAt(lo)) * fraction,
+      price,
+    };
+  }
+  private placeDrawing(point: { x: number; y: number }) {
+    const anchor = this.anchorAt(point);
+    if (!anchor || this.drawingTool === "cursor") return;
+    if (this.drawingTool !== "horizontal" && !this.drawingStart) {
+      this.drawingStart = anchor;
+      this.paintSoon();
+      return;
+    }
+    this.rememberDrawings();
+    this.drawings.push({
+      id: crypto.randomUUID(),
+      tool: this.drawingTool,
+      start: this.drawingStart ?? anchor,
+      end: anchor,
+    });
+    this.drawings = this.drawings.slice(-200);
+    this.drawingStart = null;
+    this.emitDrawings();
+  }
   constructor(
     private container: HTMLElement,
     options: Options,
@@ -165,6 +269,12 @@ class CanvasChart {
     this.ctx = this.canvas.getContext("2d");
     this.applyOptions(options);
     this.on("pointerdown", (e: PointerEvent) => {
+      if (this.drawingTool !== "cursor") {
+        e.preventDefault();
+        this.canvas.focus({ preventScroll: true });
+        this.placeDrawing(this.point(e));
+        return;
+      }
       if (this.options.handleScroll?.pressedMouseMove === false) return;
       this.canvas.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, this.point(e));
@@ -225,6 +335,54 @@ class CanvasChart {
     );
     this.on("dblclick", () => this.fitContent());
     this.on("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        this.drawingStart = null;
+        this.paintSoon();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        this.undoDrawing();
+        return;
+      }
+      if (
+        this.drawingTool !== "cursor" &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(
+          e.key,
+        )
+      ) {
+        e.preventDefault();
+        const p = this.hover ?? {
+          x: this.plotWidth() / 2,
+          y: this.plotHeight() / 2,
+        };
+        if (e.key === "Enter") this.placeDrawing(p);
+        else
+          this.hover = {
+            x: Math.max(
+              0,
+              Math.min(
+                this.plotWidth(),
+                p.x +
+                  (e.key === "ArrowRight"
+                    ? 10
+                    : e.key === "ArrowLeft"
+                      ? -10
+                      : 0),
+              ),
+            ),
+            y: Math.max(
+              0,
+              Math.min(
+                this.plotHeight(),
+                p.y +
+                  (e.key === "ArrowDown" ? 10 : e.key === "ArrowUp" ? -10 : 0),
+              ),
+            ),
+          };
+        this.paintSoon();
+        return;
+      }
       if (!["ArrowLeft", "ArrowRight", "+", "=", "-", "0"].includes(e.key))
         return;
       e.preventDefault();
@@ -266,6 +424,18 @@ class CanvasChart {
           distance: p.length > 1 ? Math.max(5, Math.abs(p[1].x - p[0].x)) : 1,
         }
       : null;
+  }
+  private drawingX(time: number) {
+    if (!this.times.length) return 0;
+    const step =
+      this.times.length > 1 ? this.times.at(-1)! - this.times.at(-2)! : 60;
+    const index =
+      time < this.times[0]
+        ? (time - this.times[0]) / step
+        : time > this.times.at(-1)!
+          ? this.times.length - 1 + (time - this.times.at(-1)!) / step
+          : this.indexForTime(time);
+    return this.x(index);
   }
   private plotWidth() {
     return Math.max(1, this.width - 82);
@@ -581,6 +751,70 @@ class CanvasChart {
           }
         }
     }
+    const drawAnnotation = (d: ChartDrawing, preview = false) => {
+      const x1 = this.drawingX(d.start.time),
+        x2 = this.drawingX(d.end.time),
+        y1 = rawY(d.start.price),
+        y2 = rawY(d.end.price);
+      c.strokeStyle = preview ? "#a5c5d8" : "#6ce3ff";
+      c.fillStyle = "rgba(108,227,255,0.08)";
+      c.lineWidth = 1.5;
+      c.setLineDash(preview ? [4, 4] : []);
+      if (d.tool === "rectangle") {
+        c.fillRect(
+          Math.min(x1, x2),
+          Math.min(y1, y2),
+          Math.abs(x2 - x1),
+          Math.abs(y2 - y1),
+        );
+        c.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      } else if (d.tool === "fibonacci") {
+        for (const level of fibonacciLevels(d.start.price, d.end.price)) {
+          const y = rawY(level.price);
+          c.beginPath();
+          c.moveTo(Math.min(x1, x2), y);
+          c.lineTo(Math.max(x1, x2), y);
+          c.stroke();
+          c.fillStyle = "#9aebff";
+          c.fillText(
+            `${(level.ratio * 100).toFixed(1)}% · ${fmt(level.price)}`,
+            Math.max(4, Math.min(x1, x2) + 6),
+            y - 7,
+          );
+        }
+      } else {
+        c.beginPath();
+        c.moveTo(d.tool === "horizontal" ? 0 : x1, y1);
+        c.lineTo(
+          d.tool === "horizontal" ? w : x2,
+          d.tool === "horizontal" ? y1 : y2,
+        );
+        c.stroke();
+        if (d.tool === "horizontal") {
+          c.fillStyle = "#9aebff";
+          c.fillText(`Level ${fmt(d.start.price)}`, 8, y1 - 8);
+        }
+      }
+      c.setLineDash([]);
+      c.fillStyle = "#6ce3ff";
+      c.beginPath();
+      c.arc(x1, y1, 3, 0, Math.PI * 2);
+      c.fill();
+    };
+    if (this.drawingsVisible) for (const d of this.drawings) drawAnnotation(d);
+    if (this.drawingStart && this.hover && this.drawingTool !== "cursor") {
+      const end = this.anchorAt(this.hover);
+      if (end)
+        drawAnnotation(
+          {
+            id: "preview",
+            tool: this.drawingTool,
+            start: this.drawingStart,
+            end,
+          },
+          true,
+        );
+    }
     c.restore();
     const priceLine = (o: Options) => {
       const y = this.priceToCoordinate(o.price);
@@ -649,6 +883,7 @@ class CanvasChart {
     this.rangeListeners.clear();
     this.crosshairListeners.clear();
     this.pointers.clear();
+    this.drawingListener = null;
     this.series.length = 0;
     this.canvas.remove();
   }

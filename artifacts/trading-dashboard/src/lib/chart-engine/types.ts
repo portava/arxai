@@ -1,3 +1,4 @@
+import type { ChartDrawing, DrawingTool } from "./drawings";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,7 +29,11 @@ export interface ChartEngineCandle {
   close: number;
 }
 
-export interface ChartGhostPath { id: string; color: string; candles: ChartEngineCandle[] }
+export interface ChartGhostPath {
+  id: string;
+  color: string;
+  candles: ChartEngineCandle[];
+}
 
 /**
  * Feed truth the engine needs to render honestly. Today this is just the
@@ -77,7 +82,7 @@ export interface ChartEngineCapabilities {
   zones: boolean;
   /** Price↔coordinate API for DOM overlays (e.g. floating P/L bubbles). */
   coordinateApi: boolean;
-  /** User drawing tools (trendlines, rays, etc.). Staged — not built yet. */
+  /** User annotation tools. Purely visual; never order placement. */
   drawingTools: boolean;
   /** Draggable order/SL/TP handles. Staged — not built yet. */
   draggableOrders: boolean;
@@ -119,6 +124,14 @@ export interface ChartStructureMarker {
  */
 export interface ChartEngineAdapter {
   readonly capabilities: ChartEngineCapabilities;
+  setDrawingsVisible?(visible: boolean): void;
+  setDrawingTool?(tool: DrawingTool): void;
+  setDrawings?(drawings: ChartDrawing[]): void;
+  onDrawingsChange?(
+    listener: ((drawings: ChartDrawing[], canUndo: boolean) => void) | null,
+  ): void;
+  undoDrawing?(): void;
+  clearDrawings?(): void;
 
   /** Mount the engine into the container. Resets all internal render state. */
   init(options: ChartEngineInitOptions): void;
@@ -167,5 +180,8 @@ export interface ChartEngineAdapter {
    * history. Pass null to clear. The handler may fire repeatedly; the Shell must
    * guard against concurrent loads. View-only — fetching history places no trade.
    */
-  setReachStartHandler?(handler: (() => void) | null, thresholdBars?: number): void;
+  setReachStartHandler?(
+    handler: (() => void) | null,
+    thresholdBars?: number,
+  ): void;
 }
