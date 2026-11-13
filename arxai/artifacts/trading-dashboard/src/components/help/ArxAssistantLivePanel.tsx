@@ -583,7 +583,7 @@ export function ArxAssistantLivePanel() {
     const obsolete=()=>cancelled||revision!==conversationLoadRevision.current;
     (async () => {
       try {
-        if (!conversation && !conversationChangePending.current) {
+        if (!conversation && !conversationChangePending.current && !remoteChartBlocked) {
           // Track resume status with a local flag so we don't depend on the
           // stale `conversation` closure value after the async fetch above
           // resolves (React won't have re-rendered inside this same effect
@@ -593,12 +593,15 @@ export function ArxAssistantLivePanel() {
           let resumed = false;
           if (!hydratedRef.current) {
             const listRes = await fetch(`${BASE}/api/me/assistant/conversations`, { credentials: "include" });
+            if (!listRes.ok) throw new Error(`Chat history unavailable (${listRes.status})`);
             if (listRes.ok && !obsolete()) {
               const j = (await listRes.json()) as { conversations?: Array<{ id: number; title: string; archivedAt?: string | null }> };
               if(obsolete())return;
+              if (!Array.isArray(j.conversations)) throw new Error("Invalid chat history response");
               const latest = (j.conversations ?? []).find((c) => !c.archivedAt);
               if (latest) {
                 const convRes = await fetch(`${BASE}/api/me/assistant/conversations/${latest.id}`, { credentials: "include" });
+                if (!convRes.ok) throw new Error(`Saved chat unavailable (${convRes.status})`);
                 if (convRes.ok && !obsolete()) {
                   const cj = (await convRes.json()) as { conversation: Conversation; messages: Array<{ id: number; role: "user" | "assistant"; content: string; intent?: string | null }> };
                   if(obsolete())return;
@@ -673,11 +676,11 @@ export function ArxAssistantLivePanel() {
       } catch (e) {
         if (obsolete()) return;
         const msg = e instanceof Error ? e.message : "unknown";
-        setErrorBanner(/401|403/.test(msg) ? `Sign in to chat with ${name}.` : "Couldn't start a chat session.");
+        setErrorBanner(/401|403/.test(msg) ? `Sign in to chat with ${name}.` : "Saved chat is temporarily unavailable. Reopen Eleanor to retry. Local chart tools still work.");
       }
     })();
     return () => { cancelled = true; };
-  }, [open, conversation]);
+  }, [open, conversation, remoteChartBlocked]);
 
   useEffect(() => { if(!open)return;const timer=setTimeout(()=>{const active=document.activeElement;if(panelRef.current?.contains(active)||active!==document.body&&active!==triggerRef.current)return;if(mobileChartRef.current)panelRef.current?.focus({preventScroll:true});else inputRef.current?.focus();},120);return()=>clearTimeout(timer); }, [open]); // Retain current focus on viewport/mode changes; mobile does not summon the keyboard on open.
   // "Ask <name>" from other surfaces (e.g. the position side card): open the

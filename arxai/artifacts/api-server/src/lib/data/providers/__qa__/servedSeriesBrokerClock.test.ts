@@ -80,7 +80,7 @@ test("an attributed bridge: null before a broker-time tick, the measured offset 
 
 test("the newest bar's own measured offset applies to an in-memory MT5 series", () => {
   __resetMt5ProviderStore();
-  const bar = { timeBasisEvidence: { basis: "BROKER_SERVER", brokerClockOffsetMs: 3 * HOUR } };
+  const bar = { timeBasisEvidence: { basis: "BROKER_SERVER", brokerClockOffsetMs: 3 * HOUR, brokerClockOffsetMeasuredAt: new Date().toISOString() } };
   assert.equal(servedSeriesBrokerClockOffsetMs(mt5(7), bar), 3 * HOUR, "bridge unmeasured, bar carries it");
   assert.equal(servedSeriesBrokerClockOffsetMs(mt5(null), bar), 3 * HOUR, "unattributed writer, bar carries it");
   assert.equal(

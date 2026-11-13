@@ -87,14 +87,27 @@ export function plausibleBrokerClockOffsetMs(offsetMs: unknown): number | null {
  * future-stamp checks compare a broker-stamped bar on the UTC clock; it never
  * rewrites a bar time and is never a historical UTC claim.
  */
-export function measuredBrokerClockOffsetMs(evidence: unknown): number | null {
+export function observedBrokerClockMeasurement(evidence: unknown): { offsetMs: number; measuredAtMs: number } | null {
   if (!evidence || typeof evidence !== "object") return null;
-  const e = evidence as { basis?: unknown; brokerClockOffsetMs?: unknown; convertedAtIngest?: unknown };
+  const e = evidence as { brokerClockOffsetMs?: unknown; brokerClockOffsetMeasuredAt?: unknown };
+  const offsetMs = plausibleBrokerClockOffsetMs(e.brokerClockOffsetMs);
+  const stamp = e.brokerClockOffsetMeasuredAt;
+  // A zone-less date depends on the server timezone. An absent date must
+  // never become Date.now(): that would manufacture measurement freshness.
+  if (offsetMs == null || typeof stamp !== "string" || !/(?:Z|[+-]\d{2}:\d{2})$/.test(stamp)) return null;
+  const measuredAtMs = Date.parse(stamp);
+  return Number.isFinite(measuredAtMs) && measuredAtMs > 0 ? { offsetMs, measuredAtMs } : null;
+}
+
+export function measuredBrokerClockOffsetMs(evidence: unknown): number | null {
+  const measurement = observedBrokerClockMeasurement(evidence);
+  if (!measurement) return null;
+  const e = evidence as { basis?: unknown; convertedAtIngest?: unknown };
   // Converted to UTC at ingest: the offset was already removed from the bar
   // time, so nothing remains to subtract (0), and no writer offset applies.
   if (e.basis === "UTC" && e.convertedAtIngest === true) return 0;
   if (e.basis !== "BROKER_SERVER") return null;
-  return plausibleBrokerClockOffsetMs(e.brokerClockOffsetMs);
+  return measurement.offsetMs;
 }
 
 /**

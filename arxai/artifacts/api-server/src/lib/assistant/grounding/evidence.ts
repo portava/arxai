@@ -10,6 +10,7 @@
 // Pure and deterministic: no clock, no I/O.
 
 import { collectMarketStateFacts, type MarketStateFact } from "./stateClaims.js";
+import { classifyMeasuredRank, type MeasuredRankInput } from "../../ranking/measuredRank.js";
 export type EvidenceSource = "tool" | "user";
 
 export interface EvidenceNumber {
@@ -31,7 +32,6 @@ export interface EvidenceNumber {
   /**
    * What KIND of calibrated number this is, when calibrated is true:
    *   "measured"  a measured probability that beat the base rate out of sample
-   *               (or a legacy `calibrated: true` field);
    *   "base_rate" a measured base rate (the unconditional hit rate). It may be
    *               quoted as a base rate, never as this setup's edge.
    */
@@ -44,6 +44,7 @@ export type CalibrationKind = "measured" | "base_rate";
 
 export interface EvidenceTime {
   iso: string;
+  utc: boolean;
   date: string; // YYYY-MM-DD (UTC)
   hhmm: string; // HH:MM (UTC)
   tool: string;
@@ -108,6 +109,7 @@ export function numbersInText(s: string): number[] {
 }
 
 interface Frame {
+  utcAllowed?: boolean;
   entities?: string[];
   entitySymbols?: string[];
   entityIds?: string[];
@@ -130,6 +132,7 @@ const ROOT_FRAME: Frame = { stale: null, staleAsOf: null, calibrated: null, cali
 
 interface StampInfo {
   measured: boolean;
+  probability: number | null;
   /** Kind of the stamp's `probability` (and `label`) value. */
   kind: CalibrationKind;
   n: number;
@@ -138,13 +141,14 @@ interface StampInfo {
 export function calibrationStampInfo(obj: Record<string, unknown>): StampInfo | null {
   if (obj.status !== "measured" && obj.status !== "unmeasured") return null;
   if (!("probability" in obj) || typeof obj.n !== "number" || typeof obj.edgeDetected !== "boolean") return null;
-  const measured = obj.status === "measured" && typeof obj.probability === "number" && Number.isFinite(obj.probability);
-  const edge = obj.edgeDetected === true && obj.model !== "base_rate";
-  return { measured, kind: edge ? "measured" : "base_rate", n: obj.n };
+  const rank = classifyMeasuredRank({ rawScore: 0, calibration: obj as unknown as MeasuredRankInput["calibration"] });
+  const measured = rank.rankBasis !== "unmeasured_raw_order";
+  return { measured, probability: measured ? obj.probability as number : null,
+    kind: rank.rankBasis === "calibrated_probability" ? "measured" : "base_rate", n: rank.rankN };
 }
 
 function stampChildFrame(stamp: StampInfo, key: string, f: Frame): Frame {
-  if (stamp.measured && (key === "probability" || key === "label")) return { ...f, calibrated: true, calibrationKind: stamp.kind, calibrationN: stamp.n };
+  if (stamp.measured && key === "probability") return { ...f, calibrated: true, calibrationKind: stamp.kind, calibrationN: stamp.n };
   if (stamp.measured && key === "baseRate") return { ...f, calibrated: true, calibrationKind: "base_rate", calibrationN: stamp.n };
   return { ...f, calibrated: false, calibrationKind: null, calibrationN: null };
 }
@@ -153,6 +157,9 @@ function stampChildFrame(stamp: StampInfo, key: string, f: Frame): Frame {
 const STAMP_SIBLING_KEYS = /^(calibratedProbability|calibratedProb|winProbability)$/;
 
 function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
+  const timeEvidence = obj.timeBasisEvidence as { kind?: unknown } | null | undefined;
+  const utcAllowed = obj.observedTimeBasis === "source_clock" || obj.clockBasis === "broker_server"
+    || (timeEvidence && timeEvidence.kind !== "original_utc") ? false : parent.utcAllowed;
   let stale = parent.stale;
   let staleAsOf = parent.staleAsOf;
   let own: boolean | null = null;
@@ -173,8 +180,10 @@ function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
   let calibrationKind = parent.calibrationKind;
   let calibrationN = parent.calibrationN;
   if (typeof obj.calibrated === "boolean") {
-    calibrated = obj.calibrated;
-    calibrationKind = obj.calibrated ? "measured" : null;
+    // A boolean alone contains no model, sample count or validated probability.
+    // Only the same measured stamp that Scanner accepts can support the claim.
+    calibrated = false;
+    calibrationKind = null;
     calibrationN = null;
   }
   const valuesFor = (keys: RegExp) => Object.entries(obj)
@@ -185,22 +194,20 @@ function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
   // A child with its own identity replaces that part of the ancestor scope.
   const entitySymbols = ownSymbols.length ? ownSymbols : parent.entitySymbols ?? [];
   const entityIds = ownIds.length ? ownIds : parent.entityIds ?? [];
-  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN,
+  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN, utcAllowed,
     entitySymbols, entityIds, entities: [...entitySymbols, ...entityIds] };
 
 }
 
-function addTimes(s: string, tool: string, out: EvidenceTime[]): void {
+function addTimes(s: string, tool: string, out: EvidenceTime[], utcAllowed = true): void {
   for (const m of s.matchAll(ISO_TS)) {
-    const d = new Date(m[0].replace(" ", "T"));
-    if (Number.isNaN(d.getTime())) {
-      out.push({ iso: m[0], date: m[1], hhmm: `${m[2]}:${m[3]}`, tool });
-      continue;
-    }
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(m[0]);
+    const d = new Date(m[0].replace(" ", "T") + (hasZone ? "" : "Z"));
+    if (Number.isNaN(d.getTime())) continue;
     const iso = d.toISOString();
-    out.push({ iso, date: iso.slice(0, 10), hhmm: iso.slice(11, 16), tool });
+    out.push({ iso, date: iso.slice(0, 10), hhmm: iso.slice(11, 16), tool, utc: utcAllowed && hasZone });
     // The literal wall-clock in the string too (an offset timestamp may be quoted as written).
-    if (`${m[2]}:${m[3]}` !== iso.slice(11, 16)) out.push({ iso: m[0], date: m[1], hhmm: `${m[2]}:${m[3]}`, tool });
+    if (`${m[2]}:${m[3]}` !== iso.slice(11, 16)) out.push({ iso: m[0], date: m[1], hhmm: `${m[2]}:${m[3]}`, tool, utc: false });
   }
 }
 
@@ -237,14 +244,14 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
       const lower = v.toLowerCase();
       idx.strings.push(lower);
       if (SYMBOL_KEYS.test(key)) idx.symbols.add(lower);
-      addTimes(v, tool, idx.times);
+      addTimes(v, tool, idx.times, frame.utcAllowed);
       // A numeric string field ("1.08523") is a typed value; a sentence carries text numbers.
       const asNum = /^-?\d+(?:\.\d+)?$/.test(v.trim()) ? Number(v.trim()) : null;
       if (asNum != null) idx.numbers.push({ value: asNum, key, keyTokens: splitKey(key), path, tool, source: "tool", fromText: false, ...frame });
       else for (const n of numbersInText(v.replace(ISO_TS, " "))) idx.numbers.push({ value: n, key, keyTokens: splitKey(key), path, tool, source: "tool", fromText: true, ...frame });
       return;
     }
-    if (v instanceof Date) { addTimes(v.toISOString(), tool, idx.times); return; }
+    if (v instanceof Date) { if (Number.isFinite(v.getTime())) addTimes(v.toISOString(), tool, idx.times, frame.utcAllowed); return; }
     if (!v || typeof v !== "object") return;
     if (seen.has(v)) return;
     seen.add(v);
@@ -263,7 +270,7 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
       const cf = stamp
         ? stampChildFrame(stamp, k, f)
         : sibling && STAMP_SIBLING_KEYS.test(k)
-          ? stampChildFrame(sibling, "probability", f)
+          ? stampChildFrame(sibling, child === sibling.probability ? "probability" : "unverified", f)
           : f;
       walk(child, k, path ? `${path}.${k}` : k, tool, cf, depth + 1);
     }

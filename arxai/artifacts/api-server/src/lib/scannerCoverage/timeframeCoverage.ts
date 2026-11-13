@@ -86,8 +86,7 @@ export interface TimeframeCoverage {
 }
 
 export function isDirectional(action: string | null | undefined): boolean {
-  const a = String(action ?? "").toUpperCase();
-  return a.includes("BUY") || a.includes("SELL") || a.includes("LONG") || a.includes("SHORT");
+  return ["BUY", "SELL", "LONG", "SHORT"].includes(String(action ?? "").trim().toUpperCase());
 }
 
 function hasSignal(row: CoverageRow | undefined): boolean {
@@ -116,7 +115,16 @@ export function resolveTimeframeReading<R extends CoverageRow>(
   rowsForSymbol: readonly R[],
   skipped = false,
 ): TimeframeCoverage & { row: R | null } {
-  const byTf = new Map(rowsForSymbol.map((r) => [r.timeframe, r] as const));
+  const byTf = new Map<string, R>();
+  const ambiguous = new Set<string>();
+  for (const row of rowsForSymbol) {
+    if (row.symbol !== symbol) continue;
+    if (byTf.has(row.timeframe)) ambiguous.add(row.timeframe);
+    else byTf.set(row.timeframe, row);
+  }
+  // A caller passing a mixed universe or conflicting duplicate results must
+  // not silently attach another market's direction to the requested chart.
+  for (const tf of ambiguous) byTf.delete(tf);
   const own = byTf.get(timeframe);
   const status = ownStatus(own, skipped);
   if (status === "signal") {

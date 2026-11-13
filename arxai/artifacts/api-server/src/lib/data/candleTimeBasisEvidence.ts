@@ -1,5 +1,6 @@
 import { isOriginalTwelveDataStockEvidence, TWELVE_DATA_STOCK_AUTHORITY } from "../assistant/twelveDataCandles.js";
 import { isOriginalPolygonEvidence, POLYGON_FX_AUTHORITY, type OriginalCandleContext } from "../assistant/polygonFxCandles.js";
+import { observedBrokerClockMeasurement, plausibleBrokerClockOffsetMs } from "./freshness.js";
 /** Original clock authority, separate from a syntactically valid ISO string.
  * A current broker offset, transport receipt time or appended Z is not a
  * historical UTC conversion. Only reviewed endpoint-specific original evidence may qualify UTC. */
@@ -40,7 +41,7 @@ export function brokerServerCandleTimeBasis(
   offset: { offsetMs: number; measuredAtMs: number } | null,
 ): CandleTimeBasisEvidence {
   const base = unavailableCandleTimeBasis("mt5_broker");
-  if (!offset || !Number.isFinite(offset.offsetMs)) {
+  if (!validClockMeasurement(offset)) {
     return { ...base, brokerClockOffsetMs: null, brokerClockOffsetMeasuredAt: null };
   }
   const sign = offset.offsetMs >= 0 ? "+" : "-";
@@ -64,6 +65,7 @@ export function brokerServerCandleTimeBasis(
 export function convertedBrokerCandleTimeBasis(
   offset: { offsetMs: number; measuredAtMs: number },
 ): CandleTimeBasisEvidence {
+  if (!validClockMeasurement(offset)) return unavailableCandleTimeBasis("mt5_broker");
   const sign = offset.offsetMs >= 0 ? "+" : "-";
   const abs = Math.abs(offset.offsetMs);
   const hh = String(Math.floor(abs / 3_600_000)).padStart(2, "0");
@@ -77,6 +79,10 @@ export function convertedBrokerCandleTimeBasis(
     brokerClockOffsetMeasuredAt: new Date(offset.measuredAtMs).toISOString(),
     convertedAtIngest: true,
   };
+}
+function validClockMeasurement(offset: { offsetMs: number; measuredAtMs: number } | null): offset is { offsetMs: number; measuredAtMs: number } {
+  return offset != null && plausibleBrokerClockOffsetMs(offset.offsetMs) != null
+    && offset.measuredAtMs > 0 && Number.isFinite(new Date(offset.measuredAtMs).getTime());
 }
 export function unavailableCandleTimeBasis(source: string | null): CandleTimeBasisEvidence {
   return {
@@ -97,13 +103,12 @@ export function resolveCandleTimeBasisEvidence(evidence: unknown, source: string
   // UTC claim: the result stays "unavailable" / BROKER_SERVER).
   if (source === "mt5_broker" && evidence && typeof evidence === "object") {
     const e = evidence as Partial<CandleTimeBasisEvidence>;
-    if (e.basis === "UTC" && e.convertedAtIngest === true && typeof e.brokerClockOffsetMs === "number" && Number.isFinite(e.brokerClockOffsetMs)) {
-      const at = typeof e.brokerClockOffsetMeasuredAt === "string" ? Date.parse(e.brokerClockOffsetMeasuredAt) : NaN;
-      return convertedBrokerCandleTimeBasis({ offsetMs: e.brokerClockOffsetMs, measuredAtMs: Number.isFinite(at) ? at : Date.now() });
+    const measurement = observedBrokerClockMeasurement(e);
+    if (measurement && e.basis === "UTC" && e.convertedAtIngest === true) {
+      return convertedBrokerCandleTimeBasis(measurement);
     }
-    if (e.basis === "BROKER_SERVER" && typeof e.brokerClockOffsetMs === "number" && Number.isFinite(e.brokerClockOffsetMs)) {
-      const at = typeof e.brokerClockOffsetMeasuredAt === "string" ? Date.parse(e.brokerClockOffsetMeasuredAt) : NaN;
-      return brokerServerCandleTimeBasis({ offsetMs: e.brokerClockOffsetMs, measuredAtMs: Number.isFinite(at) ? at : Date.now() });
+    if (measurement && e.basis === "BROKER_SERVER") {
+      return brokerServerCandleTimeBasis(measurement);
     }
   }
   return unavailableCandleTimeBasis(source);

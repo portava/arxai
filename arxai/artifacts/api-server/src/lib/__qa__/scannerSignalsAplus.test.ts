@@ -32,6 +32,7 @@ import {
   higherTimeframes,
   planScanPairs,
   resolveTimeframeReading,
+  isDirectional,
 } from "../scannerCoverage/timeframeCoverage.js";
 import {
   breakOfStructureStrategy,
@@ -100,6 +101,20 @@ describe("every chart timeframe is scanned", () => {
 
 describe("cross-timeframe fallback is explicit", () => {
   const row = (tf: string, action: string, dataStatus = "live") => ({ symbol: "EURUSD", timeframe: tf, recommendedAction: action, dataStatus });
+
+  it("only explicit directional actions are signals; negation and prose cannot become buys", () => {
+    for (const action of ["DO_NOT_BUY", "WAIT_FOR_BUY", "NOT_LONG", "SHORTLIST", "BUY_OR_SELL", "Buy only after confirmation"])
+      assert.equal(isDirectional(action), false, action);
+    for (const action of ["BUY", "SELL", "LONG", "SHORT", "buy"]) assert.equal(isDirectional(action), true);
+  });
+  it("never borrows a reading from another symbol or an ambiguous duplicate timeframe", () => {
+    const wrong = { ...row("M5", "BUY"), symbol: "GBPUSD" };
+    const wrongHigher = { ...row("H1", "SELL"), symbol: "GBPUSD" };
+    assert.equal(resolveTimeframeReading("EURUSD", "M5", [wrong, wrongHigher]).row, null);
+    const duplicate = resolveTimeframeReading("EURUSD", "M5", [row("M5", "BUY"), row("M5", "SELL")]);
+    assert.equal(duplicate.status, "insufficient_data");assert.equal(duplicate.row, null);
+    assert.equal(resolveTimeframeReading("EURUSD", "M5", [row("H1", "BUY"), row("H1", "SELL")]).row, null);
+  });
 
   it("only higher timeframes, nearest first", () => {
     assert.deepEqual(higherTimeframes("M5"), ["M15", "M30", "H1", "H4", "D1"]);

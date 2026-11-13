@@ -4,6 +4,7 @@ import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@worksp
 import { and, eq } from "drizzle-orm";
 import { ingestBrokerCandles } from "../brokerCandleStore.js";
 import { brokerHistoryCandle } from "../brokerHistoryCandle.js";
+import { __resetBrokerClockOffsets, getBrokerClockOffset, recordBrokerClockSample } from "../../brokerHub/brokerClockOffset.js";
 
 if (process.env.ARX_REQUIRE_INTEGRATION_DB !== "true" || !["127.0.0.1", "localhost"].includes(new URL(process.env.DATABASE_URL!).hostname))
   throw new Error("Volume integration tests require an explicitly disposable local database");
@@ -53,4 +54,30 @@ test("durable reobservation upgrades only genuine ticks and preserves qualified 
     assert.equal((await stored(2)).tickVolumeObserved, false);
     assert.equal(brokerHistoryCandle(await stored(2)).volumeEvidence?.kind, "unavailable");
   } finally { await clean(); }
+});
+
+test("refused candle batches cannot change the bridge clock used by chart and scanner", async () => {
+  await clean();
+  try {
+    const now = Date.now(), offset = 3 * 3_600_000;
+    const valid = payload({ tickVolume: 60 });
+    const invalid = [
+      { ...valid, accountNumber: "another-account" },
+      { ...valid, serverName: "another-server" },
+      { ...valid, timeframe: "unsupported" },
+      { ...valid, sentAt: now - 600_000, brokerServerTime: now - 600_000 },
+      { ...valid, bars: [{ ...valid.bars[0]!, high: .1 }] },
+      { ...valid, bars: [] },
+    ];
+    for (const batch of invalid) {
+      __resetBrokerClockOffsets();
+      recordBrokerClockSample({ bridgeConnectionId: id, brokerMs: now + offset, gmtMs: now, basis: "v2_tick", nowMs: now });
+      const result = await ingestBrokerCandles(batch, ctx, { now });
+      assert.equal(result.acceptedBars, 0);
+      assert.equal(getBrokerClockOffset(id, now)?.offsetMs, offset, `Refused ${result.note} changed the bridge clock`);
+      assert.equal(getBrokerClockOffset(id, now)?.windowSamples, 1);
+    }
+    assert.equal((await ingestBrokerCandles(valid, ctx, { now })).acceptedBars, 1);
+    assert.equal(getBrokerClockOffset(id, now)?.offsetMs, 0, "A committed valid native observation supplies its measured clock");
+  } finally { await clean(); __resetBrokerClockOffsets(); }
 });

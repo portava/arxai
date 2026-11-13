@@ -111,7 +111,7 @@ const MACHINE_KEYS = [
   "symbol", "timeframe", "gated", "readLayer", "liveSetupWithheld", "canReadStructure",
   "canShowLiveTradeSetup", "canUseCurrentCandleForEntry", "basis", "reasonCode", "dataQuality",
   "chartTruthScore", "chartReadScore", "hasFormingCandle", "tradeHealthFreshness",
-  "withheldBy", "observedAt",
+  "withheldBy", "observedAt", "observedTimeBasis",
 ];
 function narrativeOnly(read: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -138,6 +138,7 @@ test("owner's case: closed-bar sufficiency delayed + clean forming-tip feed → 
   assert.equal(read.tradeHealthFreshness, "HISTORICAL_ONLY", "tradeHealthFreshness enum (SCREAMING_SNAKE) must not be blanked");
   assert.equal(read.withheldBy, "sufficiency");
   assert.equal(read.observedAt, CLOSE_TIME, "observedAt is the latest closed candle's close time");
+  assert.equal(read.observedTimeBasis, "source_clock");
   const cautions = cautionsOf(read);
   const withheld = cautions.find((c) => c.startsWith("Exact entry, stop, and target levels withheld"));
   assert.ok(withheld, "structural read carries the withheld caution");
@@ -216,6 +217,7 @@ test("FULL branch keeps reasonCode / freshness enums and carries observedAt", as
   assert.equal(read.tradeHealthFreshness, "LIVE_CONFIRMED");
   assert.equal(read.liveSetupWithheld, false);
   assert.equal(read.observedAt, CLOSE_TIME);
+  assert.equal(read.observedTimeBasis, "source_clock");
   assert.equal(read.withheldBy, null);
   assert.deepEqual(findInternalLeaks(JSON.stringify(narrativeOnly(read))), []);
 });
@@ -232,5 +234,6 @@ test("INSUFFICIENT branch keeps readLayer / reasonCode and carries observedAt", 
   assert.equal(read.dataQuality, "insufficient");
   assert.ok(typeof read.tradeHealthFreshness === "string" && read.tradeHealthFreshness.length > 0);
   assert.equal(read.observedAt, CLOSE_TIME);
+  assert.equal(read.observedTimeBasis, "source_clock");
   assert.deepEqual(findInternalLeaks(JSON.stringify(narrativeOnly(read))), []);
 });

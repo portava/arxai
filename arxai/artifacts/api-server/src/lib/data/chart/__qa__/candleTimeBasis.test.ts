@@ -4,9 +4,32 @@ import {resolveCandleTimeBasisEvidence} from "../../candleTimeBasisEvidence.js";
 import {normalizeCandles} from "../candleNormalization.js";
 import {runCandleTruth} from "../candleTruthEngine.js";
 import type {Candle} from "../../types.js";
+import {measuredBrokerClockOffsetMs} from "../../freshness.js";
 const now=Date.UTC(2026,10,1,12), step=60_000;
 const raw:Candle[] = Array.from({length:10},(_,i)=>({time:new Date(now-(10-i)*step).toISOString(),open:1,high:1.2,low:.9,close:1.1}));
 const opts={symbol:"EURUSD",displaySymbol:"EUR/USD",timeframe:"M1" as const,source:"mt5_broker",assetClass:"forex" as const,limit:100,now};
+for(const basis of ["BROKER_SERVER","UTC"] as const) {
+ for(const measuredAt of [undefined,null,"invalid","2026-11-01T12:00:00",""]) test(`${basis}: missing/ambiguous clock observation ${measuredAt} cannot gain a measurement time`,()=>{
+  const supplied={basis,convertedAtIngest:basis==="UTC",brokerClockOffsetMs:7_200_000,brokerClockOffsetMeasuredAt:measuredAt};
+  const resolved=resolveCandleTimeBasisEvidence(supplied,"mt5_broker");
+  assert.equal(resolved.brokerClockOffsetMeasuredAt??null,null);
+  assert.equal(resolved.brokerClockOffsetMs??null,null);
+  assert.equal(resolved.convertedAtIngest??false,false);
+  assert.equal(measuredBrokerClockOffsetMs(supplied),null);
+ });
+ for(const offset of [NaN,Infinity,54_000_001]) test(`${basis}: implausible clock offset ${offset} cannot affect candle freshness`,()=>{
+  const supplied={basis,convertedAtIngest:basis==="UTC",brokerClockOffsetMs:offset,brokerClockOffsetMeasuredAt:new Date(now).toISOString()};
+  assert.equal(resolveCandleTimeBasisEvidence(supplied,"mt5_broker").brokerClockOffsetMs??null,null);
+  assert.equal(measuredBrokerClockOffsetMs(supplied),null);
+ });
+ test(`${basis}: valid observed clock evidence survives without becoming historical UTC authority`,()=>{
+  const supplied={basis,convertedAtIngest:basis==="UTC",brokerClockOffsetMs:7_200_000,brokerClockOffsetMeasuredAt:new Date(now).toISOString()};
+  const resolved=resolveCandleTimeBasisEvidence(supplied,"mt5_broker");
+  assert.equal(resolved.brokerClockOffsetMeasuredAt,supplied.brokerClockOffsetMeasuredAt);
+  assert.equal(resolved.kind,"unavailable");assert.equal(resolved.authority,null);
+  assert.equal(measuredBrokerClockOffsetMs(resolved),basis==="UTC"?0:7_200_000);
+ });
+}
 for(const source of ["mt5_broker","deriv","deriv_public","binance",null])
  for(const supplied of [undefined,{kind:"original_utc",basis:"UTC",authority:"client_said_utc",reason:null},{kind:"original_utc",basis:"UTC",authority:"current_heartbeat_offset",reason:null}])
   test(`${source}: raw declarations cannot mint unregistered UTC authority (${JSON.stringify(supplied)})`,()=>{

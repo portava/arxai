@@ -42,6 +42,22 @@ const row = (over: Record<string, unknown>) => ({
 });
 const kinds = (text: string, outputs: Array<{ name: string; result: unknown }>) => checkClaims(text, outputs).findings.map((f) => f.kind);
 
+for (const [name, patch] of Object.entries({
+  negativeCount: { n: -1 }, fractionalCount: { n: 143.5 }, tooFew: { n: 1 },
+  invalidProbability: { probability: 1.62 }, noModel: { model: "none" },
+  noEdge: { edgeDetected: false }, noBaseRate: { baseRate: null },
+  contradictoryBase: { model: "base_rate", edgeDetected: false, probability: .62, baseRate: .5 },
+})) test(`Eleanor cannot claim a measured probability from ${name}`, () => {
+  const calibration={...measuredEdge,...patch};
+  const output=[row({calibratedProbability:calibration.probability,calibration})];
+  assert.equal(calibrationStampInfo(calibration as unknown as Record<string,unknown>)?.measured,false);
+  assert.ok(kinds(`GBPUSD has a ${Number(calibration.probability)*100}% chance of winning.`,output).includes("UNCALIBRATED_PROBABILITY"));
+});
+test("a sibling probability must equal its valid calibration stamp",()=>{
+  const output=[row({calibratedProbability:.99,calibration:measuredEdge})];
+  assert.ok(kinds("GBPUSD has a 99% chance of winning.",output).includes("UNCALIBRATED_PROBABILITY"));
+});
+
 test("the stamp label is what the engine formats", () => {
   assert.equal(measuredEdge.label, "62% (N=143)");
   assert.equal(measuredBaseRate.label, "55% (N=143)");

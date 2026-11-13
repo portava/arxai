@@ -436,7 +436,9 @@ function composeChartRead(
 ): Record<string, unknown> {
   const scrubbed = scrubUserCopyDeep(narrative, SCRUB_OPTS);
   const safe = opts.neutralize ? neutralizeFeedCopyDeep(scrubbed) : scrubbed;
-  return { ...safe, ...machine };
+  // observedAt is a native candle coordinate. Neither ISO formatting nor a
+  // valid structural read establishes its historical UTC mapping.
+  return { ...safe, ...machine, observedTimeBasis: "source_clock" };
 }
 
 /** Latest CLOSED candle close time from the chart state, or null when unknown. */

@@ -48,6 +48,23 @@ test("times and dates must be in the evidence (UTC)", () => {
   assert.deepEqual(kinds("Observed on 2026-11-08.", [snap()]), ["FABRICATION"]);
 });
 
+test("a source-clock chart read cannot be relabelled UTC by Eleanor", () => {
+  for (const clock of [{ observedTimeBasis: "source_clock" }, { clockBasis: "broker_server" }, { timeBasisEvidence: { kind: "unavailable", basis: "BROKER_SERVER" } }]) {
+    const output=[{name:"readChartStructure",result:{chartRead:{symbol:"EURUSD",observedAt:"2026-11-09T14:32:00.000Z",...clock}}}];
+    assert.deepEqual(kinds("Observed at 14:32 source clock.",output),[]);
+    assert.deepEqual(kinds("Observed at 14:32 UTC.",output),["FABRICATION"]);
+  }
+});
+test("offset wall-clock and zoneless timestamps never qualify as UTC as written",()=>{
+  const offset=[{name:"getMarketSnapshot",result:{observedAt:"2026-11-09T15:32:00+01:00"}}];
+  assert.deepEqual(kinds("Observed at 14:32 UTC.",offset),[]);
+  assert.deepEqual(kinds("Observed at 15:32 UTC.",offset),["FABRICATION"]);
+  assert.deepEqual(kinds("Observed at 15:32 local time.",offset),[]);
+  const zoneless=[{name:"getMarketSnapshot",result:{observedAt:"2026-11-09T14:32:00"}}];
+  assert.deepEqual(kinds("Observed at 14:32 UTC.",zoneless),["FABRICATION"]);
+  assert.deepEqual(kinds("Observed at 14:32 source clock.",zoneless),[]);
+});
+
 test("tickets and ids must appear in the evidence", () => {
   const ex = [{ name: "getActionExecutionResult", result: { actionId: 5123, mt5PositionTicket: 70011224, status: "executed", fillPrice: 1.08531, executedAt: "2026-11-09T14:33:02.000Z" } }];
   assert.deepEqual(kinds("Ticket #70011224 for action 5123.", ex), []);
@@ -87,9 +104,9 @@ test("scores and unsupported figures presented as probabilities are flagged", ()
   assert.deepEqual(kinds("GBPUSD has a confidence score of 72/100.", scan), []);
   assert.deepEqual(kinds("A 0.72 probability of success.", scan), ["UNCALIBRATED_PROBABILITY"]);
   assert.deepEqual(kinds("The score is 72; it is not a calibrated probability.", scan), []);
-  // Only a value the tool marks calibrated may be stated as a probability.
+  // A legacy boolean cannot replace measured calibration evidence.
   const cal = [{ name: "x", result: { hitProbability: 0.61, calibrated: true } }];
-  assert.deepEqual(kinds("The calibrated hit probability is 61%.", cal), []);
+  assert.deepEqual(kinds("The calibrated hit probability is 61%.", cal), ["UNCALIBRATED_PROBABILITY"]);
 });
 
 test("execution claims need an executed result; negated and conditional statements are not claims", () => {

@@ -402,18 +402,6 @@ export async function ingestBrokerCandles(
   const source = payload.source?.trim() || BROKER_CANDLE_SOURCE;
   const terminalId = payload.terminalId ?? null;
   const brokerServerTime = parseTime(payload.brokerServerTime ?? null);
-  // Broker-clock offset sample (Truth audit T1): the push carries the broker
-  // server clock (TimeCurrent) beside the EA's GMT clock (sentAt) read at the
-  // same instant. The bars below are stamped in the broker clock and are
-  // converted to UTC with the bridge's measured offset when one is known.
-  const sentAtForClock = parseTime(payload.sentAt ?? null);
-  recordBrokerClockSample({
-    bridgeConnectionId: ctx.bridgeConnectionId,
-    brokerMs: brokerServerTime?.getTime() ?? null,
-    gmtMs: sentAtForClock?.getTime() ?? null,
-    basis: "candle_push",
-    nowMs: now,
-  });
   const serverName = payload.serverName ?? ctx.serverName ?? null;
   const clockBasis = "broker_server";
   const historyIdentity = brokerHistoryIdentity({ ...ctx, accountNumber, serverName, clockBasis });
@@ -746,6 +734,18 @@ export async function ingestBrokerCandles(
     nextBackfillHints: [hint],
   };
   });
+  // Publish clock evidence only after identity, freshness, candle validation
+  // and the durable transaction succeed. Rejected or rolled-back batches
+  // must not poison the clock that chart/scanner freshness checks consume.
+  if (result.acceptedBars > 0 && result.rejectedBars === 0) {
+    recordBrokerClockSample({
+      bridgeConnectionId: ctx.bridgeConnectionId,
+      brokerMs: parseTime(payload.brokerServerTime)?.getTime() ?? null,
+      gmtMs: parseTime(payload.sentAt)?.getTime() ?? null,
+      basis: "candle_push",
+      nowMs: opts?.now ?? Date.now(),
+    });
+  }
   if (publish) await publish();
   return result;
 }

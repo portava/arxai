@@ -14,9 +14,8 @@
 //   UNCALIBRATED_PROBABILITY  a score or unsupported figure presented as a
 //                             probability/chance, a 0-100 score as a percent,
 //                             or a measured base rate presented as an edge.
-//                             Calibrated = a measured calibration stamp
-//                             (status "measured", numeric probability) or a
-//                             legacy `calibrated: true` field (evidence.ts)
+//                             Calibrated = the same validated measured stamp
+//                             accepted by Scanner ranking (evidence.ts).
 //   EXECUTION_UNCONFIRMED     "filled/executed/placed" claimed with no executed
 //                             result in the evidence
 //
@@ -356,9 +355,9 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
   // Clock times.
   for (const m of work.matchAll(TIME_RE)) {
     const hhmm = `${m[1].padStart(2, "0")}:${m[2]}`;
-    const ok = idx.times.some((t) => t.hhmm === hhmm);
+    const ok = idx.times.some((t) => t.hhmm === hhmm && (!m[3] || t.utc));
     const claim = pushClaim({ kind: "time", text: m[0], grounded: ok, groundedBy: ok ? ["time"] : [], localStart: m.index ?? 0, localEnd: (m.index ?? 0) + m[0].length });
-    if (!ok) findings.push({ kind: "FABRICATION", claim, detail: `time ${hhmm} (UTC) is not in any tool output this turn` });
+    if (!ok) findings.push({ kind: "FABRICATION", claim, detail: `time ${hhmm}${m[3] ? " UTC" : ""} is not supported by this turn's clock evidence` });
   }
   work = mask(work, TIME_RE);
 
