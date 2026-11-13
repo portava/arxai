@@ -120,7 +120,7 @@ const OFFERED_OPTIONS_RE = /\bI\s+(?:can|could)(?:\s+also)?\s+(?:give|show|offer
 // Segment-local so the streaming verifier and speech gate judge it the same.
 const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send(?: me)?|try(?: asking)?|type|reply with|ask(?: me)?)`;
 const EXAMPLE_QUOTE = String.raw`(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)(?:\*\*)?`;
-const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*${EXAMPLE_QUOTE}(?:\s+or\s+${EXAMPLE_QUOTE})*`, "gi");
+const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*${EXAMPLE_QUOTE}(?:(?:\s*,\s*(?:or\s+)?|\s+or\s+)${EXAMPLE_QUOTE})*`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
 const EXAMPLE_COMMAND_RE = new RegExp(String.raw`\b(?:type|send|try)\s+the\s+(?:direct\s+)?command\s+(?:exactly\s+)?as:\s*(?:\*\*[^*\n]{1,200}\*\*|${EXAMPLE_QUOTE})`, "gi");
 // A bullet whose whole content is one quotation is a suggested phrasing.
@@ -212,7 +212,10 @@ function specificTokens(e: EvidenceNumber): string[] {
 /** How many of the field's specific tokens the label names: all of them, or 0. */
 function labelStrength(e: EvidenceNumber, tokens: Set<string>): number {
   if (e.source !== "tool" || e.fromText) return 0;
-  const spec = specificTokens(e);
+  // "filled size" identifies filledLotSize even when its lot unit is omitted.
+  // Retain fill + size specificity so it cannot fall back to fillPrice.
+  const all = specificTokens(e);
+  const spec = all.includes("size") && tokens.has("size") ? all.filter(t => t !== "lot") : all;
   return spec.length > 0 && spec.every((t) => tokens.has(t)) ? spec.length : 0;
 }
 
@@ -426,14 +429,22 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
     // A standalone imperative may follow its example cue on the preceding
     // line. Only repeat the user's own side, instrument and size; never infer
     // an observed price or an execution from that requested command.
-    const command = /^\s*(?:\*\*|`)?(buy|sell)\s+[A-Z][A-Z0-9_/-]*\s+\d+(?:\.\d+)?(?:\*\*|`)?[.!]?\s*$/i.exec(raw);
+    const command = /(?:^\s*|\benter:\s*)(?:\*\*|`)?(buy|sell)\s+[A-Z][A-Z0-9_/-]*\s+\d+(?:\.\d+)?(?:\*\*|`)?[.!]?\s*$/i.exec(raw);
     const requestedCommand = !!command && !!symbol && namedSymbols(idx.userText, idx).includes(symbol)
+      && localStart >= command.index
       && new RegExp(`\\b${command[1]}\\b`, "i").test(idx.userText);
     const requestedIdLookup = Number.isInteger(value) && value >= 100
       && /\b(?:look up|check|search for)\s+(?:the\s+)?(?:action|order|ticket)\s*(?:\*\*)?\s*$/i.test(clause.before);
     const userEcho = /you (?:asked|said|provided|requested|mentioned)|your (?:requested|specified)|^\s*(?:Risking|If you risk)\b/i.test(raw)
       || requestedRiskCheck || conditionalUserId || requestedCommand || requestedIdLookup;
-    const candidates = idx.numbers.filter(e => e.source === "user" ? userEcho : entityMatches(e));
+    // A global book count before a colon/list is not the following market's
+    // price. Allow only explicit trade/position count fields in this grammar;
+    // an already named instrument still requires scoped evidence.
+    const globalBookCount = prefixSymbols.length === 0 && /^\s+(?:verified\s+)?(?:live\s+)?(?:open\s+)?(?:trades?|positions?)\s*(?::|[.!]|$)/i.test(clause.after)
+      && /\b(?:I can see|you have|there (?:is|are))\s*$/i.test(clause.before);
+    const bookCountField = (e: EvidenceNumber) => /get(?:MyLiveOpenTrades|OpenPositions)/.test(e.tool)
+      && (e.key === "count" || e.keyTokens.includes("count")) && !(e.entities?.length);
+    const candidates = idx.numbers.filter(e => e.source === "user" ? userEcho : entityMatches(e) || globalBookCount && bookCountField(e));
     const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({
       kind: "number", text: raw.slice(localStart, localEnd).trim(), value: (m[1] === "-" || m[1] === "−" ? -1 : 1) * value,

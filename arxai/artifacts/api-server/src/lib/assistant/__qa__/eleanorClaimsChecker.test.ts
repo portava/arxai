@@ -318,6 +318,27 @@ test("requested commands and identifier lookups remain requests across line brea
   assert.ok(kinds("Check action **5124**, but your order was filled.", [], "Status of 5124?").includes("EXECUTION_UNCONFIRMED"));
 });
 
+test("live evaluation: inline requested commands and comma-separated examples preserve factual checks", () => {
+  assert.deepEqual(kinds("Use the Trade Ticket and enter: buy EURUSD 0.1.", [], "Buy 0.1 EURUSD"), []);
+  assert.deepEqual(kinds("Next: say “analyze EURUSD”, “check risk for EURUSD 0.1”, or “validate this ticket”.", []), []);
+  assert.ok(kinds("EURUSD is trading at 0.1, enter: buy EURUSD 0.1.", [], "Buy 0.1 EURUSD").length);
+  assert.ok(kinds("Use the ticket and enter: buy GBPUSD 0.1.", [], "Buy 0.1 EURUSD").length);
+});
+
+test("live evaluation: filled size without a unit binds to quantity rather than price", () => {
+  assert.deepEqual(kinds("Fill price was 1.08531, slippage was 0.00011, filled size was 0.1.", liveFill), []);
+  assert.ok(kinds("Filled size was 1.08531.", liveFill).includes("WRONG_NUMBER"));
+  assert.ok(kinds("Fill price was 0.1.", liveFill).includes("WRONG_NUMBER"));
+});
+
+test("live evaluation: global book count cannot borrow a price or a different symbol's count", () => {
+  const book = [{name:"getMyLiveOpenTrades", result:{count:1,trades:[{symbol:"R_75",volume:0.01}]}}];
+  assert.deepEqual(kinds("I can see 1 verified live trade: R_75.", book), []);
+  assert.ok(kinds("I can see 2 verified live trades: R_75.", book).length);
+  assert.ok(kinds("R_75 is trading at 1.", book).length);
+  assert.ok(kinds("EURUSD has 1 live trade.", book).length);
+});
+
 
 test("nested instruments replace parent scope and unscoped numbers cannot prove a scoped price", () => {
   const outputs = [{ name: "getMarketSnapshot", result: { symbol: "EURUSD", lastPrice: 1.08, count: 2, related: { symbol: "GBPUSD", lastPrice: 1.28 } } }];
