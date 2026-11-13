@@ -1,19 +1,19 @@
 // Broker-grid forming tip + bridge-partitioned tick state (2026-11-04 sweep).
 //
 //   [A] brokerBucketOpenMs puts D1 / H4 / W1 / MN1 buckets on the broker's
-//       calendar at UTC+0 / +2 / +3 (bars are converted to UTC at ingest).
-//   [B] A D1 tip on a UTC+2 broker merges into the broker's current D1 bar
-//       instead of being appended as a second bar for the same session; the
-//       safety net merges an off-grid tip too.
+//       calendar at UTC+0 / +2 / +3 in UTC display coordinates.
+//   [B] MT5 display uses an exact writer-bound native pair, preserving raw
+//       broker times. Sampled composer ticks cannot invent native OHLC.
 //   [C] Forming bars and tick freshness are partitioned by bridge: one
 //       broker's ticks never fold into another broker's tip or clock.
-//   [D] The SSE tick stream follows the reader's own bridge.
+//   [D] MT5 SSE declares native-snapshot mode and never replaces native OHLC
+//       with either the reader's sampled ticks or another bridge's ticks.
 //   [E] The stores are bounded: entries silent for 30 min are evicted.
 //
 // Run: DATABASE_URL=postgres://nobody@127.0.0.1:1/none node --import tsx --test \
 //        src/lib/data/chart/__qa__/brokerGridFormingTip.test.ts
 
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -33,16 +33,22 @@ import { getChartCandles } from "../chartDataService.js";
 import { __resetMt5ProviderStore, __setMt5ContentionWarnSink, updateCandlesFromMT5 } from "../../providers/mt5Provider.js";
 import { handleChartTickStream } from "../../../../routes/chartTickStream.js";
 import { fixedFeedScope, runWithFeedScope } from "../../feedScope.js";
+import { brokerServerCandleTimeBasis } from "../../candleTimeBasisEvidence.js";
+import { mt5PriceBasisEvidence } from "../../candlePriceBasisEvidence.js";
+import { recordNativeSeamObservation, __resetNativeSeamObservations, NATIVE_SEAM_TTL_MS, type NativeSeamObservation } from "../nativeSeamObservation.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const utc = (y: number, mo: number, d: number, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
 
 beforeEach(() => {
+  mock.timers.enable({ apis: ["Date"], now: utc(2026, 11, 4, 10, 30) });
   __resetFormingBarStore();
+  __resetNativeSeamObservations();
   __resetMt5ProviderStore();
   __setMt5ContentionWarnSink(() => {});
 });
+afterEach(() => mock.timers.reset());
 
 // ── [A] bucket helper ───────────────────────────────────────────────────────
 
@@ -105,63 +111,122 @@ test("[A6] the composer buckets D1 / W1 / MN1 tips on the broker grid", () => {
   assert.equal(getFormingBar("EURUSD", "H4", t, "mt5_broker", 5)?.openMs, utc(2026, 11, 4, 10));
 });
 
-// ── [B] chart: no duplicate D1 bar on a UTC+2 broker ───────────────────────
+// ── [B] exact native D1 display on a UTC+2 broker ───────────────────────────
 
 const SYMBOL = "V75"; // 24/7 synthetic: no session-profile DB read
 const OFF = 2 * HOUR;
+const NATIVE_SYMBOL = "Volatility 75 Index";
+const WRITER = { bridgeConnectionId: 11, userId: 1 };
 
 function d1Bars(newestOpen: number, n = 40) {
   return Array.from({ length: n }, (_, i) => {
     const t = newestOpen - (n - 1 - i) * DAY;
     const p = 1000 + i;
-    return { time: new Date(t).toISOString(), open: p, high: p + 2, low: p - 2, close: p + 1, volume: 10 };
+    return { time: new Date(t).toISOString(), brokerSymbol: NATIVE_SYMBOL,
+      timeBasisEvidence: brokerServerCandleTimeBasis({ offsetMs: OFF, measuredAtMs: Date.now() }),
+      priceBasisEvidence: mt5PriceBasisEvidence("bid"),
+      open: p, high: p + 2, low: p - 2, close: p + 1, volume: 10 };
   });
 }
 
-test("[B1] a UTC+2 broker's D1 tip merges into its current D1 bar (no second bar for the session)", async () => {
+function nativePair(now: number, bars: ReturnType<typeof d1Bars>): NativeSeamObservation {
+  const last = bars.at(-1)!;
+  return { symbol: SYMBOL, brokerSymbol: NATIVE_SYMBOL, timeframe: "D1",
+    collectedAtEpochMs: now, brokerServerTimeEpochMs: now + OFF, brokerUtcOffsetMs: OFF,
+    lastClosed: { openTimeEpochMs: Date.parse(last.time), open: last.open, high: last.high, low: last.low, close: last.close },
+    forming: { openTimeEpochMs: brokerBucketOpenMs(now, "D1", OFF) + OFF, open: 1100, high: 1104, low: 1098, close: 1102 },
+  };
+}
+
+test("[B1] own-bridge sampled ticks cannot merge into MT5 history without a native pair", async () => {
   const now = Date.now();
-  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF);
+  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF) + OFF;
   updateCandlesFromMT5(SYMBOL, d1Bars(sessionOpen), "D1", { bridgeConnectionId: 11, userId: 1 });
   foldFormingTick(SYMBOL, 5000, now, now, "mt5_broker", { bridgeConnectionId: 11, brokerOffsetMs: OFF });
   const withTip = await getChartCandles(SYMBOL, "D1", 40, true, { bridgeConnectionId: 11 });
   const closed = await getChartCandles(SYMBOL, "D1", 40, false, { bridgeConnectionId: 11 });
-  assert.equal(withTip.candles.length, closed.candles.length, "the tip is not appended beside the session's bar");
-  const last = withTip.candles.at(-1)!;
-  assert.equal(last.isForming, true);
-  assert.equal(Date.parse(last.openTime), sessionOpen);
-  assert.equal(last.close, 5000);
+  assert.deepEqual(withTip.candles, closed.candles, "neither merging nor appending can fabricate native MT5 OHLC");
+  assert.equal(withTip.candles.some(c => c.isForming), false);
+  assert.equal(withTip.candles.at(-1)?.priceBasis, "BID");
 });
 
-test("[B2] after the broker day closes, the next D1 tip is appended at the next broker midnight", async () => {
+test("[B2] an exact native pair appends raw broker-midnight OHLC for display only", async () => {
   const now = Date.now();
-  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF);
-  updateCandlesFromMT5(SYMBOL, d1Bars(sessionOpen - DAY), "D1", { bridgeConnectionId: 11, userId: 1 });
+  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF) + OFF; // native broker clock, not UTC-converted
+  const bars = d1Bars(sessionOpen - DAY);
+  updateCandlesFromMT5(SYMBOL, bars, "D1", WRITER);
   foldFormingTick(SYMBOL, 5000, now, now, "mt5_broker", { bridgeConnectionId: 11, brokerOffsetMs: OFF });
+  const pair = nativePair(now, bars);
+  assert.equal(recordNativeSeamObservation(pair, WRITER, now).accepted, true);
   const withTip = await getChartCandles(SYMBOL, "D1", 40, true, { bridgeConnectionId: 11 });
   const closed = await getChartCandles(SYMBOL, "D1", 40, false, { bridgeConnectionId: 11 });
   assert.equal(withTip.candles.length, closed.candles.length + 1);
   const tip = withTip.candles.at(-1)!;
+  assert.deepEqual(withTip.candles.slice(0, -1), closed.candles);
+  assert.deepEqual([tip.open, tip.high, tip.low, tip.close], [1100, 1104, 1098, 1102]);
   assert.equal(Date.parse(tip.openTime), sessionOpen);
   assert.equal(Date.parse(tip.closeTime), sessionOpen + DAY);
+  assert.equal(tip.isForming, true); assert.equal(tip.isFinal, false);
+  assert.equal(tip.formingOrigin, "native_mt5_snapshot");
+  assert.equal(tip.observedAt, new Date(now).toISOString());
+  assert.equal(tip.priceBasis, "UNKNOWN", "native OHLC has no separate price-basis declaration");
+  assert.equal(tip.priceBasisEvidence?.kind, "unavailable");
+  assert.equal(tip.timeBasisEvidence?.kind, "unavailable", "current offset never establishes historical UTC");
+  assert.equal(closed.candles.at(-1)?.priceBasis, "BID", "the declared closed-bar basis is retained");
+  assert.equal(closed.candles.some(c => c.isForming), false);
+  assert.deepEqual(withTip.marketEvidence, closed.marketEvidence);
 });
 
-test("[B3] safety net: a tip on a different grid inside the newest bar's interval is merged, not appended", async () => {
+test("[B3] a sampled tip on a different grid cannot overwrite the native snapshot or closed bar", async () => {
   const now = Date.now();
-  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF);
-  updateCandlesFromMT5(SYMBOL, d1Bars(sessionOpen), "D1", { bridgeConnectionId: 11, userId: 1 });
-  // Offset not yet measured when the tick folded: the tip sits on the UTC grid.
-  foldFormingTick(SYMBOL, 5000, now, now, "mt5_broker", { bridgeConnectionId: 11, brokerOffsetMs: 0 });
-  const tipOpen = brokerBucketOpenMs(now, "D1", 0);
+  const sessionOpen = brokerBucketOpenMs(now, "D1", OFF) + OFF;
+  const bars = d1Bars(sessionOpen - DAY);
+  updateCandlesFromMT5(SYMBOL, bars, "D1", WRITER);
+  assert.equal(recordNativeSeamObservation(nativePair(now, bars), WRITER, now).accepted, true);
+  foldFormingTick(SYMBOL, 5000, now, now, "mt5_broker", { bridgeConnectionId: 11, brokerOffsetMs: OFF });
+  assert.notEqual(getFormingBar(SYMBOL, "D1", now, "mt5_broker", 11)?.openMs, sessionOpen);
   const withTip = await getChartCandles(SYMBOL, "D1", 40, true, { bridgeConnectionId: 11 });
   const closed = await getChartCandles(SYMBOL, "D1", 40, false, { bridgeConnectionId: 11 });
-  if (tipOpen > sessionOpen) {
-    assert.equal(withTip.candles.length, closed.candles.length, "off-grid tip merged into the session bar");
-    assert.equal(withTip.candles.at(-1)!.close, 5000);
-    assert.equal(Date.parse(withTip.candles.at(-1)!.openTime), sessionOpen, "the broker bar keeps its own open");
-  } else {
-    // 22:00–24:00 UTC: the UTC-grid tip is behind the broker's new bar → ignored.
-    assert.equal(withTip.candles.length, closed.candles.length);
+  assert.deepEqual(withTip.candles.slice(0, -1), closed.candles);
+  assert.equal(withTip.candles.at(-1)?.close, 1102);
+  assert.equal(Date.parse(withTip.candles.at(-1)!.openTime), sessionOpen);
+});
+
+test("[B4] native display refuses different owners, bridges, symbols, closed timestamps, OHLC and clocks", async () => {
+  const now = Date.now();
+  const bars = d1Bars(brokerBucketOpenMs(now, "D1", OFF) + OFF - DAY);
+  updateCandlesFromMT5(SYMBOL, bars, "D1", WRITER);
+  const closed = await getChartCandles(SYMBOL, "D1", 40, false, WRITER);
+  for (const kind of ["owner", "bridge", "symbol", "timestamp", "ohlc", "clock", "stale"] as const) {
+    __resetNativeSeamObservations();
+    const pair = nativePair(now, bars), writer = { ...WRITER };
+    if (kind === "owner") writer.userId = 2;
+    if (kind === "bridge") writer.bridgeConnectionId = 22;
+    if (kind === "symbol") pair.brokerSymbol = "other.native.symbol";
+    if (kind === "timestamp") pair.lastClosed.openTimeEpochMs -= 1000;
+    if (kind === "ohlc") pair.lastClosed.close += 0.01;
+    if (kind === "clock") pair.brokerServerTimeEpochMs += 60_000;
+    if (kind === "stale") pair.collectedAtEpochMs -= NATIVE_SEAM_TTL_MS + 1;
+    assert.equal(recordNativeSeamObservation(pair, writer, now).accepted, kind !== "clock" && kind !== "stale", kind);
+    const result = await getChartCandles(SYMBOL, "D1", 40, true, WRITER);
+    assert.deepEqual(result.candles, closed.candles, kind);
   }
+});
+
+test("[B5] fresh own-bridge ticks cannot revive an expired native snapshot", async () => {
+  const now = Date.now();
+  const bars = d1Bars(brokerBucketOpenMs(now, "D1", OFF) + OFF - DAY);
+  updateCandlesFromMT5(SYMBOL, bars, "D1", WRITER);
+  assert.equal(recordNativeSeamObservation(nativePair(now, bars), WRITER, now).accepted, true);
+  const later = now + NATIVE_SEAM_TTL_MS + 1;
+  mock.timers.setTime(later);
+  // Closed history is freshly reobserved, but the separate native pair is not.
+  updateCandlesFromMT5(SYMBOL, bars, "D1", WRITER);
+  foldFormingTick(SYMBOL, 5000, later, later, "mt5_broker", { ...WRITER, brokerOffsetMs: OFF });
+  const result = await getChartCandles(SYMBOL, "D1", 40, true, WRITER);
+  assert.equal(result.source, "mt5_broker");
+  assert.equal(result.candles.length, 40);
+  assert.equal(result.candles.some(c => c.isForming), false);
 });
 
 // ── [C] bridge partition ────────────────────────────────────────────────────
@@ -189,9 +254,9 @@ test("[C2] a reader follows its own bridge, else sticks to the partition it foll
   assert.equal(resolveFormingPartition("GBPUSD", "mt5_broker", 11, undefined, now), undefined);
 });
 
-// ── [D] SSE follows the reader's bridge ─────────────────────────────────────
+// ── [D] MT5 SSE does not replace exact native snapshots ─────────────────────
 
-test("[D1] the tick stream pushes the reader's own bridge and ignores another bridge's ticks", async () => {
+test("[D1] MT5 SSE declares native-snapshot mode and ignores own and other bridges' sampled OHLC", async () => {
   const app = express();
   app.use((_req, _res, next) => runWithFeedScope(fixedFeedScope(11, 1), () => next()));
   app.get("/s", handleChartTickStream);
@@ -199,6 +264,7 @@ test("[D1] the tick stream pushes the reader's own bridge and ignores another br
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
   const closes: number[] = [];
+  const eventTypes: string[] = [];
   let buffer = "";
   const req = await new Promise<http.ClientRequest>((resolve) => {
     const r = http.get({ host: "127.0.0.1", port, path: "/s?symbol=EURUSD&timeframe=M5&source=mt5_broker" }, (res) => {
@@ -211,6 +277,7 @@ test("[D1] the tick stream pushes the reader's own bridge and ignores another br
           buffer = buffer.slice(sep + 2);
           if (line) {
             const e = JSON.parse(line.slice(6)) as { type?: string; bar?: { close?: number } };
+            if (e.type) eventTypes.push(e.type);
             if (e.type === "forming_bar" && typeof e.bar?.close === "number") closes.push(e.bar.close);
           }
           sep = buffer.indexOf("\n\n");
@@ -219,15 +286,19 @@ test("[D1] the tick stream pushes the reader's own bridge and ignores another br
       resolve(r);
     });
   });
-  await new Promise((r) => setTimeout(r, 25));
-  const now = Date.now();
-  foldFormingTick("EURUSD", 1.1, now, now, "mt5_broker", { bridgeConnectionId: 11 });
-  foldFormingTick("EURUSD", 9.9, now + 1, now + 1, "mt5_broker", { bridgeConnectionId: 22 });
-  foldFormingTick("EURUSD", 1.15, now + 2, now + 2, "mt5_broker", { bridgeConnectionId: 11 });
-  await new Promise((r) => setTimeout(r, 80));
-  assert.deepEqual(closes, [1.1, 1.15], "only bridge 11's tip reached bridge 11's reader");
-  req.destroy();
-  await new Promise<void>((r) => server.close(() => r()));
+  try {
+    await new Promise((r) => setTimeout(r, 25));
+    const now = Date.now();
+    foldFormingTick("EURUSD", 1.1, now, now, "mt5_broker", { bridgeConnectionId: 11 });
+    foldFormingTick("EURUSD", 9.9, now + 1, now + 1, "mt5_broker", { bridgeConnectionId: 22 });
+    foldFormingTick("EURUSD", 1.15, now + 2, now + 2, "mt5_broker", { bridgeConnectionId: 11 });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.ok(eventTypes.includes("native_snapshot_mode"), "a live SSE connection explicitly selects native snapshot mode");
+    assert.deepEqual(closes, [], "neither own nor foreign sampled ticks can overwrite native OHLC");
+  } finally {
+    req.destroy();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
 });
 
 // ── [E] bounded stores ──────────────────────────────────────────────────────

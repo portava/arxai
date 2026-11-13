@@ -53,12 +53,18 @@ describe("coerceVisibleTimeframe", () => {
     const display = chartIntervalDisplayId(timeframe);
     expect(coerceVisibleTimeframe(timeframe)).toBe(display);
     expect(coerceVisibleTimeframe(display)).toBe(display);
-    expect(scannerTimeframeLimitation(display)).toBeNull();
+    if (timeframe !== "MN1") expect(scannerTimeframeLimitation(display)).toBeNull();
   });
-  it.each([["W1","1w","week"],["MN1","1mo","calendar-month"],["1M","1mo","calendar-month"]])("keeps unavailable %s with an explicit reason", (code, display, reason) => {
+  it.each([["W1", "1w"], ["1w", "1w"]])("preserves supported weekly %s without an unavailable claim", (code, display) => {
     expect(coerceVisibleTimeframe(code)).toBe(display);
     expect(coerceVisibleTimeframe(display!)).toBe(display);
-    expect(scannerTimeframeLimitation(code!)).toContain(reason);
+    expect(scannerTimeframeLimitation(code!)).toBeNull();
+  });
+  it.each(["MN1", "1M", "1mo"])("keeps native monthly %s and its fixed-duration research limitation", (code) => {
+    expect(coerceVisibleTimeframe(code)).toBe("1mo");
+    expect(scannerTimeframeLimitation(code)).toBe(
+      "Calendar-month charts use native month boundaries; fixed-duration research tools are unavailable for this interval.",
+    );
   });
   it("distinguishes a month from a minute without a silent supported fallback", () => {
     expect(coerceVisibleTimeframe("1M")).toBe("1mo");

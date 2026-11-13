@@ -53,7 +53,7 @@ const w1 = buildGatedTrustLine("W1", {
 rec(
   1,
   "W1 delayed-feed gated line is exact + honest",
-  w1 === "W1 candles syncing · feed delayed · read gated",
+  w1 === "W1 candle read withheld · feed delayed · read gated",
   `got "${w1}"`,
 );
 rec(
@@ -73,10 +73,12 @@ rec(
 //     reason, never "delayed": gaps (partial), failed integrity (invalid), or
 //     an unknown grade.
 const notDelayed: Array<[string | null | undefined, string]> = [
-  ["partial", "W1 candles syncing · candle sequence incomplete · read gated"],
-  ["invalid", "W1 candles syncing · candles failed integrity checks · read gated"],
-  [null, "W1 candles syncing · feed not confirmed · read gated"],
-  [undefined, "W1 candles syncing · feed not confirmed · read gated"],
+  ["partial", "W1 candle read withheld · candle sequence incomplete · read gated"],
+  ["invalid", "W1 candle read withheld · candles failed integrity checks · read gated"],
+  ["empty", "W1 candles unavailable · no candles · read gated"],
+  ["unavailable", "W1 candles unavailable · no candles · read gated"],
+  [null, "W1 candle read withheld · feed not confirmed · read gated"],
+  [undefined, "W1 candle read withheld · feed not confirmed · read gated"],
 ];
 const notDelayedBad = notDelayed
   .map(([quality, want]): [string, string] =>
@@ -99,7 +101,7 @@ const unavail = buildGatedTrustLine("M5", {
 rec(
   4,
   "unavailable feed → 'feed unavailable', honest",
-  unavail === "M5 candles syncing · feed unavailable · read gated" &&
+  unavail === "M5 candles unavailable · feed unavailable · read gated" &&
     hasForbidden(unavail).length === 0,
   unavail,
 );
@@ -114,7 +116,7 @@ const stale = buildGatedTrustLine("M15", {
 rec(
   5,
   "stale feed → 'feed stale', honest",
-  stale === "M15 candles syncing · feed stale · read gated" &&
+  stale === "M15 candle read withheld · feed stale · read gated" &&
     hasForbidden(stale).length === 0,
   stale,
 );
@@ -155,6 +157,7 @@ rec(
 //    line must never contain "Verified" or "Live feed", and must echo the
 //    timeframe + the "read gated" suffix. A clean, current feed is never
 //    called "syncing"; an unavailable / stale / delayed feed never "clean".
+//    Missing candles are unavailable; an existing but unusable read is withheld.
 const bases: EleanorChartReadBasis[] = ["INSUFFICIENT", "PARTIAL", "SYNCING", "VERIFIED"];
 const tfs = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
 const leaks: string[] = [];
@@ -166,10 +169,12 @@ for (const tf of tfs) {
           const line = buildGatedTrustLine(tf, { available, stale: sstale, aiUsable, basis });
           const bad = hasForbidden(line);
           const feedClean = available && !sstale && aiUsable;
+          const expectedPrefix = !available ? `${tf} candles unavailable · `
+            : feedClean ? `${tf} candles clean · ` : `${tf} candle read withheld · `;
           const wellFormed =
-            line.startsWith(feedClean ? `${tf} candles clean · ` : `${tf} candles syncing · `) &&
+            line.startsWith(expectedPrefix) &&
             line.endsWith(" · read gated") &&
-            (feedClean ? !/syncing/i.test(line) : !/clean/i.test(line));
+            !/syncing/i.test(line) && (feedClean || !/clean/i.test(line));
           if (bad.length > 0 || !wellFormed) {
             leaks.push(`${tf}/${available}/${sstale}/${aiUsable}/${basis} → "${line}"`);
           }

@@ -249,11 +249,11 @@ describe("linked view adapter boundaries", () => {
 describe("display time zone", () => {
   const TOKYO_1446 = Date.UTC(2026, 9, 28, 5, 46) / 1000;
   const installed = () => mocks.createChart.mock.calls.at(-1)![1];
-  it("installs stable formatters at createChart that reproduce the library defaults under UTC", () => {
+  it("installs stable native date-and-time formatters that follow the display zone", () => {
     const options = installed();
     expect(navigator.language).toBe("en-US");
     expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
-    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBeNull();
+    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("28 Oct 05:46");
     expect(options.timeScale.timeVisible).toBe(true);
     expect(options.timeScale.secondsVisible).toBe(false);
     mocks.chart.applyOptions.mockClear();
@@ -263,12 +263,14 @@ describe("display time zone", () => {
     expect(applied.localization.timeFormatter).toBe(options.localization.timeFormatter);
     expect(applied.timeScale.tickMarkFormatter).toBe(options.timeScale.tickMarkFormatter);
     expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
-    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("14:46");
+    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("28 Oct 14:46");
+    expect(options.timeScale.tickMarkFormatter(Date.UTC(2026, 9, 28, 20, 46) / 1000, 3, "en-US")).toBe("29 Oct 05:46");
     adapter.setDisplayTimeZone("Asia/Tokyo");
     expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
     adapter.setDisplayTimeZone("UTC");
     expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
     expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
+    expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("28 Oct 05:46");
   });
   it("keeps the zone across a re-init without touching data", () => {
     adapter.setDisplayTimeZone("Asia/Tokyo");

@@ -18,6 +18,7 @@ const sent: Record<string, any>[] = [];
 let now = Date.now();
 let tickEpoch = Math.floor(now / 1000);
 const failedTicks = new Set<string>();
+let ignoreHistoryCursor = false;
 class Socket extends EventEmitter {
   constructor(readonly url: string) { super(); queueMicrotask(() => this.emit("open")); }
   send(raw: string) {
@@ -26,7 +27,12 @@ class Socket extends EventEmitter {
     if (r.active_symbols) reply({ active_symbols: ["R_75", ...Object.values(nonSynthetic)].map(underlying_symbol => ({ underlying_symbol, underlying_symbol_name: underlying_symbol, exchange_is_open: 1, is_trading_suspended: 0 })) });
     if (r.ticks && failedTicks.has(r.ticks)) { reply({ error: { code: "TickUnavailable", message: "No tick" } }); return; }
     if (r.ticks) reply({ tick: { symbol: r.ticks, epoch: tickEpoch, quote: 123 }, subscription: { id: r.ticks } });
-    if (r.ticks_history) reply({ echo_req: r, candles: Array.from({ length: 30 }, (_, i) => ({ epoch: Math.floor(now / 60_000) * 60 - (29 - i) * 60, open: 120, high: 125, low: 119, close: 123 })) });
+    if (r.ticks_history) {
+      const end = typeof r.end === "number" && !ignoreHistoryCursor ? r.end : Math.floor(now / 1000);
+      const lastOpen = Math.floor(end / r.granularity) * r.granularity;
+      const count = Math.min(30, r.count);
+      reply({ echo_req: r, candles: Array.from({ length: count }, (_, i) => ({ epoch: lastOpen - (count - 1 - i) * r.granularity, open: 120, high: 125, low: 119, close: 123 })) });
+    }
     if (r.forget) reply({ forget: 1 });
     if (r.ping) reply({ ping: "pong" });
   }
@@ -159,12 +165,33 @@ test("history cursor fetches do not create new live subscriptions", async () => 
   await client.unsubscribeTicks("frxEURUSD");
   const before = sent.filter(r => r.ticks === "frxEURUSD").length;
   const { getDerivCandles } = await import("../derivProvider.js");
-  const history = await getDerivCandles("EURUSD", "M1", 30, Math.floor(now / 1000) - 3600);
-  assert.equal(history.ok, true);
+  const end = Math.floor(now / 1000) - 3600;
+  const history = await getDerivCandles("EURUSD", "M1", 30, end);
+  assert.equal(history.ok, true, history.reason ?? "history should be available");
+  assert.equal(history.candles.length, 30);
+  assert.ok(history.candles.every(c => c.epoch <= end));
+  assert.equal(history.candles.at(-1)?.epoch, Math.floor(end / 60) * 60);
+  assert.equal(sent.filter(r => r.ticks_history === "frxEURUSD").at(-1)?.end, end);
   assert.equal(sent.filter(r => r.ticks === "frxEURUSD").length, before);
   const current = await getDerivCandles("EURUSD", "M1", 30);
   assert.equal(current.ok, true);
   assert.equal(sent.filter(r => r.ticks === "frxEURUSD").length, before + 1);
+});
+
+test("history that ignores its cursor is refused without creating a live subscription", async () => {
+  const client = getDerivFeedClient();
+  await client.unsubscribeTicks("frxEURUSD");
+  const before = sent.filter(r => r.ticks === "frxEURUSD").length;
+  const { getDerivCandles } = await import("../derivProvider.js");
+  ignoreHistoryCursor = true;
+  try {
+    const history = await getDerivCandles("EURUSD", "M1", 30, Math.floor(now / 1000) - 3600);
+    assert.equal(history.ok, false);
+    assert.equal(history.reason, "DERIV_PUBLIC_HISTORY_RANGE_MISMATCH");
+    assert.deepEqual(history.candles, []);
+    assert.equal(sent.filter(r => r.ticks === "frxEURUSD").length, before);
+    assert.equal(getDerivSymbolFeedStatus("EURUSD").hasRecentTick, false);
+  } finally { ignoreHistoryCursor = false; }
 });
 
 test("failed live subscription preserves real history without inventing tick freshness", async () => {

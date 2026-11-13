@@ -66,10 +66,20 @@ describe("ScannerChartPanel — frozen-quote chip", () => {
 
 describe("ScannerChartPanel — candle-close countdown", () => {
   it("is withdrawn while the broker keeps repeating one quote (no 'closes in' on a frozen market)", () => {
-    const idx = smart.indexOf("<CandleCloseCountdown");
+    // The compact desk reports why its timer is unavailable. Only the final
+    // branch may render a countdown, and it also requires a server clock.
+    const compactStart = smart.indexOf("const compactTimer =");
+    expect(compactStart).toBeGreaterThan(-1);
+    const compact = smart.slice(compactStart, smart.indexOf("const historyControls", compactStart));
+    expect(compact).toMatch(/!hasCandles\s*\?[\s\S]*: marketFrozen\s*\?[\s\S]*: !isLivePriceAffordance\s*\?[\s\S]*: formingCloseMs != null\s*\? <CandleCloseCountdown[^>]*requireServerClock/);
+    expect(compact).toContain("Timer paused — feed frozen");
+    expect(compact).toContain("Timer unavailable — feed not live-confirmed");
+    // The expanded layout retains the same frozen/live gates.
+    const idx = smart.lastIndexOf("<CandleCloseCountdown");
     expect(idx).toBeGreaterThan(-1);
     const gate = smart.slice(smart.lastIndexOf("{", idx), idx);
     expect(gate).toMatch(/formingCloseMs != null && isLivePriceAffordance && !marketFrozen/);
+    expect(smart.match(/<CandleCloseCountdown\b/g)).toHaveLength(2);
     // The panel mounts no ungated countdown of its own.
     expect(code).not.toContain("<CandleCloseCountdown");
   });

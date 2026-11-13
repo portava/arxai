@@ -41,8 +41,16 @@ describe("HighImpactEventBanner", () => {
     expect(row.textContent).toMatch(/^released 10m ago · HIGH/);
     expect(row.textContent).not.toMatch(/^0m/);
     expect(screen.getByTestId("high-impact-banner").textContent).toMatch(/post-release volatility window/);
-    // The banner asks the server for the post-release window.
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("pastMinutes=30");
+    // The live-provider read can start first. The stored-calendar fallback
+    // must still request the complete post-release window.
+    const storedWindowUrl = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.startsWith("/api/economic-events/upcoming?"));
+    expect(storedWindowUrl).toBeDefined();
+    const query = new URL(storedWindowUrl!, "http://localhost").searchParams;
+    expect(query.get("hours")).toBe("1");
+    expect(query.get("minImpact")).toBe("HIGH");
+    expect(query.get("pastMinutes")).toBe("30");
   });
 
   it("an upcoming event shows its countdown", async () => {

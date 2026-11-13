@@ -6,6 +6,7 @@
 // the same method and shape in the same file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import ts from "typescript";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,70 +60,50 @@ test("no router file registers a param route before a literal route it would swa
 // GET /admin/investors/performance-batches once swallowed GET :id, POST
 // /admin/investors and POST bulk-performance this way: all three answered 404
 // after every restart until someone opened the batch list. This scanner
-// tracks brace depth (skipping strings, template text and comments) and flags
-// any router.<method>( call that is not at module top level.
+// uses lexical function scope to reject request-time registration while allowing
+// a factory that constructs and returns its own router before requests arrive.
 export function findNestedRouteRegistrations(source: string): string[] {
+  const tree = ts.createSourceFile("routes.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const out: string[] = [];
-  let depth = 0, i = 0, line = 1;
-  const tmpl: number[] = []; // brace depth at which each open template's ${ began
-  const n = source.length;
-  const skipString = (q: string) => {
-    i++;
-    while (i < n && source[i] !== q) { if (source[i] === "\\") i++; if (source[i] === "\n") line++; i++; }
-    i++;
+  const routeCall = (node: ts.Node): node is ts.CallExpression => ts.isCallExpression(node)
+    && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression)
+    && node.expression.expression.text === "router"
+    && ["get", "post", "put", "patch", "delete", "all"].includes(node.expression.name.text);
+  const functionScope = (node: ts.Node) => ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node);
+  const isRouterFactory = (fn: ts.Node): boolean => {
+    let declaresRouter = false, returnsRouter = false;
+    const visit = (node: ts.Node) => {
+      if (node !== fn && functionScope(node)) return;
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "router"
+        && node.initializer && ts.isCallExpression(node.initializer)
+        && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === "Router") declaresRouter = true;
+      if (ts.isReturnStatement(node) && node.expression && ts.isIdentifier(node.expression)
+        && node.expression.text === "router") returnsRouter = true;
+      ts.forEachChild(node, visit);
+    };
+    visit(fn);
+    return declaresRouter && returnsRouter;
   };
-  const skipTemplateText = () => {
-    // at the char after ` or after a closing } of ${...}
-    while (i < n) {
-      const c = source[i];
-      if (c === "\\") { i += 2; continue; }
-      if (c === "\n") line++;
-      if (c === "`") { i++; return; }
-      if (c === "$" && source[i + 1] === "{") { i += 2; tmpl.push(depth); depth++; return; }
-      i++;
-    }
-  };
-  while (i < n) {
-    const c = source[i]!;
-    if (c === "\n") { line++; i++; continue; }
-    if (c === "/" && source[i + 1] === "/") { while (i < n && source[i] !== "\n") i++; continue; }
-    if (c === "/" && source[i + 1] === "*") { i += 2; while (i < n && !(source[i] === "*" && source[i + 1] === "/")) { if (source[i] === "\n") line++; i++; } i += 2; continue; }
-    if (c === '"' || c === "'") { skipString(c); continue; }
-    if (c === "/") {
-      // A regex literal where an expression starts: skip it (it may hold
-      // quotes or braces, e.g. /don'?t/ or {3,20}).
-      let k = i - 1; while (k >= 0 && /\s/.test(source[k]!)) k--;
-      const prev = k >= 0 ? source[k]! : "";
-      const prevWord = /(?:return|typeof|case|in|of)$/.test(source.slice(Math.max(0, k - 6), k + 1));
-      // `x! / 2` is a TypeScript non-null assertion followed by division.
-      const nonNull = prev === "!" && k > 0 && /[\w$)\]]/.test(source[k - 1]!);
-      if (!nonNull && (prev === "" || "(,=:[!&|?{};+-*%<>~^".includes(prev) || prevWord)) {
-        i++;
-        let inClass = false;
-        while (i < n && source[i] !== "\n") {
-          const ch = source[i]!;
-          if (ch === "\\") { i += 2; continue; }
-          if (ch === "[") inClass = true; else if (ch === "]") inClass = false;
-          else if (ch === "/" && !inClass) break;
-          i++;
-        }
-        i++;
-        continue;
+  const visit = (node: ts.Node) => {
+    if (routeCall(node) && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+      const functions: ts.Node[] = [];
+      let withinRouteHandler = false;
+      for (let parent = node.parent; parent && parent !== tree; parent = parent.parent) {
+        if (functionScope(parent)) functions.push(parent);
+        if (routeCall(parent)) withinRouteHandler = true;
+      }
+      // A local router constructed and returned by a factory is registered at
+      // factory invocation. A registration in a request callback (including a
+      // nested factory there) is still forbidden.
+      if (withinRouteHandler || (functions.length > 0 && !(functions.length === 1 && isRouterFactory(functions[0]!)))) {
+        const expression = node.expression as ts.PropertyAccessExpression;
+        const line = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
+        out.push(`${expression.name.text.toUpperCase()} ${node.arguments[0].text} (line ${line}) is registered inside a handler (depth ${functions.length})`);
       }
     }
-    if (c === "`") { i++; skipTemplateText(); continue; }
-    if (c === "{") { depth++; i++; continue; }
-    if (c === "}") {
-      depth--; i++;
-      if (tmpl.length && tmpl[tmpl.length - 1] === depth) { tmpl.pop(); skipTemplateText(); }
-      continue;
-    }
-    if (c === "r" && source.startsWith("router.", i) && (i === 0 || !/[\w$.]/.test(source[i - 1]!))) {
-      const m = /^router\.(get|post|put|patch|delete|all)\(\s*["']([^"']+)["']/.exec(source.slice(i, i + 200));
-      if (m && depth !== 0) out.push(`${m[1]!.toUpperCase()} ${m[2]} (line ${line}) is registered inside a handler (depth ${depth})`);
-    }
-    i++;
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
   return out;
 }
 
@@ -138,4 +119,21 @@ test("no route file registers a route inside another handler", () => {
     for (const hit of findNestedRouteRegistrations(readFileSync(join(ROUTES_DIR, f), "utf8"))) offenders.push(`${f}: ${hit}`);
   }
   assert.deepEqual(offenders, []);
+});
+
+
+test("router factories register their own local router without a request-time mutation", () => {
+  for (const start of ["function createRouter()", "const createRouter = () =>"]) {
+    const src = `${start} { const router = Router(); router.get("/a", (req, res) => { res.json({text: "router.get ignored"}); }); return router; }`;
+    assert.deepEqual(findNestedRouteRegistrations(src), []);
+  }
+});
+
+test("a factory does not hide registrations nested in its request callback or helper", () => {
+  const inHandler = 'function createRouter() { const router = Router(); router.get("/a", () => { router.post("/late", h); }); return router; }';
+  assert.match(findNestedRouteRegistrations(inHandler)[0]!, /POST \/late/);
+  const inHelper = 'function createRouter() { const router = Router(); function later() { router.post("/late", h); } return router; }';
+  assert.match(findNestedRouteRegistrations(inHelper)[0]!, /POST \/late/);
+  const nestedFactory = 'router.get("/a", () => { const router = Router(); router.post("/late", h); return router; });';
+  assert.match(findNestedRouteRegistrations(nestedFactory)[0]!, /POST \/late/);
 });

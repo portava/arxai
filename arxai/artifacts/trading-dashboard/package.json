@@ -76,10 +76,11 @@
     "test:chart-signals-20261104": "node ../../scripts/validation/run-named-tests.mjs vitest run src/hooks/useChartSetupPreview.expiry.test.ts src/lib/ai-chart-commands.test.ts src/components/charts/chart-setup-signal-strip.test.tsx src/components/charts/ChartSetupPreviewPanel.scannerChip.test.tsx src/hooks/useAiChartOverlays.eleanorExpiry.test.ts src/components/charts/ChartAiOverlayPanel.scannerStatus.test.tsx src/components/charts/ChartDecisionReceiptsPanel.test.tsx",
     "test:smart-chart-analysis": "node ../../scripts/validation/run-named-tests.mjs vitest run src/lib/chart-engine/smartChartAnalysis.test.ts src/lib/chart-engine/smartChartAnalysis.catalogue.test.ts",
     "test:performance": "node ../../scripts/validation/run-named-tests.mjs vitest run src/pages/admin-diagnostics.performance.test.tsx",
-    "test:build-config": "node --test tests/buildConfig.test.mjs"
+    "test:build-config": "node --test tests/buildConfig.test.mjs",
+    "test:native-account-report": "node ../../scripts/validation/run-named-tests.mjs vitest run src/pages/mt5-bridge.nativeAccountReport.test.tsx"
   },
   "devDependencies": {
-    "@hookform/resolvers": "^3.10.0",
+    "@hookform/resolvers": "^5.9.2",
     "@radix-ui/react-accordion": "^1.2.4",
     "@radix-ui/react-alert-dialog": "^1.1.7",
     "@radix-ui/react-aspect-ratio": "^1.1.3",
@@ -122,6 +123,7 @@
     "@workspace/api-client-react": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/integrations-openai-ai-react": "workspace:*",
+    "@workspace/markets": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
@@ -147,7 +149,6 @@
     "vite": "catalog:",
     "vitest": "^4.1.7",
     "wouter": "^3.3.5",
-    "zod": "catalog:",
-    "@workspace/markets": "workspace:*"
+    "zod": "catalog:"
   }
 }

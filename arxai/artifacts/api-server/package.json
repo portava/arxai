@@ -324,7 +324,13 @@
     "test:performance": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test src/lib/perf/__qa__/*.test.ts src/lib/ai/__qa__/requestDeadline.test.ts src/lib/auth/__qa__/sessionPerformance.test.ts src/lib/startup/__qa__/dashboard.test.ts",
     "test:build-identity": "node --test tests/buildIdentity.test.mjs",
     "test:schema-compatibility": "node --import tsx --test src/scripts/__qa__/schemaCompatibility.test.ts",
-    "test:schema-compatibility-db": "node --import tsx --test src/scripts/__qa__/schemaCompatibility.db.test.ts"
+    "test:schema-compatibility-db": "node --import tsx --test src/scripts/__qa__/schemaCompatibility.db.test.ts",
+    "test:mt5-terminal-results": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/mt5/__qa__/terminalResultEvidence.test.ts",
+    "test:account-profit-truth": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/accountProfitTruth.test.ts",
+    "test:native-account-report": "node ../../scripts/validation/run-named-tests.mjs node --experimental-test-module-mocks --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/nativeAccountReport.test.ts src/lib/brokerHub/__qa__/nativeAccountReportReader.test.ts",
+    "test:chart-captured-input": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/chartCapturedInput.test.ts",
+    "test:strategy-evidence-validity": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/research/__qa__/strategyEvidenceValidity.test.ts src/lib/backtest/__qa__/backtestEvidence.test.ts",
+    "test:route-shadowing": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/routes/__qa__/routeShadowing.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -170,20 +170,21 @@ const lastReadText = (dataUpdatedAt: number | undefined) =>
 
 // ── Custom limits form schema ────────────────────────────────────────────────
 
+// Sliders supply numbers; the calculator below also accepts typed numeric strings.
 const limitsSchema = z.object({
-  riskPerTradePct:          z.coerce.number().min(0.01).max(10),
-  maxDailyLossPct:          z.coerce.number().min(0.1).max(20),
+  riskPerTradePct:          z.coerce.number<number>().min(0.01).max(10),
+  maxDailyLossPct:          z.coerce.number<number>().min(0.1).max(20),
   // 0 is the store's "no weekly cap" (user_risk_settings keeps NULL, the
   // governor applies no weekly % limit). Saving it keeps the cap off.
-  maxWeeklyLossPct:         z.coerce.number().refine((v) => v === 0 || (v >= 0.1 && v <= 50), {
+  maxWeeklyLossPct:         z.coerce.number<number>().refine((v) => v === 0 || (v >= 0.1 && v <= 50), {
     message: "Set a weekly cap between 0.1% and 50%.",
   }),
-  maxTradesPerDay:          z.coerce.number().min(1).max(500),
-  maxOpenTrades:            z.coerce.number().min(1).max(50),
-  maxLotSize:               z.coerce.number().min(0.01).max(100),
-  stopAfterLosingStreak:    z.coerce.number().min(1).max(20),
-  cooldownAfterLossMinutes: z.coerce.number().min(0).max(1440),
-  minConfidenceScore:       z.coerce.number().min(0).max(100),
+  maxTradesPerDay:          z.coerce.number<number>().min(1).max(500),
+  maxOpenTrades:            z.coerce.number<number>().min(1).max(50),
+  maxLotSize:               z.coerce.number<number>().min(0.01).max(100),
+  stopAfterLosingStreak:    z.coerce.number<number>().min(1).max(20),
+  cooldownAfterLossMinutes: z.coerce.number<number>().min(0).max(1440),
+  minConfidenceScore:       z.coerce.number<number>().min(0).max(100),
   disableDuringAbnormalVolatility: z.boolean(),
 });
 
@@ -191,10 +192,10 @@ const limitsSchema = z.object({
 
 const calcSchema = z.object({
   symbol:         z.string().min(1),
-  accountBalance: z.coerce.number().min(1),
-  riskPercent:    z.coerce.number().min(0.01).max(100),
-  entry:          z.coerce.number().min(0.000001),
-  stopLoss:       z.coerce.number().min(0.000001),
+  accountBalance: z.coerce.number<number | string>().min(1),
+  riskPercent:    z.coerce.number<number | string>().min(0.01).max(100),
+  entry:          z.coerce.number<number | string>().min(0.000001),
+  stopLoss:       z.coerce.number<number | string>().min(0.000001),
 });
 
 // ── Reusable Stat Row ────────────────────────────────────────────────────────
@@ -707,7 +708,7 @@ export default function RiskSettings() {
     entry: number; stopLoss: number;
   }>(null);
 
-  const calcForm = useForm<z.infer<typeof calcSchema>>({
+  const calcForm = useForm<z.input<typeof calcSchema>, unknown, z.output<typeof calcSchema>>({
     resolver: zodResolver(calcSchema),
     defaultValues: {
       symbol: "Volatility 75 Index",
@@ -1570,7 +1571,7 @@ export default function RiskSettings() {
                       <span>{calcForm.getValues("riskPercent")}% of account</span>
                     </div>
                     <Progress
-                      value={Math.min(calcForm.getValues("riskPercent") * 10, 100)}
+                      value={Math.min(Number(calcForm.getValues("riskPercent")) * 10, 100)}
                       className="h-1.5"
                     />
                   </div>

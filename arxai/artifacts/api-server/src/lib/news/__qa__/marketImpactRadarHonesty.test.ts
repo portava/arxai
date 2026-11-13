@@ -3,44 +3,72 @@
 //
 // NON-NEGOTIABLE HONESTY: with no live economic-calendar provider connected the
 // radar NEVER fabricates a scheduled event and NEVER reads as a confident
-// all-clear. The disconnected note must say events are not fabricated, the event
-// list must be empty, and the summary must name the missing provider rather than
+// all-clear. The disconnected note must distinguish missing configuration from
+// a failed fetch, the event list must be empty, and the summary must name the disconnected provider rather than
 // implying "no events". Synthetic instruments are never driven by macro events.
 // Advisory only — the radar carries no execution field of any kind.
 
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { buildMarketImpactRadar, isSyntheticSymbol } from "../marketImpactRadar.js";
 import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
+import { __resetEconomicCalendarStateForTests, __setEconomicCalendarFetcherForTests } from "../calendar/economicCalendarService.js";
+import { _resetMarketProviderForTests, _setMarketProviderForTests } from "../../assistant/marketProvider.js";
 
 const NOW = Date.parse("2026-06-19T12:00:00.000Z");
 
-// ── events are real-or-empty, in EITHER environment ──────────────────────────
-//
-// These two locks used to hardcode "this environment has no live
-// economic-calendar provider connected", which only holds on a runner without
-// `ECONOMIC_CALENDAR_PROVIDER` / `FRED_API_KEY`. This container HAS those
-// secrets, so the provider genuinely connects, the radar legitimately surfaces
-// real FRED events, and the tests failed for being wrong about their
-// environment — nothing fabricated an event. (Its sibling in
-// `heat/__qa__/newsRiskAndEvents.test.ts` was corrected the same way.)
-//
-// The invariant that actually matters is identical in both environments and is
-// asserted as a biconditional: an event may exist ONLY when the provider is
-// connected. The disconnected branch keeps every original assertion verbatim,
-// so the honesty lock is not weakened — a disconnected radar still cannot
-// surface a single event, still must say events are not fabricated, and still
-// must never read as a confident all-clear.
+const ENV_KEYS = ["ECONOMIC_CALENDAR_PROVIDER", "TRADING_ECONOMICS_KEY", "TRADING_ECONOMICS_SECRET", "FRED_API_KEY"] as const;
+let savedEnv: Record<string, string | undefined> = {};
+let fetchFailed = false;
+const EVENT = { CalendarId: "offline-cpi", Date: "2026-06-19T12:10:00Z", Country: "United States",
+  Currency: "USD", Category: "Inflation", Event: "CPI fixture", Importance: 3, Actual: null, Forecast: null, Previous: null };
+beforeEach(() => {
+  savedEnv = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
+  for (const key of ENV_KEYS) delete process.env[key];
+  process.env.ECONOMIC_CALENDAR_PROVIDER = "trading_economics";
+  process.env.TRADING_ECONOMICS_KEY = "offline-test-only";
+  fetchFailed = false;
+  __resetEconomicCalendarStateForTests();
+  __setEconomicCalendarFetcherForTests(async () => ({ ok: !fetchFailed, status: fetchFailed ? 503 : 200,
+    text: async () => fetchFailed ? "fixture upstream unavailable" : JSON.stringify([EVENT]) }));
+  const unexpected = async (): Promise<never> => { throw new Error("Unexpected non-news provider call in radar fixture"); };
+  _setMarketProviderForTests({ name: "offline-headlines", connected: false,
+    features: { quotes: false, news: false, snapshots: false, economicCalendar: false, candles: false },
+    getMarketNews: async () => ({ connected: false, items: [], provider: "offline-headlines" }),
+    getLiveQuote: unexpected, getCandles: unexpected, getEconomicCalendar: unexpected,
+    getSymbolOverview: unexpected, getTradingSessionContext: unexpected });
+});
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+  __resetEconomicCalendarStateForTests();
+  __setEconomicCalendarFetcherForTests(null);
+  _resetMarketProviderForTests();
+});
+const STATES = ["not_configured", "fetch_error", "connected"] as const;
+function selectState(state: typeof STATES[number]) {
+  if (state === "not_configured") delete process.env.TRADING_ECONOMICS_KEY;
+  fetchFailed = state === "fetch_error";
+}
 
-test("radar: events are real-or-empty — never fabricated while disconnected", async () => {
+for (const state of STATES) test(`radar: ${state} events are real-or-empty — never fabricated while disconnected`, async () => {
+  selectState(state);
   const { radar } = await buildMarketImpactRadar("EURUSD", NOW);
+  assert.equal(radar.provider.connected, state === "connected");
 
   if (!radar.provider.connected) {
-    // The original assertions, unchanged, on the disconnected path.
     assert.deepEqual(radar.events, []);
-    // The absence of a warning is NOT an all-clear — the note must say so by
-    // explicitly stating events are not fabricated.
-    assert.match(radar.provider.note, /none are fabricated/i);
+    if (state === "fetch_error") {
+      assert.match(radar.provider.note, /configured but the last fetch failed/i);
+      assert.match(radar.provider.note, /events unavailable until the next successful refresh/i);
+      assert.doesNotMatch(radar.provider.note, /no .*provider is configured/i);
+    } else {
+      assert.match(radar.provider.note, /no live economic-calendar provider is configured/i);
+      assert.match(radar.provider.note, /none are fabricated/i);
+    }
+    assert.equal(radar.provider.fetchedAt, null);
     // The summary must name the missing provider, never imply a confident
     // "no events" all-clear.
     assert.match(radar.summary, /no live economic-calendar provider is connected/i);
@@ -52,6 +80,8 @@ test("radar: events are real-or-empty — never fabricated while disconnected", 
   // attributed record — no filler rows, no placeholder titles, no invented
   // timestamps — and the copy must not claim a provider is missing.
   assert.match(radar.provider.note, /live economic-calendar feed connected/i);
+  assert.equal(radar.events.length, 1, "the attributed offline provider fixture must actually exercise the connected branch");
+  assert.equal(radar.events[0]!.title, EVENT.Event);
   assert.doesNotMatch(radar.summary, /no live economic-calendar provider is connected/i);
   assert.doesNotMatch(radar.summary, /low risk/i);
   for (const e of radar.events) {
@@ -72,8 +102,10 @@ test("radar: events are real-or-empty — never fabricated while disconnected", 
   }
 });
 
-test("radar: severity and high-impact window are earned, never asserted", async () => {
+for (const state of STATES) test(`radar: ${state} severity and high-impact window are earned, never asserted`, async () => {
+  selectState(state);
   const { radar } = await buildMarketImpactRadar("XAUUSD", NOW);
+  assert.equal(radar.provider.connected, state === "connected");
 
   if (!radar.provider.connected) {
     // The original assertions, unchanged, on the disconnected path.

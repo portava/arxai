@@ -94,7 +94,8 @@ export function recordDecisionSnapshot(userId: number, snapshot: ChartDecisionSn
     buf = [];
     ringBuffers.set(userId, buf);
   }
-  buf.push(snapshot);
+  // Capture owns its data; later producer changes cannot rewrite history.
+  buf.push(structuredClone(snapshot));
   if (buf.length > RING_BUFFER_SIZE) buf.shift();
 }
 
@@ -111,7 +112,7 @@ export function getRecentSnapshots(
     const up = opts.symbol.toUpperCase();
     result = result.filter((s) => s.symbol.toUpperCase() === up);
   }
-  return result.slice(0, opts.limit ?? RING_BUFFER_SIZE);
+  return structuredClone(result.slice(0, opts.limit ?? RING_BUFFER_SIZE));
 }
 
 /**
@@ -128,7 +129,7 @@ export function getLastSnapshot(
   for (let i = buf.length - 1; i >= 0; i--) {
     const s = buf[i]!;
     if (s.symbol.toUpperCase() === symUp && s.timeframe.toUpperCase() === tfUp) {
-      return s;
+      return structuredClone(s);
     }
   }
   return null;
@@ -150,7 +151,7 @@ export function buildDecisionSnapshot(params: {
   plan?: ChartDecisionSnapshotPlan | null;
   source: string;
 }): ChartDecisionSnapshot {
-  return {
+  const snapshot: ChartDecisionSnapshot = {
     id: generateSnapshotId(),
     capturedAt: new Date().toISOString(),
     symbol: params.symbol,
@@ -166,6 +167,9 @@ export function buildDecisionSnapshot(params: {
       "Point-in-time snapshot — replay must only judge with data known at capturedAt; any later-known information must be explicitly labelled.",
     source: params.source,
   };
+  // These typed fields are plain data. structuredClone also preserves optional
+  // undefined values and numeric observations without a JSON round-trip.
+  return structuredClone(snapshot);
 }
 
 // ── Simple UUID-like id generator (no external dependency needed) ─────────────
