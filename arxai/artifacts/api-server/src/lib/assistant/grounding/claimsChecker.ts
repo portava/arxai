@@ -118,7 +118,7 @@ const OFFERED_OPTIONS_RE = /\bI\s+(?:can|could)(?:\s+also)?\s+(?:give|show|offer
 // A phrasing the model suggests the user type ("send something like “action
 // #123”", "like **#123**", "say “check action 42”") is an example, not a claim.
 // Segment-local so the streaming verifier and speech gate judge it the same.
-const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send|try|type|reply with|ask(?: me)?)`;
+const EXAMPLE_CUE = String.raw`(?:like|such as|e\.g\.?,?|for example,?|for instance,?|say|send(?: me)?|try(?: asking)?|type|reply with|ask(?: me)?)`;
 const EXAMPLE_QUOTE = String.raw`(?:\*\*)?(?:[“"][^”"\n]{1,200}[”"]|\`[^\`\n]{1,200}\`)(?:\*\*)?`;
 const EXAMPLE_QUOTED_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*:?\s*${EXAMPLE_QUOTE}(?:\s+or\s+${EXAMPLE_QUOTE})*`, "gi");
 const EXAMPLE_ID_RE = new RegExp(String.raw`\b${EXAMPLE_CUE}\s*(?:\*\*)?#\d+(?:\*\*)?`, "gi");
@@ -258,7 +258,10 @@ const LIVE_WORDS = /\b(?:live(?!\s+(?:account|trading|mode|trades?|book|position
 const STALE_DISCLOSED = /\b(?:stale|delayed|not live|isn't live|not a live|not current|not a current|last (?:recorded|known|close|closing)|as of|old|outdated|unconfirmed|out of date|frozen|closed market|market is closed)\b/i;
 const EXECUTION_AFFIRM = /\b(?:executed|filled|got filled|went through|placed|I(?:'ve| have)? (?:opened|bought|sold|entered|closed))\b/i;
 const EXECUTION_CONTEXT = /\b(?:order|trade|position|buy|sell|long|short|entry|ticket|lots?|I)\b/i;
-const EXECUTION_NEGATED = /\b(?:nothing|none|neither|nor|not|never|no|cannot|can't|won't|wouldn't|unable|without|until|unless|if|once|when|would|could|should|will|can|may|might|pending|awaiting|preview|draft|haven't|hasn't|wasn't|isn't|didn't|failed|rejected|cancel(?:led|ed)?|expired|yet|whether|need|needs|ready)\b|n't\b|'ll\b/i;
+const EXECUTION_NEGATED = /\b(?:nothing|none|neither|nor|not|never|no|cannot|can't|won't|wouldn't|unable|without|until|unless|if|once|when|would|could|should|will|can|may|might|pending|awaiting|preview|draft|haven't|hasn't|wasn't|isn't|didn't|failed|rejected|cancel(?:led|ed)?|expired|yet|whether|need|needs|ready)\b|n['’]t\b|['’]ll\b/i;
+// In "whether it is pending, executed, rejected ...", a bare status after a
+// comma remains an inquiry. A new subject or auxiliary is a separate assertion.
+const STATUS_ENUMERATION = /\bwhether\s+(?:it(?:['’]s|\s+is)|the\s+(?:order|trade)\s+is)\s+(?:still\s+)?(?:pending|queued|awaiting confirmation|rejected|failed|cancelled|canceled|expired)(?:,\s*(?:pending|queued|rejected|failed|cancelled|canceled|expired))*[,]\s*$/i;
 
 /** Explicit identities, including FX pairs absent from this turn's evidence. */
 function namedSymbols(text: string, idx: EvidenceIndex): string[] {
@@ -537,6 +540,7 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
       /^\s*(?:(?:then|now|subsequently)\s+)?(?:it|they|this|that|was|were|is|are|has|have|had|got|filled|executed|placed|partially|fully|successfully|already|finally)\b/i.test(clause) &&
       EXECUTION_CONTEXT.test(prior);
     if ((!EXECUTION_CONTEXT.test(clause) && !inheritedContext) || EXECUTION_NEGATED.test(clause)) continue;
+    if (/^\s*(?:executed|filled|placed)\s*$/i.test(clause) && STATUS_ENUMERATION.test(before)) continue;
     // A bare coordinated verb shares the preceding auxiliary: "will be
     // executed and filled", "was not executed and filled". An explicit new
     // auxiliary ("and was filled") makes a separate affirmative claim.

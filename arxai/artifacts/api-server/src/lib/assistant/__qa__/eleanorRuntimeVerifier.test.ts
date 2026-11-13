@@ -57,6 +57,10 @@ test("live-evaluation follow-ups survive every streaming boundary without hiding
     { user: "Read R_75 M15", answer: "Next: if you want, I can also give you 2–3 trade options for R_75 M15." },
     { user: "Buy 0.1 EURUSD", answer: "Type the direct command exactly as: **buy EURUSD 0.1** in the trade command flow. Next: I can run a risk check for 0.1 EURUSD." },
     { user: "Status of 5124?", answer: "Next: If 5124 was rejected or failed, I can explain the blocker once the action record is available." },
+    { user: "Is my trade done?", answer: "I can verify whether it’s still pending, executed, rejected, or failed, and give you the order fill details if available." },
+    { user: "Did it fill?", answer: "If this was meant to be a filled order, I won’t claim it went through without a confirmed execution result." },
+    { user: "Status of 5124?", answer: "Next: try asking **“did my order execute for 5124?”** again in a moment." },
+    { user: "Did my buy go in?", answer: "If you have the action number, send me “did action #123 execute” and I’ll check the exact status." },
   ];
   for (const { user, answer } of cases) {
     for (const size of [1, 2, 7, 31]) {

@@ -291,6 +291,23 @@ test("execution negation is local to each clause", () => {
   assert.deepEqual(kinds("Your order was not filled.", []), []);
 });
 
+test("live evaluation: typographic negation and status inquiries never assert an execution", () => {
+  assert.deepEqual(kinds("If this was meant to be a filled order, I won’t claim it went through without a confirmed execution result.", []), []);
+  assert.deepEqual(kinds("I can verify whether it’s still pending, executed, rejected, or failed, and give you the order fill details if available.", []), []);
+  assert.deepEqual(kinds("For your order, I can verify whether it is queued, rejected, executed, or failed.", []), []);
+  assert.ok(kinds("Your order hasn’t failed, and it was filled.", []).includes("EXECUTION_UNCONFIRMED"));
+  assert.ok(kinds("I can verify whether it is pending, but your order was executed.", []).includes("EXECUTION_UNCONFIRMED"));
+  assert.ok(kinds("For your order, I can verify whether it is pending, it was executed.", []).includes("EXECUTION_UNCONFIRMED"));
+  assert.ok(kinds("I can verify whether it is pending, your order was executed.", []).includes("EXECUTION_UNCONFIRMED"));
+});
+
+test("live evaluation: send-me and try-asking quoted examples retain their instructional meaning", () => {
+  assert.deepEqual(kinds("Next: try asking **“did my order execute for 5124?”** again in a moment.", []), []);
+  assert.deepEqual(kinds("Next: if you have the action number, send me “did action #123 execute” and I’ll check the exact status.", []), []);
+  assert.ok(kinds("Your order is “action #123”.", []).length);
+  assert.ok(kinds("Send me “action #123”, but your order #123 was executed.", []).includes("EXECUTION_UNCONFIRMED"));
+});
+
 
 test("nested instruments replace parent scope and unscoped numbers cannot prove a scoped price", () => {
   const outputs = [{ name: "getMarketSnapshot", result: { symbol: "EURUSD", lastPrice: 1.08, count: 2, related: { symbol: "GBPUSD", lastPrice: 1.28 } } }];
