@@ -13,7 +13,7 @@ import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
 import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut, SlidersHorizontal, CalendarClock } from "lucide-react";
 import { MAX_NOTE_LENGTH, MAX_NOTE_PARAGRAPHS, normalizeNoteText } from "@/lib/chart-engine/chartTextNote";
 
 import { measurementLabels } from "@/lib/chart-engine/chartRangeMeasurement";
@@ -167,6 +167,8 @@ export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,
   const [snap,setSnap] = useState(false);
   const [panOnly,setPanOnly] = useState(false);
   const [toolsOpen,setToolsOpen] = useState(false);
+  // Display and date controls stay mounted but folded, keeping the toolbar to one row.
+  const [section,setSection] = useState<"display" | "goto" | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const previouslyPopulated = useRef(hasCandles);
   useLayoutEffect(()=>{
@@ -504,6 +506,20 @@ export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,
       </div>
       <Button ref={toggleRef} size="sm" variant="outline" className={compact ? "h-8 text-xs" : "hidden"} aria-label="Chart tools" aria-controls={toolsId} aria-expanded={toolsOpen} onClick={()=>{toggleRef.current?.focus();setToolsOpen(value=>!value);}}>Tools {toolsOpen ? "−" : "+"}</Button>
       <div ref={advancedRef} id={toolsId} data-testid="chart-advanced-tools" className={compact && !toolsOpen ? "hidden" : "contents"}>
+      {/* One compact row: navigate, draw, studies. Display and date controls open on demand. */}
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Drawing">
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{if(e.target.value==="auto_levels"){requestLevels();return;}if(e.target.value==="auto_fibonacci"){requestFibonacci();return;}setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
+        <option value="">Select / crosshair / pan</option>{getSupportResistanceProposal&&<option value="auto_levels">Automatic support / resistance</option>}{getFibonacciProposal&&<option value="auto_fibonacci">Automatic Fibonacci preview</option>}{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
+      </select>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
+      <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Undo drawing edit (Ctrl/Cmd+Z on chart)" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Redo drawing edit (Ctrl/Cmd+Shift+Z on chart)" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
+      </div>
+      <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
+      <Button size="sm" variant={section === "display" ? "secondary" : "outline"} className="h-8 gap-1 text-xs" aria-expanded={section === "display"} aria-controls={`${toolsId}-display`} data-testid="chart-display-toggle" title="Scale, chart style, time zone and image export" onClick={()=>setSection(value=>value === "display" ? null : "display")}><SlidersHorizontal className="h-3.5 w-3.5"/>Display</Button>
+      <Button size="sm" variant={section === "goto" ? "secondary" : "outline"} className="h-8 gap-1 text-xs" aria-expanded={section === "goto"} aria-controls={`${toolsId}-goto`} data-testid="chart-goto-toggle" title="Range presets and jump to a date" onClick={()=>setSection(value=>value === "goto" ? null : "goto")}><CalendarClock className="h-3.5 w-3.5"/>Go to</Button>
+      <div id={`${toolsId}-display`} role="group" aria-label="Chart display" data-testid="chart-display-controls" className={section === "display" ? "basis-full mt-1 flex flex-wrap items-center gap-2 rounded border border-zinc-800 p-2" : "hidden"}>
       <label className="flex items-center gap-2 text-zinc-400">Scale<select aria-label="Price scale" className={field} value={preferences.scale} onChange={event=>onPreferences(p=>({...p,scale:event.target.value as typeof p.scale}))}>
         <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
       </select></label>
@@ -516,20 +532,13 @@ export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,
         {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{!utcClockQualified && option==="UTC" ? "Source clock (UTC unverified)" : option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}
       </select></label>
       {utcClockQualified && zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
-      <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{if(e.target.value==="auto_levels"){requestLevels();return;}if(e.target.value==="auto_fibonacci"){requestFibonacci();return;}setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
-        <option value="">Select / crosshair / pan</option>{getSupportResistanceProposal&&<option value="auto_levels">Automatic support / resistance</option>}{getFibonacciProposal&&<option value="auto_fibonacci">Automatic Fibonacci preview</option>}{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
-      </select>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
-      <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Undo drawing edit (Ctrl/Cmd+Z on chart)" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" title="Redo drawing edit (Ctrl/Cmd+Shift+Z on chart)" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
       {showTemplates && <ChartTemplatesPanel preferences={preferences} onPreferences={onPreferences} onHiddenTriggerClose={()=>{
         const fallback=[toggleRef.current,panRef.current].find(button=>button && !button.disabled && button.getClientRects().length);
         if(!fallback)return false;fallback.focus();return true;
       }}/> }
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
-    <div className="basis-full mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
+      </div>
+    <div id={`${toolsId}-goto`} data-testid="chart-goto-controls" className={section === "goto" ? "basis-full mt-1 flex flex-wrap items-center gap-2 rounded border border-zinc-800 p-2 text-zinc-400" : "hidden"} aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}
       <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const parsed=parseWallClockInZone(goToDate,zone);
           if(parsed.kind==="invalid"){setMessage("Enter a complete date and time.");return;}
