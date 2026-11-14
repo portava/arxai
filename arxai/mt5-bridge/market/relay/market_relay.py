@@ -44,6 +44,7 @@ def incremental_payload(series,observation,now_ms,last_open_ms=None):
     return payload
 
 TIP_REOBSERVE_SECONDS=90
+TIP_REFRESH_PRIORITY_SECONDS=180
 FAST_LANE_PENDING_LIMIT=6
 
 def observed_tip_payload(series,observation,now_ms,mark,monotonic_now):
@@ -58,11 +59,16 @@ def fast_lane_has_room(key,inflight):
     minute=key.split('|')[1]=='M1'
     return key not in inflight and sum((item.split('|')[1]=='M1')==minute for item in inflight)<FAST_LANE_PENDING_LIMIT
 
-def fast_candidate_rank(candidate):
+def fast_candidate_rank(candidate,monotonic_now=None):
     key,payload,mark,attempt=candidate
     unserved=mark is None
+    now=time.monotonic() if monotonic_now is None else monotonic_now
+    overdue=mark is not None and now-mark[1]>=TIP_REFRESH_PRIORITY_SECONDS
     new_tip=unserved or payload['bars'][-1]['openTime']>mark[0]
-    return (0 if unserved else 1 if new_tip else 2,attempt,key)
+    # A busy stream of new short-period bars must not starve H1/D1 re-reads
+    # beyond the API's five-minute receipt TTL. Only freshly collected native
+    # observations reach this queue; priority never refreshes their timestamp.
+    return (0 if unserved or overdue else 1 if new_tip else 2,attempt,key)
 
 def full_history_payload(series,observation,now_ms):
     payload=candle_payload(series,observation,now_ms)

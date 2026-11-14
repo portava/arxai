@@ -58,7 +58,16 @@ class RelayTests(unittest.TestCase):
  def test_refresh_fairness_serves_unseen_then_new_then_oldest_attempt(self):
   payload={'bars':[{'openTime':200}]}
   rows=[('front|H1|front',payload,(200,0.),99.),('late|MN1|late',payload,None,100.),('new|M15|new',payload,(100,0.),101.),('old|H4|old',payload,(200,0.),1.)]
-  self.assertEqual([row[0] for row in sorted(rows,key=fast_candidate_rank)],['late|MN1|late','new|M15|new','old|H4|old','front|H1|front'])
+  self.assertEqual([row[0] for row in sorted(rows,key=lambda row:fast_candidate_rank(row,120.))],['late|MN1|late','new|M15|new','old|H4|old','front|H1|front'])
+ def test_overdue_hourly_observation_is_not_starved_by_continuous_new_minute_bars(self):
+  hourly=('hour|H1|hour',{'bars':[{'openTime':200}]},(200,0.),20.)
+  hot=[(f'hot{i}|M5|hot{i}',{'bars':[{'openTime':300}]},(200,170.),100.+i) for i in range(100)]
+  candidates=[*hot,hourly]
+  self.assertEqual(min(candidates,key=lambda row:fast_candidate_rank(row,181.)),hourly)
+  # After a real acknowledgement, ordinary new bars take precedence again.
+  refreshed=(hourly[0],hourly[1],(200,181.),181.)
+  self.assertNotEqual(min([*hot,refreshed],key=lambda row:fast_candidate_rank(row,182.)),refreshed)
+  self.assertEqual(hourly[1],{'bars':[{'openTime':200}]})
  def test_pending_bound_keeps_minute_lane_independent_and_rejects_duplicates(self):
   pending=set()
   for i in range(20):
