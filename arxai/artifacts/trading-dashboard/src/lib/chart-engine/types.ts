@@ -205,7 +205,7 @@ export interface ChartEngineAdapter {
   /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
   setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void;
   /** Render unverified archived bars on a distinct display-only series. */
-  setArchiveCandles?(candles: ChartEngineCandle[]): void;
+  setArchiveCandles?(candles: ChartEngineCandle[], evidence?: { sourceVerified: boolean }): void;
   /** Clear context-owned observations/geometry while retaining the renderer. */
   resetDataContext?(): void;
   /**
@@ -257,6 +257,8 @@ export interface ChartEngineAdapter {
   /** Display-only, already resolved for timeframe by the caller; candle times,
    * anchors and link events stay UTC seconds. */
   setDisplayTimeZone?(zone: ChartTimeZone): void;
+  /** Only normalized original clock evidence allows UTC labels/conversion. */
+  setUtcClockQualified?(qualified: boolean): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getVolumeProfiles?(): VolumeProfileInspection[];

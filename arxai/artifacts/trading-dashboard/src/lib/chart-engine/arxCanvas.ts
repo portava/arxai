@@ -619,9 +619,10 @@ export class CanvasChart {
   }
   dataChanged(advance = false) {
     const oldCount = this.times.length;
-    const candleTimes = this.series
+    const timelineSources = this.series.filter(s => s.options().timelineSource);
+    const candleTimes = (timelineSources.length ? timelineSources : this.series
       .filter((s) => s.kind === "Candlestick" || s.kind === "Bar")
-      .flatMap((s) => s.data.map((p) => p.time));
+    ).flatMap((s) => s.data.map((p) => p.time));
     this.times = [
       ...new Set(
         candleTimes.length
@@ -841,7 +842,11 @@ export class CanvasChart {
         return from == null || to == null ? null : { from, to };
       },
       width: () => this.plotWidth(),
-      scrollToRealTime: () => this.fitContent(),
+      scrollToRealTime: () => {
+        const span = this.range.to - this.range.from;
+        const to = this.times.length + (Number(this.chartOptions.timeScale?.rightOffset) || 3);
+        this.setRange({ from: to - span, to });
+      },
       scrollToPosition: (position: number, _animated?: boolean) => {
         const span = this.range.to - this.range.from;
         this.setRange({ from: this.times.length + position - span, to: this.times.length + position });
@@ -1244,10 +1249,13 @@ export class CanvasChart {
       c.setLineDash([]);
       const time = this.times[Math.round(this.indexAt(x))],
         bar = this.series
-          .find((s) => s.kind === "Candlestick")
-          ?.data.find((p) => p.time === time) as CandleData | undefined;
+          .filter((s) => s.kind === "Candlestick" || s.kind === "Bar")
+          .map(s => s.data.find(p => p.time === time))
+          .find(Boolean) as CandleData | undefined;
       if (bar) {
-        const label = `${new Date(time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC   O ${fmt(bar.open)}  H ${fmt(bar.high)}  L ${fmt(bar.low)}  C ${fmt(bar.close)}`;
+        const stamp = this.chartOptions.localization?.timeFormatter?.(time)
+          ?? `${new Date(time * 1000).toISOString().slice(0, 16).replace("T", " ")} source clock`;
+        const label = `${stamp}   O ${fmt(bar.open)}  H ${fmt(bar.high)}  L ${fmt(bar.low)}  C ${fmt(bar.close)}`;
         c.fillStyle = background;
         c.fillRect(7, 7, Math.min(w - 14, c.measureText(label).width + 16), 24);
         c.fillStyle = text;

@@ -98,7 +98,8 @@ export class ChartAnalysisRenderer {
     const firstCurrent = points[0]?.time ?? Infinity;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.archiveTickPoints[mid]!.time < firstCurrent) lo = mid + 1; else hi = mid; }
     const count = lo;
-    const visible = studyDisplayWindow(count + points.length, this.chart.timeScale().getVisibleLogicalRange(), null);
+    const visible = studyDisplayWindow(count + points.length, this.inputRange(count + points.length,
+      i => i < count ? this.archiveTickPoints[i]!.time : points[i - count]!.time), null);
     return [...this.archiveTickPoints.slice(visible.from, Math.min(visible.to, count)),
       ...points.slice(Math.max(0, visible.from - count), Math.max(0, visible.to - count))];
   }
@@ -193,7 +194,7 @@ export class ChartAnalysisRenderer {
     this.recordInputs(candles, dirty);
     this.refreshProfiles();
     // The window a rebuild would choose: it starts from displayWindow = null.
-    const window = studyDisplayWindow(candles.length, this.chart.timeScale().getVisibleLogicalRange(), null);
+    const window = studyDisplayWindow(candles.length, this.inputRange(candles.length, i => candles[i]!.time), null);
     this.displayWindow = window;
     this.rendering = true;
     try {
@@ -322,7 +323,20 @@ export class ChartAnalysisRenderer {
     };
   }
   private nextWindow() {
-    return studyDisplayWindow(this.inputs.length / INPUT_STRIDE, this.chart.timeScale().getVisibleLogicalRange(), this.displayWindow);
+    const count = this.inputs.length / INPUT_STRIDE;
+    return studyDisplayWindow(count, this.inputRange(count, i => this.inputs[i * INPUT_STRIDE]!), this.displayWindow);
+  }
+  private inputRange(count: number, timeAt: (index: number) => number): LogicalRange | null {
+    const scale = this.chart.timeScale(), visible = scale.getVisibleRange?.();
+    if (!visible || typeof visible.from !== "number" || typeof visible.to !== "number") return scale.getVisibleLogicalRange();
+    const index = (time: number, upper: boolean) => {
+      let lo = 0, hi = count;
+      while (lo < hi) { const mid = (lo + hi) >>> 1; if (timeAt(mid) < time || (upper && timeAt(mid) === time)) lo = mid + 1; else hi = mid; }
+      return lo;
+    };
+    // The shared axis can also contain display-only archive bars. Map back
+    // into each calculator's actual inputs rather than copying global indices.
+    return { from: index(visible.from, false), to: index(visible.to, true) - 1 };
   }
   /** Keep all calculated values for inspection/replay, but only ask the chart
    * library to rebuild visible study geometry plus a generous pan buffer. Its

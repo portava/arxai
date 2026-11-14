@@ -56,6 +56,7 @@ function makeAdapter(): FakeAdapter {
     setLinkedTimeRange: track("setLinkedTimeRange"),
     setLinkedCrosshair: track("setLinkedCrosshair"),
     setDisplayTimeZone: track("setDisplayTimeZone"),
+    setUtcClockQualified: track("setUtcClockQualified"),
     priceToCoordinate: vi.fn(() => null),
   } as unknown as FakeAdapter;
   created.push(adapter);
@@ -1021,6 +1022,7 @@ describe("deferred comparison engine init", () => {
     const order = calls.map(call => call.slice(2));
     expect(order.slice(0, 6)).toEqual(["init", "setSymbol", "setTimeframe", "setCrosshairHandler", "setViewLinkStatusHandler", "setDisplayTimeZone"]);
     expect(created[0]!.setDisplayTimeZone).toHaveBeenCalledWith("Asia/Tokyo");
+    expect(created[0]!.setUtcClockQualified).toHaveBeenLastCalledWith(true);
     expect(created[0]!.setDisplayTimeZone.mock.calls.every(([zone]) => zone === "Asia/Tokyo")).toBe(true);
     expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).value).toBe("Asia/Tokyo");
     // The comparison's own key now diverges without touching the primary's.
@@ -1146,6 +1148,7 @@ describe("original candle clock disclosure",()=>{
   expect(screen.getByTestId("chart-clock-authority").textContent).toContain("UTC mapping unverified");
   expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
   expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
+  expect(engine.setUtcClockQualified).toHaveBeenLastCalledWith(false);
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("source clock (UTC unverified)");
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.101  H 1.103  L 1.100  C 1.102  ·  Range H−L 0.003  ·  Volume unavailable");
   expect(engine.setCandles).toHaveBeenCalled();expect(engine.destroy).not.toHaveBeenCalled();

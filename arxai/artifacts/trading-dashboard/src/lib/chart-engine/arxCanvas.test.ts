@@ -217,3 +217,98 @@ it("carries archive tick evidence through the actual canvas adapter without chan
   expect(adapter.getStudyValues(400)[0]!.values[0]!.value).toBeNull();
   adapter.destroy();
 });
+
+describe("real canvas with paged native history", () => {
+  const history = Array.from({ length: 1200 }, (_, i) => ({
+    time: 1_700_000_000 + i * 60, open: 100, high: 103, low: 99, close: i % 2 ? 102 : 99.5,
+  }));
+  function setup() {
+    Object.defineProperty(container, "clientWidth", { value: 900 });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const adapter = new ArxCanvasAdapter();
+    adapter.init({ container, height: 400 });
+    adapter.setTimeframe("M1");
+    adapter.setCandles(history.slice(900));
+    const chart = (adapter as any).chart;
+    return { adapter, chart, scale: chart.timeScale() };
+  }
+  it("preserves recent candles and zoom through two older pages, polls and navigation", () => {
+    const { adapter, scale } = setup();
+    const before = scale.getVisibleRange();
+    const span = () => { const r = scale.getVisibleLogicalRange(); return r.to - r.from; };
+    const initialSpan = span();
+    const visible = adapter.getVisibleCandles();
+    adapter.setArchiveCandles(history.slice(400, 900), { sourceVerified: true });
+    expect(scale.getVisibleRange()).toEqual(before);
+    expect(adapter.getVisibleCandles()).toEqual(visible);
+    adapter.setCandles(history.slice(900));
+    adapter.setArchiveCandles(history.slice(0, 900), { sourceVerified: true });
+    expect(scale.getVisibleRange()).toEqual(before);
+    expect(span()).toBe(initialSpan);
+    expect(adapter.getVisibleCandles()).toEqual(visible);
+    // Global logical indices include archive bars. Zoom must stay at the live end.
+    adapter.zoomBy(0.75);
+    expect(adapter.getVisibleCandles().length).toBeGreaterThan(20);
+    adapter.goToLatest();
+    expect(span()).toBeCloseTo(initialSpan * 0.75);
+    expect(adapter.getVisibleCandles().at(-1)?.time).toBe(history.at(-1)!.time);
+    adapter.goToTime(history[1100]!.time);
+    expect(adapter.getVisibleCandles().some(c => c.time === history[1100]!.time)).toBe(true);
+    adapter.destroy();
+  });
+  it("keeps an archive-only view fixed across a rolling recent window without granting analysis authority", () => {
+    const { adapter, scale } = setup();
+    adapter.setArchiveCandles(history.slice(0, 900), { sourceVerified: true });
+    scale.setVisibleLogicalRange({ from: 100, to: 180 });
+    const before = scale.getVisibleRange();
+    adapter.setCandles([...history.slice(901), { ...history.at(-1)!, time: history.at(-1)!.time + 60 }]);
+    expect(scale.getVisibleRange()).toEqual(before);
+    expect(adapter.getVisibleCandles()).toEqual([]);
+    expect(adapter.measureRenderFidelity()?.barsCompared).toBe(300);
+    expect((adapter as any).archiveSeries.options()).toMatchObject({ upColor: "#10b981", downColor: "#ef4444", priceLineVisible: false });
+    adapter.setArchiveCandles(history.slice(0, 900));
+    expect((adapter as any).archiveSeries.options().upColor).toBe("#64748b");
+    adapter.destroy();
+  });
+  it("uses the same archive-aware timeline in line style and linked views", () => {
+    const { adapter, scale } = setup();
+    adapter.setArchiveCandles(history.slice(0, 900), { sourceVerified: true });
+    const before = scale.getVisibleRange();
+    adapter.setChartStyle("line");
+    expect(scale.getVisibleRange()).toEqual(before);
+    adapter.setLinkedTimeRange({ from: history[1000]!.time, to: history[1050]!.time });
+    expect(adapter.getVisibleCandles()).toEqual(history.slice(1000, 1051));
+    adapter.destroy();
+  });
+  it("renders archive crosshair labels with the actual clock evidence", () => {
+    const fillText = vi.fn();
+    const context = new Proxy({ fillText, measureText: (text: string) => ({width: text.length * 6}) } as any, {
+      get: (target, name) => name in target ? target[name] : () => {},
+    });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(context);
+    const { adapter, chart, scale } = setup();
+    adapter.setArchiveCandles(history.slice(0, 900), { sourceVerified: true });
+    scale.setVisibleLogicalRange({ from: 100, to: 180 });
+    adapter.setDisplayTimeZone("Asia/Tokyo");
+    chart.setCrosshairPosition(100, history[140]!.time, (adapter as any).archiveSeries);
+    chart.paint();
+    expect(fillText.mock.calls.some(([label]) => String(label).includes("source clock (UTC unverified)   O"))).toBe(true);
+    expect(fillText.mock.calls.some(([label]) => String(label).includes("GMT+9"))).toBe(false);
+    fillText.mockClear();
+    adapter.setUtcClockQualified(true);
+    chart.paint();
+    expect(fillText.mock.calls.some(([label]) => String(label).includes("GMT+9   O"))).toBe(true);
+    expect(fillText.mock.calls.some(([label]) => String(label).includes("UTC unverified"))).toBe(false);
+    adapter.destroy();
+  });
+  it("renders study values for the visible current candles after archive insertion", () => {
+    const { adapter, chart, scale } = setup();
+    adapter.setStudies([{ kind: "sma", period: 2, color: "#ffffff" }]);
+    adapter.setArchiveCandles(history.slice(0, 900), { sourceVerified: true });
+    scale.setVisibleLogicalRange({ from: 905, to: 930 });
+    const study = chart.series.find((s: any) => s.kind === "Line");
+    expect(study.data.some((point: any) => point.time === history[910]!.time && Number.isFinite(point.value))).toBe(true);
+    expect(study.data.every((point: any) => point.time >= history[900]!.time)).toBe(true);
+    adapter.destroy();
+  });
+});

@@ -43,7 +43,7 @@ import type {
   OhlcTuple,
 } from "./types";
 import { HA_TRANSFORM_SAMPLE_LIMIT } from "./types";
-import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
+import { candleDisplayPrecision, incrementalCandles, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
@@ -56,6 +56,18 @@ import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartView
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
 import { crosshairTimeLabel, marketAxisTimeLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
+
+function timelineRangeShift(previous: ChartEngineCandle[], next: ChartEngineCandle[], range: {from:number;to:number}, followLatest = false): number {
+  if (!previous.length || !next.length) return 0;
+  if (followLatest) return next.length - previous.length;
+  // Anchor the inspected candle, not the first common candle: a rolling live
+  // window can remove a bar in the middle of the combined archive timeline.
+  const anchor = Math.max(0, Math.min(previous.length - 1, Math.round((range.from + range.to) / 2)));
+  const time = previous[anchor]!.time;
+  let lo = 0, hi = next.length;
+  while (lo < hi) { const mid = (lo + hi) >>> 1; if (next[mid]!.time < time) lo = mid + 1; else hi = mid; }
+  return Math.min(lo, next.length - 1) - anchor;
+}
 
 // The chart adapter's tick types mirror the app's tick-mark classifications.
 const TICK_MARK_TYPES_MATCH: Record<TickMarkType, ChartTickMarkType> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4 } satisfies Record<ChartTickMarkType, ChartTickMarkType>;
@@ -263,10 +275,13 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   // references (applyOptions cannot remove a formatter; only destroy resets
   // it), so a zone change is one applyOptions call with no setData.
   private displayZone: ChartTimeZone = "UTC";
+  private utcClockQualified = false;
   // the user's selected display locale.
   private locale = typeof navigator !== "undefined" ? navigator.language : "";
-  private readonly timeLabel = (time: Time): string => typeof time === "number" ? crosshairTimeLabel(time, this.displayZone, this.locale) : String(time);
-  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? marketAxisTimeLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
+  private readonly timeLabel = (time: Time): string => typeof time === "number"
+    ? crosshairTimeLabel(time, this.utcClockQualified ? this.displayZone : "UTC", this.locale)
+      + (this.utcClockQualified ? (this.displayZone === "UTC" ? " UTC" : "") : " source clock (UTC unverified)") : String(time);
+  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? marketAxisTimeLabel(time, type as number as ChartTickMarkType, this.utcClockQualified ? this.displayZone : "UTC", locale) : null;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -341,6 +356,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     // Create the native ARX candle series; all source and finality checks stay
     // in the caller before any point reaches this renderer.
     const series = chart.addSeries(CandlestickSeries, {
+      timelineSource: true,
       upColor: "#10b981",
       downColor: "#ef4444",
       borderUpColor: "#10b981",
@@ -351,6 +367,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     // Unverified history is intentionally a different, muted display series.
     // It is not part of this.candles, studies, reader input or render evidence.
     const archiveSeries = chart.addSeries(CandlestickSeries, {
+      timelineSource: true,
       upColor: "#64748b",
       downColor: "#475569",
       borderUpColor: "#64748b",
@@ -576,7 +593,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     if (visibleRange && this.candles.length) {
       this.pendingUserRange = {
           range: { ...visibleRange },
-          previousLength: this.candles.length,
+          previousLength: this.displayCandles().length,
           symbol: this.symbol,
           intervalSeconds: this.intervalSeconds,
         };
@@ -622,8 +639,10 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     }
     const previous = this.candles;
     const savedRange = chart?.timeScale().getVisibleLogicalRange();
-    const followingLatest = savedRange != null && savedRange.to >= previous.length - 1;
-    const shift = followingLatest ? sanitized.length - previous.length : historyRangeShift(previous, sanitized);
+    const previousTimeline = this.displayCandles();
+    const nextTimeline = this.displayCandles(sanitized);
+    const followingLatest = savedRange != null && savedRange.to >= previousTimeline.length - 1;
+    const shift = savedRange ? timelineRangeShift(previousTimeline, nextTimeline, savedRange, followingLatest) : 0;
     const updates = incrementalCandles(previous, sanitized);
     const unchanged = unchangedCandlePrefix(previous, sanitized);
     const removed = previous.length - sanitized.length;
@@ -666,7 +685,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         // requested window on the next poll. Refit that untouched initial
         // viewport instead of shifting the sparse range to the new right edge.
         this.applyDefaultVisibleRange();
-      } else if ((updates === null || bulk) && savedRange && chart && sanitized.length) {
+      } else if (savedRange && chart && sanitized.length && (updates === null || updates.length > 0)) {
         chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
       }
       // Replay explicitly follows its cursor. Set its final range before the
@@ -697,31 +716,28 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.queueViewportUpdate();
   }
 
-  setArchiveCandles(candles: ChartEngineCandle[]): void {
+  setArchiveCandles(candles: ChartEngineCandle[], evidence?: { sourceVerified: boolean }): void {
     const series = this.archiveSeries;
     const chart = this.chart;
     if (!series || !chart) return;
-    const previousTimes = new Set([...this.candles, ...this.archiveCandles].map(c => c.time));
-    const previousOldest = Math.min(this.candles[0]?.time ?? Infinity, this.archiveCandles[0]?.time ?? Infinity);
+    const previousTimeline = this.displayCandles();
     const mainTimes = new Set(this.candles.map(c => c.time));
     const sanitized = sanitizeCandlestickData(candles.map(c => ({ ...c, time: c.time as UTCTimestamp })))
       .filter(c => !mainTimes.has(c.time));
-    const addedBefore = Number.isFinite(previousOldest)
-      ? sanitized.filter(c => c.time < previousOldest && !previousTimes.has(c.time)).length
-      : 0;
     const savedRange = chart.timeScale().getVisibleLogicalRange();
     this.archiveCandles = sanitized;
     try {
+      const up = evidence?.sourceVerified ? "#10b981" : "#64748b";
+      const down = evidence?.sourceVerified ? "#ef4444" : "#475569";
+      // Source identity qualifies the OHLC colors, never UTC, liveness or AI.
+      series.applyOptions({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down });
       series.setData(sanitized.map(c => ({
         time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close,
       })));
       this.applyPricePrecision();
-      if (savedRange && addedBefore > 0) {
-        const rebased = shiftRangeForPrependedArchive(savedRange, addedBefore);
-        if (rebased) {
-          this.takeRangeOwnership();
-          chart.timeScale().setVisibleLogicalRange(rebased);
-        }
+      if (savedRange && previousTimeline.length) {
+        const shift = timelineRangeShift(previousTimeline, this.displayCandles(), savedRange);
+        chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
       }
     } catch {
       // A disposed/replaced chart cannot accept a delayed archive response.
@@ -859,8 +875,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     if (!hadPaths && this.ghostSeries.length) {
       const projected = Math.max(0, ...paths.map((path) => path.candles.length));
       chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, this.candles.length - 80),
-        to: this.candles.length + projected + 5,
+        from: Math.max(0, this.displayCandles().length - 80),
+        to: this.displayCandles().length + projected + 5,
       });
     }
   }
@@ -945,7 +961,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
   panBy(fraction: number): boolean {
     if (!this.chart) return false;
-    const range = panChartWindow(this.chart.timeScale().getVisibleLogicalRange(), fraction, this.candles.length);
+    const range = panChartWindow(this.chart.timeScale().getVisibleLogicalRange(), fraction, this.displayCandles().length);
     if (!range) return false;
     this.takeRangeOwnership();
     this.chart.timeScale().setVisibleLogicalRange(range);
@@ -953,7 +969,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   }
   zoomBy(factor: number): boolean {
     if (!this.chart) return false;
-    const range = zoomChartWindow(this.chart.timeScale().getVisibleLogicalRange(), factor, this.candles.length);
+    const range = zoomChartWindow(this.chart.timeScale().getVisibleLogicalRange(), factor, this.displayCandles().length);
     if (!range) return false;
     this.takeRangeOwnership();
     this.chart.timeScale().setVisibleLogicalRange(range);
@@ -962,7 +978,9 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   getVisibleCandles(): ChartEngineCandle[] {
     const range = this.chart?.timeScale().getVisibleLogicalRange();
     if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to < range.from) return [];
-    return this.candles.slice(Math.max(0, Math.ceil(range.from)), Math.max(0, Math.floor(range.to) + 1)).map(candle => ({...candle}));
+    const visibleTimes = new Set(this.displayCandles().slice(Math.max(0, Math.ceil(range.from)), Math.max(0, Math.floor(range.to) + 1)).map(c => c.time));
+    // An archive-only view has no current-feed analysis candles.
+    return this.candles.filter(c => visibleTimes.has(c.time)).map(candle => ({...candle}));
   }
   subscribeViewport(listener: () => void): () => void {
     this.viewportListeners.add(listener);
@@ -1017,24 +1035,31 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.displayZone = zone;
     this.chart?.applyOptions({ timeScale: { tickMarkFormatter: this.tickLabel }, localization: { timeFormatter: this.timeLabel } });
   }
+  setUtcClockQualified(qualified: boolean): void {
+    if (this.utcClockQualified === qualified) return;
+    this.utcClockQualified = qualified;
+    this.chart?.applyOptions({ timeScale: { tickMarkFormatter: this.tickLabel }, localization: { timeFormatter: this.timeLabel } });
+  }
   goToTime(time: number): boolean {
-    if (!this.chart || !Number.isFinite(time) || !this.candles.length || time < this.candles[0]!.time || time > this.candles.at(-1)!.time) return false;
+    const displayed = this.displayCandles();
+    if (!this.chart || !Number.isFinite(time) || !displayed.length || time < displayed[0]!.time || time > displayed.at(-1)!.time) return false;
     this.takeRangeOwnership();
-    let lo = 0, hi = this.candles.length - 1;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < time) lo = mid + 1; else hi = mid; }
+    let lo = 0, hi = displayed.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (displayed[mid]!.time < time) lo = mid + 1; else hi = mid; }
     const previous = this.chart.timeScale().getVisibleLogicalRange();
     const span = Math.max(20, previous ? previous.to - previous.from : DEFAULT_VISIBLE_DESKTOP);
     this.chart.timeScale().setVisibleLogicalRange({from:lo-span/2,to:lo+span/2});
     return true;
   }
   showRecentRange(seconds: number): {complete:boolean} | null {
-    const last = this.candles.at(-1), first = this.candles[0];
+    const displayed = this.displayCandles();
+    const last = displayed.at(-1), first = displayed[0];
     if (!this.chart || !first || !last || !Number.isFinite(seconds) || seconds <= 0) return null;
     this.takeRangeOwnership();
     const start = last.time - seconds;
-    let lo = 0, hi = this.candles.length - 1;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < start) lo = mid + 1; else hi = mid; }
-    this.chart.timeScale().setVisibleLogicalRange({from:lo,to:this.candles.length - 1 + 3});
+    let lo = 0, hi = displayed.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (displayed[mid]!.time < start) lo = mid + 1; else hi = mid; }
+    this.chart.timeScale().setVisibleLogicalRange({from:lo,to:displayed.length - 1 + 3});
     return {complete:first.time <= start};
   }
   getVolumeProfiles() { return this.analysis?.inspectProfiles() ?? []; }
@@ -1072,16 +1097,17 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.pendingRange = false;
     this.linkedRange = range ? { ...range } : null;
     if (!range) { this.viewLinkStatusHandler?.(""); return; }
-    const first = this.candles[0], last = this.candles.at(-1);
+    const displayed = this.displayCandles();
+    const first = displayed[0], last = displayed.at(-1);
     if (!this.chart || !first || !last) { this.viewLinkStatusHandler?.("Linked time range is waiting for candles."); return; }
-    let lo = 0, hi = this.candles.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < range.from) lo = mid + 1; else hi = mid; }
+    let lo = 0, hi = displayed.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (displayed[mid]!.time < range.from) lo = mid + 1; else hi = mid; }
     let from = lo;
-    if (lo > 0 && range.from < this.barEnd(this.candles[lo - 1]!.time)) from--;
-    lo = 0; hi = this.candles.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time <= range.to) lo = mid + 1; else hi = mid; }
+    if (lo > 0 && range.from < this.barEnd(displayed[lo - 1]!.time)) from--;
+    lo = 0; hi = displayed.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (displayed[mid]!.time <= range.to) lo = mid + 1; else hi = mid; }
     const to = lo - 1;
-    if (from > to || from >= this.candles.length || to < 0) {
+    if (from > to || from >= displayed.length || to < 0) {
       this.viewLinkStatusHandler?.("Linked time range is outside loaded history. This view has not moved.");
       return;
     }
@@ -1156,7 +1182,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     const range = chart.timeScale().getVisibleLogicalRange();
     this.markersApi?.detach(); this.markersApi = null;
     this.clearStructureOverlays();
-    const options = {priceLineVisible:false,lastValueVisible:false};
+    const options = {priceLineVisible:false,lastValueVisible:false,timelineSource:true};
     const firstClose = this.candles[0]?.close ?? null;
     const next: PriceSeries = style === "line"
       ? chart.addSeries(LineSeries, {...options,color:"#38bdf8",lineWidth:2})
@@ -1546,10 +1572,17 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     return find(this.candles) ?? find(this.archiveCandles);
   }
 
+  private displayCandles(main = this.candles): ChartEngineCandle[] {
+    if (!this.archiveCandles.length) return main;
+    const byTime = new Map(this.archiveCandles.map(c => [c.time, c]));
+    for (const candle of main) byTime.set(candle.time, candle);
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
+  }
+
   private applyDefaultVisibleRange(): void {
     const chart = this.chart;
     if (!chart) return;
-    const times = this.candles
+    const times = this.displayCandles()
       .map((c) => c.time)
       .filter((t) => Number.isFinite(t));
     if (times.length === 0) {

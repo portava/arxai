@@ -792,8 +792,8 @@ export function ARXNativeChart({
   // canvas engine. Settled empty/error responses retain their existing engine
   // behavior; an engine already created survives subsequent loading cycles.
   const canStartPrimaryEngine = !query.isLoading || hasCandles;
-  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine });
-  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, canStartPrimaryEngine }; });
+  const engineInputsRef = useRef({ effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, utcClockQualified, canStartPrimaryEngine });
+  useLayoutEffect(() => { engineInputsRef.current = { effectiveHeight, resolvedSymbol, timeframe, updateLegend, displayZone, utcClockQualified, canStartPrimaryEngine }; });
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -813,6 +813,7 @@ export function ARXNativeChart({
       engine.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
       // A deferred comparison never paints UTC ticks before its zone arrives.
       engine.setDisplayTimeZone?.(inputs.displayZone);
+      engine.setUtcClockQualified?.(inputs.utcClockQualified);
       inputs.updateLegend(null);
       building = null;
       adapter = engine;
@@ -912,6 +913,7 @@ export function ARXNativeChart({
     timeZoneRef.current = displayZone;
     utcClockRef.current = utcClockQualified;
     adapterRef.current?.setDisplayTimeZone?.(displayZone);
+    adapterRef.current?.setUtcClockQualified?.(utcClockQualified);
     updateLegend(inspectedCandleRef.current);
   }, [displayZone, utcClockQualified, chartEpoch, updateLegend]);
 
@@ -1108,7 +1110,7 @@ export function ARXNativeChart({
     adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
     adapter.setDisplayPricePrecision?.(pricePrecision);
     adapter.setCandles(mergedEngineCandles);
-    adapter.setArchiveCandles?.(archiveEngineCandles);
+    adapter.setArchiveCandles?.(archiveEngineCandles, { sourceVerified: deepHistory.nativeHistory != null });
     // setCandles just replaced any tick-stream tip on the axis with the poll's
     // newest close, so a published Scanner tip no longer matches the axis.
     withdrawLiveTip();
@@ -1118,7 +1120,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, archiveEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
+  }, [mergedEngineCandles, archiveEngineCandles, deepHistory.nativeHistory, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
   // Measure what the engine drew against these source bars after it paints, and
   // keep that evidence fresh while the chart is open (renderEvidenceReporter.ts).
   // Nothing is scheduled until an engine holds bars (the deferred init owns the

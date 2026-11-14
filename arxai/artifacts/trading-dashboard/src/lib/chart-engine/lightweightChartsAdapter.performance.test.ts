@@ -251,8 +251,10 @@ describe("display time zone", () => {
   const installed = () => mocks.createChart.mock.calls.at(-1)![1];
   it("installs stable native date-and-time formatters that follow the display zone", () => {
     const options = installed();
+    expect(options.localization.timeFormatter(TOKYO_1446)).toContain("source clock (UTC unverified)");
+    adapter.setUtcClockQualified(true);
     expect(navigator.language).toBe("en-US");
-    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46 UTC");
     expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("28 Oct 05:46");
     expect(options.timeScale.timeVisible).toBe(true);
     expect(options.timeScale.secondsVisible).toBe(false);
@@ -269,10 +271,11 @@ describe("display time zone", () => {
     expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(1);
     adapter.setDisplayTimeZone("UTC");
     expect(mocks.chart.applyOptions).toHaveBeenCalledTimes(2);
-    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46");
+    expect(options.localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   05:46 UTC");
     expect(options.timeScale.tickMarkFormatter(TOKYO_1446, 3, "en-US")).toBe("28 Oct 05:46");
   });
   it("keeps the zone across a re-init without touching data", () => {
+    adapter.setUtcClockQualified(true);
     adapter.setDisplayTimeZone("Asia/Tokyo");
     adapter.init({container:document.createElement("div"),height:400});
     expect(installed().localization.timeFormatter(TOKYO_1446)).toBe("28 Oct '26   14:46 GMT+9");
