@@ -36,7 +36,7 @@ export interface EleanorReadLayers {
   canReadStructure: boolean;
   /**
    * The current (forming) candle may inform an entry — only on a confirmed
-   * LIVE feed. False ⇒ the read is from closed candles only.
+   * LIVE feed with enough closed history. False ⇒ closed candles only.
    */
   canUseCurrentCandleForEntry: boolean;
   /**
@@ -60,12 +60,14 @@ export function deriveEleanorReadLayers(input: EleanorReadLayerInput): EleanorRe
   const { closedBarsCount, freshnessVerdict, canShowTradeSetup, clientFeedUnconfirmed } =
     input;
 
-  const canReadStructure = closedBarsCount >= STRUCTURE_MIN_CLOSED_BARS;
+  const canReadStructure = Number.isFinite(closedBarsCount) && closedBarsCount >= STRUCTURE_MIN_CLOSED_BARS;
   const feedConfirmed = !clientFeedUnconfirmed;
   const isLive = String(freshnessVerdict ?? "").toUpperCase() === "LIVE";
 
-  const canUseCurrentCandleForEntry = isLive && feedConfirmed;
-  const canShowLiveTradeSetup = canShowTradeSetup && feedConfirmed;
+  const canUseCurrentCandleForEntry = canReadStructure && isLive && feedConfirmed;
+  // Independent freshness/history evidence may have changed since a cached
+  // sufficiency verdict was built. Every permission must agree at read time.
+  const canShowLiveTradeSetup = canReadStructure && isLive && canShowTradeSetup && feedConfirmed;
 
   let layer: EleanorReadLayer;
   if (!canReadStructure) {

@@ -100,6 +100,9 @@ string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete,da
    bool boundary=count>0 && serverFirst>0 && bars[0].time<=serverFirst && ArxHistoryClose(bars[0].time,tf)>serverFirst;
    complete=error==0 && (count==wanted || boundary);
    int digits=(int)SymbolInfoInteger(name,SYMBOL_DIGITS);string values="";
+   // Large native pages should not repeatedly grow the JSON string buffer.
+   // Reserving capacity changes neither the native values nor page size.
+   if(count>0)StringReserve(values,(uint)count*256);
    for(int b=0;b<count;b++) {
       if(values!="")values+=",";
       values+="{\"openTimeServer\":"+(string)(long)bars[b].time+",\"open\":"+ArxMarketN(bars[b].open,digits)+

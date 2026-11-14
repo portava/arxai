@@ -33,6 +33,33 @@ int main(int argc,char** argv) {
   assert(q.Next(903,regular,3000)==4);
  } else if(scenario=="success") {
   q.Retry(4,100,0);q.Forget(4);assert(q.Next(903,regular,1000)==50);
+ } else if(scenario=="ack_delay") {
+  q.AwaitAcknowledgement(4,100,0);
+  // A slow receipt must not send this series to the end of a903-slot cycle.
+  // Polls read only the cursor file; the same native page is not recollected.
+  for(ulong now=1000;now<=12000;now+=1000) {
+   assert(q.Next(903,regular,now)==4);q.PollAcknowledgement(4,now);
+   assert(q.Next(903,regular,now)==50+(int)(now/1000)-1);
+  }
+  // Server advances the cursor at12s; the next due visit can collect its page.
+  assert(q.Next(903,regular,13000)==4);
+  q.AwaitAcknowledgement(4,90,13000);
+  q.Next(903,regular,14000);assert(q.Next(903,regular,14000)==4);
+ } else if(scenario=="ack_expires") {
+  q.AwaitAcknowledgement(4,100,0);q.PollAcknowledgement(4,29000);
+  assert(q.Next(903,regular,30000)==50); // polling cannot extend the lease
+ } else if(scenario=="ack_fairness") {
+  regular=0;for(int i=0;i<40;i++)q.AwaitAcknowledgement(i,100,0);
+  for(int i=0;i<903;i++) {
+   int slot=q.Next(903,regular,1000);assert(slot>=0 && slot<16);
+   assert(q.Next(903,regular,1000)==i);
+  }
+  assert(regular==0);
+ } else if(scenario=="ack_to_retry") {
+  q.AwaitAcknowledgement(4,100,0);q.Retry(4,90,1000);
+  assert(q.Next(903,regular,2000)==4);q.Retry(4,90,2000);
+  q.Next(903,regular,3000);assert(q.Next(903,regular,3000)==4);
+  q.Retry(4,90,3000);q.Next(903,regular,4000);assert(q.Next(903,regular,4000)==52);
  } else return 2;
 }
 '''
@@ -55,6 +82,10 @@ class CollectorSchedulingTests(unittest.TestCase):
  def test_persistent_failure_uses_only_two_early_retries(self):self.check('bounded_retries')
  def test_new_server_cursor_starts_new_retry_budget(self):self.check('new_cursor')
  def test_successful_page_removes_prompt_retry(self):self.check('success')
+ def test_successful_write_waits_for_delayed_ack_without_full_rotation(self):self.check('ack_delay')
+ def test_unacknowledged_cursor_polling_expires(self):self.check('ack_expires')
+ def test_ack_watch_capacity_and_regular_series_fairness(self):self.check('ack_fairness')
+ def test_next_page_hydration_keeps_bounded_native_retries(self):self.check('ack_to_retry')
  def test_runtime_mirror_matches_collector_and_queue(self):
   for name in ['ArxHistoryCollector.mq5','ArxHistoryRetryQueue.mqh']:
    self.assertEqual((ROOT/name).read_bytes(),(ROOT/'runtime'/name).read_bytes())

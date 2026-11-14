@@ -247,7 +247,7 @@
     "test:scanner-outage-injection": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/__qa__/devScannerOutage.test.ts",
     "test:selected-market": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/scannerSelected/__qa__/selectedMarket.test.ts",
     "test:scanner-chart-freshness": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/scannerChartFreshnessAlignment.test.ts",
-    "test:symbol-truth": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/truth/__qa__/symbolTruthSnapshot.test.ts",
+    "test:symbol-truth": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/truth/__qa__/symbolTruthSnapshot.test.ts src/lib/truth/__qa__/truthScannerEleanorParity.test.ts",
     "test:feed-truth-honesty": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/lib/honesty/__qa__/feedTruthCopy.test.ts",
     "test:simulator-surface-rbac": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --test --test-force-exit src/routes/__qa__/simulatorSurfaceRbac.test.ts",
     "test:simulator-mask": "node ../../scripts/validation/run-named-tests.mjs node --import tsx --experimental-test-module-mocks --test --test-force-exit src/routes/__qa__/aiHelperSimulatorMask.test.ts",

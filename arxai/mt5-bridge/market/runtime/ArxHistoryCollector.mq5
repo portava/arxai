@@ -1,5 +1,5 @@
 #property strict
-#property version "1.02"
+#property version "1.03"
 #property indicator_chart_window
 #property indicator_buffers 1
 #property indicator_plots 0
@@ -64,12 +64,13 @@ void ExtraBackfillSnapshot() {
    // A successful page waits for its server-owned cursor to advance. A later
    // refresh always makes a new native read; no old observation is restamped.
    if(extraBackfillEnd[slot]==end && extraBackfillAt[slot]>0 && now-extraBackfillAt[slot]<30000) {
-      extraBackfillRetry.Forget(slot);return;
+      extraBackfillRetry.PollAcknowledgement(slot,now);return;
    }
    bool complete=false;string group=ArxMarketSeries(i,arxExtraTimeframes[ti],5000,complete,(datetime)end);
    bool wrote=group!="" && ArxMarketWrite("backfill-extra-"+key+".json",ArxMarketHeader()+",\"producer\":\"read_only_history_indicator\",\"series\":["+group+"]}");
    if(wrote && complete) {
-      extraBackfillEnd[slot]=end;extraBackfillAt[slot]=GetTickCount64();extraBackfillRetry.Forget(slot);
+      extraBackfillEnd[slot]=end;extraBackfillAt[slot]=GetTickCount64();
+      extraBackfillRetry.AwaitAcknowledgement(slot,end,extraBackfillAt[slot]);
    } else extraBackfillRetry.Retry(slot,end,GetTickCount64());
 }
 void OnTimer() {ArxExtraObserve();}

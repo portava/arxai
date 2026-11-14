@@ -98,6 +98,23 @@ test("freshness casing is normalized — lowercase 'live' still confirms the can
   assert.equal(r.canUseCurrentCandleForEntry, true);
 });
 
+test("a stale or unknown freshness verdict overrides an old setup-allowed flag", () => {
+  for (const freshnessVerdict of ["LIVE_DELAYED", "STALE", "AWAITING", null]) {
+    const r = deriveEleanorReadLayers({ ...base, freshnessVerdict });
+    assert.equal(r.layer, "STRUCTURAL_ONLY", String(freshnessVerdict));
+    assert.equal(r.canShowLiveTradeSetup, false);
+  }
+});
+
+test("insufficient or invalid closed history cannot retain a setup permission", () => {
+  for (const closedBarsCount of [0, 3, NaN, Infinity, -1]) {
+    const r = deriveEleanorReadLayers({ ...base, closedBarsCount });
+    assert.equal(r.layer, "INSUFFICIENT", String(closedBarsCount));
+    assert.equal(r.canShowLiveTradeSetup, false);
+    assert.equal(r.canUseCurrentCandleForEntry, false);
+  }
+});
+
 // ── resolveFeedUnconfirmed — server-authoritative feed verdict ──────────────
 // The glue that makes Eleanor CHAT agree with the Scanner header badge: it ORs the
 // caller's observation with the server's ChartFeedStatus.aiUsable so the chat
