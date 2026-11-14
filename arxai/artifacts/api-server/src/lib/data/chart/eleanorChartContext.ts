@@ -26,6 +26,7 @@ import type { Candle } from "../../data/types.js";
 import type { MarketDataSufficiencyVerdict } from "@workspace/domain/market";
 import { evaluateSufficiencyFromChartState } from "./chartSufficiency.js";
 import { enrichStateWithUserBrokerQuote } from "./userBrokerAlignment.js";
+import { sameMarketReadSourceFamily } from "../../truth/marketReadEvidence.js";
 
 /** Canonical trust basis for this Eleanor chart read. */
 export type EleanorChartReadBasis =
@@ -471,8 +472,7 @@ export async function buildEleanorChartContext(
   // HTF context is independently closed and cannot see beyond this read's stamp.
   const htf = higherTimeframeOf(timeframe);
   const htfState = htf ? await buildChartIntelligenceState(symbol, htf, 120).catch(() => null) : null;
-  const primaryIdentity = evidenceOfState(state)?.sourceIdentity;
-  const htfCandles = htfState && primaryIdentity && evidenceOfState(htfState)?.sourceIdentity === primaryIdentity
+  const htfCandles = htfState && sameMarketReadSourceFamily(evidenceOfState(state), evidenceOfState(htfState))
     ? closedCandlesOfState(htfState, state.latestClosedCandle?.closeTime) : [];
   if (closedBarsCount !== state.candleStats.barsAnalyzed) {
     basis = "INSUFFICIENT";

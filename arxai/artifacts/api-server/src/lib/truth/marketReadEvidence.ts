@@ -1,4 +1,5 @@
 import type { TruthReadEvidence } from "@workspace/domain/truth";
+import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 import {
@@ -10,6 +11,36 @@ import { normalizeChartTimeframe, barCloseMs } from "../data/chart/timeframes.js
 /** Calculation freshness is bounded separately from the age of an observed bar.
  * This matches the polling UI's 30-second advice horizon; it is not a quote TTL. */
 export const COMPONENT_BUILD_TTL_MS = 30_000;
+
+// Internal only: JSON cannot carry or forge this binding. Object-spread
+// decorators preserve the symbol, including the frozen state candle window.
+const sourceFamilyBinding: unique symbol = Symbol("marketReadSourceFamily");
+type FamilyBound = TruthReadEvidence & { [sourceFamilyBinding]?: string };
+function sourceFamily(result: MarketCandlesResult, timeframe: string): string | null {
+  const p = result.provenance;
+  if (!p || !result.primaryProvider) return null;
+  const prefix = `${result.primaryProvider}:${result.symbol.trim().toUpperCase()}:`;
+  const seriesPrefix = `${prefix}${timeframe}`;
+  const suffix = p.sourceId.startsWith(seriesPrefix) ? p.sourceId.slice(seriesPrefix.length) : null;
+  if (suffix == null) return null;
+  // Native account-era identity is mandatory across broker timeframes. A
+  // reused bridge on another account cannot borrow the previous HTF window.
+  if (result.primaryProvider === "mt5_broker") {
+    if (!/^:[a-f0-9]{64}$/.test(suffix) || p.bridgeConnectionId == null || p.userId == null || !p.brokerSymbol) return null;
+  } else if (suffix !== "") return null;
+  // Remove only the observed timeframe slot of the router's exact source ID.
+  // Every other source boundary remains in the digest; series identity itself
+  // stays unchanged for Scanner/Truth equality checks on the SAME timeframe.
+  return createHash("sha256").update(JSON.stringify([result.primaryProvider, p.providerId,
+    p.subProviderId, `${prefix}${suffix}`, p.bridgeConnectionId, p.userId,
+    p.environment, p.brokerSymbol])).digest("hex");
+}
+
+export function sameMarketReadSourceFamily(a: TruthReadEvidence | null, b: TruthReadEvidence | null): boolean {
+  const family = (a as FamilyBound | null)?.[sourceFamilyBinding];
+  return !!family && !!b && a!.symbol === b.symbol && a!.source === b.source
+    && family === (b as FamilyBound)[sourceFamilyBinding];
+}
 
 export function prepareMarketRead(
   result: MarketCandlesResult, symbol: string, timeframe: string, now: number,
@@ -27,6 +58,8 @@ export function prepareMarketRead(
     sourceIdentity: scannerSourceIdentity(result),
     lastClosedCandleAt: new Date(closeMs).toISOString(),
   };
+  const family = sourceFamily(result, tf);
+  if (family) Object.defineProperty(evidence, sourceFamilyBinding, { value: family, enumerable: true });
   return { ...prepared, evidence };
 }
 
