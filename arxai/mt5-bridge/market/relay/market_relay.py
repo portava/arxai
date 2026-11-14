@@ -46,6 +46,10 @@ def incremental_payload(series,observation,now_ms,last_open_ms=None):
 TIP_REOBSERVE_SECONDS=90
 TIP_REFRESH_PRIORITY_SECONDS=180
 FAST_LANE_PENDING_LIMIT=6
+# 860 non-M1 series at a measured ~1.3s per accepted receipt need more than
+# three concurrent senders to revisit every series inside the 300s receipt
+# TTL. Workers equal the pending bound, so no payload ages in a local queue.
+FAST_OTHER_WORKERS=FAST_LANE_PENDING_LIMIT
 FAST_TRANSPORT_RETRY_SECONDS=3
 FAST_DATA_REFUSAL_RETRY_SECONDS=60
 
@@ -200,7 +204,7 @@ def run():
                 with fast_lock:retry_after[key]=time.monotonic()+FAST_TRANSPORT_RETRY_SECONDS
             finally:
                 with fast_lock:inflight.discard(key)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as minute_pool, concurrent.futures.ThreadPoolExecutor(max_workers=3) as slow_pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as minute_pool, concurrent.futures.ThreadPoolExecutor(max_workers=FAST_OTHER_WORKERS) as slow_pool:
             fast_executors.extend([minute_pool,slow_pool])
             while not stop.is_set():
                 candidates=[]
