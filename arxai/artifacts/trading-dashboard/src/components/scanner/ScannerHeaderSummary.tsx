@@ -25,6 +25,7 @@ import {
   chartReadAsOfLabel,
   chartReadExpiresAtMs,
   isFeedLimitedAction,
+  isStructuralOnlyRead,
   resolveCappedEleanorReadStatus,
 } from "@/lib/eleanorReadPanelState";
 import { candleIntervalMs } from "@workspace/domain/market";
@@ -268,17 +269,20 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
     dataOnlyAction,
     expiredPendingKey === pendingKey,
   );
-  // Eleanor-feed gate: when Eleanor has actually read the chart and found the
-  // feed unconfirmed (sharedRead.gated === true), propagate her stricter result
-  // downward — both capping READY_NOW to WAIT_FOR_CONFIRMATION (so the action
-  // status itself never claims "ready" while Eleanor says the feed is unconfirmed)
-  // and nulling the direction (so no directional label leaks on an unconfirmed
-  // read). Convergence is downward-only — this can only restrict, never promote.
-  // DISPLAY-ONLY: no execution gate, verdict, tone, or pipeline changes.
-  const eleanorFeedGated = sharedRead?.gated === true;
-  const finalActionWithEleanor: ScannerActionabilityDisplay = (
-    eleanorFeedGated && finalAction === "READY_NOW"
-  ) ? "WAIT_FOR_CONFIRMATION" : finalAction;
+  // A structural read can be successful (gated:false) while withholding a live
+  // setup. Its explicit permissions also cap the header's action, including
+  // the directional "Conditional Buy/Sell" label on a WAIT verdict. The bias
+  // row remains the canonical directional analysis. Display-only, downgrade-only.
+  const eleanorSetupWithheld = sharedRead != null && (
+    sharedRead.gated === true || isStructuralOnlyRead(sharedRead) ||
+    sharedRead.dataQuality === "insufficient" || sharedRead.readLayer === "INSUFFICIENT" ||
+    sharedRead.liveSetupWithheld === true || sharedRead.canShowLiveTradeSetup === false
+  );
+  const actionReadCapped = eleanorSetupWithheld && (
+    finalAction === "READY_NOW" || finalAction === "WAIT_FOR_CONFIRMATION"
+  );
+  const finalActionWithEleanor: ScannerActionabilityDisplay = actionReadCapped
+    ? "WAIT_FOR_CONFIRMATION" : finalAction;
   // The display resolver is total: it always yields a display state (verdict,
   // PENDING, NO_CONFIRMATION, or CHECK_FAILED) — the cell never shows a bare
   // "Waiting" placeholder.
@@ -330,15 +334,18 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
         : cappedEleanor.reason ?? truth?.strip.eleanor.detail ?? "";
   // The side comes from the composed bias, but a lifted card verdict carries
   // its own scalp side: when they disagree no side is shown (downgrade-only).
-  const actionDirection = eleanorFeedGated
+  const actionDirection = eleanorSetupWithheld
     ? null
     : reconcileLiftedActionDirection(
         biasToActionDirection(verdict?.bias),
         liftedAction != null ? selectedActionStore.getSide(bare, coercedTf) : null,
       );
   const visibleActionLabel = resolveVisibleActionLabel(finalActionWithEleanor, actionDirection);
-  const whyMessage = truth?.consolidated.userMessage ?? "";
-  const whyCode = truth?.consolidated.internalReasonCode ?? "";
+  const actionDetail = actionReadCapped
+    ? sharedRead?.blockedReason || "The chart read withholds a live setup. Re-read after confirmation."
+    : actionUi.copy;
+  const whyMessage = actionReadCapped ? actionDetail : truth?.consolidated.userMessage ?? "";
+  const whyCode = actionReadCapped ? "" : truth?.consolidated.internalReasonCode ?? "";
 
   return (
     <div className="space-y-2 md:space-y-3">
@@ -431,7 +438,7 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
           label="Action"
           verdict={visibleActionLabel}
           tone={actionTone(actionUi.tone)}
-          detail={actionUi.copy}
+          detail={actionDetail}
           testId="scanner-header-action"
           prominent
         />

@@ -63,6 +63,8 @@ function clientLiveConfirmed(): ScannerTruth["readiness"] {
 
 let currentReadiness: ScannerTruth["readiness"] = clientLiveConfirmed();
 let storedRead: ChartRead | null = null;
+let verdictBias: "BULLISH" | "BEARISH" | null = null;
+let currentAction: "READY_NOW" | "WAIT_FOR_CONFIRMATION" = "WAIT_FOR_CONFIRMATION";
 const storeKeys: string[] = [];
 
 function makeTruth(): ScannerTruth {
@@ -75,7 +77,7 @@ function makeTruth(): ScannerTruth {
     candles: { lastClose: 33588.01, sourceTechnical: "test", count: 200, minRequired: 150, status: "CONFIRMED" },
     consolidated: {
       eleanorReadStatus: "FULL_READ",
-      scannerActionability: "WAIT_FOR_CONFIRMATION",
+      scannerActionability: currentAction,
       userMessage: "This read is fresh enough for a live entry.",
       internalReasonCode: "FEED_OK",
     },
@@ -93,7 +95,7 @@ vi.mock("@/hooks/useScannerTimeframe", () => ({
   useScannerTimeframe: () => ["1m", () => {}],
 }));
 vi.mock("@/hooks/useSymbolTruth", () => ({
-  useSymbolTruth: () => ({ scannerTruth: makeTruth(), verdict: null }),
+  useSymbolTruth: () => ({ scannerTruth: makeTruth(), verdict: verdictBias ? { bias: verdictBias } : null }),
 }));
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({ shouldShowAdminDiagnostics: false }),
@@ -114,10 +116,28 @@ afterEach(() => {
   cleanup();
   currentReadiness = clientLiveConfirmed();
   storedRead = null;
+  verdictBias = null;
+  currentAction = "WAIT_FOR_CONFIRMATION";
   storeKeys.length = 0;
 });
 
 describe("ScannerHeaderSummary — a STRUCTURAL_ONLY Eleanor read caps the header (owner screenshot 2026-10-27)", () => {
+  for (const side of ["BULLISH", "BEARISH"] as const) {
+    for (const action of ["READY_NOW", "WAIT_FOR_CONFIRMATION"] as const) {
+      it(`${side} ${action}: a withheld Eleanor setup cannot leave a directional action`, () => {
+        storedRead = serverStructuralRead("STRUCTURAL_ONLY", "HISTORICAL_ONLY");
+        verdictBias = side;
+        currentAction = action;
+        render(<ScannerHeaderSummary running={false} />);
+        const cell = screen.getByTestId("scanner-header-action");
+        expect(cell.textContent).toContain("Wait for confirmation");
+        expect(cell.textContent).not.toMatch(/buy|sell|ready now/i);
+        expect(cell.textContent).toContain(WITHHELD_REASON);
+        expect(screen.getByTestId("scanner-header-bias").textContent).toBe(side === "BULLISH" ? "Bullish" : "Bearish");
+      });
+    }
+  }
+
   for (const [label, make] of [
     ["fixed server wire", () => serverStructuralRead("STRUCTURAL_ONLY", "HISTORICAL_ONLY")],
     ["pre-fix scrubbed wire", () => serverStructuralRead("", "")],
