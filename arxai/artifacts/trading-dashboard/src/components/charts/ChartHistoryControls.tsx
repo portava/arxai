@@ -1,6 +1,7 @@
 import { History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ToolbarPopup } from "./ToolbarPopup";
 
 export interface ChartHistoryControlsProps {
   loadedCount: number;
@@ -40,7 +41,11 @@ export function ChartHistoryControls({
 }: ChartHistoryControlsProps) {
   const oldest = formatLoadedHistoryTime(oldestTimeMs);
   const label = `${loadedCount} candles loaded; oldest ${oldest}; ${clockLabel}`;
+  // The loaded-window facts and paging actions open from one History menu
+  // rather than occupying most of the chart's top row.
   return (
+    <ToolbarPopup testId="chart-history" popupLabel="Loaded history" title={label}
+      label={<><History className="h-3.5 w-3.5" />{loading ? "Loading…" : `History · ${loadedCount}`}</>}>
     <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="chart-history-controls">
       <Badge
         variant="outline"
@@ -92,5 +97,6 @@ export function ChartHistoryControls({
         Fit history
       </Button>
     </div>
+    </ToolbarPopup>
   );
 }
