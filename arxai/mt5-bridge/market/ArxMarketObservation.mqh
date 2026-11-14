@@ -1,6 +1,7 @@
 #ifndef ARX_MARKET_OBSERVATION_MQH
 #define ARX_MARKET_OBSERVATION_MQH
 #include "ArxMarketUniverse.mqh"
+#include "ArxHistoryBoundary.mqh"
 // Pure read-only observation. No network, broker orders, account balances,
 // positions, or command polling. Existing immutable EA safety inputs are used.
 ulong arxMarketLastQuote=0, arxMarketLastInventory=0, arxMarketLastHistory=0;
@@ -98,6 +99,24 @@ string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete,da
    int error=GetLastError();
    long serverFirst=SeriesInfoInteger(name,tf,SERIES_SERVER_FIRSTDATE);
    bool boundary=count>0 && serverFirst>0 && bars[0].time<=serverFirst && ArxHistoryClose(bars[0].time,tf)>serverFirst;
+   string boundaryRange="";
+   if(error==0 && count>0 && count<wanted && !boundary && serverFirst>0 &&
+      bars[0].time>serverFirst && (long)bars[0].time/86400==serverFirst/86400) {
+      // This bounded DATE-RANGE query also requests any missing prefix. A cold
+      // indicator read returns an error; it must retry, never declare EOF.
+      MqlRates firstRange[];long through=(long)ArxHistoryClose(bars[0].time,tf)-1;
+      ResetLastError();int rangeCount=CopyRates(name,tf,(datetime)serverFirst,(datetime)through,firstRange);
+      int rangeError=GetLastError();
+      bool synchronized=SeriesInfoInteger(name,tf,SERIES_SYNCHRONIZED)!=0;
+      long localFirst=SeriesInfoInteger(name,tf,SERIES_FIRSTDATE);
+      long rangeFirst=rangeCount>0?(long)firstRange[0].time:0;
+      boundary=ArxHistoryFirstDayRangeValid(serverFirst,(long)bars[0].time,through+1,
+         serverFirst,through,rangeFirst,localFirst,rangeCount,rangeError,synchronized);
+      if(boundary)boundaryRange=",\"firstDayRange\":{\"fromServer\":"+(string)serverFirst+
+         ",\"throughServer\":"+(string)through+",\"firstOpenServer\":"+(string)rangeFirst+
+         ",\"localFirstServer\":"+(string)localFirst+",\"copyCount\":"+(string)rangeCount+
+         ",\"error\":"+(string)rangeError+",\"synchronized\":true}";
+   }
    complete=error==0 && (count==wanted || boundary);
    int digits=(int)SymbolInfoInteger(name,SYMBOL_DIGITS);string values="";
    // Large native pages should not repeatedly grow the JSON string buffer.
@@ -112,7 +131,7 @@ string ArxMarketSeries(int index,ENUM_TIMEFRAMES tf,int wanted,bool &complete,da
    string timeframe=StringSubstr(EnumToString(tf),7);
    string history=wanted>2 ? ",\"requestedHistoryBars\":"+(string)wanted+",\"historyKind\":"+ArxMarketQ(endBefore>0?"backfill":"seed")+
       ",\"requestedEndServer\":"+(string)(long)endBefore+",\"serverFirstHistoryServer\":"+(string)serverFirst+
-      ",\"brokerHistoryBoundaryReached\":"+(boundary?"true":"false")+",\"historyDepthPartial\":"+(count<wanted?"true":"false") : "";
+      ",\"brokerHistoryBoundaryReached\":"+(boundary?"true":"false")+",\"historyDepthPartial\":"+(count<wanted?"true":"false")+boundaryRange : "";
    string seam=wanted==2 ? ",\"nativeSeam\":"+ArxNativeSeamObservation(index,tf) : "";
    return "{\"canonical\":"+ArxMarketQ(arxMarketCanonicals[index])+","+ArxMarketSpec(name)+",\"timeframe\":"+ArxMarketQ(timeframe)+
       ",\"copyCount\":"+(string)count+",\"error\":"+(string)error+",\"closedOnly\":true,\"bars\":["+values+"]"+seam+history+"}";

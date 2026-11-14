@@ -43,3 +43,29 @@ test("account/server changes create a new immutable history partition", () => {
   assert.notEqual(brokerHistoryIdentity(id), brokerHistoryIdentity({ ...id, serverName: "Y" }));
   assert.notEqual(brokerHistoryIdentity(id), brokerHistoryIdentity({ ...id, userId: 2 }));
 });
+
+test("native first-day range admits session start later than symbol-wide midnight", () => {
+  const oldest = start + 3 * 3600000;
+  const range = { fromRawMs: start, throughRawMs: oldest + 3600000 - 1000,
+    firstOpenRawMs: oldest, localFirstRawMs: oldest, copiedBars: 1, error: 0, synchronized: true };
+  const input = { ...page, oldestRawMs: oldest, oldestCloseRawMs: oldest + 3600000,
+    newestRawMs: oldest + 3600000, accepted: 2, sent: 2,
+    proof: { kind: "seed" as const, requestedBars: 5000, copiedBars: 2,
+      serverFirstRawMs: start, boundaryReached: true, firstDayRange: range } };
+  assert.equal(advanceHistoryPage(input).complete, true);
+  assert.equal(advanceHistoryPage(input).cursor, null);
+  for (const change of [{ fromRawMs: start + 1000 }, { throughRawMs: oldest },
+    { firstOpenRawMs: oldest - 3600000 }, { localFirstRawMs: oldest + 3600000 },
+    { copiedBars: 0 }, { copiedBars: 2 }, { error: 4401 }, { synchronized: false }]) {
+    assert.equal(advanceHistoryPage({ ...input, proof: { ...input.proof,
+      firstDayRange: { ...range, ...change } } }).advanced, false, JSON.stringify(change));
+  }
+  assert.equal(advanceHistoryPage({ ...input, proof: { ...input.proof,
+    firstDayRange: undefined } }).complete, false);
+  assert.equal(advanceHistoryPage({ ...input, proof: { ...input.proof,
+    serverFirstRawMs: start - 86400000,
+    firstDayRange: { ...range, fromRawMs: start - 86400000 } } }).complete, false);
+  assert.equal(advanceHistoryPage({ ...input, accepted: 1, rejected: 1 }).complete, false);
+  assert.equal(advanceHistoryPage({ ...input, proof: { ...input.proof,
+    kind: "backfill", requestedEndRawMs: input.newestRawMs } }).complete, false);
+});

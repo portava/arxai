@@ -42,3 +42,27 @@ test("durable sequential backfill, raw time, account isolation, conflicts and li
     assert.equal((await ingestBrokerCandles({ ...payload(0,1), accountNumber: "wrong" }, ctx, { now })).note,"producer_account_or_server_mismatch");
   } finally { await clean(); }
 });
+
+test("first-day native range completes a durable later-session history without inventing midnight candles", async () => {
+  await clean();
+  try {
+    const seeded = await ingestBrokerCandles({ ...payload(380,200), historyPage: { kind: "seed", requestedBars: 200,
+      copiedBars: 200, serverFirstRawMs: origin, boundaryReached: false } }, ctx, { now });
+    const end = Date.parse(seeded.nextBackfillHints[0]!.suggestedEndTimeRaw!);
+    const first = origin + 180 * 60000;
+    const proof = { kind: "backfill" as const, requestedBars: 5000, copiedBars: 200,
+      requestedEndRawMs: end, serverFirstRawMs: origin, boundaryReached: true };
+    // A local short page is stored but must not advance the server cursor.
+    const unproven = await ingestBrokerCandles({ ...payload(180,200), historyPage: proof }, ctx, { now });
+    assert.notEqual(unproven.nextBackfillHints[0]?.status, "COMPLETE");
+    assert.equal(Date.parse(unproven.nextBackfillHints[0]!.suggestedEndTimeRaw!), end);
+    const verified = await ingestBrokerCandles({ ...payload(180,200), historyPage: { ...proof,
+      firstDayRange: { fromRawMs: origin, throughRawMs: first + 60000 - 1000,
+        firstOpenRawMs: first, localFirstRawMs: first, copiedBars: 1, error: 0, synchronized: true } } }, ctx, { now });
+    assert.equal(verified.nextBackfillHints[0]?.status, "COMPLETE");
+    assert.equal(verified.latestStoredBySymbolTimeframe[0]?.barsStored, 400);
+    const rows = await db.select({ opened: brokerCandlesTable.rawOpenTime }).from(brokerCandlesTable)
+      .where(eq(brokerCandlesTable.userId, id));
+    assert.equal(Math.min(...rows.map(row => row.opened!.getTime())), first);
+  } finally { await clean(); }
+});

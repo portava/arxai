@@ -73,8 +73,21 @@ def candle_payload(series,observation,now_ms):
         requested=series.get('requestedHistoryBars');first=series.get('serverFirstHistoryServer');end=series.get('requestedEndServer')
         if not integer(requested) or not 1<=requested<=5000 or not integer(first) or first<0:raise ContractError('HISTORY_PROOF_INVALID')
         boundary=series.get('brokerHistoryBoundaryReached') is True
-        if boundary and not (bars[0]['openTimeServer']<=first<candle_close_seconds(bars[0]['openTimeServer'],tf)):raise ContractError('HISTORY_BOUNDARY_NOT_IN_PAGE')
+        oldest=bars[0]['openTimeServer'];closed=candle_close_seconds(oldest,tf)
+        first_day=series.get('firstDayRange')
+        verified_range=None
+        if first_day is not None:
+            keys=['fromServer','throughServer','firstOpenServer','localFirstServer','copyCount','error']
+            if not isinstance(first_day,dict) or not all(integer(first_day.get(k)) for k in keys):raise ContractError('HISTORY_FIRST_DAY_RANGE_INVALID')
+            if not (first>0 and oldest>first and oldest//86400==first//86400 and
+                first_day['fromServer']==first and first_day['throughServer']==closed-1 and
+                first_day['firstOpenServer']==oldest and first_day['localFirstServer']==oldest and
+                first_day['copyCount']==1 and first_day['error']==0 and first_day.get('synchronized') is True):raise ContractError('HISTORY_FIRST_DAY_RANGE_INVALID')
+            verified_range={'fromRawMs':first*1000,'throughRawMs':(closed-1)*1000,
+                'firstOpenRawMs':oldest*1000,'localFirstRawMs':oldest*1000,'copiedBars':1,'error':0,'synchronized':True}
+        if boundary and not (first>0 and oldest<=first<closed or verified_range is not None):raise ContractError('HISTORY_BOUNDARY_NOT_IN_PAGE')
         proof={'kind':series['historyKind'],'serverFirstRawMs':first*1000,'requestedBars':requested,'copiedBars':len(bars),'boundaryReached':boundary}
+        if verified_range is not None:proof['firstDayRange']=verified_range
         if proof['kind']=='backfill':
             if not integer(end) or end<=0 or bars[-1]['openTimeServer']>end:raise ContractError('HISTORY_CURSOR_INVALID')
             proof['requestedEndRawMs']=end*1000

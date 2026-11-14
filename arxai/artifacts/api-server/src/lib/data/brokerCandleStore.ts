@@ -205,6 +205,11 @@ export const BrokerCandleIngestSchema = z.object({
     requestedBars: z.number().int().min(1).max(5000),
     copiedBars: z.number().int().min(1).max(5000),
     boundaryReached: z.boolean(),
+    firstDayRange: z.object({
+      fromRawMs: z.number().int().positive(), throughRawMs: z.number().int().positive(),
+      firstOpenRawMs: z.number().int().positive(), localFirstRawMs: z.number().int().positive(),
+      copiedBars: z.literal(1), error: z.literal(0), synchronized: z.literal(true),
+    }).optional(),
   }).optional(),
   brokerServerTime: z.union([z.string(), z.number()]).optional(),
   /** EA signals the broker has no older bars beyond this window. */

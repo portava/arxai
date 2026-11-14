@@ -8,6 +8,7 @@ HARNESS=r'''
 #include <string>
 using ulong=unsigned long;
 #include "ArxHistoryRetryQueue.mqh"
+#include "ArxHistoryBoundary.mqh"
 int main(int argc,char** argv) {
  assert(argc==2);std::string scenario=argv[1];
  ArxHistoryRetryQueue q;q.Reset();int regular=50;
@@ -60,6 +61,18 @@ int main(int argc,char** argv) {
   assert(q.Next(903,regular,2000)==4);q.Retry(4,90,2000);
   q.Next(903,regular,3000);assert(q.Next(903,regular,3000)==4);
   q.Retry(4,90,3000);q.Next(903,regular,4000);assert(q.Next(903,regular,4000)==52);
+ } else if(scenario=="first_day_range") {
+  long day=1710028800,oldest=day+3*3600,closed=oldest+3600;
+  assert(ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest,1,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest,1,4401,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest,1,0,false));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest,0,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest,2,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day+1,closed-1,oldest,oldest,1,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-2,oldest,oldest,1,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest-3600,oldest,1,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day,oldest,closed,day,closed-1,oldest,oldest+3600,1,0,true));
+  assert(!ArxHistoryFirstDayRangeValid(day-86400,oldest,closed,day-86400,closed-1,oldest,oldest,1,0,true));
  } else return 2;
 }
 '''
@@ -86,6 +99,7 @@ class CollectorSchedulingTests(unittest.TestCase):
  def test_unacknowledged_cursor_polling_expires(self):self.check('ack_expires')
  def test_ack_watch_capacity_and_regular_series_fairness(self):self.check('ack_fairness')
  def test_next_page_hydration_keeps_bounded_native_retries(self):self.check('ack_to_retry')
+ def test_native_boundary_requires_synchronized_exact_first_day_range(self):self.check('first_day_range')
  def test_runtime_mirror_matches_collector_and_queue(self):
-  for name in ['ArxHistoryCollector.mq5','ArxHistoryRetryQueue.mqh']:
+  for name in ['ArxHistoryCollector.mq5','ArxHistoryRetryQueue.mqh','ArxHistoryBoundary.mqh','ArxMarketObservation.mqh']:
    self.assertEqual((ROOT/name).read_bytes(),(ROOT/'runtime'/name).read_bytes())

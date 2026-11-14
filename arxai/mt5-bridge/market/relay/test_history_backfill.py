@@ -36,3 +36,24 @@ class BackfillTests(unittest.TestCase):
    self.assertEqual((root/'backfill-request-EURUSD-M1.txt').read_text(),'1577836800')
    persist_backfill_request(root,payload,{'nextBackfillHints':[{**hint,'suggestedEndTimeRaw':None,'status':'COMPLETE'}]})
    self.assertEqual((root/'backfill-request-EURUSD-M1.txt').read_text(),'0')
+
+ def first_day_series(self):
+  s=self.series(12);oldest=s['bars'][0]['openTimeServer'];first=oldest//86400*86400
+  s.update(serverFirstHistoryServer=first,brokerHistoryBoundaryReached=True,
+   firstDayRange=dict(fromServer=first,throughServer=oldest+59,firstOpenServer=oldest,localFirstServer=oldest,copyCount=1,error=0,synchronized=True))
+  return s
+ def test_native_first_day_range_admits_later_session_open(self):
+  s=self.first_day_series();p=full_history_payload(s,snapshot(),NOW)
+  self.assertTrue(p['historyPage']['boundaryReached'])
+  self.assertEqual(p['historyPage']['firstDayRange']['firstOpenRawMs'],s['bars'][0]['openTimeServer']*1000)
+ def test_first_day_boundary_needs_entire_native_range_proof(self):
+  s=self.first_day_series()
+  for change in [dict(error=4401),dict(synchronized=False),dict(copyCount=0),dict(copyCount=2),dict(copyCount=True),
+    dict(fromServer=s['serverFirstHistoryServer']+1),dict(throughServer=s['firstDayRange']['throughServer']-1),
+    dict(firstOpenServer=s['firstDayRange']['firstOpenServer']-60),dict(localFirstServer=s['firstDayRange']['firstOpenServer']+60)]:
+   with self.subTest(change=change),self.assertRaises(ContractError):
+    full_history_payload({**s,'firstDayRange':{**s['firstDayRange'],**change}},snapshot(),NOW)
+  with self.assertRaises(ContractError):full_history_payload({**s,'firstDayRange':None},snapshot(),NOW)
+ def test_later_local_cache_day_is_not_broker_boundary(self):
+  s=self.first_day_series();s['serverFirstHistoryServer']-=86400;s['firstDayRange']['fromServer']-=86400
+  with self.assertRaises(ContractError):full_history_payload(s,snapshot(),NOW)

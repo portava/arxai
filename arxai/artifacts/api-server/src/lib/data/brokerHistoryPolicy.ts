@@ -19,6 +19,10 @@ export interface HistoryPageProof {
   requestedBars: number;
   copiedBars: number;
   boundaryReached: boolean;
+  firstDayRange?: {
+    fromRawMs: number; throughRawMs: number; firstOpenRawMs: number; localFirstRawMs: number;
+    copiedBars: number; error: number; synchronized: boolean;
+  };
 }
 
 /** Advance only an acknowledged, sequential CopyRates page. Existing oldest
@@ -39,8 +43,18 @@ export function advanceHistoryPage(args: {
   if (p.kind === "backfill" && (!args.priorCursor
     || p.requestedEndRawMs !== args.priorCursor.getTime()
     || args.newestRawMs > args.priorCursor.getTime())) return unchanged;
+  const r = p.firstDayRange;
+  // The symbol-wide server date can precede the first intraday candle. Only
+  // an error-free synchronized native date-range query can prove that prefix.
+  // Never substitute the terminal's local cache date for the broker boundary.
+  const firstDayRange = r !== undefined && args.oldestRawMs > p.serverFirstRawMs
+    && Math.floor(args.oldestRawMs / 86400000) === Math.floor(p.serverFirstRawMs / 86400000)
+    && args.oldestCloseRawMs > args.oldestRawMs
+    && r.fromRawMs === p.serverFirstRawMs && r.throughRawMs === args.oldestCloseRawMs - 1000
+    && r.firstOpenRawMs === args.oldestRawMs && r.localFirstRawMs === args.oldestRawMs
+    && r.copiedBars === 1 && r.error === 0 && r.synchronized === true;
   const boundary = p.boundaryReached && p.serverFirstRawMs > 0
-    && args.oldestRawMs <= p.serverFirstRawMs && args.oldestCloseRawMs > p.serverFirstRawMs;
+    && ((args.oldestRawMs <= p.serverFirstRawMs && args.oldestCloseRawMs > p.serverFirstRawMs) || firstDayRange);
   // A short result without an observed broker boundary can still be hydrating.
   if (args.sent < p.requestedBars && !boundary) return unchanged;
   return { cursor: boundary ? null : new Date(args.oldestRawMs - 1000), complete: boundary, advanced: true };

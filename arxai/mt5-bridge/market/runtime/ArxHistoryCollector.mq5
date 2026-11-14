@@ -1,5 +1,5 @@
 #property strict
-#property version "1.03"
+#property version "1.04"
 #property indicator_chart_window
 #property indicator_buffers 1
 #property indicator_plots 0
