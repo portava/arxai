@@ -1002,11 +1002,23 @@ describe("chart-first layout", () => {
       for (const [button, section] of [["arx-native-open-tools", "arx-chart-workbench-tools"], ["arx-native-open-forecast", "arx-structural-forecast"], ["arx-native-open-read", "arx-smart-chart-read"]] as const) {
         fireEvent.click(view.getByTestId(button));
         expect(popup.className).toContain("absolute");
+        // A small window, not a sheet across the chart.
+        expect(popup.className).toContain("w-[min(26rem,calc(100%-1rem))]");
         expect(popup.contains(view.getByTestId(section))).toBe(true);
+        // It shows only the section that was asked for; the others stay mounted but hidden.
+        const shown = button === "arx-native-open-tools" ? "tools" : button === "arx-native-open-forecast" ? "forecast" : "read";
+        for (const name of ["tools", "forecast", "read"]) expect(view.getByTestId(`arx-details-section-${name}`).className).toBe(name === shown ? "contents" : "hidden");
         fireEvent.click(view.getByTestId("arx-native-details-close"));
         expect(popup.className).toBe("hidden");
       }
       fireEvent.click(view.getByTestId("arx-native-open-tools"));
+      // The window moves with its title bar.
+      const bar = view.getByTestId("arx-native-details-titlebar");
+      fireEvent.pointerDown(bar, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerMove(bar, { pointerId: 1, clientX: 60, clientY: 80 });
+      fireEvent.pointerUp(bar, { pointerId: 1 });
+      expect(popup.style.transform).toMatch(/^translate\(-?\d+(\.\d+)?px, -?\d+(\.\d+)?px\)$/);
+      expect(popup.style.transform).not.toBe("translate(0px, 0px)");
       fireEvent.keyDown(view.getByRole("group", { name: "Zoom and pan" }), { key: "Escape" });
       expect(popup.className).toBe("hidden");
     } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }

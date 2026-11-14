@@ -767,6 +767,10 @@ export function ARXNativeChart({
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [advancedToolsMounted, setAdvancedToolsMounted] = useState(false);
+  // Which part the small details window shows, and where it was dragged to.
+  const [detailsSection, setDetailsSection] = useState<"all" | "tools" | "forecast" | "read">("all");
+  const [detailsOffset, setDetailsOffset] = useState({ x: 0, y: 0 });
+  const detailsDrag = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number } | null>(null);
   const compactDesktopWorkspace = compactWorkspace && !mobileLayout;
   useEffect(() => {
     const update = () => {
@@ -1749,6 +1753,7 @@ export function ARXNativeChart({
                   // The forecast panel lived only inside the collapsed Advanced
                   // section, so the dashboard chart showed no way to reach it.
                   setAdvancedToolsMounted(true);
+                  setDetailsSection("forecast");
                   setAdvancedToolsOpen(true);
                   const reveal = () => document.getElementById("arx-structural-forecast")?.scrollIntoView?.({ block: "nearest" });
                   if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
@@ -1769,6 +1774,7 @@ export function ARXNativeChart({
                 data-testid="arx-native-advanced-toggle"
                 onClick={() => {
                   const next = !advancedToolsOpen;
+                  setDetailsSection("all");
                   setAdvancedToolsOpen(next);
                   if (next) setAdvancedToolsMounted(true);
                 }}
@@ -1812,6 +1818,7 @@ export function ARXNativeChart({
   // launcher reveals its own section inside that popup.
   const openDetails = (sectionId: string) => {
     setAdvancedToolsMounted(true);
+    setDetailsSection(sectionId === "arx-structural-forecast" ? "forecast" : sectionId === "arx-smart-chart-read" ? "read" : "tools");
     setAdvancedToolsOpen(true);
     const reveal = () => {
       document.getElementById(sectionId)?.scrollIntoView?.({ block: "nearest" });
@@ -1823,11 +1830,38 @@ export function ARXNativeChart({
   const closeDetails = () => setAdvancedToolsOpen(false);
   // Desktop: details float over the chart. Phones keep them inline below it.
   const detailsAsPopup = !mobileLayout;
-  const detailsPopupClass = "absolute inset-x-2 bottom-2 z-30 max-h-[72%] overflow-auto rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl shadow-black/60";
-  const detailsPopupHeader = <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs">
-    <strong className="text-zinc-200">Chart tools and analysis · {resolvedSymbol} · {timeframe}</strong>
-    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={closeDetails} aria-label="Close chart tools and analysis" data-testid="arx-native-details-close">Close</Button>
+  // A small terminal-style window: narrow, anchored to the chart's lower right
+  // corner, showing one section, and movable by its title bar.
+  const detailsPopupClass = "absolute bottom-2 right-2 z-30 max-h-[60%] w-[min(26rem,calc(100%-1rem))] overflow-auto rounded-md border border-zinc-600 bg-zinc-950 shadow-2xl shadow-black/70";
+  const detailsPopupStyle = detailsAsPopup && advancedToolsOpen ? { transform: `translate(${detailsOffset.x}px, ${detailsOffset.y}px)` } : undefined;
+  const detailsTitle = detailsSection === "tools" ? "Tools" : detailsSection === "forecast" ? "Forecast" : detailsSection === "read" ? "Chart read" : "Tools and analysis";
+  const detailsPopupHeader = <div className="sticky top-0 z-10 flex cursor-move touch-none select-none items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-900 px-2 py-1 text-xs" data-testid="arx-native-details-titlebar"
+    title="Drag to move this window"
+    onPointerDown={event => {
+      if ((event.target as HTMLElement).closest("button")) return;
+      detailsDrag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: detailsOffset.x, y: detailsOffset.y };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }}
+    onPointerMove={event => {
+      const drag = detailsDrag.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      // Keep the title bar reachable inside the chart card.
+      const card = cardRef.current?.getBoundingClientRect(), box = (event.currentTarget.closest("#arx-advanced-chart-content") ?? event.currentTarget).getBoundingClientRect();
+      let x = drag.x + event.clientX - drag.startX, y = drag.y + event.clientY - drag.startY;
+      if (card) {
+        const baseLeft = box.left - detailsOffset.x, baseTop = box.top - detailsOffset.y;
+        x = Math.min(card.right - 48 - baseLeft, Math.max(card.left - baseLeft - box.width + 96, x));
+        y = Math.min(card.bottom - 32 - baseTop, Math.max(card.top - baseTop, y));
+      }
+      setDetailsOffset({ x, y });
+    }}
+    onPointerUp={event => { if (detailsDrag.current?.pointerId === event.pointerId) detailsDrag.current = null; }}
+    onPointerCancel={() => { detailsDrag.current = null; }}>
+    <strong className="truncate text-zinc-200">{detailsTitle} · {resolvedSymbol} · {timeframe}</strong>
+    <Button size="sm" variant="ghost" className="h-6 w-6 shrink-0 p-0 text-sm leading-none" onClick={closeDetails} aria-label="Close chart tools and analysis" data-testid="arx-native-details-close">×</Button>
   </div>;
+  // Sections stay mounted; the window shows the one that was asked for.
+  const sectionClass = (name: "tools" | "forecast" | "read") => !detailsAsPopup || detailsSection === "all" || detailsSection === name ? "contents" : "hidden";
   const clockStatus = utcClockQualified ? "Clock: UTC" : "Source clock · UTC unverified";
   const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
   const compactQuickTools = compactDesktopWorkspace ? (
@@ -1887,14 +1921,20 @@ export function ARXNativeChart({
   </Fragment>;
 
   const chartDetailsContent = <>
+    <div className={sectionClass("tools")} data-testid="arx-details-section-tools">
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
+    </div>
+    <div className={sectionClass("forecast")} data-testid="arx-details-section-forecast">
     <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} /></div>
+    </div>
+    <div className={sectionClass("read")} data-testid="arx-details-section-read">
       <div id="arx-smart-chart-read" data-testid="arx-smart-chart-read"><SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} /></div>
     <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
       <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
       <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
     </details>
+    </div>
   </>;
 
   return (
@@ -2298,6 +2338,7 @@ export function ARXNativeChart({
         <div
           id="arx-advanced-chart-content"
           className={compactDesktopWorkspace ? (advancedToolsOpen ? detailsPopupClass : "") : "border-t border-zinc-800"}
+          style={compactDesktopWorkspace ? detailsPopupStyle : undefined}
           data-testid="arx-native-advanced-details"
           hidden={compactDesktopWorkspace && !advancedToolsOpen}
           onKeyDown={compactDesktopWorkspace ? event => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } } : undefined}
@@ -2313,6 +2354,7 @@ export function ARXNativeChart({
           role={detailsAsPopup ? "dialog" : undefined}
           aria-label={detailsAsPopup ? "Chart tools and analysis" : undefined}
           className={!detailsAsPopup ? "" : advancedToolsOpen ? detailsPopupClass : "hidden"}
+          style={detailsPopupStyle}
           data-testid="arx-native-details-popup"
           onKeyDown={event => { if (detailsAsPopup && event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}
         >
