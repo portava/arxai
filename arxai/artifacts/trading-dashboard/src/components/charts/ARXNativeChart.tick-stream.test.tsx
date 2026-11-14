@@ -984,6 +984,33 @@ describe("chart-first layout", () => {
       expect(adapterSpies.init).toHaveBeenCalledTimes(mounts);
     } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
   });
+
+  it("opens tools, forecast and the chart read as a popup from buttons under the chart and always states the clock", () => {
+    const width = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+      const view = renderChart();
+      const popup = view.getByTestId("arx-native-details-popup");
+      // Closed by default: nothing extends the page below the chart.
+      expect(popup.className).toBe("hidden");
+      expect(popup.getAttribute("role")).toBe("dialog");
+      // The clock basis is stated outside the popup, next to its launchers.
+      const launchers = view.getByTestId("arx-native-detail-launchers");
+      const clock = view.getByTestId("chart-clock-status");
+      expect(launchers.contains(clock)).toBe(true); expect(popup.contains(clock)).toBe(false);
+      expect(clock.textContent).toMatch(/^(Clock: UTC|Source clock · UTC unverified)$/);
+      for (const [button, section] of [["arx-native-open-tools", "arx-chart-workbench-tools"], ["arx-native-open-forecast", "arx-structural-forecast"], ["arx-native-open-read", "arx-smart-chart-read"]] as const) {
+        fireEvent.click(view.getByTestId(button));
+        expect(popup.className).toContain("absolute");
+        expect(popup.contains(view.getByTestId(section))).toBe(true);
+        fireEvent.click(view.getByTestId("arx-native-details-close"));
+        expect(popup.className).toBe("hidden");
+      }
+      fireEvent.click(view.getByTestId("arx-native-open-tools"));
+      fireEvent.keyDown(view.getByRole("group", { name: "Zoom and pan" }), { key: "Escape" });
+      expect(popup.className).toBe("hidden");
+    } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
+  });
 });
 
 

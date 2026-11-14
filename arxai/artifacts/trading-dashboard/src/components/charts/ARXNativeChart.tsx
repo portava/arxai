@@ -1808,15 +1808,27 @@ export function ARXNativeChart({
       onFitHistory={() => adapterRef.current?.fitHistory?.()}
     />
   );
-  const openDrawingTools = () => {
+  // Tools, forecast and the chart read open as one popup over the chart; a
+  // launcher reveals its own section inside that popup.
+  const openDetails = (sectionId: string) => {
     setAdvancedToolsMounted(true);
     setAdvancedToolsOpen(true);
     const reveal = () => {
-      document.getElementById("arx-chart-workbench-tools")?.scrollIntoView?.({ block: "nearest" });
+      document.getElementById(sectionId)?.scrollIntoView?.({ block: "nearest" });
     };
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
     else reveal();
   };
+  const openDrawingTools = () => openDetails("arx-chart-workbench-tools");
+  const closeDetails = () => setAdvancedToolsOpen(false);
+  // Desktop: details float over the chart. Phones keep them inline below it.
+  const detailsAsPopup = !mobileLayout;
+  const detailsPopupClass = "absolute inset-x-2 bottom-2 z-30 max-h-[72%] overflow-auto rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl shadow-black/60";
+  const detailsPopupHeader = <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs">
+    <strong className="text-zinc-200">Chart tools and analysis · {resolvedSymbol} · {timeframe}</strong>
+    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={closeDetails} aria-label="Close chart tools and analysis" data-testid="arx-native-details-close">Close</Button>
+  </div>;
+  const clockStatus = utcClockQualified ? "Clock: UTC" : "Source clock · UTC unverified";
   const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
   const compactQuickTools = compactDesktopWorkspace ? (
     <div
@@ -1878,7 +1890,7 @@ export function ARXNativeChart({
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
     <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} /></div>
-      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <div id="arx-smart-chart-read" data-testid="arx-smart-chart-read"><SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} /></div>
     <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
       <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
       <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
@@ -1886,7 +1898,7 @@ export function ARXNativeChart({
   </>;
 
   return (
-    <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
+    <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "relative overflow-hidden border-zinc-800 bg-zinc-950/40"}>
       <CardHeader className={compactDesktopWorkspace ? "arx-native-chart-header-compact px-2 py-1 md:px-3" : "py-3 px-3 md:px-4"}>
         <CardTitle className={compactDesktopWorkspace ? "arx-native-chart-title-compact flex flex-col items-stretch gap-1 text-sm" : "flex flex-wrap items-center justify-between gap-2 text-sm"}>
           <div className={`flex flex-wrap items-center ${compactDesktopWorkspace ? "min-w-0 gap-1" : "gap-2"}`}>
@@ -2271,16 +2283,43 @@ export function ARXNativeChart({
       </output>
       {/* Detailed tools stay mounted after the plot on every viewport. Source
           and safety notices above it remain visible before any candle. */}
+      {detailsAsPopup && <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-3 py-1.5 text-xs" role="toolbar" aria-label="Chart tools and analysis" data-testid="arx-native-detail-launchers">
+        <span className={`rounded border px-2 py-1 text-[11px] ${utcClockQualified ? "border-zinc-700 text-zinc-300" : "border-amber-700/60 text-amber-200"}`} data-testid="chart-clock-status"
+          title={utcClockQualified ? "Candle times are qualified UTC." : "Candle times are the broker source clock. A UTC mapping has not been verified, so no time-zone conversion is offered."}>{clockStatus}</span>
+        {!compactDesktopWorkspace && <>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-haspopup="dialog" aria-controls="arx-advanced-chart-content" onClick={() => openDetails("arx-chart-workbench-tools")} data-testid="arx-native-open-tools">Tools</Button>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-haspopup="dialog" aria-controls="arx-advanced-chart-content" onClick={() => openDetails("arx-structural-forecast")} data-testid="arx-native-open-forecast">Forecast</Button>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-haspopup="dialog" aria-controls="arx-advanced-chart-content" onClick={() => openDetails("arx-smart-chart-read")} data-testid="arx-native-open-read">Chart read</Button>
+        </>}
+      </div>}
+      {/* Detailed tools stay mounted. On desktop they open as a popup over the
+          chart instead of extending the page below it. */}
       {compactWorkspace ? (
         <div
           id="arx-advanced-chart-content"
-          className="border-t border-zinc-800"
+          className={compactDesktopWorkspace ? (advancedToolsOpen ? detailsPopupClass : "") : "border-t border-zinc-800"}
           data-testid="arx-native-advanced-details"
           hidden={compactDesktopWorkspace && !advancedToolsOpen}
+          onKeyDown={compactDesktopWorkspace ? event => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } } : undefined}
         >
+          {compactDesktopWorkspace && advancedToolsMounted && detailsPopupHeader}
           {(!compactDesktopWorkspace || advancedToolsMounted) && <div className="space-y-2">{chartDetailsContent}</div>}
         </div>
-      ) : chartDetailsContent}
+      ) : (
+        // One wrapper at every width: switching between the desktop popup and
+        // the inline phone layout must not remount tools or lose their state.
+        <div
+          id="arx-advanced-chart-content"
+          role={detailsAsPopup ? "dialog" : undefined}
+          aria-label={detailsAsPopup ? "Chart tools and analysis" : undefined}
+          className={!detailsAsPopup ? "" : advancedToolsOpen ? detailsPopupClass : "hidden"}
+          data-testid="arx-native-details-popup"
+          onKeyDown={event => { if (detailsAsPopup && event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}
+        >
+          <div className={detailsAsPopup ? "contents" : "hidden"}>{detailsPopupHeader}</div>
+          {chartDetailsContent}
+        </div>
+      )}
     </Card>
   );
 }
