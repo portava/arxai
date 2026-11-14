@@ -22,5 +22,8 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
     origin: { symbol, provider: history.source ?? "unknown", fetchedAt: new Date(now).toISOString(),
       kind: "BROKER_HISTORY", historicalArrivalTimesKnown: false },
     ready: sameSource && known && current.aiUsable && current.quality === "clean",
-    reason: !sameSource ? "HISTORY_SOURCE_MISMATCH" : !known ? "UNKNOWN_DATA_PROVENANCE" : current.warning };
+    // Refusals are stable codes: a free-text chart warning was masked by the
+    // route as a generic failure, hiding why the forecast was withheld.
+    reason: !sameSource ? "HISTORY_SOURCE_MISMATCH" : !known ? "UNKNOWN_DATA_PROVENANCE"
+      : !current.aiUsable || current.quality !== "clean" ? "LIVE_CHART_NOT_VERIFIED_CLEAN" : null };
 }

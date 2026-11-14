@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, access } from "node:fs/promises";
 import { captureBuildIdentity } from "./buildIdentity.mjs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
@@ -120,6 +120,21 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // The structural forecast fits its model in a worker thread loaded from
+  // dist/structuralFitWorker.mjs. It was never emitted, so every forecast that
+  // needed a fit failed in the built server with a generic refusal.
+  await esbuild({
+    entryPoints: { structuralFitWorker: path.resolve(artifactDir, "src/lib/structural/fitWorker.ts") },
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outdir: distDir,
+    outExtension: { ".js": ".mjs" },
+    logLevel: "info",
+    sourcemap: "linked",
+  });
+  await access(path.resolve(distDir, "structuralFitWorker.mjs"));
 }
 
 buildAll().catch((err) => {

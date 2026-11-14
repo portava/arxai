@@ -19,7 +19,7 @@ export async function fitInWorker(bars: StructuralBar[], origin: DataOrigin): Pr
         clearTimeout(timer); void worker.terminate();
         if (message.model) resolve(message.model); else reject(new Error(message.error ?? "MODEL_FIT_FAILED"));
       });
-      worker.once("error", error => { clearTimeout(timer); reject(error); });
+      worker.once("error", error => { clearTimeout(timer); reject(new Error("MODEL_WORKER_FAILED", { cause: error })); });
       worker.once("exit", () => { clearTimeout(timer); reject(new Error("MODEL_WORKER_EXITED")); });
     });
   } finally { active = false; }
