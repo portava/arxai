@@ -323,6 +323,18 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     expect(screen.getByTestId("arx-chart-workbench-tools")).toBeTruthy();
   });
 
+  it("offers the projected path forecast directly from the compact chart toolbar", async () => {
+    currentCandleResponse = makeResponse(liveFeedStatus());
+    renderCompactChart();
+    const details = screen.getByTestId("arx-native-advanced-details");
+    expect(details.hasAttribute("hidden")).toBe(true);
+    expect(screen.queryByTestId("arx-structural-forecast")).toBeNull();
+    fireEvent.click(screen.getByTestId("arx-native-forecast-open"));
+    await waitFor(() => expect(details.hasAttribute("hidden")).toBe(false));
+    expect(screen.getByTestId("arx-structural-forecast")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Forecast next hour" })).toBeTruthy();
+  });
+
   it("shows a server-timed candle countdown only after an accepted forming-bar frame", () => {
     currentCandleResponse = makeResponse(liveFeedStatus());
     renderCompactChart();

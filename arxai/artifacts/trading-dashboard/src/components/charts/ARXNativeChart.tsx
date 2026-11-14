@@ -1741,6 +1741,28 @@ export function ARXNativeChart({
                 size="sm"
                 variant="outline"
                 className="h-7 shrink-0 px-2 text-xs"
+                aria-label="Open the projected path forecast"
+                title="Forecast next hour — projected scenario paths drawn ahead of the latest candle"
+                aria-controls="arx-structural-forecast"
+                data-testid="arx-native-forecast-open"
+                onClick={() => {
+                  // The forecast panel lived only inside the collapsed Advanced
+                  // section, so the dashboard chart showed no way to reach it.
+                  setAdvancedToolsMounted(true);
+                  setAdvancedToolsOpen(true);
+                  const reveal = () => document.getElementById("arx-structural-forecast")?.scrollIntoView?.({ block: "nearest" });
+                  if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
+                  else reveal();
+                }}
+              >
+                Forecast
+              </Button>
+            )}
+            {compactDesktopWorkspace && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-xs"
                 aria-label="Advanced chart details"
                 aria-expanded={advancedToolsOpen}
                 aria-controls="arx-advanced-chart-content"
@@ -1855,7 +1877,7 @@ export function ARXNativeChart({
   const chartDetailsContent = <>
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
-    <StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} />
+    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} /></div>
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
     <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
       <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
