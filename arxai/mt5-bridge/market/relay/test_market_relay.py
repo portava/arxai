@@ -76,4 +76,15 @@ class RelayTests(unittest.TestCase):
     if fast_lane_has_room(key,pending):pending.add(key)
   self.assertEqual(len(pending),12);self.assertEqual(sum('|M1|' in key for key in pending),6)
   self.assertFalse(fast_lane_has_room(next(iter(pending)),pending))
+ def test_content_refusal_backs_off_while_transport_failure_retries_promptly(self):
+  refused={'ok':True,'acceptedBars':1,'rejectedBars':1,'rejectionReasons':{'finalized_tick_volume_conflict':1}}
+  self.assertEqual(fast_retry_delay(200,refused),FAST_DATA_REFUSAL_RETRY_SECONDS)
+  for status,result in [(503,{'ok':False,'error':'HTTP_ERROR'}),(200,{'ok':True,'acceptedBars':0,'rejectedBars':0}),(200,{'ok':False,'rejectedBars':2}),(401,{'ok':False})]:
+   self.assertEqual(fast_retry_delay(status,result),FAST_TRANSPORT_RETRY_SECONDS)
+  self.assertGreater(FAST_DATA_REFUSAL_RETRY_SECONDS,FAST_TRANSPORT_RETRY_SECONDS)
+ def test_receipt_diagnostics_keep_only_bounded_non_secret_server_verdicts(self):
+  detail=receipt_diagnostics({'rejectionReasons':{'finalized_ohlc_conflict':2,'x'*90:1,'bad':'token','flag':True},'tickVolumeRevisionCount':3,'secret':'no'},10.,10.25)
+  self.assertEqual(detail,{'rejectionReasons':{'finalized_ohlc_conflict':2,'x'*48:1},'tickVolumeRevisionCount':3,'latencyMs':250})
+  self.assertEqual(receipt_diagnostics({'ok':True},1.,1.),{'rejectionReasons':None,'tickVolumeRevisionCount':0,'latencyMs':0})
+  self.assertEqual(receipt_diagnostics({'tickVolumeRevisionCount':'9','rejectionReasons':[1]},1.,1.)['tickVolumeRevisionCount'],0)
 if __name__=='__main__':unittest.main()

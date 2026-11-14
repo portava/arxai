@@ -46,6 +46,23 @@ def incremental_payload(series,observation,now_ms,last_open_ms=None):
 TIP_REOBSERVE_SECONDS=90
 TIP_REFRESH_PRIORITY_SECONDS=180
 FAST_LANE_PENDING_LIMIT=6
+FAST_TRANSPORT_RETRY_SECONDS=3
+FAST_DATA_REFUSAL_RETRY_SECONDS=60
+
+def fast_retry_delay(status,result):
+    # The API answered and refused candle content (HTTP 200, rejected bars).
+    # Re-sending the same closed bars every three seconds cannot change that
+    # verdict, and those retries held top queue priority ahead of healthy
+    # series. A transport or server failure is still retried promptly.
+    refused=status==200 and isinstance(result,dict) and result.get('ok') is True and (result.get('rejectedBars') or 0)>0
+    return FAST_DATA_REFUSAL_RETRY_SECONDS if refused else FAST_TRANSPORT_RETRY_SECONDS
+
+def receipt_diagnostics(result,started,finished):
+    # Non-secret server verdict detail: HTTP 200 alone is not acceptance.
+    reasons=result.get('rejectionReasons') if isinstance(result,dict) else None
+    clean={str(k)[:48]:v for k,v in reasons.items() if isinstance(v,int) and not isinstance(v,bool)} if isinstance(reasons,dict) else None
+    revised=result.get('tickVolumeRevisionCount') if isinstance(result,dict) else None
+    return {'rejectionReasons':clean or None,'tickVolumeRevisionCount':revised if isinstance(revised,int) and not isinstance(revised,bool) else 0,'latencyMs':round((finished-started)*1000)}
 
 def observed_tip_payload(series,observation,now_ms,mark,monotonic_now):
     # mark=(last accepted native open time, monotonic time of actual receipt).
@@ -144,11 +161,11 @@ def run():
                     if int(calendar.read_regular(request).strip())*1000!=payload['historyPage']['requestedEndRawMs']:continue
                 full=backfill or needs_full_history(mark,len(payload['bars']),payload.get('brokerLimited'),time.monotonic())
                 if not full:continue
-                status,result=deliver(opener(),token,CANDLE_ROUTE,payload)
+                started=time.monotonic();status,result=deliver(opener(),token,CANDLE_ROUTE,payload);finished=time.monotonic()
                 retry=retry or retryable_history_status(status)
                 accepted=status==200 and result.get('ok') is True and result.get('acceptedBars')==len(payload['bars']) and result.get('rejectedBars')==0
                 with mutex:
-                    state['historySeries'][series_key]={'http':status,'accepted':accepted,'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'sentBars':len(payload['bars']),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'at':calendar.now_iso()}
+                    state['historySeries'][series_key]={**receipt_diagnostics(result,started,finished),'http':status,'accepted':accepted,'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'sentBars':len(payload['bars']),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'at':calendar.now_iso()}
                     if accepted:
                         persist_backfill_request(SPOOL,payload,result)
                         history_marks[series_key]=(payload['bars'][-1]['openTime'],time.monotonic(),len(payload['bars']),payload.get('brokerLimited') is True)
@@ -169,18 +186,18 @@ def run():
         def forward(payload,key):
             try:
                 if stop.is_set():return
-                status,result=deliver(opener(),token,CANDLE_ROUTE,payload)
+                started=time.monotonic();status,result=deliver(opener(),token,CANDLE_ROUTE,payload);finished=time.monotonic()
                 accepted=status==200 and result.get('ok') is True and result.get('acceptedBars')==len(payload['bars']) and result.get('rejectedBars')==0
-                record={'http':status,'accepted':accepted,'bars':len(payload['bars']),'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'observationMs':payload['sentAt'],'acceptedAt':calendar.now_iso()}
+                record={**receipt_diagnostics(result,started,finished),'http':status,'accepted':accepted,'bars':len(payload['bars']),'acceptedBars':result.get('acceptedBars'),'rejectedBars':result.get('rejectedBars'),'brokerSymbol':payload['brokerSymbol'],'latestOpenTimeMs':payload['bars'][-1]['openTime'],'observationMs':payload['sentAt'],'acceptedAt':calendar.now_iso()}
                 with mutex:state.setdefault('fastSeries',{})[key]=record
                 if accepted:
                     with fast_lock:marks[key]=(payload['bars'][-1]['openTime'],time.monotonic())
                     calendar.atomic_write(evidence/('fast-'+payload['symbol']+'-'+payload['timeframe']+'.json'),json.dumps({'acceptedAt':record['acceptedAt'],'http':status,'result':result,'payload':payload}).encode())
                 else:
-                    with fast_lock:retry_after[key]=time.monotonic()+3
+                    with fast_lock:retry_after[key]=time.monotonic()+fast_retry_delay(status,result)
             except Exception as exc:
                 with mutex:state['lastFastError']={'type':type(exc).__name__,'at':calendar.now_iso()}
-                with fast_lock:retry_after[key]=time.monotonic()+3
+                with fast_lock:retry_after[key]=time.monotonic()+FAST_TRANSPORT_RETRY_SECONDS
             finally:
                 with fast_lock:inflight.discard(key)
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as minute_pool, concurrent.futures.ThreadPoolExecutor(max_workers=3) as slow_pool:

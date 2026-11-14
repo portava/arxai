@@ -256,9 +256,33 @@ export interface BrokerCandleIngestResult {
   rejectedBars: number;
   /** Honest top-level note when the whole request was refused (and why). */
   note?: string;
+  /** Count of refused bars per cause, so HTTP 200 is never the only signal. */
+  rejectionReasons?: Partial<Record<CandleRejectionReason, number>>;
+  /** Finalized bars whose native tick count was re-reported within the minor
+   *  revision bound. The first finalized count is RETAINED; the later native
+   *  observation is disclosed here, never silently adopted. Capped. */
+  tickVolumeRevisions?: { openTime: string; stored: number; observed: number }[];
+  tickVolumeRevisionCount?: number;
   latestStoredBySymbolTimeframe: LatestStoredEntry[];
   nextBackfillHints: NextBackfillHint[];
 }
+
+export type CandleRejectionReason =
+  | "invalid_ohlc" | "invalid_open_time" | "finalized_ohlc_conflict"
+  | "finalized_tick_volume_conflict" | "closed_to_forming_regression" | "concurrent_write_lost";
+
+// The native terminal re-reports the tick count of an already-closed bar after
+// it re-synchronizes minute history with the broker server. Measured on
+// 2026-11-14 against 95,798 previously accepted native bars: 0 OHLC changes and
+// 40 tick-count changes, at most 11 ticks / 0.056% of the bar. Such a revision
+// leaves the bar's immutable prices confirmed, so it must not refuse the batch
+// (which blocked 24 live tips and 106 seed windows). The stored count is kept
+// and the revision disclosed; anything larger remains a refused conflict.
+const TICK_REVISION_MAX_FRACTION = 0.001;
+export function isMinorTickRevision(stored: number, observed: number): boolean {
+  return Math.abs(stored - observed) <= Math.max(1, Math.floor(stored * TICK_REVISION_MAX_FRACTION));
+}
+const TICK_REVISION_REPORT_LIMIT = 20;
 
 // Stale-push thresholds — same posture as the live-tail / history sync paths. A
 // backfill legitimately contains OLD bars, so freshness is judged by the
@@ -448,14 +472,21 @@ export async function ingestBrokerCandles(
   // ── Normalize → validate → dedupe by open time (last write wins) ─────────────
   const byTime = new Map<string, NormalizedBar>();
   let rejected = 0;
+  const rejectionReasons: Partial<Record<CandleRejectionReason, number>> = {};
+  const refuse = (reason: CandleRejectionReason, count = 1): void => {
+    rejected += count;
+    rejectionReasons[reason] = (rejectionReasons[reason] ?? 0) + count;
+  };
+  const tickVolumeRevisions: { openTime: string; stored: number; observed: number }[] = [];
+  let tickVolumeRevisionCount = 0;
   for (const b of payload.bars) {
     if (!isValidCacheOhlc(b)) {
-      rejected += 1;
+      refuse("invalid_ohlc");
       continue;
     }
     const openTimeRaw = parseTime(b.openTime ?? b.time);
     if (!openTimeRaw) {
-      rejected += 1;
+      refuse("invalid_open_time");
       continue;
     }
     const openTime = toUtc(openTimeRaw);
@@ -483,7 +514,7 @@ export async function ingestBrokerCandles(
 
   if (byTime.size === 0) {
     // Nothing storable — never clear an existing good series.
-    return { ...empty, rejectedBars: rejected, note: "no_valid_bars" };
+    return { ...empty, rejectedBars: rejected, rejectionReasons, note: "no_valid_bars" };
   }
 
   const incoming = [...byTime.values()].sort(
@@ -523,9 +554,17 @@ export async function ingestBrokerCandles(
       if (ohlcEqual(prev, bar)) {
         const previousTicks = prev.tickVolumeObserved ? mt5TickVolumeEvidence(prev.tickVolume) : null;
         if (previousTicks?.kind === "tick_count") {
-          if (bar.volumeEvidence.kind === "tick_count" && bar.volumeEvidence.quantity !== previousTicks.quantity) {
-            rejected += 1;
-            continue;
+          const storedTicks = previousTicks.quantity, observedTicks = bar.volumeEvidence.quantity;
+          if (bar.volumeEvidence.kind === "tick_count" && storedTicks != null && observedTicks != null && observedTicks !== storedTicks) {
+            if (!isMinorTickRevision(storedTicks, observedTicks)) {
+              refuse("finalized_tick_volume_conflict");
+              continue;
+            }
+            tickVolumeRevisionCount += 1;
+            if (tickVolumeRevisions.length < TICK_REVISION_REPORT_LIMIT) {
+              tickVolumeRevisions.push({ openTime: bar.openTime.toISOString(),
+                stored: storedTicks, observed: observedTicks });
+            }
           }
           // A generic/absent volume on an idempotent push cannot erase an
           // earlier explicit observation or replace it with an ambiguous alias.
@@ -536,12 +575,12 @@ export async function ingestBrokerCandles(
         qualityReason = "idempotent";
       } else {
         // A finalized bar's OHLC is immutable — refuse a conflicting close.
-        rejected += 1;
+        refuse("finalized_ohlc_conflict");
         continue;
       }
     } else {
       // prev closed, incoming forming → a regression; refuse.
-      rejected += 1;
+      refuse("closed_to_forming_regression");
       continue;
     }
 
@@ -615,7 +654,7 @@ export async function ingestBrokerCandles(
       }).returning({ time: brokerCandlesTable.openTimeUtc });
     insertedTimes.push(...written.filter(row => !previous.has(row.time.getTime())).map(row => row.time.getTime()));
     const lost = Math.min(500, writes.length - offset) - written.length;
-    accepted -= lost; rejected += lost;
+    accepted -= lost; if (lost > 0) refuse("concurrent_write_lost", lost);
   }
 
   // Publish current closed bars only AFTER the durable transaction commits.
@@ -759,6 +798,8 @@ export async function ingestBrokerCandles(
     ok: true,
     acceptedBars: accepted,
     rejectedBars: rejected,
+    ...(rejected > 0 ? { rejectionReasons } : {}),
+    ...(tickVolumeRevisionCount > 0 ? { tickVolumeRevisions, tickVolumeRevisionCount } : {}),
     latestStoredBySymbolTimeframe: [latestStored],
     nextBackfillHints: [hint],
   };

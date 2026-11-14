@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { ingestBrokerCandles } from "../brokerCandleStore.js";
+import { ingestBrokerCandles, isMinorTickRevision } from "../brokerCandleStore.js";
 import { brokerHistoryCandle } from "../brokerHistoryCandle.js";
 import { __resetBrokerClockOffsets, getBrokerClockOffset, recordBrokerClockSample } from "../../brokerHub/brokerClockOffset.js";
 import { __resetMt5ProviderStore, readMt5Candles } from "../providers/mt5Provider.js";
@@ -42,14 +42,29 @@ test("durable reobservation upgrades only genuine ticks and preserves qualified 
     assert.equal(row.qualityStatus, "idempotent");
     assert.deepEqual(brokerHistoryCandle(row).volumeEvidence, { kind: "tick_count", quantity: 60, unit: "ticks", reason: null });
 
-    const conflict = await ingestBrokerCandles(payload({ tickVolume: 61 }), ctx);
+    // A minor native re-report confirms the immutable prices: the batch is not
+    // refused, the first finalized count is retained and the revision disclosed.
+    const revision = await ingestBrokerCandles(payload({ tickVolume: 61 }), ctx);
+    assert.equal(revision.acceptedBars, 1); assert.equal(revision.rejectedBars, 0);
+    assert.equal(revision.tickVolumeRevisionCount, 1);
+    assert.deepEqual(revision.tickVolumeRevisions?.map(r => [r.stored, r.observed]), [[60, 61]]);
+    row = await stored(); assert.equal(row.tickVolume, 60); assert.equal(row.tickVolumeObserved, true);
+    // A material change remains a refused conflict with a stated cause.
+    const conflict = await ingestBrokerCandles(payload({ tickVolume: 63 }), ctx);
     assert.equal(conflict.acceptedBars, 0); assert.equal(conflict.rejectedBars, 1);
+    assert.deepEqual(conflict.rejectionReasons, { finalized_tick_volume_conflict: 1 });
+    assert.equal(conflict.tickVolumeRevisionCount, undefined);
+    assert.equal((await stored()).tickVolume, 60);
+    assert.equal(isMinorTickRevision(103659, 103648), true);
+    assert.equal(isMinorTickRevision(103659, 103500), false);
+    assert.equal(isMinorTickRevision(0, 1), true); assert.equal(isMinorTickRevision(5, 7), false);
     for (const fields of [{ volume: 999 }, {}, { tickVolume: -1 }]) {
       assert.equal((await ingestBrokerCandles(payload(fields), ctx)).acceptedBars, 1);
       row = await stored(); assert.equal(row.tickVolumeObserved, true); assert.equal(row.tickVolume, 60);
     }
     const priceConflict = await ingestBrokerCandles(payload({ tickVolume: 60, close: 1.7 }), ctx);
     assert.equal(priceConflict.rejectedBars, 1); assert.equal((await stored()).close, 1.5);
+    assert.deepEqual(priceConflict.rejectionReasons, { finalized_ohlc_conflict: 1 });
 
     assert.equal((await ingestBrokerCandles(payload({ tickVolume: 0 }, 1), ctx)).acceptedBars, 1);
     assert.equal(brokerHistoryCandle(await stored(1)).volumeEvidence?.quantity, 0);

@@ -2700,6 +2700,8 @@ router.post("/mt5/candles/ingest", bridgeAuthPerUserOnly, async (req, res) => {
       timeframe: parsed.data.timeframe,
       acceptedBars: result.acceptedBars,
       rejectedBars: result.rejectedBars,
+      rejectionReasons: result.rejectionReasons ?? null,
+      tickVolumeRevisionCount: result.tickVolumeRevisionCount ?? 0,
       note: result.note ?? null,
     },
     "MT5 broker candles ingested",
