@@ -540,6 +540,8 @@ export async function ingestBrokerCandles(
 
     let qualityStatus: string;
     let qualityReason: string | null;
+    // True when the stored finalized row already holds exactly this bar.
+    let unchanged = false;
 
     if (!prev) {
       qualityStatus = "accepted";
@@ -573,6 +575,12 @@ export async function ingestBrokerCandles(
         }
         qualityStatus = "idempotent";
         qualityReason = "idempotent";
+        // Each live tip and 200-bar seed re-sends bars that are already stored.
+        // Rewriting them changed no candle but produced tens of thousands of
+        // row versions and index/WAL writes per minute. Only a genuine
+        // tick-evidence upgrade still writes.
+        unchanged = previousTicks?.kind === "tick_count"
+          || (bar.volumeEvidence.kind !== "tick_count" && (bar.tickVolume ?? null) === (prev.tickVolume ?? null));
       } else {
         // A finalized bar's OHLC is immutable — refuse a conflicting close.
         refuse("finalized_ohlc_conflict");
@@ -613,7 +621,7 @@ export async function ingestBrokerCandles(
       updatedAt: new Date(),
     };
 
-    writes.push(row);
+    if (!unchanged) writes.push(row);
     accepted += 1;
 
     // Only finalized bars are eligible to feed the live read path — a forming

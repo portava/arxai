@@ -42,6 +42,11 @@ test("durable reobservation upgrades only genuine ticks and preserves qualified 
     assert.equal(row.qualityStatus, "idempotent");
     assert.deepEqual(brokerHistoryCandle(row).volumeEvidence, { kind: "tick_count", quantity: 60, unit: "ticks", reason: null });
 
+    // An identical re-send is accepted without rewriting the stored row.
+    const before = await stored();
+    const resend = await ingestBrokerCandles(payload({ tickVolume: 60 }), ctx);
+    assert.equal(resend.acceptedBars, 1); assert.equal(resend.rejectedBars, 0);
+    assert.equal((await stored()).updatedAt.getTime(), before.updatedAt.getTime());
     // A minor native re-report confirms the immutable prices: the batch is not
     // refused, the first finalized count is retained and the revision disclosed.
     const revision = await ingestBrokerCandles(payload({ tickVolume: 61 }), ctx);
