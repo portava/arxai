@@ -27,13 +27,15 @@ import {
   getFormingBar,
   getFormingTickAgeMs,
   getFeedFreshness,
+  getLastTick,
   resolveFormingPartition,
   type FormingPartition,
 } from "../lib/data/chart/formingBarComposer.js";
 import { brokerBucketCloseMs } from "../lib/data/chart/brokerBucket.js";
-import { isChartTimeframe, type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { barCloseMs, isChartTimeframe, type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { readNativeSeamForSeries } from "../lib/data/chart/nativeSeamObservation.js";
 import { currentFeedScopeBridge, currentFeedScopeBridgeSync } from "../lib/data/feedScope.js";
-import { normalizeSymbolKey } from "../lib/data/providers/mt5Provider.js";
+import { normalizeSymbolKey, readMt5Candles } from "../lib/data/providers/mt5Provider.js";
 import { FORMING_TIP_LIVE_MS } from "../lib/data/freshness.js";
 
 export function handleChartTickStream(req: Request, res: Response): void {
@@ -64,14 +66,70 @@ export function handleChartTickStream(req: Request, res: Response): void {
   const send = writer.send;
 
   if (source === "mt5_broker") {
-    // Native MT5 snapshots arrive through /chart/candles with the exact
-    // history writer and preceding OHLC reconciled. This provider+symbol-only
-    // tick composer cannot reconstruct the native open/extrema, and must not
-    // overwrite those snapshots or borrow another writer's forming prices.
+    // Native MT5 snapshots carry the real open and extrema; the tick composer
+    // cannot reconstruct them (it starts mid-bar) and must never borrow another
+    // writer's prices. So the live tip is the NATIVE forming bar of the exact
+    // writer that serves this series, reconciled to its closed history, with
+    // only that same writer's later ticks applied: close = last bid, high/low
+    // widened by ticks seen after the snapshot. The open is never touched, a
+    // tick older than the snapshot is never applied, and without a reconciled
+    // native snapshot nothing is streamed (closed history stays as-is).
     send({ type: "native_snapshot_mode", symbol: rawSymbol, source, timeframe, ts: Date.now() });
+    let readerBridge: FormingPartition = currentFeedScopeBridgeSync() ?? null;
+    if (currentFeedScopeBridgeSync() === undefined) {
+      void currentFeedScopeBridge().then((id) => { readerBridge = id; }, () => {});
+    }
+    // Ticks seen after the current snapshot widen its extrema until a newer one lands.
+    let widened: { key: string; high: number; low: number } | null = null;
+    const nativeTip = (now: number) => {
+      const pinned = readerBridge != null ? readMt5Candles(rawSymbol, timeframe, 3, { bridgeConnectionId: readerBridge, now }) : null;
+      const served = pinned && pinned.candles.length ? pinned : readMt5Candles(rawSymbol, timeframe, 3, { now });
+      const last = served.candles.at(-1);
+      if (!last || served.bridgeConnectionId == null || served.userId == null) return null;
+      const native = readNativeSeamForSeries(rawSymbol, timeframe, served.candles, {
+        providerId: "mt5_broker", subProviderId: null, bridgeConnectionId: served.bridgeConnectionId,
+        userId: served.userId, environment: "unknown", brokerSymbol: last.brokerSymbol ?? null,
+      }, now);
+      return native ? { native, bridge: served.bridgeConnectionId } : null;
+    };
+    const emitNative = (now: number = Date.now(), ticked?: FormingPartition) => {
+      if (writer.closed) return;
+      const tip = nativeTip(now);
+      // Another writer's tick on this symbol is not this series' price.
+      if (!tip || (ticked !== undefined && ticked !== tip.bridge)) return;
+      const o = tip.native.observation, b = o.forming;
+      const key = `${tip.bridge}|${b.openTimeEpochMs}|${o.collectedAtEpochMs}`;
+      if (widened?.key !== key) widened = { key, high: b.high, low: b.low };
+      const tick = getLastTick(rawSymbol, "mt5_broker", tip.bridge);
+      // Only this writer's ticks that arrived after the snapshot was collected.
+      const fresh = tick != null && tick.wallMs > o.collectedAtEpochMs ? tick : null;
+      if (fresh) { widened.high = Math.max(widened.high, fresh.bid); widened.low = Math.min(widened.low, fresh.bid); }
+      const lastWallMs = fresh ? fresh.wallMs : tip.native.receivedAtEpochMs;
+      // Liveness is the writer's tick age; a snapshot alone never proves a live quote.
+      const ageMs = tick ? Math.max(0, now - tick.wallMs) : Number.POSITIVE_INFINITY;
+      send({
+        type: "forming_bar", symbol: rawSymbol, source, timeframe,
+        bar: {
+          openTimeMs: b.openTimeEpochMs, closeTimeMs: barCloseMs(b.openTimeEpochMs, timeframe),
+          open: b.open, high: widened.high, low: widened.low, close: fresh ? fresh.bid : b.close, isForming: true,
+        },
+        origin: fresh ? "native_mt5_snapshot_with_ticks" : "native_mt5_snapshot",
+        tickAgeMs: Number.isFinite(ageMs) ? ageMs : null, tickWallMs: lastWallMs, frozen: ageMs > FORMING_TIP_LIVE_MS, ts: now,
+      });
+      const status = getFeedFreshness(rawSymbol, now, "mt5_broker", tip.bridge);
+      if (status) send({ type: "feed_status", symbol: rawSymbol, source, timeframe, marketFrozen: status.marketFrozen,
+        lastBrokerTimeMs: status.lastBrokerTimeMs, brokerStaleMs: status.brokerStaleMs, wallStaleMs: status.wallStaleMs, ts: now });
+    };
+    const onNativeTick = (ticked: FormingPartition) => emitNative(Date.now(), ticked);
+    formingBarBus.on(symbolKey, onNativeTick, "mt5_broker");
+    unsubscribe = () => formingBarBus.off(symbolKey, onNativeTick, "mt5_broker");
+    if (writer.closed) { unsubscribe(); return; }
+    emitNative();
     if (!writer.closed) heartbeat = setInterval(() => {
-      if (!writer.closed) send({ type: "heartbeat", symbol: rawSymbol, source, timeframe, ts: Date.now() });
-    }, 15_000);
+      if (writer.closed) return;
+      send({ type: "heartbeat", symbol: rawSymbol, source, timeframe, ts: Date.now() });
+      emitNative();
+    }, 5_000);
     return;
   }
 

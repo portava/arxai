@@ -196,6 +196,14 @@ export interface LastTickInfo {
 // source + symbolKey + partition → last tick seen (across all timeframes).
 const lastTickBySymbol = new Map<string, LastTickInfo>();
 
+/** The exact last tick of ONE writer partition (copy), or null. Never "latest". */
+export function getLastTick(symbol: string, source: StoreSource, partition: FormingPartition): LastTickInfo | null {
+  const symbolKey = formingKey(symbol);
+  if (!symbolKey) return null;
+  const t = lastTickBySymbol.get(partitionKey(symbolKey, source, partition));
+  return t ? { ...t } : null;
+}
+
 // ── Tick notification bus ──────────────────────────────────────────────────
 // One in-process emitter keyed by source + symbolKey. The SSE handler subscribes
 // for the symbol it is streaming; each notification names the partition that
