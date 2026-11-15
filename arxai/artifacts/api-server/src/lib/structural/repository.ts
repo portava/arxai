@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, chartDecisionReceiptsTable as receipts, chartDecisionOutcomesTable as outcomes } from "@workspace/db";
-import { MODEL_POLICY, type StructuralForecast, type ForecastScore, type StructuralModel } from "@workspace/domain/structural";
+import { MODEL_POLICY, FORECAST_HORIZONS, forecastStepMs, type StructuralForecast, type ForecastScore, type StructuralModel } from "@workspace/domain/structural";
 import type { ForecastRepository, StoredForecast } from "./service.js";
 import { sha256Hex, stableStringify } from "@workspace/features";
 
@@ -28,12 +28,12 @@ export const structuralRepository: ForecastRepository = {
       geometryGate: model.geometryGate, confirmationGate: model.confirmationGate, prebreakGate: model.prebreakGate,
       partitions: model.partitions, dataQuality: model.dataQuality, holdout: model.holdout, policy: MODEL_POLICY };
     const inserted = await db.insert(receipts).values({ receiptId: row.id, userId,
-      symbol: row.forecast.origin.symbol, timeframe: "M1", source: SOURCE,
+      symbol: row.forecast.origin.symbol, timeframe: FORECAST_HORIZONS.find(h => h.stepMs === forecastStepMs(row.forecast))?.timeframe ?? "M1", source: SOURCE,
       marketSentence: "Structural event forecast; ghost paths are illustrations.",
       chartTruthSnapshot: { origin: row.forecast.origin },
       intelligenceSnapshot: { forecast: row.forecast, issuedAt: row.issuedAt, manifest },
       fingerprint: { kind: SOURCE, snapshotSha256: sha256Hex(stableStringify(row.forecast)) },
-      expiresAt: new Date(row.forecast.asOf + 3_600_000),
+      expiresAt: new Date(row.forecast.asOf + 60 * forecastStepMs(row.forecast)),
     }).onConflictDoNothing({ target: receipts.receiptId }).returning();
     if (inserted.length) return row;
     const existing = (await this.list(userId, row.forecast.origin.symbol)).find(r => r.id === row.id);

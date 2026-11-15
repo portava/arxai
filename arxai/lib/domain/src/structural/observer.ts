@@ -1,18 +1,26 @@
-import { type StructuralBar, type StructureRead, type Precursor, type FeatureRead } from "./contracts.js";
+import { BAR_STEPS_MS, type StructuralBar, type StructureRead, type Precursor, type FeatureRead } from "./contracts.js";
 
 // Frozen implementation policy v1: 2-right-bar pivots, 20-bar true range;
 // both displacement checks use the ATR frozen at the first close. The source
 // prose was ambiguous about the second ATR: this explicit choice is versioned.
+/** Length of the series' bars; every bar must share it. */
+export function barStepMs(bars: readonly StructuralBar[]): number {
+  return bars.length ? bars[0]!.closeTime - bars[0]!.openTime : 60_000;
+}
 export function validateBars(bars: readonly StructuralBar[], asOf: number, minimum = 120): void {
   if (!Number.isFinite(asOf) || bars.length < minimum) throw new Error("INSUFFICIENT_CLOSED_HISTORY");
+  const step = barStepMs(bars);
+  if (!(BAR_STEPS_MS as readonly number[]).includes(step)) throw new Error("NON_FINAL_OR_NON_M1");
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i]!;
     if (![b.openTime, b.closeTime, b.open, b.high, b.low, b.close].every(Number.isFinite)
       || b.low <= 0 || b.high < Math.max(b.open, b.close) || b.low > Math.min(b.open, b.close)) {
       throw new Error("INVALID_OHLC");
     }
-    if (!b.isFinal || b.closeTime > asOf || b.closeTime - b.openTime !== 60_000
-      || b.openTime % 60_000 !== 0) throw new Error("NON_FINAL_OR_NON_M1");
+    // Every bar has the series' length and starts on a whole minute; bars up
+    // to one hour also start on their own grid (H4 grids follow the venue).
+    if (!b.isFinal || b.closeTime > asOf || b.closeTime - b.openTime !== step
+      || b.openTime % 60_000 !== 0 || (step <= 3_600_000 && b.openTime % step !== 0)) throw new Error("NON_FINAL_OR_NON_M1");
     if (i && b.openTime !== bars[i - 1]!.closeTime) throw new Error("GAP_DUPLICATE_OR_OUT_OF_ORDER");
   }
 }

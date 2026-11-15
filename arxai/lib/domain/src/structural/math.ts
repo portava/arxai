@@ -29,8 +29,10 @@ export function probabilities(mass: readonly Mass[], horizon: number): Triple {
   for (const r of mass.slice(0, horizon)) { up += r[0] + r[1]; down += r[2] + r[3]; }
   return [up, down, Math.max(0, 1 - up - down)];
 }
-export const horizonsFromMass = (mass: Mass[]): HorizonForecast[] =>
-  HORIZONS.map(minutes => ({ minutes, probabilities: probabilities(mass, minutes) }));
+/** Probabilities at each reported horizon, counted in bars of `stepMs`. */
+export const horizonsFromMass = (mass: Mass[], stepMs = 60_000, extra: readonly number[] = []): HorizonForecast[] =>
+  [...new Set<number>([...HORIZONS, ...extra])].filter(b => Number.isInteger(b) && b >= 1 && b <= 60).sort((a, b) => a - b)
+    .map(bars => ({ minutes: bars * stepMs / 60_000, bars, probabilities: probabilities(mass, bars) }));
 
 /** Preserve each 60m subtype, including zero-late-mass infeasibility. */
 export function reallocateEarly(base: Mass[], candidate: Mass[], weight: number): Mass[] {

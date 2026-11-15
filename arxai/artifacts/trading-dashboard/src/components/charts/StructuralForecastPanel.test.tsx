@@ -21,28 +21,46 @@ describe("ARX structural forecast controls", () => {
     const onPaths = vi.fn();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: true, ...row })));
     render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
-    fireEvent.click(screen.getByRole("button", { name: "Forecast next hour" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
     await screen.findByText("50.0%");
     expect(screen.getByText(/Ghost candles are illustrative/)).toBeTruthy();
     expect(screen.getByLabelText(/Neither confirmed.*path unavailable/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Forecast horizon"), { target: { value: "5" } });
-    expect(screen.getByText("80.0%")).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Bullish first \(/));
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].some((p: { scenario: string }) => p.scenario === "UP_FIRST")).toBe(false));
+  });
+  it("asks for the chosen window and shows a forecast only under its own window", async () => {
+    const onPaths = vi.fn();
+    const fetch = vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: true, ...row }))
+      .mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: false, reason: "UNBROKEN_HISTORY_TOO_SHORT",
+        detail: { timeframe: "H4", chartSource: "deriv_public", chartQuality: "clean", chartAiUsable: true, historySource: "deriv_public", closedBars: 900, trainingWindows: 50, trainingWindowsNeeded: 153, lastCloseAgeSeconds: 30 } }, false));
+    vi.stubGlobal("fetch", fetch);
+    render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
+    expect(Array.from((screen.getByLabelText("Forecast window") as HTMLSelectElement).options).map(o => o.textContent))
+      .toEqual(["15 minutes", "30 minutes", "1 hour", "4 hours", "8 hours", "12 hours", "24 hours", "2 days", "1 week"]);
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
+    await screen.findByText("50.0%");
+    expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ symbol: "V75", horizon: "1h" });
+    // The one-hour forecast is not presented as a one-week forecast.
+    fireEvent.change(screen.getByLabelText("Forecast window"), { target: { value: "1w" } });
+    expect(screen.queryByText("50.0%")).toBeNull();
+    await waitFor(() => expect(onPaths.mock.lastCall?.[0]).toEqual([]));
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 week ahead" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/H4 feed.*50 of 153 gap-free training windows/);
+    expect(JSON.parse(fetch.mock.calls[3]![1].body)).toEqual({ symbol: "V75", horizon: "1w" });
   });
   it("never claims an unsaved forecast was issued", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: false, reason: "FORECAST_UNAVAILABLE" }, false)));
     render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Forecast next hour" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
     await screen.findByRole("alert");
-    expect(screen.queryByText(/Saved forecasts:/)).toBeNull();
+    expect(screen.queryByText(/Saved .*forecasts:/)).toBeNull();
   });
   it("reviews memory and performance without issuing another forecast", async () => {
     const fetch = vi.fn().mockResolvedValue(response({ forecasts: [{ ...row, scores: [{ horizon: 60, outcome: "UP_FIRST", brier: .38, baselineBrier: .5, logLoss: .69 }] }] }));
     vi.stubGlobal("fetch", fetch);
     render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Refresh saved forecasts" }));
-    await screen.findByText("60m resolved: 1");
+    await screen.findByText("1 hour resolved: 1");
     expect(screen.getByText("Brier: 0.3800")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Saved forecast"), { target: { value: row.id } });
     await screen.findByText("50.0%");
@@ -52,7 +70,7 @@ describe("ARX structural forecast controls", () => {
     const onPaths = vi.fn();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: true, ...row })));
     const view = render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
-    fireEvent.click(screen.getByRole("button", { name: "Forecast next hour" }));
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
     await screen.findByText("50.0%");
     view.rerender(<StructuralForecastPanel symbol="V50" onPaths={onPaths} />);
     await waitFor(() => expect(onPaths.mock.lastCall?.[0]).toEqual([]));

@@ -15,7 +15,9 @@ router.post("/me/structural/forecasts", requireUser, async (req, res) => {
   const symbol = symbolFrom(req.body?.symbol);
   if (!symbol) { res.status(400).json({ error: "INVALID_SYMBOL" }); return; }
   try {
-    const row = await service.issue(req.authUser!.id, symbol);
+    // Optional; an unknown window is refused by the service (INVALID_HORIZON).
+    const horizon = typeof req.body?.horizon === "string" && req.body.horizon.length <= 8 ? req.body.horizon : undefined;
+    const row = await service.issue(req.authUser!.id, symbol, horizon);
     res.json({ ok: true, saved: true, ...row });
   } catch (error) {
     logger.warn({ err: error }, "Structural forecast unavailable");

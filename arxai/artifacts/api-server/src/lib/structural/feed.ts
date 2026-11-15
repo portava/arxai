@@ -1,31 +1,32 @@
 import { normalizeCandles, type NormalizedChartCandle } from "../data/chart/candleNormalization.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
 import type { ForecastFeed } from "./service.js";
+import type { ForecastHorizonPreset } from "@workspace/domain/structural";
 
 /** Compose existing deep-history and current-truth services; never mix sources. */
 export function assembleForecastFeed(symbol: string, history: CandleHistoryResult, current: {
   candles: NormalizedChartCandle[]; source: string | null; aiUsable: boolean;
   quality: string; warning: string | null;
-}, now: number): ForecastFeed {
+}, now: number, horizon: Pick<ForecastHorizonPreset, "timeframe" | "stepMs"> = { timeframe: "M1", stepMs: 60_000 }): ForecastFeed {
+  const step = horizon.stepMs;
   const historical = normalizeCandles(history.candles, { symbol, displaySymbol: symbol,
-    timeframe: "M1", source: history.source, now, receivedAt: history.fetchedAt }).candles;
+    timeframe: horizon.timeframe, source: history.source, now, receivedAt: history.fetchedAt }).candles;
   const sameSource = history.ok && history.source != null && history.source === current.source;
   // The latest verified chart candle wins over a stale cache copy at the same time.
   const byTime = new Map(historical.map(b => [b.openTime, b]));
   if (sameSource) for (const b of current.candles) byTime.set(b.openTime, b);
   const ordered = [...byTime.values()].filter(b => b.isFinal && b.isComplete)
     .sort((a, b) => Date.parse(a.openTime) - Date.parse(b.openTime)).slice(-5000);
-  // The model needs gap-free one-minute bars, and a cached history can hold an
-  // old segment separated from the recent one by a hole (measured: 1,688
-  // missing minutes 1,011 bars before the tip). Use the most recent unbroken
-  // run instead of refusing the whole series; nothing is interpolated, and the
-  // model's own sample checks still decide whether that run is enough.
+  // The model trains on windows of 180 consecutive bars and never bridges a
+  // gap, so bars on both sides of a hole are kept: windows that cross it are
+  // simply not used (fitWindowCount). The forecast itself needs the newest 120
+  // bars unbroken; `closedBars` reports that newest run.
   let start = ordered.length ? ordered.length - 1 : 0;
-  while (start > 0 && Date.parse(ordered[start]!.openTime) - Date.parse(ordered[start - 1]!.openTime) === 60_000) start--;
+  while (start > 0 && Date.parse(ordered[start]!.openTime) - Date.parse(ordered[start - 1]!.openTime) === step) start--;
   const closed = ordered.slice(start);
-  const known = closed.length > 0 && closed.every(b => b.source === history.source
+  const known = ordered.length > 0 && ordered.every(b => b.source === history.source
     && (b.sourceMode === "live" || b.sourceMode === "demo"));
-  return { bars: closed.map(b => ({ openTime: Date.parse(b.openTime), closeTime: Date.parse(b.closeTime),
+  return { bars: ordered.map(b => ({ openTime: Date.parse(b.openTime), closeTime: Date.parse(b.closeTime),
     open: b.open, high: b.high, low: b.low, close: b.close, isFinal: b.isFinal })),
     origin: { symbol, provider: history.source ?? "unknown", fetchedAt: new Date(now).toISOString(),
       kind: "BROKER_HISTORY", historicalArrivalTimesKnown: false },

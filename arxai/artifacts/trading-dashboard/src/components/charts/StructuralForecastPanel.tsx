@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ForecastScore, GhostPath, StructuralForecast, Scenario } from "@workspace/domain/structural";
+import { FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastScore, type GhostPath, type StructuralForecast, type Scenario } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -15,7 +15,10 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
   const [internalSelected, setInternalSelected] = useState<Scenario[]>(allScenarios);
   const selected=selectedScenarios??internalSelected;
   const setSelected=(next:Scenario[])=>{setInternalSelected(next);onSelectedScenariosChange?.(next);};
-  const [horizon, setHorizon] = useState(60);
+  // One window drives the request, the shown probabilities and the scoring.
+  const [horizonId, setHorizonId] = useState(DEFAULT_FORECAST_HORIZON);
+  const preset = forecastHorizon(horizonId) ?? forecastHorizon(DEFAULT_FORECAST_HORIZON)!;
+  const rowHorizonId = (r: Row) => r.forecast.horizonId ?? DEFAULT_FORECAST_HORIZON;
   const [cohort, setCohort] = useState("all");
   const [auto, setAuto] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,8 +30,10 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     return () => { request.current?.abort(); };
   }, [symbol]);
   useEffect(() => {
-    onPaths(row?.forecast.origin.symbol === canonicalSymbol ? row.forecast.paths.filter(p => selected.includes(p.scenario)) : []);
-  }, [row, canonicalSymbol, selected, onPaths]);
+    // Draw only the paths of the window being shown.
+    const current = row && (row.forecast.horizonId ?? DEFAULT_FORECAST_HORIZON) === horizonId ? row : null;
+    onPaths(current?.forecast.origin.symbol === canonicalSymbol ? current.forecast.paths.filter(p => selected.includes(p.scenario)) : []);
+  }, [row, canonicalSymbol, selected, onPaths, horizonId]);
 
   const generate = useCallback(async (historyOnly = false) => {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
@@ -42,30 +47,33 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
       } else if (historyOnly) throw new Error("prediction memory unavailable");
       if (historyOnly) return;
       const response = await fetch(`${basePath}/api/me/structural/forecasts`, { method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol }), signal: controller.signal });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol, horizon: preset.id }), signal: controller.signal });
       const result = await response.json();
       if (!response.ok || !result.saved) {
         // State what the forecast saw, not only that it declined.
-        const d = result.detail as { historySource?: string | null; historyBars?: number; chartSource?: string | null; chartQuality?: string; chartAiUsable?: boolean; closedBars?: number; barsBeforeLastGap?: number; lastCloseAgeSeconds?: number | null } | undefined;
-        const facts = d ? ` (1-minute feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} unbroken closed bars${d.barsBeforeLastGap ? `, ${d.barsBeforeLastGap} older bars behind a gap` : ""}; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
+        const d = result.detail as { historySource?: string | null; historyBars?: number; chartSource?: string | null; chartQuality?: string; chartAiUsable?: boolean; closedBars?: number; barsBeforeLastGap?: number; lastCloseAgeSeconds?: number | null; timeframe?: string; trainingWindows?: number; trainingWindowsNeeded?: number } | undefined;
+        const facts = d ? ` (${d.timeframe ?? preset.timeframe} feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} unbroken closed bars${d.barsBeforeLastGap ? `, ${d.barsBeforeLastGap} older bars behind a gap` : ""}${d.trainingWindows != null ? `; ${d.trainingWindows} of ${d.trainingWindowsNeeded} gap-free training windows` : ""}; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
         throw new Error(`${String(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE").replaceAll("_", " ").toLowerCase()}${facts}`);
       }
       if (!controller.signal.aborted) setRow(result as Row);
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message.replaceAll("_", " ") : "forecast unavailable");
     } finally { if (!controller.signal.aborted) setBusy(false); }
-  }, [symbol]);
+  }, [symbol, preset.id]);
 
   useEffect(() => {
     if (!auto) return;
-    const timer = setInterval(() => { if (!document.hidden && !busy) void generate(); }, 60_000);
+    // A new forecast is possible once per closed bar of the window's length.
+    const timer = setInterval(() => { if (!document.hidden && !busy) void generate(); }, preset.stepMs);
     return () => clearInterval(timer);
-  }, [auto, busy, generate]);
+  }, [auto, busy, generate, preset.stepMs]);
 
-  const probability = row?.forecast.horizons.find(h => h.minutes === horizon)?.probabilities;
-  const evaluated = history.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
-    .flatMap(r => r.scores.filter(s => s.horizon === horizon).map(score => ({ score,
-      p: r.forecast.horizons.find(h => h.minutes === horizon)?.probabilities })));
+  const shown = row && rowHorizonId(row) === preset.id ? row : null;
+  const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
+  const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
+  const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
+    .flatMap(r => r.scores.filter(s => s.horizon === preset.bars).map(score => ({ score,
+      p: r.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities })));
   const scores = evaluated.map(r => r.score);
   const directional = evaluated.filter(r => r.p && r.p.indexOf(Math.max(...r.p)) < 2);
   const correctDirection = directional.filter(r => (r.p!.indexOf(Math.max(...r.p!)) === 0 ? "UP_FIRST" : "DOWN_FIRST") === r.score.outcome).length;
@@ -74,38 +82,39 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
   return <section aria-label="Structural forecasts" className="border-t border-zinc-800 px-4 py-3 text-xs">
     <div className="flex flex-wrap items-center gap-3">
       <strong className="text-zinc-100">ARX structural forecast</strong>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => void generate()}>{busy ? "Building forecast…" : "Forecast next hour"}</Button>
+      <label>Window <select aria-label="Forecast window" data-testid="forecast-window" className="rounded bg-zinc-900 p-1" value={preset.id}
+        onChange={e => { setHorizonId(e.target.value); setAuto(false); setError(null); }}>
+        {FORECAST_HORIZONS.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}</select></label>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => void generate()}>{busy ? "Building forecast…" : `Forecast ${preset.label} ahead`}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void generate(true)}>Refresh saved forecasts</Button>
-      <label className="flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(); }} /> Update each minute</label>
-      <label>Horizon <select aria-label="Forecast horizon" className="rounded bg-zinc-900 p-1" value={horizon} onChange={e => setHorizon(Number(e.target.value))}>
-        {[1, 3, 5, 15, 30, 60].map(h => <option key={h} value={h}>{h}m</option>)}</select></label>
+      <label className="flex items-center gap-1"><input type="checkbox" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(); }} /> Update each {preset.timeframe} bar</label>
     </div>
     {error && <p role="alert" className="mt-2 text-amber-300">Forecast unavailable: {error}. Saved forecasts remain unchanged.</p>}
-    {row && row.forecast.origin.symbol === canonicalSymbol && <>
-      <p className="mt-2 text-zinc-400">Saved {new Date(row.issuedAt).toLocaleString()} · Data through {new Date(row.forecast.asOf).toLocaleTimeString()} · {row.forecast.mode.replaceAll("_", " ").toLowerCase()} · {row.forecast.origin.provider}</p>
-      <div aria-label="Selected horizon probabilities" className="my-2 flex flex-wrap gap-4"><span>Outcomes at {horizon}m:</span>
+    {shown && shown.forecast.origin.symbol === canonicalSymbol && <>
+      <p className="mt-2 text-zinc-400">Saved {new Date(shown.issuedAt).toLocaleString()} · Data through {new Date(shown.forecast.asOf).toLocaleString()} · {preset.timeframe} bars · {shown.forecast.mode.replaceAll("_", " ").toLowerCase()} · {shown.forecast.origin.provider}</p>
+      <div aria-label="Selected horizon probabilities" className="my-2 flex flex-wrap gap-4"><span>Outcomes within {preset.label}:</span>
         {allScenarios.map((scenario, i) => <span key={scenario}>{labels[scenario]}: <strong>{((probability?.[i] ?? 0) * 100).toFixed(1)}%</strong></span>)}
       </div>
-      <div className="my-2 flex flex-wrap gap-4"><span>60m ghost paths:</span>{row.forecast.paths.map(path => <label key={path.scenario} className="flex items-center gap-2">
+      <div className="my-2 flex flex-wrap gap-4"><span>{preset.label} ghost paths ({preset.timeframe} candles):</span>{shown.forecast.paths.map(path => <label key={path.scenario} className="flex items-center gap-2">
         <input type="checkbox" checked={selected.includes(path.scenario)} disabled={!path.candles.length}
           onChange={e => setSelected(e.target.checked ? [...selected, path.scenario] : selected.filter(s => s !== path.scenario))} />
-        <span>{labels[path.scenario]} ({(path.probability * 100).toFixed(1)}% at 60m){!path.candles.length && " · path unavailable"}</span>
+        <span>{labels[path.scenario]} ({(path.probability * 100).toFixed(1)}%){!path.candles.length && " · path unavailable"}</span>
       </label>)}</div>
       <p className="text-amber-200">Ghost candles are illustrative scenarios, not calibrated price predictions. “Neither” means no confirmed structural break; prices can still move.</p>
-      <p className="mt-1 text-zinc-400">Model {row.forecast.version} · {row.forecast.gateReason.replaceAll("_", " ").toLowerCase()} · Predictive performance not yet validated.</p>
+      <p className="mt-1 text-zinc-400">Model {shown.forecast.version} · {shown.forecast.gateReason.replaceAll("_", " ").toLowerCase()} · Predictive performance not yet validated.</p>
     </>}
     {(row || history.length > 0) && <div aria-label="Forecast performance" className="mt-3 flex flex-wrap gap-4 text-zinc-300">
       <label>Scoring <select aria-label="Forecast scoring cohort" className="rounded bg-zinc-900 p-1" value={cohort} onChange={e => setCohort(e.target.value)}>
         <option value="all">All snapshots</option><option value="prebreak">Before first break</option><option value="confirmation">After precursor</option>
       </select></label>
-      <span>{horizon}m resolved: {scores.length}</span><span>Brier: {average("brier")}</span><span>Frequency baseline: {average("baselineBrier")}</span><span>Log loss: {average("logLoss")}</span>
+      <span>{preset.label} resolved: {scores.length}</span><span>Brier: {average("brier")}</span><span>Frequency baseline: {average("baselineBrier")}</span><span>Log loss: {average("logLoss")}</span>
       <span>Direction precision: {directional.length ? `${(100 * correctDirection / directional.length).toFixed(1)}% (${directional.length})` : "—"}</span>
       <span>Direction recall: {actualDirection ? `${(100 * correctDirection / actualDirection).toFixed(1)}%` : "—"}</span>
-      <span>Saved forecasts: {history.length + (row && !history.some(r => r.id === row.id) ? 1 : 0)}</span>
+      <span>Saved {preset.label} forecasts: {windowHistory.length + (shown && !windowHistory.some(r => r.id === shown.id) ? 1 : 0)}</span>
     </div>}
-    {history.length > 0 && <label className="mt-2 block text-zinc-400">Review a saved forecast <select aria-label="Saved forecast" className="ml-2 rounded bg-zinc-900 p-1" value={row?.id ?? ""} onChange={e => setRow(history.find(r => r.id === e.target.value) ?? row)}>
-      <option value="">Select issuance time</option>{row && !history.some(r => r.id === row.id) && <option value={row.id}>Current forecast</option>}
-      {history.map(r => <option key={r.id} value={r.id}>{new Date(r.issuedAt).toLocaleString()}</option>)}
+    {windowHistory.length > 0 && <label className="mt-2 block text-zinc-400">Review a saved forecast <select aria-label="Saved forecast" className="ml-2 rounded bg-zinc-900 p-1" value={shown?.id ?? ""} onChange={e => setRow(windowHistory.find(r => r.id === e.target.value) ?? row)}>
+      <option value="">Select issuance time</option>{shown && !windowHistory.some(r => r.id === shown.id) && <option value={shown.id}>Current forecast</option>}
+      {windowHistory.map(r => <option key={r.id} value={r.id}>{new Date(r.issuedAt).toLocaleString()}</option>)}
     </select></label>}
   </section>;
 }

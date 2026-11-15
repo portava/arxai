@@ -1,6 +1,6 @@
 import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type Triple, type StructuralBar,
   type StructuralEvent, type DataOrigin, type StructuralForecast, type GhostPath } from "./contracts.js";
-import { observeStructure, structuralFeatures, validateBars } from "./observer.js";
+import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
@@ -9,12 +9,14 @@ export const MODEL_POLICY = Object.freeze({ stride: 15, purgeMinutes: 60, minTra
   blends: [0, .25, .5, .75, 1], minimumGain: .005, brakeWindow: 30,
   brakeExcess: .03, bootstrapReplicates: 400 });
 export interface Episode { origin: number; history: StructuralBar[]; future: StructuralBar[];
-  features: number[]; eligible: boolean; event: StructuralEvent | null }
+  features: number[]; eligible: boolean; event: StructuralEvent | null; step: number }
 export interface LinearHead { mean: number[]; scale: number[]; weights: number[][] }
 export interface Gate { accepted: boolean; blend: number; selectedBlend: number; n: number; gain: number | null;
   lowerGain: number | null; reason: string }
 export interface StructuralModel {
   version: string; modelId: string; origin: DataOrigin; trainedThrough: number;
+  /** Bar length the model was fitted on; every horizon is counted in these bars. */
+  stepMs: number;
   availableAt: number; baseline: Mass[]; geometry: LinearHead; confirmation: LinearHead;
   prebreak: LinearHead | null; geometryGate: Gate; confirmationGate: Gate; prebreakGate: Gate;
   training: Episode[]; partitions: Record<string, { n: number; first: number | null; last: number | null }>;
@@ -55,8 +57,21 @@ export function fitHead(rows: Array<{ x: number[]; y: number }>, classes: number
   return head;
 }
 
+/** Windows the fit can use: 180 consecutive bars at each 15-bar stride. A
+ * window that crosses a gap is not usable; nothing is bridged. */
+export function fitWindowCount(bars: StructuralBar[]): number {
+  let n = 0;
+  for (let i = 120; i + 60 <= bars.length; i += MODEL_POLICY.stride) {
+    try { validateBars(bars.slice(i - 120, i + 60), bars[i + 59]!.closeTime, 180); n++; } catch { /* gap or bad bar */ }
+  }
+  return n;
+}
+/** Fewest usable windows that leave MODEL_POLICY.minTraining training episodes
+ * after the chronological split and purge (a test pins this to fit behaviour). */
+export const MIN_FIT_WINDOWS = 153;
 export function makeEpisodes(bars: StructuralBar[]): Episode[] {
   if (bars.length < 180) throw new Error("INSUFFICIENT_CLOSED_HISTORY");
+  const step = barStepMs(bars);
   const episodes: Episode[] = [];
   for (let i = 120; i + 60 <= bars.length; i += MODEL_POLICY.stride) {
     // Do not bridge missing/session bars, invent timestamps or infer tick order.
@@ -66,7 +81,7 @@ export function makeEpisodes(bars: StructuralBar[]): Episode[] {
     const history = bars.slice(i - 120, i), future = bars.slice(i, i + 60), origin = history.at(-1)!.closeTime;
     const f = structuralFeatures(history, origin);
     const event = observeStructure([...history, ...future]).events.find(e => e.time > origin) ?? null;
-    episodes.push({ origin, history, future, features: f.values, eligible: f.eligible, event });
+    episodes.push({ origin, history, future, features: f.values, eligible: f.eligible, event, step });
   }
   return episodes;
 }
@@ -78,7 +93,7 @@ export function chronologicalPartitions(episodes: Episode[]): Record<"train" | "
   const result = {} as Record<typeof groups[number], Episode[]>;
   for (let p = 0; p < 4; p++) {
     const end = p < 3 ? episodes[cuts[p + 1]!]!.origin : Infinity;
-    result[groups[p]!] = episodes.slice(cuts[p], cuts[p + 1]).filter(e => e.origin + 60 * 60_000 < end);
+    result[groups[p]!] = episodes.slice(cuts[p], cuts[p + 1]).filter(e => e.origin + 60 * e.step < end);
   }
   return result;
 }
@@ -87,7 +102,7 @@ function timeFeatures(x: number[], minute: number): number[] { return [...x, min
 function hazardRows(episodes: Episode[], geometry: boolean): Array<{ x: number[]; y: number }> {
   const rows: Array<{ x: number[]; y: number }> = [];
   for (const e of episodes) {
-    const minute = e.event ? (e.event.time - e.origin) / 60_000 : 61;
+    const minute = e.event ? (e.event.time - e.origin) / e.step : 61;
     for (let j = 1; j <= Math.min(60, minute); j++) rows.push({
       x: timeFeatures(geometry ? geometryFeatures(e.features) : e.features, j),
       y: j === minute ? CAUSES.indexOf(e.event!.cause) : 4,
@@ -97,10 +112,10 @@ function hazardRows(episodes: Episode[], geometry: boolean): Array<{ x: number[]
 }
 function empiricalBaseline(episodes: Episode[]): Mass[] {
   return hazardsToMass(Array.from({ length: 60 }, (_, j) => {
-    const risk = episodes.filter(e => !e.event || e.event.time > e.origin + j * 60_000);
+    const risk = episodes.filter(e => !e.event || e.event.time > e.origin + j * e.step);
     if (!risk.length) return [0, 0, 0, 0, 1];
     const counts = [.5, .5, .5, .5, .5]; // explicit Jeffreys pseudocount policy
-    for (const e of risk) counts[e.event?.time === e.origin + (j + 1) * 60_000 ? CAUSES.indexOf(e.event.cause) : 4]!++;
+    for (const e of risk) counts[e.event?.time === e.origin + (j + 1) * e.step ? CAUSES.indexOf(e.event.cause) : 4]!++;
     return counts.map(v => v / (risk.length + 2.5));
   }));
 }
@@ -108,7 +123,7 @@ function hazardPrediction(head: LinearHead, features: number[], geometry: boolea
   const x = geometry ? geometryFeatures(features) : features;
   return hazardsToMass(Array.from({ length: 60 }, (_, j) => predictHead(head, timeFeatures(x, j + 1))));
 }
-const truth = (e: Episode, h: number) => scenarioIndex(scenarioOf(e.event && e.event.time <= e.origin + h * 60_000 ? e.event : null));
+const truth = (e: Episode, h: number) => scenarioIndex(scenarioOf(e.event && e.event.time <= e.origin + h * e.step ? e.event : null));
 const rejected = (reason: string): Gate => ({ accepted: false, blend: 0, selectedBlend: 0, n: 0, gain: null, lowerGain: null, reason });
 
 /** Deterministic moving-block bootstrap accounts for overlapping 60m labels.
@@ -196,7 +211,7 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   const trainedThrough = parts.train.at(-1)!.future.at(-1)!.closeTime;
   const model: StructuralModel = {
     version: STRUCTURAL_VERSION, modelId: `${STRUCTURAL_VERSION}:${origin.provider}:${origin.symbol}:${trainedThrough}`,
-    origin, trainedThrough, availableAt: parts.gate.at(-1)?.future.at(-1)?.closeTime ?? trainedThrough,
+    origin, trainedThrough, stepMs: episodes[0]?.step ?? barStepMs(bars), availableAt: parts.gate.at(-1)?.future.at(-1)?.closeTime ?? trainedThrough,
     baseline: empiricalBaseline(parts.train), geometry: fitHead(hazardRows(parts.train, true), 5),
     confirmation: fitHead(hazardRows(parts.train, false), 5), prebreak: null,
     geometryGate: rejected("NOT_EVALUATED"), confirmationGate: rejected("NOT_EVALUATED"), prebreakGate: rejected("NOT_EVALUATED"),
@@ -235,20 +250,20 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   return model;
 }
 
-export function ghostPaths(model: StructuralModel, history: StructuralBar[], mass: Mass[]): GhostPath[] {
-  const asOf = history.at(-1)!.closeTime, start = history.at(-1)!.close;
+export function ghostPaths(model: StructuralModel, history: StructuralBar[], mass: Mass[], horizonBars = 60): GhostPath[] {
+  const asOf = history.at(-1)!.closeTime, start = history.at(-1)!.close, step = model.stepMs ?? 60_000;
   const buckets: StructuralBar[][][] = [[], [], []];
   const ends: number[][] = [[], [], []];
   for (const e of model.training) {
     if (e.future.at(-1)!.closeTime > model.trainedThrough || e.future.at(-1)!.closeTime >= asOf) continue;
     const ratio = start / e.history.at(-1)!.close;
-    const path = e.future.map((b, j) => ({ ...b, openTime: asOf + j * 60_000, closeTime: asOf + (j + 1) * 60_000,
+    const path = e.future.slice(0, horizonBars).map((b, j) => ({ ...b, openTime: asOf + j * step, closeTime: asOf + (j + 1) * step,
       open: b.open * ratio, high: b.high * ratio, low: b.low * ratio, close: b.close * ratio }));
     const event = observeStructure([...history, ...path]).events.find(x => x.time > asOf);
     const index = scenarioIndex(scenarioOf(event));
     buckets[index]!.push(path); ends[index]!.push(e.future.at(-1)!.closeTime);
   }
-  const p = probabilities(mass, 60);
+  const p = probabilities(mass, horizonBars);
   return (["UP_FIRST", "DOWN_FIRST", "NEITHER"] as const).map((scenario, i) => {
     const ranked = buckets[i]!.map((path, k) => ({ path, end: ends[i]![k]!, close: path.at(-1)!.close }))
       .sort((a, b) => a.close - b.close);
@@ -257,16 +272,20 @@ export function ghostPaths(model: StructuralModel, history: StructuralBar[], mas
       candles: selected?.path ?? [], unavailableReason: selected ? null : "NO_CLASS_MATCHING_TRAINING_PATH" };
   });
 }
-export function forecastStructural(model: StructuralModel, history: StructuralBar[], origin: DataOrigin, quarantined = false): StructuralForecast {
+export function forecastStructural(model: StructuralModel, history: StructuralBar[], origin: DataOrigin, quarantined = false,
+  horizonBars = 60, horizonId?: string): StructuralForecast {
   const asOf = history.at(-1)?.closeTime ?? NaN;
   validateBars(history, asOf);
-  if (asOf < model.availableAt || origin.symbol !== model.origin.symbol || origin.provider !== model.origin.provider) throw new Error("MODEL_PROVENANCE_OR_TIME_MISMATCH");
+  if (!Number.isInteger(horizonBars) || horizonBars < 1 || horizonBars > 60) throw new Error("INVALID_HORIZON");
+  const stepMs = model.stepMs ?? 60_000;
+  if (asOf < model.availableAt || origin.symbol !== model.origin.symbol || origin.provider !== model.origin.provider
+    || barStepMs(history) !== stepMs) throw new Error("MODEL_PROVENANCE_OR_TIME_MISMATCH");
   const h = history.slice(-120), features = structuralFeatures(h, asOf);
   const prediction = predictMass(model, features.values, features.eligible, quarantined);
   return { version: model.version, modelId: model.modelId, asOf, origin, trainedThrough: model.trainedThrough,
     featureVersion: `${model.version}:features-1`, eventDefinitionVersion: `${model.version}:events-1`,
     features: features.values, preBreakEligible: features.eligible, mode: prediction.mode, gateReason: prediction.reason,
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
-    horizons: horizonsFromMass(prediction.mass), paths: ghostPaths(model, h, prediction.mass), history: h,
-    executionAuthority: "NONE" };
+    horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars), history: h,
+    executionAuthority: "NONE", stepMs, horizonBars, ...(horizonId ? { horizonId } : {}) };
 }

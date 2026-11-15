@@ -332,7 +332,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     fireEvent.click(screen.getByTestId("arx-native-forecast-open"));
     await waitFor(() => expect(details.hasAttribute("hidden")).toBe(false));
     expect(screen.getByTestId("arx-structural-forecast")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Forecast next hour" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Forecast 1 hour ahead" })).toBeTruthy();
   });
 
   it("shows a server-timed candle countdown only after an accepted forming-bar frame", () => {

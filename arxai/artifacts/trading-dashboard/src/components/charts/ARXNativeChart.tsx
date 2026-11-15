@@ -1746,7 +1746,7 @@ export function ARXNativeChart({
                 variant="outline"
                 className="h-7 shrink-0 px-2 text-xs"
                 aria-label="Open the projected path forecast"
-                title="Forecast next hour — projected scenario paths drawn ahead of the latest candle"
+                title="Forecast — pick a window from 15 minutes to 1 week; scenario paths are drawn ahead of the latest candle"
                 aria-controls="arx-structural-forecast"
                 data-testid="arx-native-forecast-open"
                 onClick={() => {

@@ -3,16 +3,17 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
 
-export function fixture(n = 5000): StructuralBar[] {
+export function fixture(n = 5000, step = 60_000): StructuralBar[] {
   let seed = 123, price = 100;
   return Array.from({ length: n }, (_, i) => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     const open = price; price = Math.max(2, price + (seed / 2 ** 32 - .5) * .8);
-    return { openTime: Date.UTC(2026, 0, 1) + i * 60_000, closeTime: Date.UTC(2026, 0, 1) + (i + 1) * 60_000,
+    return { openTime: Date.UTC(2026, 0, 1) + i * step, closeTime: Date.UTC(2026, 0, 1) + (i + 1) * step,
       open, high: Math.max(open, price) + .15, low: Math.min(open, price) - .15, close: price, isFinal: true };
   });
 }
@@ -215,6 +216,9 @@ test("a request that crosses the minute boundary re-reads once and issues on the
 test("the minimum unbroken history matches what the model accepts, and a shorter run is refused before fitting", async () => {
   assert.throws(() => fitStructuralModel(fixture(MIN_FIT_BARS - 1), origin), /INSUFFICIENT_TRAINING_HISTORY/);
   fitStructuralModel(fixture(MIN_FIT_BARS), origin);
+  // The window count is the real limit: the minimum run yields exactly the minimum windows.
+  assert.equal(fitWindowCount(fixture(MIN_FIT_BARS)), MIN_FIT_WINDOWS);
+  assert.equal(fitWindowCount(fixture(MIN_FIT_BARS - 1)), MIN_FIT_WINDOWS - 1);
   const short = fixture(MIN_FIT_BARS - 1), shortAsOf = short.at(-1)!.closeTime; let fits = 0;
   const service = new StructuralForecastService({ repository: memory(), now: () => shortAsOf + 1000,
     readFeed: async () => ({ bars: short, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null,
@@ -222,7 +226,8 @@ test("the minimum unbroken history matches what the model accepts, and a shorter
     fit: () => { fits++; return structuredClone(model()); } });
   await assert.rejects(service.issue(1, "V75"), (error: unknown) => {
     assert.ok(error instanceof ForecastRefusal); assert.equal(error.code, "UNBROKEN_HISTORY_TOO_SHORT");
-    assert.equal(error.detail?.closedBars, MIN_FIT_BARS - 1); assert.equal(error.detail?.lastCloseAgeSeconds, 1); return true;
+    assert.equal(error.detail?.closedBars, MIN_FIT_BARS - 1); assert.equal(error.detail?.lastCloseAgeSeconds, 1);
+    assert.equal(error.detail?.trainingWindows, MIN_FIT_WINDOWS - 1); assert.equal(error.detail?.trainingWindowsNeeded, MIN_FIT_WINDOWS); return true;
   });
   assert.equal(fits, 0);
 });
@@ -232,7 +237,7 @@ test("a refusal states a stable code and what the feed looked like", async () =>
     readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: false, reason: "LIVE_CHART_DELAYED", diagnostics }), fit: () => structuredClone(model()) });
   await assert.rejects(service.issue(1, "V75"), (error: unknown) => {
     assert.ok(error instanceof ForecastRefusal); assert.equal(error.code, "LIVE_CHART_DELAYED");
-    assert.deepEqual(error.detail, { ...diagnostics, lastCloseAgeSeconds: 1 }); return true;
+    assert.deepEqual(error.detail, { ...diagnostics, timeframe: "M1", lastCloseAgeSeconds: 1 }); return true;
   });
   // The feed assembler names the failing check instead of passing free text.
   // It reaches the data layer, so this part runs where a database is configured.
@@ -244,13 +249,76 @@ test("a refusal states a stable code and what the feed looked like", async () =>
   assert.equal(feedFor("clean", true, "mt5_broker").reason, "HISTORY_SOURCE_MISMATCH");
   assert.equal(feedFor("clean", true).reason, "UNKNOWN_DATA_PROVENANCE"); // no closed bars to vouch for
   assert.deepEqual(feedFor("delayed", false).diagnostics, { historySource: "deriv_public", historyBars: 0, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 0, barsBeforeLastGap: 0, lastCloseAgeSeconds: null });
-  // A hole in stored history: only the unbroken recent run is used, never bars across the hole.
+  // A hole in stored history: bars on both sides are kept (training windows
+  // that cross it are skipped by the model), and the newest run is reported.
   const minute = (i: number) => new Date(asOf - (400 - i) * 60_000).toISOString();
   const stored = Array.from({ length: 400 }, (_, i) => i).filter(i => i < 100 || i >= 150)
     .map(i => ({ time: minute(i), open: 10, high: 11, low: 9, close: 10.5, volume: 1 }));
   const holed = assembleForecastFeed("V75", { ok: true, source: "deriv_public", candles: stored, fetchedAt: new Date(asOf).toISOString() } as unknown as CandleHistoryResult,
     { candles: [], source: "deriv_public", aiUsable: true, quality: "clean", warning: null }, asOf);
-  assert.equal(holed.bars.length, 250); assert.equal(holed.diagnostics?.barsBeforeLastGap, 100);
-  assert.equal(holed.bars[0]!.openTime, Date.parse(minute(150)));
-  for (let i = 1; i < holed.bars.length; i++) assert.equal(holed.bars[i]!.openTime - holed.bars[i - 1]!.openTime, 60_000);
+  assert.equal(holed.bars.length, 350); assert.equal(holed.diagnostics?.closedBars, 250); assert.equal(holed.diagnostics?.barsBeforeLastGap, 100);
+  assert.equal(holed.bars[100]!.openTime, Date.parse(minute(150)));
+  assert.equal(holed.bars[100]!.openTime - holed.bars[99]!.openTime, 51 * 60_000);
 });
+
+test("every forecast window fits inside the model's 60 bars, from 15 minutes to one week", () => {
+  assert.deepEqual(FORECAST_HORIZONS.map(h => h.id), ["15m", "30m", "1h", "4h", "8h", "12h", "24h", "2d", "1w"]);
+  for (const h of FORECAST_HORIZONS) {
+    assert.ok(Number.isInteger(h.bars) && h.bars >= 1 && h.bars <= 60, h.id);
+    assert.equal(h.bars * h.stepMs, h.minutes * 60_000);
+  }
+  assert.equal(forecastHorizon("1w")?.minutes, 7 * 24 * 60);
+  assert.equal(forecastHorizon("3h"), null);
+});
+test("a five-minute model forecasts four hours: 48 bars, five-minute ghost candles, scored in its own bars", () => {
+  const step = 300_000, m5 = fixture(5000, step), m5AsOf = m5.at(-1)!.closeTime;
+  const m5Model = fitStructuralModel(m5, origin);
+  assert.equal(m5Model.stepMs, step);
+  const f = forecastStructural(m5Model, m5.slice(-120), origin, false, 48, "4h");
+  assert.equal(f.stepMs, step); assert.equal(f.horizonBars, 48); assert.equal(f.horizonId, "4h");
+  const at4h = f.horizons.find(h => h.bars === 48)!;
+  assert.equal(at4h.minutes, 240);
+  for (const path of f.paths) {
+    close(path.probability, at4h.probabilities[["UP_FIRST", "DOWN_FIRST", "NEITHER"].indexOf(path.scenario)]!);
+    if (!path.candles.length) continue;
+    assert.equal(path.candles.length, 48);
+    assert.equal(path.candles[0]!.openTime, m5AsOf);
+    assert.equal(path.candles.at(-1)!.closeTime, m5AsOf + 48 * step);
+  }
+  // A one-minute history cannot be read by a five-minute model.
+  assert.throws(() => forecastStructural(m5Model, bars.slice(-120), origin, false, 48), /MODEL_PROVENANCE_OR_TIME_MISMATCH|INVALID|NON_FINAL/);
+  // Outcomes are scored at bar counts of five minutes each, including the requested 48.
+  const future = Array.from({ length: 60 }, (_, i) => ({ ...m5.at(-1)!, openTime: m5AsOf + i * step, closeTime: m5AsOf + (i + 1) * step }));
+  const scores = evaluateForecast(f, future, m5AsOf + 60 * step);
+  const s48 = scores.find(s => s.horizon === 48)!;
+  assert.equal(s48.minutes, 240); assert.equal(s48.observedThrough, m5AsOf + 48 * step);
+});
+test("a requested window reads its own bar length and an unknown window is refused", async () => {
+  const seen: string[] = [];
+  const service = new StructuralForecastService({ repository: memory(), now: () => asOf + 1000,
+    readFeed: async (_symbol, horizon) => { seen.push(horizon?.timeframe ?? "none"); return { bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }; },
+    fit: () => structuredClone(model()) });
+  const row = await service.issue(1, "V75", "15m");
+  assert.equal(row.forecast.horizonId, "15m"); assert.equal(row.forecast.horizonBars, 15);
+  assert.ok(row.forecast.horizons.some(h => h.minutes === 15));
+  assert.deepEqual(seen, ["M1"]);
+  await assert.rejects(service.issue(1, "V75", "3h"), (e: unknown) => e instanceof ForecastRefusal && e.code === "INVALID_HORIZON");
+  // An eight-hour window asks for 15-minute bars and refuses a feed of any other length.
+  await assert.rejects(service.issue(1, "V75", "8h"), (e: unknown) => e instanceof ForecastRefusal && e.code === "FEED_BAR_LENGTH_MISMATCH");
+  assert.equal(seen.at(-1), "M15");
+});
+
+test("walk-forward accuracy fits only on bars before each cutoff and finds no edge in a random walk", () => {
+  const walk = fixture(9000), seen: number[] = [];
+  const result = walkForwardAccuracy(walk, origin, [5, 15, 60], { folds: 3, fit: (b, o) => { seen.push(b.at(-1)!.closeTime); return fitStructuralModel(b, o); } });
+  assert.equal(result.folds.length, 3);
+  // Every scored forecast was issued after the end of the data its model saw.
+  for (const [k, fold] of result.folds.entries()) { assert.equal(fold.trainedThrough <= seen[k]!, true); assert.ok(fold.tested > 0); }
+  for (const h of result.horizons) {
+    assert.equal(h.forecasts, result.folds.reduce((s, f) => s + f.tested, 0));
+    assert.equal(h.outcomes.up + h.outcomes.down + h.outcomes.neither, h.forecasts);
+    // The fixture is a seeded random walk: there is nothing to learn, and the measurement must not claim otherwise.
+    assert.ok(!(h.gainLowerBound > MODEL_POLICY_MIN_GAIN), `horizon ${h.horizonBars}: lower bound ${h.gainLowerBound}`);
+  }
+});
+const MODEL_POLICY_MIN_GAIN = .005;
