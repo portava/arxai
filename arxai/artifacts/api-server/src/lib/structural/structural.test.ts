@@ -229,5 +229,14 @@ test("a refusal states a stable code and what the feed looked like", async () =>
     { candles: [], source, aiUsable, quality, warning: "free text that must not become the reason" }, asOf);
   assert.equal(feedFor("clean", true, "mt5_broker").reason, "HISTORY_SOURCE_MISMATCH");
   assert.equal(feedFor("clean", true).reason, "UNKNOWN_DATA_PROVENANCE"); // no closed bars to vouch for
-  assert.deepEqual(feedFor("delayed", false).diagnostics, { historySource: "deriv_public", historyBars: 0, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 0, lastCloseAgeSeconds: null });
+  assert.deepEqual(feedFor("delayed", false).diagnostics, { historySource: "deriv_public", historyBars: 0, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 0, barsBeforeLastGap: 0, lastCloseAgeSeconds: null });
+  // A hole in stored history: only the unbroken recent run is used, never bars across the hole.
+  const minute = (i: number) => new Date(asOf - (400 - i) * 60_000).toISOString();
+  const stored = Array.from({ length: 400 }, (_, i) => i).filter(i => i < 100 || i >= 150)
+    .map(i => ({ time: minute(i), open: 10, high: 11, low: 9, close: 10.5, volume: 1 }));
+  const holed = assembleForecastFeed("V75", { ok: true, source: "deriv_public", candles: stored, fetchedAt: new Date(asOf).toISOString() } as unknown as CandleHistoryResult,
+    { candles: [], source: "deriv_public", aiUsable: true, quality: "clean", warning: null }, asOf);
+  assert.equal(holed.bars.length, 250); assert.equal(holed.diagnostics?.barsBeforeLastGap, 100);
+  assert.equal(holed.bars[0]!.openTime, Date.parse(minute(150)));
+  for (let i = 1; i < holed.bars.length; i++) assert.equal(holed.bars[i]!.openTime - holed.bars[i - 1]!.openTime, 60_000);
 });

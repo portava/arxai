@@ -12,6 +12,8 @@ export interface ForecastRepository {
 export interface ForecastFeedDiagnostics {
   historySource: string | null; historyBars: number; chartSource: string | null;
   chartQuality: string; chartAiUsable: boolean; closedBars: number; lastCloseAgeSeconds: number | null;
+  /** Older stored bars left out because a gap separates them from the recent run. */
+  barsBeforeLastGap?: number;
 }
 export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics }
 /** A domain refusal: a stable code plus the non-secret facts behind it. */

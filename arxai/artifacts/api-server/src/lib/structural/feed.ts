@@ -13,8 +13,16 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
   // The latest verified chart candle wins over a stale cache copy at the same time.
   const byTime = new Map(historical.map(b => [b.openTime, b]));
   if (sameSource) for (const b of current.candles) byTime.set(b.openTime, b);
-  const closed = [...byTime.values()].filter(b => b.isFinal && b.isComplete)
+  const ordered = [...byTime.values()].filter(b => b.isFinal && b.isComplete)
     .sort((a, b) => Date.parse(a.openTime) - Date.parse(b.openTime)).slice(-5000);
+  // The model needs gap-free one-minute bars, and a cached history can hold an
+  // old segment separated from the recent one by a hole (measured: 1,688
+  // missing minutes 1,011 bars before the tip). Use the most recent unbroken
+  // run instead of refusing the whole series; nothing is interpolated, and the
+  // model's own sample checks still decide whether that run is enough.
+  let start = ordered.length ? ordered.length - 1 : 0;
+  while (start > 0 && Date.parse(ordered[start]!.openTime) - Date.parse(ordered[start - 1]!.openTime) === 60_000) start--;
+  const closed = ordered.slice(start);
   const known = closed.length > 0 && closed.every(b => b.source === history.source
     && (b.sourceMode === "live" || b.sourceMode === "demo"));
   return { bars: closed.map(b => ({ openTime: Date.parse(b.openTime), closeTime: Date.parse(b.closeTime),
@@ -29,5 +37,6 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
       : !current.aiUsable ? "LIVE_CHART_NOT_AI_USABLE" : null,
     diagnostics: { historySource: history.source ?? null, historyBars: history.candles.length, chartSource: current.source,
       chartQuality: String(current.quality), chartAiUsable: current.aiUsable, closedBars: closed.length,
+      barsBeforeLastGap: ordered.length - closed.length,
       lastCloseAgeSeconds: closed.length ? Math.round((now - Date.parse(closed.at(-1)!.closeTime)) / 1000) : null } };
 }
