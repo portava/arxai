@@ -456,6 +456,37 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     }
   }
 
+  // ── Repair holes inside the newest window ───────────────────────────────────
+  // The deep fetch above only runs when the cache is SHORT. A cache that holds
+  // enough rows can still be two segments with a hole between them (measured:
+  // V25_1S M1 had 1,688 missing minutes 1,011 bars before the tip), and that
+  // window was served as if it were continuous. Deriv synthetics trade around
+  // the clock, so a missing interval there is a cache hole, not a closed
+  // market. Fetch the bars that end at each hole from the same producer; a
+  // hole the provider cannot fill is left exactly as it is.
+  if (!before && sourceSupportsDeepCursor(source) && assetClass === "synthetic" && source === derivMarketDataSource()) {
+    const stepMs = timeframeMs(timeframe);
+    const newestHole = (candles: Candle[]): number | null => {
+      for (let i = candles.length - 1; i > 0; i--) {
+        const resume = new Date(candles[i]!.time).getTime(), prior = new Date(candles[i - 1]!.time).getTime();
+        if (Number.isFinite(resume) && Number.isFinite(prior) && resume - prior > stepMs) return resume;
+      }
+      return null;
+    };
+    let repairs = 0, lastHole: number | null = null;
+    while (repairs < MAX_DERIV_BACKFILL_FETCHES) {
+      const hole = newestHole(page.candles);
+      if (hole == null || hole === lastHole) break; // continuous, or no progress
+      lastHole = hole;
+      const res = await getDerivCandles(symbol, timeframe, MAX_LIMIT, Math.floor(hole / 1000) - 1);
+      repairs += 1;
+      cacheHit = false;
+      if (!res.ok || res.source !== source || source !== derivMarketDataSource() || res.candles.length === 0) break;
+      await upsertCandles(symbol, timeframe, source, derivToCandles(res.candles));
+      page = await readCachedCandles({ symbol, timeframe, source, before, limit });
+    }
+  }
+
   // ── Honest status verdict ───────────────────────────────────────────────────
   let status: CandleHistoryStatus;
   if (page.count === 0) {
