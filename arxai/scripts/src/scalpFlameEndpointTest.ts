@@ -301,6 +301,14 @@ async function main(): Promise<void> {
 
   await cleanupByEmail();
 
+  // The in-process server must not read the internet's calendar. With no
+  // provider named, the key-free Forex Factory weekly feed is selected and its
+  // real EUR/GBP high-impact releases veto the EURGBP read in some weeks (CI
+  // went red on 2026-11-15 for exactly that). Naming no real provider makes
+  // the seam report not-configured, so news is "none" for every symbol here.
+  // The production news gate is unchanged and keeps its own tests.
+  if (!EXTERNAL_BASE) process.env["ECONOMIC_CALENDAR_PROVIDER"] = "none";
+
   // ── Resolve a base URL: in-process ephemeral server (CI-safe) unless an
   //    external server URL was supplied via ARX_QA_BASE_URL. ────────────────
   let server: Server | null = null;
