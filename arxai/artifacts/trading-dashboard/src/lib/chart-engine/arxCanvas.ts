@@ -1091,7 +1091,7 @@ export class CanvasChart {
             | CandleData
             | undefined;
           if (!bar) continue;
-          const x = this.x(this.indexForTime(m.time));
+          const x = this.x(this.logicalIndexAtTime(m.time));
           if (x < 0 || x > w) continue;
           const above = m.position === "aboveBar",
             y = localY(above ? bar.high : bar.low) + (above ? -12 : 12);

@@ -12,8 +12,7 @@ import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-en
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLayersMenu } from "./ChartLayersMenu";
-import { StructuralForecastPanel } from "./StructuralForecastPanel";
-import type { GhostPath, Scenario } from "@workspace/domain/structural";
+import { StructuralForecastPanel, type ForecastDrawPath } from "./StructuralForecastPanel";
 import {
   allLayers,
   overlayLayer,
@@ -649,17 +648,18 @@ export function ARXNativeChart({
     () => visibleOverlays(overlays, layers),
     [overlays, layers],
   );
-  const acceptScenarioPaths = useCallback((paths: GhostPath[]) => {
-    const colors: Record<Scenario, string> = {
-      UP_FIRST: "#36d6b0",
-      DOWN_FIRST: "#fa668d",
-      NEITHER: "#a88cff",
+  const acceptScenarioPaths = useCallback((paths: ForecastDrawPath[]) => {
+    const colors: Record<string, string> = {
+      BULL: "#36d6b0", UP_FIRST: "#36d6b0",
+      BEAR: "#fa668d", DOWN_FIRST: "#fa668d",
+      MIDDLE: "#a88cff", NEITHER: "#a88cff",
     };
     setScenarioGhostPaths(paths
-      .filter((path) => path.label === "ILLUSTRATIVE_TRAINING_PATH" && !path.unavailableReason)
+      .filter((path) => path.candles.length > 0)
       .map((path) => ({
-        id: path.scenario,
-        color: colors[path.scenario],
+        id: path.id,
+        color: colors[path.id] ?? "#a88cff",
+        label: path.label,
         candles: path.candles.map((bar) => ({
           time: Math.floor(bar.openTime / 1000),
           open: bar.open,

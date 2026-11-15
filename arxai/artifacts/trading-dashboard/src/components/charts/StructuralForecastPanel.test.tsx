@@ -61,6 +61,30 @@ describe("ARX structural forecast controls", () => {
     rerender(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} chartTimeframe="M30" onShowOnTimeframe={onShow} />);
     expect(screen.queryByTestId("forecast-timeframe-mismatch")).toBeNull();
   });
+  it("draws bull, middle and bear paths labeled with their percentages, and shows grades and what it learned", async () => {
+    const onPaths = vi.fn();
+    const bar = (close: number) => ({ openTime: 1800000000000, closeTime: 1800000060000, open: 100, high: Math.max(100, close), low: Math.min(100, close), close, isFinal: true });
+    const trajectories = [["BULL", 75, .012, .58], ["MIDDLE", 50, .001, .5], ["BEAR", 25, -.009, .4]].map(([kind, percentile, endChange, share]) =>
+      ({ kind, percentile, label: "ANALOG_PERCENTILE_PATH", candles: [bar(100 * (1 + (endChange as number)))], endChange, share, analogs: 120, sourceEnd: 1 }));
+    const forecast = { ...row.forecast, trajectories, calibration: { applied: true, reason: "IMPROVED_ON_HELD_OUT_FORECASTS", graded: 42, heldOut: 13, weight: .25, frequencies: [.4, .4, .2], holdoutGain: .012, raw: [.55, .25, .2] } };
+    const graded = { ...row, id: "old", issuedAt: 1799990000000, forecast, scores: [{ horizon: 60, outcome: "DOWN_FIRST", brier: .3, baselineBrier: .4, logLoss: .5,
+      grade: { gradeVersion: "g", letter: "B", skill: .3, probabilityOfOutcome: .6, actualEndChange: -.004, nearestPath: "MIDDLE", insideRange: true, middlePathError: .001 } }] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [graded] })).mockResolvedValueOnce(response({ saved: true, ...row, forecast })));
+    render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
+    await screen.findByLabelText("Projected paths");
+    await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "MIDDLE", "BEAR"]));
+    const labels = onPaths.mock.lastCall![0].map((p: { label: string }) => p.label);
+    expect(labels[0]).toBe("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
+    expect(labels[1]).toBe("Middle +0.10% · median of 120 similar setups");
+    expect(labels[2]).toBe("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
+    expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 graded forecasts.*0\.012 Brier better on the 13 newest/);
+    const grades = screen.getByTestId("forecast-grades").textContent!;
+    expect(grades).toMatch(/Graded 1 hour forecasts: 1/);
+    expect(grades).toMatch(/B .*broke down first, gave it 60% · ended −0\.40% · nearest middle path · inside bull–bear range/);
+    fireEvent.click(screen.getByLabelText(/^Middle /));
+    await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "BEAR"]));
+  });
   it("never claims an unsaved forecast was issued", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: false, reason: "FORECAST_UNAVAILABLE" }, false)));
     render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);

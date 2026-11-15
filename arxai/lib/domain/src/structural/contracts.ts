@@ -53,6 +53,48 @@ export interface GhostPath {
   label: "ILLUSTRATIVE_TRAINING_PATH";
   sourceEnd: number | null; candles: StructuralBar[]; unavailableReason: string | null;
 }
+/**
+ * One of three projected paths. The forecast finds the past setups whose
+ * structure most resembled the current one, rescales what price did after each
+ * to today's price, and takes the 75th / 50th / 25th percentile by where it
+ * ended. `share` is the fraction of those matches that ended on this path's
+ * side (higher for BULL, lower for BEAR, within the middle half for MIDDLE).
+ */
+export type TrajectoryKind = "BULL" | "MIDDLE" | "BEAR";
+export interface Trajectory {
+  kind: TrajectoryKind; percentile: 75 | 50 | 25; label: "ANALOG_PERCENTILE_PATH";
+  candles: StructuralBar[];
+  /** End close relative to the starting close, as a fraction (0.01 = +1%). */
+  endChange: number;
+  share: number; analogs: number; sourceEnd: number | null;
+}
+/** Learned adjustment from this user's graded forecasts of the same symbol and window. */
+export interface CalibrationRecord {
+  applied: boolean; reason: string;
+  /** Graded forecasts it learned from, and how many of them were held out to test it. */
+  graded: number; heldOut: number;
+  /** Weight given to the observed outcome frequencies (0 = raw model, 1 = frequencies only). */
+  weight: number; frequencies: Triple | null;
+  /** Brier improvement on the held-out forecasts (> 0 = better than the raw model). */
+  holdoutGain: number | null;
+  /** Window probabilities before calibration. */
+  raw: Triple;
+}
+/** The judgement of one finished forecast, made once its whole window has closed. */
+export interface ForecastGrade {
+  gradeVersion: string;
+  letter: "A" | "B" | "C" | "D" | "F";
+  /** 1 − Brier/uniform Brier of the probabilities shown: > 0 beats a coin toss among three outcomes. */
+  skill: number;
+  /** Probability the forecast gave the outcome that actually happened. */
+  probabilityOfOutcome: number;
+  /** Where price actually ended relative to the start, and which path ended nearest to it. */
+  actualEndChange: number; nearestPath: TrajectoryKind | null;
+  /** Whether the actual end landed between the bear and bull paths' ends. */
+  insideRange: boolean | null;
+  /** Mean absolute error of the middle path's closes, as a fraction of price. */
+  middlePathError: number | null;
+}
 export interface StructuralForecast {
   version: string; asOf: number; origin: DataOrigin; modelId: string;
   featureVersion: string; eventDefinitionVersion: string;
@@ -67,6 +109,10 @@ export interface StructuralForecast {
   /** Bars of the 60 modelled that the requested window covers; absent means 60. */
   horizonBars?: number;
   horizonId?: string;
+  /** Bull / middle / bear projected paths; absent on forecasts saved before them. */
+  trajectories?: Trajectory[];
+  /** Calibration applied to this window's probabilities, if any was learned. */
+  calibration?: CalibrationRecord;
 }
 export const forecastStepMs = (f: Pick<StructuralForecast, "stepMs">): number => f.stepMs ?? 60_000;
 export const forecastHorizonBars = (f: Pick<StructuralForecast, "horizonBars">): number => f.horizonBars ?? 60;
@@ -76,6 +122,10 @@ export interface ForecastScore {
   /** Counted in bars of the forecast's bar length (minutes for one-minute bars). */
   horizon: number; minutes?: number; observedThrough: number; outcome: Scenario;
   event: StructuralEvent | null; brier: number; baselineBrier: number; logLoss: number;
+  /** Present on the forecast's own window once it has fully closed. */
+  grade?: ForecastGrade;
+  /** Brier of the probabilities the user was shown (after any calibration). */
+  shownBrier?: number;
 }
 export const scenarioOf = (event?: StructuralEvent | null): Scenario =>
   !event ? "NEITHER" : event.cause.endsWith("UP") ? "UP_FIRST" : "DOWN_FIRST";

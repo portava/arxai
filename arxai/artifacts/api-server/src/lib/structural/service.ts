@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
+  calibrate, probabilities, scenarioIndex, type GradedObservation,
   forecastHorizon, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
   type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
 
@@ -109,6 +110,18 @@ export class StructuralForecastService {
       .map(s => ({ asOf: r.forecast.asOf, completedAt: s.observedThrough, brier: s.brier, baselineBrier: s.baselineBrier })));
     const quarantined = performanceBrake(samePolicy.some(r => r.forecast.gateReason === "PERFORMANCE_QUARANTINE"), observations, asOf);
     const forecast = forecastStructural(model, feed.bars.slice(-120), feed.origin, quarantined, horizon.bars, horizon.id);
+    // Learn from this window's graded forecasts: calibrate the shown
+    // probabilities only when that scored better on forecasts it never saw.
+    const graded: GradedObservation[] = existing.filter(r => r.forecast.origin.provider === feed.origin.provider).flatMap(r => {
+      const score = r.scores.find(s => s.horizon === horizon.bars);
+      return score ? [{ p: r.forecast.calibration?.raw ?? probabilities(r.forecast.mass, horizon.bars), outcome: scenarioIndex(score.outcome), completedAt: score.observedThrough }] : [];
+    });
+    const window = forecast.horizons.find(h => h.bars === horizon.bars);
+    if (window) {
+      const learned = calibrate(window.probabilities, graded, asOf);
+      window.probabilities = learned.shown;
+      forecast.calibration = learned.record;
+    }
     const id = createHash("sha256").update(`${userId}:${symbol}:${horizon.id}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();
     if (issuedAt >= asOf + horizon.stepMs) throw new ForecastRefusal("FIRST_HORIZON_ALREADY_CLOSED", facts({ lastCloseAgeSeconds: Math.round((issuedAt - asOf) / 1000) }));

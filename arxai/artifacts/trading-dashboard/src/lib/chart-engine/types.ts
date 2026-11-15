@@ -32,6 +32,8 @@ export interface ChartGhostPath {
   id: string;
   color: string;
   candles: ChartEngineCandle[];
+  /** Shown at the path's last candle, e.g. "Bull +0.80% · 58% of matches ended higher". */
+  label?: string;
 }
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */

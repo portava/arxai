@@ -17,18 +17,18 @@ export const CHART_LAYERS = [
   { id: "agents", label: "Agent overlays", group: "AI & setups" },
   {
     id: "bullish",
-    label: "Bullish scenario",
-    group: "Illustrative scenarios · M1",
+    label: "Bull path",
+    group: "Forecast paths",
   },
   {
     id: "bearish",
-    label: "Bearish scenario",
-    group: "Illustrative scenarios · M1",
+    label: "Bear path",
+    group: "Forecast paths",
   },
   {
     id: "neither",
-    label: "Neither-confirmed scenario",
-    group: "Illustrative scenarios · M1",
+    label: "Middle path",
+    group: "Forecast paths",
   },
   {
     id: "positions",
@@ -88,6 +88,10 @@ export function structureMarkerLayer(kind: string): ChartLayerId {
   );
 }
 export const SCENARIO_LAYERS = {
+  BULL: "bullish",
+  BEAR: "bearish",
+  MIDDLE: "neither",
+  // Forecasts saved before bull / middle / bear paths.
   UP_FIRST: "bullish",
   DOWN_FIRST: "bearish",
   NEITHER: "neither",

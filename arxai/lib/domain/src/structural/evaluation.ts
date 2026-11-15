@@ -2,6 +2,7 @@ import { scenarioOf, scenarioIndex, HORIZONS, STRUCTURAL_VERSION, forecastStepMs
 import { validateBars, observeStructure } from "./observer.js";
 import { probabilities, brier, logLoss } from "./math.js";
 import { MODEL_POLICY } from "./model.js";
+import { gradeForecast } from "./learning.js";
 
 /** Forecast must already be durably saved by the application before calling. */
 export function evaluateForecast(f: StructuralForecast, future: StructuralBar[], now: number): ForecastScore[] {
@@ -17,8 +18,12 @@ export function evaluateForecast(f: StructuralForecast, future: StructuralBar[],
   return horizons.filter(h => f.asOf + h * step <= observedThrough).map(horizon => {
     const event = events.find(e => e.time <= f.asOf + horizon * step) ?? null;
     const outcome = scenarioOf(event), y = scenarioIndex(outcome), p = probabilities(f.mass, horizon);
+    // What the user saw for the window may be calibrated; every other horizon is the raw model.
+    const window = horizon === forecastHorizonBars(f);
+    const shown = (window ? f.horizons.find(h => h.bars === horizon)?.probabilities : null) ?? p;
     return { evaluationVersion: `${STRUCTURAL_VERSION}:scoring-1`, horizon, minutes: horizon * step / 60_000, observedThrough: f.asOf + horizon * step, outcome, event,
-      brier: brier(p, y), baselineBrier: brier(probabilities(f.baselineMass, horizon), y), logLoss: logLoss(p, y) };
+      brier: brier(p, y), baselineBrier: brier(probabilities(f.baselineMass, horizon), y), logLoss: logLoss(p, y),
+      ...(window ? { shownBrier: brier(shown, y), grade: gradeForecast(f, eligible.slice(0, horizon), shown, y) } : {}) };
   });
 }
 export interface CompletedObservation { asOf: number; completedAt: number; brier: number; baselineBrier: number }

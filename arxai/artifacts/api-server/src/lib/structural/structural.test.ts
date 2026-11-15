@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -322,3 +322,66 @@ test("walk-forward accuracy fits only on bars before each cutoff and finds no ed
   }
 });
 const MODEL_POLICY_MIN_GAIN = .005;
+
+test("three projected paths: bull above middle above bear, from similar past setups that closed before the forecast", () => {
+  const m = model(), index = 4800, history = bars.slice(index - 120, index);
+  const f = forecastStructural(m, history, origin, false, 30);
+  const t = f.trajectories!;
+  assert.deepEqual(t.map(x => x.kind), ["BULL", "MIDDLE", "BEAR"]);
+  assert.ok(t[0]!.endChange >= t[1]!.endChange && t[1]!.endChange >= t[2]!.endChange);
+  for (const path of t) {
+    assert.equal(path.candles.length, 30);
+    path.candles.forEach((c, j) => { assert.equal(c.openTime, f.asOf + j * 60_000); assert.equal(c.closeTime - c.openTime, 60_000); });
+    assert.ok(path.sourceEnd! < f.asOf && path.sourceEnd! <= m.trainedThrough);
+    assert.ok(path.analogs >= 30 && path.share >= 0 && path.share <= 1);
+    close(path.candles.at(-1)!.close / history.at(-1)!.close - 1, path.endChange);
+  }
+});
+test("a finished forecast is graded on its whole window, against the probabilities it showed", () => {
+  const m = model(), index = 4800, history = bars.slice(index - 120, index);
+  const f = forecastStructural(m, history, origin, false, 15);
+  const future = bars.slice(index, index + 60);
+  assert.equal(evaluateForecast(f, future, f.asOf + 14 * 60_000).some(s => s.grade), false);
+  const window = evaluateForecast(f, future, f.asOf + 3_600_000).find(s => s.horizon === 15)!;
+  const g = window.grade!;
+  assert.ok(["A", "B", "C", "D", "F"].includes(g.letter));
+  close(g.skill, 1 - window.shownBrier! / (2 / 3));
+  close(g.actualEndChange, bars[index + 14]!.close / history.at(-1)!.close - 1);
+  assert.ok(["BULL", "MIDDLE", "BEAR"].includes(g.nearestPath!));
+  // A confident correct call earns an A; a confident wrong one an F.
+  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 0).letter, "A");
+  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 1).letter, "F");
+});
+test("calibration learns only from forecasts graded before this one and keeps a change only if it helps unseen forecasts", () => {
+  const raw: [number, number, number] = [.45, .45, .1];
+  const rows = (n: number, outcome: (i: number) => number) => Array.from({ length: n }, (_, i) => ({ p: raw, outcome: outcome(i), completedAt: 1000 + i }));
+  assert.equal(calibrate(raw, rows(29, () => 2), 5000).record.applied, false);
+  const learned = calibrate(raw, rows(60, () => 2), 5000);
+  assert.equal(learned.record.applied, true);
+  assert.ok(learned.record.holdoutGain! > 0 && learned.shown[2] > raw[2]);
+  close(learned.shown.reduce((a, b) => a + b, 0), 1);
+  // Outcomes graded after the forecast cannot teach it anything.
+  assert.equal(calibrate(raw, rows(60, () => 2), 1010).record.applied, false);
+  // When the model already matches reality, nothing is changed.
+  const matched = calibrate([1 / 3, 1 / 3, 1 / 3], rows(90, i => i % 3).map(r => ({ ...r, p: [1 / 3, 1 / 3, 1 / 3] as [number, number, number] })), 5000);
+  assert.equal(matched.record.applied, false);
+  assert.deepEqual(matched.shown, [1 / 3, 1 / 3, 1 / 3]);
+});
+test("the service shows learned probabilities for a window once enough of its forecasts are graded", async () => {
+  const repository = memory();
+  const template = forecastStructural(model(), bars.slice(-120), origin, false, 60, "1h");
+  for (let i = 0; i < 60; i++) {
+    // Earlier issuances whose whole hour closed before the new forecast.
+    const old = { ...template, asOf: template.asOf - (i + 2) * 3_600_000, origin: { ...template.origin, kind: "BROKER_HISTORY" as const } };
+    repository.rows.set(`1:old-${i}`, { id: `old-${i}`, issuedAt: old.asOf, forecast: { ...old, calibration: undefined },
+      scores: [{ evaluationVersion: "t", horizon: 60, observedThrough: old.asOf + 3_600_000, outcome: "NEITHER", event: null, brier: 0, baselineBrier: 0, logLoss: 0 }] });
+  }
+  const service = new StructuralForecastService({ repository, now: () => asOf + 1000,
+    readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }), fit: () => structuredClone(model()) });
+  const row = await service.issue(1, "V75", "1h");
+  const c = row.forecast.calibration!;
+  assert.equal(c.graded, 60);
+  const shown = row.forecast.horizons.find(h => h.bars === 60)!.probabilities;
+  if (c.applied) assert.ok(shown[2] > c.raw[2]); else assert.deepEqual(shown, c.raw);
+  assert.deepEqual(c.raw, probabilities(row.forecast.mass, 60));
+});

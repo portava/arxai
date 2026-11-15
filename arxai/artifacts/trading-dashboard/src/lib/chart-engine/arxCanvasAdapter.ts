@@ -866,10 +866,19 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         priceLineVisible: false,
         title: "Illustrative scenario",
       });
-      series.setData(sanitizeCandlestickData(path.candles).map((candle) => ({
+      const data = sanitizeCandlestickData(path.candles).map((candle) => ({
         ...candle,
         time: candle.time as UTCTimestamp,
-      })));
+      }));
+      series.setData(data);
+      const end = data.at(-1);
+      if (path.label && end) {
+        // Label the path where it ends: above for the highest, below for the lowest.
+        const ends = paths.map((p) => p.candles.at(-1)?.close ?? 0);
+        const position = end.close >= Math.max(...ends) ? "aboveBar" : end.close <= Math.min(...ends) ? "belowBar" : "aboveBar";
+        try { createSeriesMarkers(series, [{ time: end.time, position, color: path.color, shape: "circle", text: path.label }]); }
+        catch { /* labels are decorative — never break the chart */ }
+      }
       this.ghostSeries.push(series);
     }
     if (!hadPaths && this.ghostSeries.length) {

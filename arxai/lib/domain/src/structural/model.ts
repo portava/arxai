@@ -2,6 +2,7 @@ import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type 
   type StructuralEvent, type DataOrigin, type StructuralForecast, type GhostPath } from "./contracts.js";
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
+import { analogTrajectories } from "./learning.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
 export const MODEL_POLICY = Object.freeze({ stride: 15, purgeMinutes: 60, minTraining: 80,
@@ -286,6 +287,7 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
     featureVersion: `${model.version}:features-1`, eventDefinitionVersion: `${model.version}:events-1`,
     features: features.values, preBreakEligible: features.eligible, mode: prediction.mode, gateReason: prediction.reason,
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
-    horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars), history: h,
+    horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars),
+    trajectories: analogTrajectories(model, h, features.values, horizonBars), history: h,
     executionAuthority: "NONE", stepMs, horizonBars, ...(horizonId ? { horizonId } : {}) };
 }
