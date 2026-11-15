@@ -4,7 +4,7 @@ import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPart
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
-import { StructuralForecastService, ForecastRefusal, type StoredForecast, type ForecastRepository } from "./service.js";
+import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
 
 export function fixture(n = 5000): StructuralBar[] {
@@ -211,6 +211,20 @@ test("a request that crosses the minute boundary re-reads once and issues on the
   assert.equal(asOf + 1000 - olderAsOf, 61_000);
   const row = await service.issue(1, "V75");
   assert.equal(reads, 2); assert.equal(row.forecast.asOf, asOf); assert.equal(repository.writes, 1);
+});
+test("the minimum unbroken history matches what the model accepts, and a shorter run is refused before fitting", async () => {
+  assert.throws(() => fitStructuralModel(fixture(MIN_FIT_BARS - 1), origin), /INSUFFICIENT_TRAINING_HISTORY/);
+  fitStructuralModel(fixture(MIN_FIT_BARS), origin);
+  const short = fixture(MIN_FIT_BARS - 1), shortAsOf = short.at(-1)!.closeTime; let fits = 0;
+  const service = new StructuralForecastService({ repository: memory(), now: () => shortAsOf + 1000,
+    readFeed: async () => ({ bars: short, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null,
+      diagnostics: { historySource: "mt5_broker", historyBars: 5000, chartSource: "mt5_broker", chartQuality: "clean", chartAiUsable: true, closedBars: short.length, barsBeforeLastGap: 5000 - short.length, lastCloseAgeSeconds: null } }),
+    fit: () => { fits++; return structuredClone(model()); } });
+  await assert.rejects(service.issue(1, "V75"), (error: unknown) => {
+    assert.ok(error instanceof ForecastRefusal); assert.equal(error.code, "UNBROKEN_HISTORY_TOO_SHORT");
+    assert.equal(error.detail?.closedBars, MIN_FIT_BARS - 1); assert.equal(error.detail?.lastCloseAgeSeconds, 1); return true;
+  });
+  assert.equal(fits, 0);
 });
 test("a refusal states a stable code and what the feed looked like", async () => {
   const diagnostics = { historySource: "deriv_public", historyBars: 5000, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 5000, lastCloseAgeSeconds: 130 };

@@ -16,6 +16,12 @@ export interface ForecastFeedDiagnostics {
   barsBeforeLastGap?: number;
 }
 export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics }
+/**
+ * Fewest unbroken one-minute bars the model can be fitted on. It follows from
+ * MODEL_POLICY (15-bar stride, 60-minute purge, 80 training episodes after the
+ * chronological split); a test pins it to the model's actual behaviour.
+ */
+export const MIN_FIT_BARS = 2460;
 /** A domain refusal: a stable code plus the non-secret facts behind it. */
 export class ForecastRefusal extends Error {
   constructor(readonly code: string, readonly detail?: ForecastFeedDiagnostics) { super(code); this.name = "ForecastRefusal"; }
@@ -75,6 +81,8 @@ export class StructuralForecastService {
       throw new ForecastRefusal(code, feed.diagnostics ? { ...feed.diagnostics, lastCloseAgeSeconds: asOf == null ? null : Math.round((now - asOf) / 1000) } : undefined);
     }
     if (feed.origin.kind === "SYNTHETIC_TEST") throw new Error("SIMULATED_INPUT_REFUSED");
+    // Say so before fitting, with the facts, instead of a bare model error.
+    if (feed.bars.length < MIN_FIT_BARS) throw new ForecastRefusal("UNBROKEN_HISTORY_TOO_SHORT", feed.diagnostics ? { ...feed.diagnostics, lastCloseAgeSeconds: Math.round((now - asOf) / 1000) } : undefined);
     const existing = await this.deps.repository.list(userId, symbol);
     const sameBar = existing.find(r => r.forecast.asOf === asOf && r.forecast.origin.provider === feed.origin.provider);
     if (sameBar) return sameBar;

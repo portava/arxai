@@ -1,5 +1,5 @@
 import { getChartCandles } from "../data/chart/chartDataService.js";
-import { StructuralForecastService } from "./service.js";
+import { StructuralForecastService, MIN_FIT_BARS } from "./service.js";
 import { structuralRepository } from "./repository.js";
 import { fitInWorker } from "./fitAsync.js";
 import { getCandleHistory } from "../data/candleHistoryService.js";
@@ -24,9 +24,12 @@ export const structuralService = new StructuralForecastService({
     // 120 while the provider's own feed was complete). Ask once for the next
     // provider; history and tip must still come from that one source, and the
     // forecast names the provider it used.
+    // "Unusable" also covers a clean series whose unbroken run is too short to
+    // fit the model (seen in the server: a clean MT5 tip over a holed history).
+    const usable = (feed: typeof primary) => feed.ready && feed.bars.length >= MIN_FIT_BARS;
     const declined = primary.diagnostics?.chartSource ?? primary.diagnostics?.historySource;
-    if (primary.ready || !declined) return primary;
+    if (usable(primary) || !declined) return primary;
     const fallback = await read([declined]);
-    return fallback.ready ? fallback : primary;
+    return usable(fallback) || (fallback.ready && !primary.ready) ? fallback : primary;
   },
 });
