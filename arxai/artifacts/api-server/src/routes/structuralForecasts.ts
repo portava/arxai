@@ -3,7 +3,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { resolveArxMarket } from "@workspace/domain/market";
 import { structuralService } from "../lib/structural/runtime.js";
 import { logger } from "../lib/logger.js";
-import type { StructuralForecastService } from "../lib/structural/service.js";
+import { ForecastRefusal, type StructuralForecastService } from "../lib/structural/service.js";
 
 function symbolFrom(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 100) return null;
@@ -21,7 +21,8 @@ router.post("/me/structural/forecasts", requireUser, async (req, res) => {
     logger.warn({ err: error }, "Structural forecast unavailable");
     const message = error instanceof Error ? error.message : "FORECAST_UNAVAILABLE";
     // Return domain refusal codes, never database/credential-bearing errors.
-    res.status(503).json({ ok: false, saved: false, reason: /^[A-Z_]+$/.test(message) ? message : "FORECAST_UNAVAILABLE" });
+    res.status(503).json({ ok: false, saved: false, reason: /^[A-Z_]+$/.test(message) ? message : "FORECAST_UNAVAILABLE",
+      ...(error instanceof ForecastRefusal && error.detail ? { detail: error.detail } : {}) });
   }
 });
 router.get("/me/structural/forecasts", requireUser, async (req, res) => {

@@ -39,15 +39,20 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
       if (historyResponse.ok) {
         const memory = await historyResponse.json();
         if (!controller.signal.aborted) setHistory(memory.forecasts ?? []);
-      } else if (historyOnly) throw new Error("PREDICTION_MEMORY_UNAVAILABLE");
+      } else if (historyOnly) throw new Error("prediction memory unavailable");
       if (historyOnly) return;
       const response = await fetch(`${basePath}/api/me/structural/forecasts`, { method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol }), signal: controller.signal });
       const result = await response.json();
-      if (!response.ok || !result.saved) throw new Error(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE");
+      if (!response.ok || !result.saved) {
+        // State what the forecast saw, not only that it declined.
+        const d = result.detail as { historySource?: string | null; historyBars?: number; chartSource?: string | null; chartQuality?: string; chartAiUsable?: boolean; closedBars?: number; lastCloseAgeSeconds?: number | null } | undefined;
+        const facts = d ? ` (1-minute feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} closed bars; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
+        throw new Error(`${String(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE").replaceAll("_", " ").toLowerCase()}${facts}`);
+      }
       if (!controller.signal.aborted) setRow(result as Row);
     } catch (e) {
-      if (!controller.signal.aborted) setError(e instanceof Error ? e.message.replaceAll("_", " ").toLowerCase() : "Forecast unavailable");
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message.replaceAll("_", " ") : "forecast unavailable");
     } finally { if (!controller.signal.aborted) setBusy(false); }
   }, [symbol]);
 

@@ -25,5 +25,9 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
     // Refusals are stable codes: a free-text chart warning was masked by the
     // route as a generic failure, hiding why the forecast was withheld.
     reason: !sameSource ? "HISTORY_SOURCE_MISMATCH" : !known ? "UNKNOWN_DATA_PROVENANCE"
-      : !current.aiUsable || current.quality !== "clean" ? "LIVE_CHART_NOT_VERIFIED_CLEAN" : null };
+      : current.quality !== "clean" ? `LIVE_CHART_${String(current.quality).toUpperCase().replace(/[^A-Z]/g, "_")}`
+      : !current.aiUsable ? "LIVE_CHART_NOT_AI_USABLE" : null,
+    diagnostics: { historySource: history.source ?? null, historyBars: history.candles.length, chartSource: current.source,
+      chartQuality: String(current.quality), chartAiUsable: current.aiUsable, closedBars: closed.length,
+      lastCloseAgeSeconds: closed.length ? Math.round((now - Date.parse(closed.at(-1)!.closeTime)) / 1000) : null } };
 }

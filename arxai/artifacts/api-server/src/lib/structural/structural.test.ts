@@ -4,7 +4,7 @@ import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPart
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
-import { StructuralForecastService, type StoredForecast, type ForecastRepository } from "./service.js";
+import { StructuralForecastService, ForecastRefusal, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
 
 export function fixture(n = 5000): StructuralBar[] {
@@ -197,6 +197,37 @@ test("fitting that crosses the first deadline cannot issue a backdated forecast"
   const service = new StructuralForecastService({ repository, now: () => now,
     readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }),
     fit: () => { now = asOf + 60_000; return structuredClone(model()); } });
-  await assert.rejects(service.issue(1, "V75"), /FIRST_HORIZON_ALREADY_CLOSED/);
+  // The one retry re-reads the same old bar, so the refusal stands.
+  await assert.rejects(service.issue(1, "V75"), /LAST_CLOSED_BAR_OLDER_THAN_ONE_MINUTE|FIRST_HORIZON_ALREADY_CLOSED/);
   assert.equal(repository.writes, 0);
+});
+test("a request that crosses the minute boundary re-reads once and issues on the newer closed bar", async () => {
+  const older = bars.slice(0, -1), olderAsOf = older.at(-1)!.closeTime;
+  let reads = 0; const repository = memory();
+  const service = new StructuralForecastService({ repository, now: () => asOf + 1000,
+    // First read still ends on the previous bar (61s old); the re-read has the new one.
+    readFeed: async () => ({ bars: reads++ === 0 ? older : bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }),
+    fit: () => structuredClone(model()) });
+  assert.equal(asOf + 1000 - olderAsOf, 61_000);
+  const row = await service.issue(1, "V75");
+  assert.equal(reads, 2); assert.equal(row.forecast.asOf, asOf); assert.equal(repository.writes, 1);
+});
+test("a refusal states a stable code and what the feed looked like", async () => {
+  const diagnostics = { historySource: "deriv_public", historyBars: 5000, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 5000, lastCloseAgeSeconds: 130 };
+  const service = new StructuralForecastService({ repository: memory(), now: () => asOf + 1000,
+    readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: false, reason: "LIVE_CHART_DELAYED", diagnostics }), fit: () => structuredClone(model()) });
+  await assert.rejects(service.issue(1, "V75"), (error: unknown) => {
+    assert.ok(error instanceof ForecastRefusal); assert.equal(error.code, "LIVE_CHART_DELAYED");
+    assert.deepEqual(error.detail, { ...diagnostics, lastCloseAgeSeconds: 1 }); return true;
+  });
+  // The feed assembler names the failing check instead of passing free text.
+  // It reaches the data layer, so this part runs where a database is configured.
+  if (!process.env.DATABASE_URL) return;
+  const { assembleForecastFeed } = await import("./feed.js");
+  const history = { ok: true, source: "deriv_public", candles: [], fetchedAt: new Date(asOf).toISOString() } as unknown as CandleHistoryResult;
+  const feedFor = (quality: string, aiUsable: boolean, source = "deriv_public") => assembleForecastFeed("V75", history,
+    { candles: [], source, aiUsable, quality, warning: "free text that must not become the reason" }, asOf);
+  assert.equal(feedFor("clean", true, "mt5_broker").reason, "HISTORY_SOURCE_MISMATCH");
+  assert.equal(feedFor("clean", true).reason, "UNKNOWN_DATA_PROVENANCE"); // no closed bars to vouch for
+  assert.deepEqual(feedFor("delayed", false).diagnostics, { historySource: "deriv_public", historyBars: 0, chartSource: "deriv_public", chartQuality: "delayed", chartAiUsable: false, closedBars: 0, lastCloseAgeSeconds: null });
 });

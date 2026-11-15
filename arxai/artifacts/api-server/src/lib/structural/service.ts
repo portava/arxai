@@ -8,7 +8,16 @@ export interface ForecastRepository {
   save(userId: number, row: StoredForecast, model: StructuralModel): Promise<StoredForecast>;
   appendScores(userId: number, id: string, scores: ForecastScore[]): Promise<void>;
 }
-export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null }
+/** What the forecast saw when it looked at the feed. Safe to show a user. */
+export interface ForecastFeedDiagnostics {
+  historySource: string | null; historyBars: number; chartSource: string | null;
+  chartQuality: string; chartAiUsable: boolean; closedBars: number; lastCloseAgeSeconds: number | null;
+}
+export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics }
+/** A domain refusal: a stable code plus the non-secret facts behind it. */
+export class ForecastRefusal extends Error {
+  constructor(readonly code: string, readonly detail?: ForecastFeedDiagnostics) { super(code); this.name = "ForecastRefusal"; }
+}
 export interface ForecastDependencies {
   readFeed(symbol: string): Promise<ForecastFeed>; repository: ForecastRepository; now(): number;
   fit?: (...args: Parameters<typeof fitStructuralModel>) => StructuralModel | Promise<StructuralModel>;
@@ -44,14 +53,25 @@ export class StructuralForecastService {
     const key = `${userId}:${symbol}`;
     const pending = this.issuing.get(key);
     if (pending) return pending;
-    const work = this.issueOnce(userId, symbol).finally(() => this.issuing.delete(key));
+    // Reading history and fitting take several seconds, so a request made late
+    // in a minute could cross the bar boundary and be refused although a newer
+    // closed bar was moments away. Re-read once for exactly those two refusals;
+    // every other refusal, and a second miss, is returned as is.
+    const work = this.issueOnce(userId, symbol).catch(error => {
+      const code = error instanceof Error ? error.message : "";
+      if (code !== "LAST_CLOSED_BAR_OLDER_THAN_ONE_MINUTE" && code !== "FIRST_HORIZON_ALREADY_CLOSED") throw error;
+      return this.issueOnce(userId, symbol);
+    }).finally(() => this.issuing.delete(key));
     this.issuing.set(key, work); return work;
   }
 
   private async issueOnce(userId: number, symbol: string): Promise<StoredForecast> {
     const feed = await this.deps.readFeed(symbol), now = this.deps.now();
     const asOf = feed.bars.at(-1)?.closeTime;
-    if (!feed.ready || asOf == null || asOf > now || now - asOf >= 60_000) throw new Error(feed.reason ?? "STALE_OR_UNAVAILABLE_FEED");
+    if (!feed.ready || asOf == null || asOf > now || now - asOf >= 60_000) {
+      const code = !feed.ready ? feed.reason ?? "FEED_NOT_READY" : asOf == null ? "NO_CLOSED_BARS" : asOf > now ? "LAST_BAR_IN_FUTURE" : "LAST_CLOSED_BAR_OLDER_THAN_ONE_MINUTE";
+      throw new ForecastRefusal(code, feed.diagnostics ? { ...feed.diagnostics, lastCloseAgeSeconds: asOf == null ? null : Math.round((now - asOf) / 1000) } : undefined);
+    }
     if (feed.origin.kind === "SYNTHETIC_TEST") throw new Error("SIMULATED_INPUT_REFUSED");
     const existing = await this.deps.repository.list(userId, symbol);
     const sameBar = existing.find(r => r.forecast.asOf === asOf && r.forecast.origin.provider === feed.origin.provider);
@@ -64,7 +84,7 @@ export class StructuralForecastService {
     const forecast = forecastStructural(model, feed.bars.slice(-120), feed.origin, quarantined);
     const id = createHash("sha256").update(`${userId}:${symbol}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();
-    if (issuedAt >= asOf + 60_000) throw new Error("FIRST_HORIZON_ALREADY_CLOSED");
+    if (issuedAt >= asOf + 60_000) throw new ForecastRefusal("FIRST_HORIZON_ALREADY_CLOSED", feed.diagnostics ? { ...feed.diagnostics, lastCloseAgeSeconds: Math.round((issuedAt - asOf) / 1000) } : undefined);
     const row = { id: `structural-${id}`, issuedAt, forecast, scores: [] };
     // Await durable write. A save failure cannot be displayed as an issued forecast.
     return this.deps.repository.save(userId, row, model);
