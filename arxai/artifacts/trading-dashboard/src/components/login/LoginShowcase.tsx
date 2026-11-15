@@ -20,6 +20,15 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+/** Every number on these slides is made up to show the layout: say so beside them. */
+function ExampleTag() {
+  return (
+    <p className="text-[11px] text-slate-400" data-testid="login-showcase-example">
+      Example only: sample values, not live prices or a current trade.
+    </p>
+  );
+}
+
 // ── Slide 1: Live Market Intelligence ─────────────────────────────────────────
 function SlideMarket({ animate }: { animate: boolean }) {
   const tickers = [
@@ -60,6 +69,7 @@ function SlideMarket({ animate }: { animate: boolean }) {
         </svg>
       </div>
 
+      <ExampleTag />
       <div className="grid grid-cols-2 gap-2.5">
         {tickers.map((t) => (
           <div key={t.sym} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
@@ -93,6 +103,7 @@ function SlideEleanor({ animate }: { animate: boolean }) {
         </p>
       </div>
 
+      <ExampleTag />
       <div className="space-y-3">
         <div className="flex items-start gap-2.5">
           <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blue-500 to-purple-500 text-xs font-black">R</div>
@@ -163,6 +174,7 @@ function SlideExecution({ animate }: { animate: boolean }) {
         ))}
       </div>
 
+      <ExampleTag />
       <div className="rounded-2xl border border-blue-400/20 bg-black/30 p-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
           <span className="text-sm font-bold">EURUSD</span>

@@ -87,7 +87,7 @@ function hist(over: Partial<ScannerHistoricalContext> = {}): ScannerHistoricalCo
 test("baseline: live + both feeds + clean => TRADE_WATCH / HIGH", () => {
   const r = computeFinalRead(opp({ newsContext: news(), historicalContext: hist() }));
   assert.equal(r.label, "TRADE_WATCH");
-  assert.equal(r.confidence, "HIGH");
+  assert.equal(r.confidence, "MEDIUM");
 });
 
 // ── Non-live data: never HIGH, never actionable ─────────────────────────────
@@ -139,6 +139,19 @@ test("one feed missing => at most MEDIUM (never HIGH)", () => {
   assert.notEqual(onlyNews.confidence, "HIGH");
   const onlyHist = computeFinalRead(opp({ historicalContext: hist() }));
   assert.notEqual(onlyHist.confidence, "HIGH");
+});
+
+test("same-time history never raises confidence, and no clean read is HIGH (audit 2026-11-15)", () => {
+  // At most five same-time bars are not evidence: with or without them the
+  // read is the same, and an unmeasured technical score never makes it HIGH.
+  const withHist = computeFinalRead(opp({ newsContext: news(), historicalContext: hist() }));
+  const withoutHist = computeFinalRead(opp({ newsContext: news() }));
+  assert.equal(withHist.confidence, "MEDIUM");
+  assert.equal(withoutHist.confidence, "MEDIUM");
+  assert.equal(withHist.historicalScore, null, "no win rate exists for same-time bars");
+  const histOnly = computeFinalRead(opp({ historicalContext: hist() }));
+  assert.equal(histOnly.confidence, "LOW");
+  assert.ok(histOnly.reasons.includes("News feed is unavailable — read is technicals-only."));
 });
 
 // ── News risk lowers the read ───────────────────────────────────────────────
@@ -217,7 +230,7 @@ test("LIVE feed with sufficient bars + a clean verdict is NOT demoted by the suf
     }),
   }));
   assert.equal(r.label, "TRADE_WATCH");
-  assert.equal(r.confidence, "HIGH");
+  assert.equal(r.confidence, "MEDIUM");
 });
 
 test("non-live feed with too few closed bars surfaces the SAME shared insufficiency reason (not just freshness copy)", () => {

@@ -634,7 +634,8 @@ export function computeFinalRead(
   const hist = opp.historicalContext ?? null;
   const news = opp.newsContext ?? null;
   const reasons: string[] = [];
-  const histScore = hist && hist.available && hist.winRate != null ? hist.winRate : null;
+  // No win rate exists for same-time bars (see historical-comparison).
+  const histScore: number | null = null;
   const newsLevel = news?.riskLevel ?? "none";
   // A failed check is not news data: "none" there was never observed.
   const newsUnchecked = news?.eventRiskUnchecked === true;
@@ -688,14 +689,18 @@ export function computeFinalRead(
   }
 
   // 4. Honest uncertainty when feeds are missing.
-  let confidence: "LOW" | "MEDIUM" | "HIGH";
-  if (!newsAvail && !histAvail) {
-    confidence = "LOW";
-    reasons.push("News and history feeds are unavailable — read is technicals-only.");
-  } else if (!newsAvail || !histAvail) {
-    confidence = "MEDIUM";
-  } else {
-    confidence = techScore >= 75 && newsLevel === "none" && !conflict ? "HIGH" : "MEDIUM";
+  // Same-time history is at most five bars: it may flag a conflict above, but
+  // it is never evidence that raises confidence, and an unmeasured technical
+  // score cannot make a read HIGH on its own (audit 2026-11-15). Downgrade-only
+  // against the previous rule: nothing here is ever higher than it was.
+  type Confidence = "LOW" | "MEDIUM" | "HIGH";
+  // Typed as the full scale so the downgrade caps below stay in force if a
+  // measured basis for HIGH is ever added.
+  let confidence: Confidence = (newsAvail ? "MEDIUM" : "LOW") as Confidence;
+  if (!newsAvail) {
+    reasons.push(histAvail
+      ? "News feed is unavailable — read is technicals-only."
+      : "News and history feeds are unavailable — read is technicals-only.");
   }
 
   // 4b. EVENT-RISK-UNCHECKED CAP. Scheduled event risk applies but could not be

@@ -43,7 +43,15 @@ export interface SameTimeWindow {
 
 export interface SetupSummary {
   sampleSize: number;
-  winRate: number | null;
+  /**
+   * Always null: these are at most five same-time bars, not trades, so no win
+   * rate exists. (It used to hold the share of bars that moved in the
+   * majority direction — at least 50% by construction, 100% from one bar.)
+   */
+  winRate: null;
+  /** Bars that moved in the majority direction, out of sampleSize. */
+  majorityDirection: "UP" | "DOWN" | null;
+  majorityCount: number;
   avgMovePct: number | null;
   worstDrawdownPct: number | null;
   bestMovePct: number | null;
@@ -188,10 +196,9 @@ export function analyzeHistoricalComparison(args: {
     explanation = "Same-time history is split — no clear directional preference.";
   }
 
-  let confidence: Confidence;
-  if (sampleSize >= 4) confidence = "HIGH";
-  else if (sampleSize >= 2) confidence = "MEDIUM";
-  else confidence = "LOW";
+  // At most five bars (yesterday, last week, last month, last year, five years
+  // ago) cannot support more than low confidence, however they split.
+  const confidence: Confidence = "LOW";
 
   const availableWindows = windows.filter(
     (w) => w.available && w.changePct != null && w.candle && w.nextCandle,
@@ -199,12 +206,8 @@ export function analyzeHistoricalComparison(args: {
   const majorityDirection: "UP" | "DOWN" | null =
     bullishCount > bearishCount ? "UP" : bearishCount > bullishCount ? "DOWN" : null;
   const movesPct = availableWindows.map((w) => w.changePct as number);
-  const winRate =
-    majorityDirection && availableWindows.length > 0
-      ? (availableWindows.filter((w) => w.direction === majorityDirection).length /
-          availableWindows.length) *
-        100
-      : null;
+  const majorityCount = majorityDirection
+    ? availableWindows.filter((w) => w.direction === majorityDirection).length : 0;
   const avgMovePct =
     movesPct.length > 0
       ? movesPct.reduce((a, b) => a + Math.abs(b), 0) / movesPct.length
@@ -223,14 +226,16 @@ export function analyzeHistoricalComparison(args: {
     availableWindows.length === 0
       ? "No same-time setups available — cannot estimate win rate."
       : `${availableWindows.length} comparable same-time setup(s). ` +
-        (winRate != null
-          ? `When history matched, the same-time bar moved ${majorityDirection === "UP" ? "up" : "down"} ${winRate.toFixed(0)}% of the time. `
+        (majorityDirection
+          ? `${majorityCount} of ${availableWindows.length} moved ${majorityDirection === "UP" ? "up" : "down"} — a handful of bars, not a measured win rate. `
           : "No directional majority. ") +
         (avgMovePct != null ? `Average move ${avgMovePct.toFixed(2)}%.` : "");
 
   const setupSummary: SetupSummary = {
     sampleSize: availableWindows.length,
-    winRate,
+    winRate: null,
+    majorityDirection,
+    majorityCount,
     avgMovePct,
     worstDrawdownPct,
     bestMovePct,

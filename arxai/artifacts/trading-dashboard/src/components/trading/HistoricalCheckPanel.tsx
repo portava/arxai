@@ -121,11 +121,12 @@ export function HistoricalCheckPanel({ symbol, timeframe = "1d", defaultOpen = f
                     <div className="font-mono text-slate-200">{result.setupSummary.sampleSize}/5</div>
                   </div>
                   <div>
-                    <div className="text-slate-500">Win rate</div>
-                    <div className="font-mono text-slate-200">
-                      {result.setupSummary.winRate != null
-                        ? `${result.setupSummary.winRate.toFixed(0)}%`
-                        : "—"}
+                    {/* Same-time bars, not trades: never a win rate (audit 2026-11-15). */}
+                    <div className="text-slate-500">Moved the same way</div>
+                    <div className="font-mono text-slate-200" data-testid="historical-majority">
+                      {result.bias.bullishCount === result.bias.bearishCount
+                        ? "Split"
+                        : `${Math.max(result.bias.bullishCount, result.bias.bearishCount)} of ${result.bias.sampleSize} ${result.bias.bullishCount > result.bias.bearishCount ? "up" : "down"}`}
                     </div>
                   </div>
                   <div>

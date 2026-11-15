@@ -23,7 +23,7 @@ describe("ARX structural forecast controls", () => {
     render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
     fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
     await screen.findByText("50.0%");
-    expect(screen.getByText(/Ghost candles are illustrative/)).toBeTruthy();
+    expect(screen.getByText(/Ghost paths are illustrative/)).toBeTruthy();
     expect(screen.getByLabelText(/Neither confirmed.*path unavailable/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Bullish first \(/));
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].some((p: { scenario: string }) => p.scenario === "UP_FIRST")).toBe(false));
@@ -79,6 +79,9 @@ describe("ARX structural forecast controls", () => {
     expect(labels).toEqual(["Bull +1.20% · 58% higher", "Middle +0.10% · median", "Bear −0.90% · 40% lower"]);
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
+    // The explanation matches what is drawn and what was learned (audit 2026-11-15).
+    expect(screen.getByText(/The paths are not price predictions: .*shaded range spans bull to bear.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
+    expect(screen.queryByText(/Ghost candles/)).toBeNull();
     expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 independent graded forecasts.*0\.012 Brier better on the 13 newest/);
     const grades = screen.getByTestId("forecast-grades").textContent!;
     expect(grades).toMatch(/Graded 1 hour forecasts: 1/);

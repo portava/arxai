@@ -7018,6 +7018,14 @@ export const SmartChartLayersResponseSafetyMode = {
   paper_only: "paper_only",
 } as const;
 
+/**
+ * Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict.
+ */
+export interface SmartChartLayersResponseTradeLevels {
+  shown: boolean;
+  reason: string | null;
+}
+
 export interface SmartChartLayersResponse {
   symbol: string;
   timeframe: string;
@@ -7027,6 +7035,8 @@ export interface SmartChartLayersResponse {
   newsBehavior: SmartChartNewsBehavior;
   handshake: SmartChartOverlayHandshake;
   handshakeInputs: SmartChartHandshakeInputs;
+  /** Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict. */
+  tradeLevels?: SmartChartLayersResponseTradeLevels;
   safetyMode: SmartChartLayersResponseSafetyMode;
   liveLocked: boolean;
   readOnlyMode: boolean;

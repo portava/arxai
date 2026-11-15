@@ -15920,6 +15920,13 @@ components:
         newsBehavior: { $ref: "#/components/schemas/SmartChartNewsBehavior" }
         handshake: { $ref: "#/components/schemas/SmartChartOverlayHandshake" }
         handshakeInputs: { $ref: "#/components/schemas/SmartChartHandshakeInputs" }
+        tradeLevels:
+          type: object
+          description: Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict.
+          required: [shown, reason]
+          properties:
+            shown: { type: boolean }
+            reason: { type: string, nullable: true }
         safetyMode: { type: string, enum: [paper_only] }
         liveLocked: { type: boolean }
         readOnlyMode: { type: boolean }

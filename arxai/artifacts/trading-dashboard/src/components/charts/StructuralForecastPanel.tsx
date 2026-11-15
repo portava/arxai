@@ -165,8 +165,8 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
       </p>}
       <p className="text-amber-200">{shown.forecast.trajectories?.length
-        ? `Ghost candles are illustrative scenarios, not calibrated price predictions: the bull, middle and bear paths are the 75th, 50th and 25th percentile of where the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market ended, rescaled to the current price. Break odds are the model's chance that structure breaks that way first.`
-        : "Ghost candles are illustrative scenarios, not calibrated price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move."}</p>
+        ? `The paths are not price predictions: the bull, middle and bear lines are the 75th, 50th and 25th percentile of where the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market ended, rescaled to the current price, and the shaded range spans bull to bear. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
+        : "Ghost paths are illustrative scenarios, not price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move."}</p>
       {shown.forecast.calibration && <p data-testid="forecast-learning" className="mt-1 text-zinc-300">{learningSentence(shown.forecast.calibration)}</p>}
       <p className="mt-1 text-zinc-400">Model {shown.forecast.version} · {shown.forecast.gateReason.replaceAll("_", " ").toLowerCase()} · Predictive performance not yet validated.</p>
     </>}

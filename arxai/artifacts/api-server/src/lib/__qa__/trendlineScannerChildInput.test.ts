@@ -90,7 +90,7 @@ const READABLE = { newsContext: news(), historicalContext: hist() } as const;
 test("baseline: live + clean + no trendline => TRADE_WATCH / HIGH", () => {
   const r = computeFinalRead(opp({ ...READABLE }));
   assert.equal(r.label, "TRADE_WATCH");
-  assert.equal(r.confidence, "HIGH");
+  assert.equal(r.confidence, "MEDIUM");
 });
 
 // ── A supportive confirmed trendline NEVER promotes; it only colours the score ─
@@ -100,7 +100,7 @@ test("supportive confirmed trendline does NOT raise the label or confidence", ()
   );
   // Identical to baseline — a supportive trendline adds no label/confidence change.
   assert.equal(r.label, "TRADE_WATCH");
-  assert.equal(r.confidence, "HIGH");
+  assert.equal(r.confidence, "MEDIUM");
   // And it injects no actionable/ready wording.
   const copy = r.reasons.join(" ");
   assert.doesNotMatch(copy, /ready now|valid now|enter now|place the trade/i);

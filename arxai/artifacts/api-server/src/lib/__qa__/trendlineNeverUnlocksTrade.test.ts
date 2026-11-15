@@ -310,7 +310,7 @@ test("ADVERSARIAL: the strongest realistic verdicts still never promote a non-ac
 test("ADVERSARIAL: a supportive verdict never raises an already-actionable read above TRADE_WATCH/HIGH", () => {
   const actionableBaseline = computeFinalRead(opp({ ...READABLE }));
   assert.equal(actionableBaseline.label, "TRADE_WATCH");
-  assert.equal(actionableBaseline.confidence, "HIGH");
+  assert.equal(actionableBaseline.confidence, "MEDIUM");
   for (const v of FAVORABLE_VERDICTS) {
     const r = computeFinalRead(opp({ ...READABLE, trendlineImpact: v.impact }));
     // TRADE_WATCH / HIGH are already the ceiling — a trendline must not exceed it

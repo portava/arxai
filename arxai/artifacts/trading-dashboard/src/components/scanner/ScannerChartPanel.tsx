@@ -2693,6 +2693,14 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
                 )}
               </div>
 
+              {/* Entry / stop / target follow the per-symbol truth verdict: when
+                  it withholds them, say so instead of leaving the layer silent. */}
+              {layerToggles.signal_zones && smartData?.tradeLevels?.shown === false && (
+                <p className="text-[11px] text-zinc-400" role="status" data-testid="scanner-trade-levels-withheld">
+                  Entry, stop and target lines are not drawn: {smartData.tradeLevels.reason ?? "no current setup."}
+                </p>
+              )}
+
               {/* The Economic-events layer is never silent: with no truth read it
                   states that event risk is being checked / was not checked, in
                   the same words as the market-read card. */}

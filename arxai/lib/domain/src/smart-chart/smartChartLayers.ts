@@ -385,6 +385,18 @@ export interface SignalLayerInput {
   takeProfitZones: PriceBand[];
 }
 
+/**
+ * The trade levels a signal may draw: entry, retest, stop, invalidation and
+ * targets. They are drawn only when the per-symbol truth shows a setup (same
+ * gate as the selected-market panel and the Eleanor read). Otherwise only the
+ * watch zone and the late "do not chase" caution remain, so the chart never
+ * shows a stop or target the rest of the page withholds.
+ */
+export function gateSignalTradeLevels(signal: SignalLayerInput | null, levelsShown: boolean): SignalLayerInput | null {
+  if (!signal || (levelsShown && signal.hasSufficientData)) return signal;
+  return { ...signal, entryZone: null, retestZone: null, invalidationPrice: null, stopLoss: null, takeProfitZones: [] };
+}
+
 /** Narrow structure-level projection (from the chart-intelligence levels read). */
 export interface StructureLevelInput {
   kind: "support" | "resistance";

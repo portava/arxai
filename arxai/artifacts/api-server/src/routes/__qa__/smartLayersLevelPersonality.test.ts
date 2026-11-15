@@ -36,6 +36,8 @@ const realRadar = await import("../../lib/news/marketImpactRadar.js");
 mock.module("../../lib/news/marketImpactRadar.js", { namedExports: {
   ...realRadar, buildMarketImpactRadar: async () => { throw new Error("no provider in test"); },
 } });
+const realTruth = await import("../../lib/truth/symbolTruthSnapshot.js");
+mock.module("../../lib/truth/symbolTruthSnapshot.js", { namedExports: { ...realTruth, getSymbolTruthSnapshot: async () => null } });
 const router = (await import("../meChartSmartLayers.js")).default;
 const { chartLevelPersonalityWords } = await import("../../lib/data/chart/marketSentenceEngine.js");
 

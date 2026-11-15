@@ -17,6 +17,7 @@ import {
   buildOverlayHandshake,
   buildSignalLayers,
   buildTradeHealthSlots,
+  gateSignalTradeLevels,
   type ReservedSlotPosition,
   type SignalLayerInput,
   type SmartChartLayer,
@@ -28,6 +29,22 @@ import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence
 import { chartLevelPersonalityWords } from "../lib/data/chart/marketSentenceEngine.js";
 import { buildMarketImpactRadar } from "../lib/news/marketImpactRadar.js";
 import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
+import { getSymbolTruthSnapshot, type SymbolTruthSnapshot } from "../lib/truth/symbolTruthSnapshot.js";
+
+/**
+ * Whether the per-symbol truth shows a trade setup right now: a current,
+ * directional verdict whose levels were not withheld. When it does not, the
+ * chart may not draw entry / stop / target either (audit 2026-11-15).
+ */
+export function truthShowsTradeLevels(truth: SymbolTruthSnapshot | null, symbol: string, timeframe: string, now = Date.now()): { shown: boolean; reason: string | null } {
+  if (!truth) return { shown: false, reason: "The market truth check could not be read, so trade levels are not drawn." };
+  if (truth.symbol !== symbol.trim().toUpperCase() || truth.timeframe !== timeframe)
+    return { shown: false, reason: "The market truth check is for a different chart, so trade levels are not drawn." };
+  const action = truth.verdict.bestAction;
+  if ((action === "BUY" || action === "SELL") && truth.levels.withheld === false
+    && truth.validUntil != null && Date.parse(truth.validUntil) > now) return { shown: true, reason: null };
+  return { shown: false, reason: truth.levels.withheldReason ?? truth.verdict.bestActionText };
+}
 
 const router = Router();
 const SAFETY_ENVELOPE = {
@@ -77,7 +94,7 @@ router.get(
     const timeframe = q.timeframe ?? "M5";
 
     const nowMs = Date.now();
-    const [signal, chartState, radarResult, openPositions] = await Promise.all([
+    const [signal, chartState, radarResult, openPositions, truth] = await Promise.all([
       buildEleanorMarketEdgeForUser(userId, { symbol, timeframe }).catch((err) => {
         req.log.warn({ err }, "smart-layers signal build failed");
         return null;
@@ -111,7 +128,12 @@ router.get(
           req.log.warn({ err }, "smart-layers open-position read failed");
           return [] as { id: number; symbol: string; entryPrice: number | null }[];
         }),
+      getSymbolTruthSnapshot(symbol, timeframe, userId).catch((err) => {
+        req.log.warn({ err }, "smart-layers truth read failed");
+        return null;
+      }),
     ]);
+    const tradeLevels = truthShowsTradeLevels(truth, symbol, timeframe);
 
     const structureLevels: StructureLevelInput[] = (
       chartState?.marketUnderstanding?.levels?.levels ?? []
@@ -121,7 +143,7 @@ router.get(
       personality: humanizeLevelPersonality(lvl.personality),
     }));
 
-    const signalInput: SignalLayerInput | null = signal
+    const signalInput: SignalLayerInput | null = gateSignalTradeLevels(signal
       ? {
           symbol: signal.symbol,
           hasSufficientData: signal.hasSufficientData,
@@ -133,7 +155,7 @@ router.get(
           stopLoss: signal.stopLoss,
           takeProfitZones: signal.takeProfitZones,
         }
-      : null;
+      : null, tradeLevels.shown);
 
     const signalLayers = buildSignalLayers(signalInput, structureLevels, symbol);
 
@@ -146,6 +168,7 @@ router.get(
     let execCostLayers: SmartChartLayer[] = [];
     const dir = signal?.direction;
     if (
+      tradeLevels.shown &&
       signalInput &&
       signalInput.hasSufficientData &&
       (dir === "BUY" || dir === "SELL") &&
@@ -260,6 +283,9 @@ router.get(
           }
         : null,
       layers,
+      // Trade levels follow the per-symbol truth: withheld here when the
+      // scanner panel and Eleanor withhold them, with the same reason.
+      tradeLevels,
       newsRadar: radarResult?.radar ?? {
         symbol,
         provider: {
