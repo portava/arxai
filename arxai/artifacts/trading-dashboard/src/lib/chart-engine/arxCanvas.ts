@@ -658,7 +658,7 @@ export class CanvasChart {
       const values: number[] = [];
       for (const s of this.series.filter((item) => item.paneIndex === pane))
         for (const p of s.data) {
-          const i = this.indexForTime(p.time);
+          const i = this.logicalIndexAtTime(p.time);
           if (i < this.range.from - 1 || i > this.range.to + 1) continue;
           if ("close" in p) {
             const high = this.toScaleValue(p.high, pane);
@@ -1055,8 +1055,10 @@ export class CanvasChart {
         }
       } else
         for (const point of s.data) {
+          // Times past either end of the timeline (a projected scenario path)
+          // extend at the bar spacing instead of piling onto the last slot.
           const p = point as CandleData,
-            x = this.x(this.indexForTime(p.time));
+            x = this.x(this.logicalIndexAtTime(p.time));
           if (x < -body || x > w + body) continue;
           const up = p.close >= p.open;
           const color = up

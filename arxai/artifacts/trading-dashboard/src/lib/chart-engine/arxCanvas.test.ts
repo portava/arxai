@@ -103,6 +103,24 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(chart.timeScale().getVisibleLogicalRange()!.to).toBe(before.to + 1);
     chart.remove();
   });
+  it("draws candles timed after the last observed bar forward at the bar spacing, not stacked on it", () => {
+    const xs: number[] = [];
+    const target: any = { measureText: (text: string) => ({ width: text.length * 6 }), fillStyle: "" };
+    target.moveTo = (x: number) => { if (target.fillStyle === "#123456") xs.push(x); };
+    const context = new Proxy(target, { get: (t, name) => name in t ? t[name] : () => {} });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(context);
+    const chart = createChart(container, { width: 900, height: 400 });
+    chart.addSeries(CandlestickSeries, { timelineSource: true } as any).setData(bars);
+    const last = bars.at(-1)!.time;
+    chart.addSeries(CandlestickSeries, { upColor: "#123456", downColor: "#123456" })
+      .setData(Array.from({ length: 5 }, (_, i) => ({ time: last + (i + 1) * 60, open: 200, high: 201, low: 199, close: 200.5 })));
+    chart.timeScale().setVisibleLogicalRange({ from: 80, to: 110 });
+    (chart as any).paint();
+    expect(xs.length).toBe(5);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]!);
+    expect(gaps.every(g => g > 0 && Math.abs(g - gaps[0]!) < 1e-6)).toBe(true);
+    chart.remove();
+  });
   it("uses reversible coordinate conversion and hides off-scale levels", () => {
     const chart = createChart(container, { width: 900, height: 400 });
     const s = chart.addSeries(CandlestickSeries);
