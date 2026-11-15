@@ -1010,6 +1010,13 @@ export class CanvasChart {
         const X = (time: number) => this.x(this.logicalIndexAtTime(time));
         const color = String(s.options().color || "#a88cff");
         const lower = ((s.options().bandLower ?? []) as LineData[]).filter((p) => "value" in p);
+        if (s.options().faded) {
+          // The forecast a live update replaced: one faint dashed outline.
+          c.strokeStyle = color; c.lineWidth = 1; c.globalAlpha = 0.35; c.setLineDash([4, 4]);
+          c.beginPath();
+          pts.forEach((p, i) => (i ? c.lineTo(X(p.time), localY(p.value)) : c.moveTo(X(p.time), localY(p.value))));
+          c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+        } else {
         const passed = pts.filter((p) => p.time <= now).length;
         const last = Math.max(0, passed - 1);
         if (pts.length > 1 && lower.length === pts.length) {
@@ -1031,6 +1038,7 @@ export class CanvasChart {
         c.globalAlpha = 1;
         const end = pts.at(-1), label = s.options().endLabel;
         if (end && typeof label === "string" && label) forecastLabels.push({ x: X(end.time), y: localY(end.value), text: label, color });
+        }
       } else if (s.kind === "Line" || s.kind === "Area" || s.kind === "Baseline") {
         c.strokeStyle = s.options().color || "#60a5fa";
         c.lineWidth = s.options().lineWidth || 1;

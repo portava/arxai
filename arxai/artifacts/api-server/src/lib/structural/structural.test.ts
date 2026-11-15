@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -384,4 +384,28 @@ test("the service shows learned probabilities for a window once enough of its fo
   const shown = row.forecast.horizons.find(h => h.bars === 60)!.probabilities;
   if (c.applied) assert.ok(shown[2] > c.raw[2]); else assert.deepEqual(shown, c.raw);
   assert.deepEqual(c.raw, probabilities(row.forecast.mass, 60));
+});
+test("learning counts one forecast per window: updates and forecasts overlapping an earlier one are left out", () => {
+  const kept = independentForecasts([{ asOf: 0 }, { asOf: 10 }, { asOf: 60 }, { asOf: 61 }, { asOf: 70, update: true }, { asOf: 130 }], 60);
+  assert.deepEqual(kept.map(r => r.asOf), [0, 60, 130]);
+  const raw: [number, number, number] = [.45, .45, .1];
+  // Sixty forecasts a minute apart on a one-hour window are one bet, not sixty.
+  const overlapping = Array.from({ length: 60 }, (_, i) => ({ p: raw, outcome: 2, completedAt: 1000 + i, asOf: i * 60_000 }));
+  const r = calibrate(raw, overlapping, 5000, 3_600_000).record;
+  assert.equal(r.applied, false);
+  assert.equal(r.graded, 1);
+  assert.equal(r.skippedOverlapping, 59);
+});
+test("a forecast issued while an earlier one of the window is open is saved as an update of it", async () => {
+  const fresh = async (anchorAgoMs: number) => {
+    const repository = memory();
+    const template = forecastStructural(model(), bars.slice(-120), origin, false, 60, "1h");
+    const anchor = { ...template, asOf: template.asOf - anchorAgoMs, origin: { ...template.origin, kind: "BROKER_HISTORY" as const } };
+    repository.rows.set("1:anchor", { id: "anchor", issuedAt: anchor.asOf, forecast: anchor, scores: [] });
+    const service = new StructuralForecastService({ repository, now: () => asOf + 1000,
+      readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }), fit: () => structuredClone(model()) });
+    return (await service.issue(1, "V75", "1h")).forecast;
+  };
+  assert.deepEqual((await fresh(10 * 60_000)).update, { of: "anchor", anchorAsOf: asOf - 10 * 60_000, barsIntoWindow: 10 });
+  assert.equal((await fresh(60 * 60_000)).update, undefined);
 });

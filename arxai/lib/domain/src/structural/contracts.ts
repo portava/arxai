@@ -79,7 +79,16 @@ export interface CalibrationRecord {
   holdoutGain: number | null;
   /** Window probabilities before calibration. */
   raw: Triple;
+  /** Graded forecasts left out because they overlapped one already counted (updates included). */
+  skippedOverlapping?: number;
 }
+/**
+ * Set on a forecast issued while an earlier forecast of the same window and
+ * feed was still open: it is an update of that one, made `barsIntoWindow` bars
+ * in. Updates are graded on their own and never used to learn calibration,
+ * since they repeat the open forecast's bet with less time left.
+ */
+export interface ForecastUpdate { of: string; anchorAsOf: number; barsIntoWindow: number }
 /** The judgement of one finished forecast, made once its whole window has closed. */
 export interface ForecastGrade {
   gradeVersion: string;
@@ -113,6 +122,8 @@ export interface StructuralForecast {
   trajectories?: Trajectory[];
   /** Calibration applied to this window's probabilities, if any was learned. */
   calibration?: CalibrationRecord;
+  /** Present when this forecast updates one whose window was still open. */
+  update?: ForecastUpdate;
 }
 export const forecastStepMs = (f: Pick<StructuralForecast, "stepMs">): number => f.stepMs ?? 60_000;
 export const forecastHorizonBars = (f: Pick<StructuralForecast, "horizonBars">): number => f.horizonBars ?? 60;

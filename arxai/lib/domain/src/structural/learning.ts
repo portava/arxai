@@ -59,7 +59,27 @@ export function gradeForecast(f: StructuralForecast, windowBars: readonly Struct
     middlePathError: n ? Array.from({ length: n }, (_, j) => Math.abs(middle!.candles[j]!.close - windowBars[j]!.close) / start).reduce((s, x) => s + x, 0) / n : null };
 }
 
-export interface GradedObservation { p: Triple; outcome: number; completedAt: number }
+export interface GradedObservation {
+  p: Triple; outcome: number; completedAt: number;
+  /** When the forecast was issued, and whether it updated an open forecast. */
+  asOf?: number; update?: boolean;
+}
+/**
+ * One forecast per window: drop updates, then keep forecasts in issue order
+ * only when each starts after the previous kept one's window has ended.
+ * Overlapping forecasts mostly repeat one bet, so counting them all would
+ * make the learning look more certain than the evidence is.
+ */
+export function independentForecasts<T extends { asOf?: number; update?: boolean }>(rows: readonly T[], windowMs: number): T[] {
+  const kept: T[] = [];
+  let openUntil = Number.NEGATIVE_INFINITY;
+  for (const r of [...rows].filter(r => !r.update).sort((a, b) => (a.asOf ?? 0) - (b.asOf ?? 0))) {
+    if (r.asOf == null) { kept.push(r); continue; }
+    if (r.asOf < openUntil) continue;
+    kept.push(r); openUntil = r.asOf + windowMs;
+  }
+  return kept;
+}
 export const CALIBRATION_POLICY = Object.freeze({ minGraded: 30, holdoutShare: .3, weights: [0, .25, .5, .75, 1] });
 const mix = (p: Triple, q: Triple, w: number): Triple => [0, 1, 2].map(i => (1 - w) * p[i]! + w * q[i]!) as Triple;
 const frequencies = (rows: readonly GradedObservation[]): Triple =>
@@ -73,10 +93,12 @@ const meanBrier = (rows: readonly GradedObservation[], f: (p: Triple) => Triple)
  * graded forecasts and kept only if it also scores better on the newest 30%,
  * which it never saw. Otherwise the raw model is shown unchanged.
  */
-export function calibrate(raw: Triple, graded: readonly GradedObservation[], completedBefore: number): { shown: Triple; record: CalibrationRecord } {
-  const rows = graded.filter(r => r.completedAt <= completedBefore && r.p.every(Number.isFinite)).sort((a, b) => a.completedAt - b.completedAt);
+export function calibrate(raw: Triple, graded: readonly GradedObservation[], completedBefore: number, windowMs?: number): { shown: Triple; record: CalibrationRecord } {
+  const done = graded.filter(r => r.completedAt <= completedBefore && r.p.every(Number.isFinite));
+  const rows = (windowMs ? independentForecasts(done, windowMs) : done).sort((a, b) => a.completedAt - b.completedAt);
+  const skippedOverlapping = done.length - rows.length;
   const none = (reason: string, extra: Partial<CalibrationRecord> = {}) =>
-    ({ shown: raw, record: { applied: false, reason, graded: rows.length, heldOut: 0, weight: 0, frequencies: null, holdoutGain: null, raw, ...extra } });
+    ({ shown: raw, record: { applied: false, reason, graded: rows.length, heldOut: 0, weight: 0, frequencies: null, holdoutGain: null, raw, skippedOverlapping, ...extra } });
   if (rows.length < CALIBRATION_POLICY.minGraded) return none(`FEWER_THAN_${CALIBRATION_POLICY.minGraded}_GRADED`);
   const cut = Math.floor(rows.length * (1 - CALIBRATION_POLICY.holdoutShare));
   const train = rows.slice(0, cut), test = rows.slice(cut), q = frequencies(train);
@@ -86,5 +108,5 @@ export function calibrate(raw: Triple, graded: readonly GradedObservation[], com
   if (!(holdoutGain > 0)) return none("DID_NOT_IMPROVE_ON_HELD_OUT_FORECASTS", { heldOut: test.length, weight, holdoutGain });
   const all = frequencies(rows);
   return { shown: mix(raw, all, weight), record: { applied: true, reason: "IMPROVED_ON_HELD_OUT_FORECASTS", graded: rows.length,
-    heldOut: test.length, weight, frequencies: all, holdoutGain, raw } };
+    heldOut: test.length, weight, frequencies: all, holdoutGain, raw, skippedOverlapping } };
 }

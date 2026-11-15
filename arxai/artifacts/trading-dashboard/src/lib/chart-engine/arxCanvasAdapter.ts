@@ -871,7 +871,16 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     this.ghostSeries = [];
     // Each path is one line of closes, starting from the price it was issued
     // at. The highest and lowest paths' ends bound a shaded range.
-    const lines = paths.slice(0, 3).map((path) => ({ path, points: forecastLinePoints(path.candles) }))
+    // A replaced original, if shown, is drawn first so the live paths sit on top.
+    for (const path of paths.filter((p) => p.faded).slice(0, 3)) {
+      const points = forecastLinePoints(path.candles);
+      if (points.length < 2) continue;
+      const series = chart.addSeries(LineSeries, { color: path.color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+        title: "Original forecast path", forecastPath: true, faded: true });
+      series.setData(points);
+      this.ghostSeries.push(series);
+    }
+    const lines = paths.filter((p) => !p.faded).slice(0, 3).map((path) => ({ path, points: forecastLinePoints(path.candles) }))
       .filter((l) => l.points.length > 1);
     const endOf = (l: (typeof lines)[number]) => l.points.at(-1)!.value;
     const top = lines.length > 1 ? lines.reduce((a, b) => (endOf(b) > endOf(a) ? b : a)) : null;

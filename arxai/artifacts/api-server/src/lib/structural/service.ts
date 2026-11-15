@@ -114,11 +114,19 @@ export class StructuralForecastService {
     // probabilities only when that scored better on forecasts it never saw.
     const graded: GradedObservation[] = existing.filter(r => r.forecast.origin.provider === feed.origin.provider).flatMap(r => {
       const score = r.scores.find(s => s.horizon === horizon.bars);
-      return score ? [{ p: r.forecast.calibration?.raw ?? probabilities(r.forecast.mass, horizon.bars), outcome: scenarioIndex(score.outcome), completedAt: score.observedThrough }] : [];
+      return score ? [{ p: r.forecast.calibration?.raw ?? probabilities(r.forecast.mass, horizon.bars), outcome: scenarioIndex(score.outcome),
+        completedAt: score.observedThrough, asOf: r.forecast.asOf, update: Boolean(r.forecast.update) }] : [];
     });
+    const windowMs = horizon.bars * horizon.stepMs;
+    // A forecast issued while an earlier one of this window is still open is
+    // an update of it. Recorded now, at issue, and never changed afterwards.
+    const anchor = existing.filter(r => !r.forecast.update && r.forecast.origin.provider === feed.origin.provider && r.forecast.asOf < asOf)
+      .sort((a, b) => b.forecast.asOf - a.forecast.asOf)[0];
+    if (anchor && asOf < anchor.forecast.asOf + windowMs)
+      forecast.update = { of: anchor.id, anchorAsOf: anchor.forecast.asOf, barsIntoWindow: Math.round((asOf - anchor.forecast.asOf) / horizon.stepMs) };
     const window = forecast.horizons.find(h => h.bars === horizon.bars);
     if (window) {
-      const learned = calibrate(window.probabilities, graded, asOf);
+      const learned = calibrate(window.probabilities, graded, asOf, windowMs);
       window.probabilities = learned.shown;
       forecast.calibration = learned.record;
     }

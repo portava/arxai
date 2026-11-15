@@ -140,6 +140,7 @@ describe("ARX renderer market-data and viewport contract", () => {
     chart.addSeries(LineSeries, { color: "#00aa00", forecastPath: true, endLabel: "Bull +2.50% · 60% higher", bandLower: bear, bandColor: "#7f77dd" } as any).setData(bull);
     chart.addSeries(LineSeries, { color: "#aa0000", forecastPath: true, endLabel: "Bear −2.50% · 40% lower" } as any).setData(bear);
     chart.addSeries(LineSeries, { color: "#0000aa", forecastPath: true, endLabel: "Middle +0.00% · median" } as any).setData(path(() => 200 + 1e-9));
+    chart.addSeries(LineSeries, { color: "#555555", forecastPath: true, faded: true, endLabel: "never drawn" } as any).setData(path(i => 199 - i));
     chart.timeScale().setVisibleLogicalRange({ from: 80, to: 110 });
     (chart as any).paint();
     const bullStrokes = strokes.filter(s => s.color === "#00aa00").map(s => s.alpha);
@@ -147,6 +148,8 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(fills.filter(f => f.color === "#7f77dd").map(f => f.alpha)).toEqual([0.06, 0.16]);
     const ys = labels.filter(l => /^(Bull|Bear|Middle) /.test(l.text)).map(l => l.y).sort((a, b) => a - b);
     expect(ys).toHaveLength(3);
+    expect(strokes.filter(s => s.color === "#555555").map(s => s.alpha)).toEqual([0.35]);
+    expect(labels.some(l => l.text === "never drawn")).toBe(false);
     expect(ys[1]! - ys[0]!).toBeGreaterThanOrEqual(14);
     expect(ys[2]! - ys[1]!).toBeGreaterThanOrEqual(14);
     chart.remove();

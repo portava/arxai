@@ -660,6 +660,7 @@ export function ARXNativeChart({
         id: path.id,
         color: colors[path.id] ?? "#a88cff",
         label: path.label,
+        faded: path.faded,
         candles: path.candles.map((bar) => ({
           time: Math.floor(bar.openTime / 1000),
           open: bar.open,

@@ -79,12 +79,31 @@ describe("ARX structural forecast controls", () => {
     expect(labels).toEqual(["Bull +1.20% · 58% higher", "Middle +0.10% · median", "Bear −0.90% · 40% lower"]);
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
-    expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 graded forecasts.*0\.012 Brier better on the 13 newest/);
+    expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 independent graded forecasts.*0\.012 Brier better on the 13 newest/);
     const grades = screen.getByTestId("forecast-grades").textContent!;
     expect(grades).toMatch(/Graded 1 hour forecasts: 1/);
     expect(grades).toMatch(/B .*broke down first, gave it 60% · ended −0\.40% · nearest middle path · inside bull–bear range/);
     fireEvent.click(screen.getByLabelText(/^Middle /));
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "BEAR"]));
+  });
+  it("in dynamic mode shows an update over its faint original and grades updates apart from fresh forecasts", async () => {
+    const onPaths = vi.fn();
+    const bar = (close: number) => ({ openTime: 1800000000000, closeTime: 1800000060000, open: 100, high: Math.max(100, close), low: Math.min(100, close), close, isFinal: true });
+    const trajectories = [["BULL", .01], ["MIDDLE", 0], ["BEAR", -.01]].map(([kind, endChange]) =>
+      ({ kind, percentile: 50, label: "ANALOG_PERCENTILE_PATH", candles: [bar(100 * (1 + (endChange as number)))], endChange, share: .5, analogs: 40, sourceEnd: 1 }));
+    const grade = (letter: string, skill: number) => ({ gradeVersion: "g", letter, skill, probabilityOfOutcome: .5, actualEndChange: 0, nearestPath: "MIDDLE", insideRange: true, middlePathError: 0 });
+    const score = (g: ReturnType<typeof grade>) => [{ horizon: 60, outcome: "NEITHER", brier: .3, baselineBrier: .4, logLoss: .5, grade: g }];
+    const original = { ...row, id: "original", issuedAt: 1799999400000, forecast: { ...row.forecast, asOf: 1799999400000, trajectories }, scores: score(grade("A", .6)) };
+    const oldUpdate = { ...row, id: "old-update", issuedAt: 1799990000000, forecast: { ...row.forecast, trajectories, update: { of: "x", anchorAsOf: 1799989000000, barsIntoWindow: 40 } }, scores: score(grade("B", .3)) };
+    const update = { saved: true, ...row, id: "live", forecast: { ...row.forecast, trajectories, update: { of: "original", anchorAsOf: 1799999400000, barsIntoWindow: 10 } } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [original, oldUpdate] })).mockResolvedValueOnce(response(update)));
+    render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} />);
+    fireEvent.click(screen.getByLabelText("Dynamic forecast"));
+    expect((await screen.findByTestId("forecast-update")).textContent).toMatch(/Updated 10 M1 bars into the forecast issued .*faint dashed outline.*not used to learn/);
+    await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string; faded?: boolean }) => `${p.id}${p.faded ? ":faded" : ""}`))
+      .toEqual(["BULL:faded", "MIDDLE:faded", "BEAR:faded", "BULL", "MIDDLE", "BEAR"]));
+    expect(screen.getByTestId("forecast-grade-cohorts").textContent).toBe("Fresh forecasts: 1, average skill 0.60 · Updates mid-window: 1, average skill 0.30 (less time left, so not comparable)");
+    expect(screen.getByTestId("forecast-grades").textContent).toMatch(/update \+40 bars/);
   });
   it("never claims an unsaved forecast was issued", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: false, reason: "FORECAST_UNAVAILABLE" }, false)));

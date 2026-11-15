@@ -203,3 +203,17 @@ describe("ArxCanvasAdapter marker re-anchoring (repaint-crash lock)", () => {
     expect(createSeriesMarkersMock).not.toHaveBeenCalled();
   });
 });
+
+it("draws a replaced original as faint lines beneath the live paths, outside the shaded range", () => {
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container: document.createElement("div"), height: 400 });
+  adapter.setCandles([bar(60), bar(120)]);
+  const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
+  adapter.setGhostPaths([
+    { id: "BULL", color: "#0a0", candles: [bar(180), bar(240)], faded: true },
+    { id: "BULL", color: "#0a0", label: "Bull", candles: [bar(180), bar(240)] },
+  ]);
+  const opts = chart.addSeries.mock.calls.slice(2).map((call: unknown[]) => call[1] as Record<string, unknown>);
+  expect(opts.map(o => [o.faded ?? false, o.endLabel ?? null])).toEqual([[true, null], [false, "Bull"]]);
+  adapter.destroy();
+});
