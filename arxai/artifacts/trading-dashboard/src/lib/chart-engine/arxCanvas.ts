@@ -989,6 +989,7 @@ export class CanvasChart {
     c.beginPath();
     c.rect(0, 0, w, h);
     c.clip();
+    const forecastLabels: Array<{ x: number; y: number; text: string; color: string }> = [];
     for (const s of this.series) {
       const pane = s.paneIndex, top = paneTop(pane), paneH = paneHeight(pane);
       const localY = (price: number) => {
@@ -1001,7 +1002,36 @@ export class CanvasChart {
         1,
         Math.min(14, (w / (this.range.to - this.range.from)) * 0.62),
       );
-      if (s.kind === "Line" || s.kind === "Area" || s.kind === "Baseline") {
+      if (s.kind === "Line" && s.options().forecastPath) {
+        // A projected forecast path: placed past the last bar at the bar
+        // spacing, with the part real bars have already reached dimmed.
+        const pts = s.data.filter((p): p is LineData => "value" in p);
+        const now = this.times.at(-1) ?? Number.NEGATIVE_INFINITY;
+        const X = (time: number) => this.x(this.logicalIndexAtTime(time));
+        const color = String(s.options().color || "#a88cff");
+        const lower = ((s.options().bandLower ?? []) as LineData[]).filter((p) => "value" in p);
+        const passed = pts.filter((p) => p.time <= now).length;
+        const last = Math.max(0, passed - 1);
+        if (pts.length > 1 && lower.length === pts.length) {
+          const band = (from: number, to: number, alpha: number) => {
+            if (to <= from) return;
+            c.beginPath();
+            for (let i = from; i <= to; i++) c.lineTo(X(pts[i]!.time), localY(pts[i]!.value));
+            for (let i = to; i >= from; i--) c.lineTo(X(lower[i]!.time), localY(lower[i]!.value));
+            c.closePath(); c.globalAlpha = alpha; c.fillStyle = String(s.options().bandColor ?? color); c.fill(); c.globalAlpha = 1;
+          };
+          band(0, last, 0.06);
+          band(last, pts.length - 1, 0.16);
+        }
+        c.strokeStyle = color; c.lineWidth = Number(s.options().lineWidth) || 2; c.lineJoin = "round";
+        for (let i = 1; i < pts.length; i++) {
+          c.globalAlpha = pts[i]!.time <= now ? 0.3 : 1;
+          c.beginPath(); c.moveTo(X(pts[i - 1]!.time), localY(pts[i - 1]!.value)); c.lineTo(X(pts[i]!.time), localY(pts[i]!.value)); c.stroke();
+        }
+        c.globalAlpha = 1;
+        const end = pts.at(-1), label = s.options().endLabel;
+        if (end && typeof label === "string" && label) forecastLabels.push({ x: X(end.time), y: localY(end.value), text: label, color });
+      } else if (s.kind === "Line" || s.kind === "Area" || s.kind === "Baseline") {
         c.strokeStyle = s.options().color || "#60a5fa";
         c.lineWidth = s.options().lineWidth || 1;
         c.setLineDash(s.options().lineStyle === 1 ? [1, 3] : s.options().lineStyle === 2 ? [5, 4] : []);
@@ -1138,7 +1168,16 @@ export class CanvasChart {
       }
       c.restore();
     }
-    const drawAnnotation = (d: ChartDrawing, preview = false) => {
+    // Path labels sit where each path ends, pushed apart so they never overlap.
+    let floor = Number.NEGATIVE_INFINITY;
+    for (const l of forecastLabels.sort((a, b) => a.y - b.y)) {
+      const y = Math.max(l.y, floor + 14);
+      floor = y;
+      const width = c.measureText(l.text).width;
+      c.fillStyle = l.color;
+      c.fillText(l.text, Math.max(3, Math.min(w - width - 4, l.x + 6)), y);
+    }
+    const drawAnnotation =(d: ChartDrawing, preview = false) => {
       const x1 = this.drawingX(d.start.time),
         x2 = this.drawingX(d.end.time),
         y1 = rawY(d.start.price),

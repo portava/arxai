@@ -121,6 +121,36 @@ describe("ARX renderer market-data and viewport contract", () => {
     expect(gaps.every(g => g > 0 && Math.abs(g - gaps[0]!) < 1e-6)).toBe(true);
     chart.remove();
   });
+
+  it("draws forecast paths as lines with a shaded range, dims what real bars passed, and keeps labels apart", () => {
+    const strokes: Array<{ color: string; alpha: number }> = [], fills: Array<{ color: string; alpha: number }> = [];
+    const labels: Array<{ text: string; y: number }> = [];
+    const target: any = { measureText: (text: string) => ({ width: text.length * 6 }), fillStyle: "", strokeStyle: "", globalAlpha: 1 };
+    target.stroke = () => strokes.push({ color: target.strokeStyle, alpha: target.globalAlpha });
+    target.fill = () => fills.push({ color: target.fillStyle, alpha: target.globalAlpha });
+    target.fillText = (text: string, _x: number, y: number) => labels.push({ text, y });
+    const context = new Proxy(target, { get: (t, name) => name in t ? t[name] : () => {} });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(context);
+    const chart = createChart(container, { width: 900, height: 400 });
+    chart.addSeries(CandlestickSeries, { timelineSource: true } as any).setData(bars);
+    const last = bars.at(-1)!.time;
+    // Issued two bars ago: points at last-120 .. last+180, two of them already passed.
+    const path = (value: (i: number) => number) => Array.from({ length: 6 }, (_, i) => ({ time: last - 120 + i * 60, value: value(i) }));
+    const bear = path(i => 200 - i), bull = path(i => 200 + i);
+    chart.addSeries(LineSeries, { color: "#00aa00", forecastPath: true, endLabel: "Bull +2.50% · 60% higher", bandLower: bear, bandColor: "#7f77dd" } as any).setData(bull);
+    chart.addSeries(LineSeries, { color: "#aa0000", forecastPath: true, endLabel: "Bear −2.50% · 40% lower" } as any).setData(bear);
+    chart.addSeries(LineSeries, { color: "#0000aa", forecastPath: true, endLabel: "Middle +0.00% · median" } as any).setData(path(() => 200 + 1e-9));
+    chart.timeScale().setVisibleLogicalRange({ from: 80, to: 110 });
+    (chart as any).paint();
+    const bullStrokes = strokes.filter(s => s.color === "#00aa00").map(s => s.alpha);
+    expect(bullStrokes).toEqual([0.3, 0.3, 1, 1, 1]);
+    expect(fills.filter(f => f.color === "#7f77dd").map(f => f.alpha)).toEqual([0.06, 0.16]);
+    const ys = labels.filter(l => /^(Bull|Bear|Middle) /.test(l.text)).map(l => l.y).sort((a, b) => a - b);
+    expect(ys).toHaveLength(3);
+    expect(ys[1]! - ys[0]!).toBeGreaterThanOrEqual(14);
+    expect(ys[2]! - ys[1]!).toBeGreaterThanOrEqual(14);
+    chart.remove();
+  });
   it("uses reversible coordinate conversion and hides off-scale levels", () => {
     const chart = createChart(container, { width: 900, height: 400 });
     const s = chart.addSeries(CandlestickSeries);

@@ -77,15 +77,30 @@ class FakeResizeObserver {
 }
 vi.stubGlobal("ResizeObserver", FakeResizeObserver);
 
-it("ghost candles occupy three separate series and clearing them preserves real bars", () => {
+it("forecast paths are three line series from the issue price, the highest one carrying the range down to the lowest", () => {
   const adapter = new ArxCanvasAdapter();
   adapter.init({ container: document.createElement("div"), height: 400 });
   adapter.setCandles([bar(60), bar(120)]);
   const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
   const realSeries = chart.addSeries.mock.results[0].value;
   const before = realSeries.setData.mock.calls.length;
-  adapter.setGhostPaths(["UP", "DOWN", "NEITHER"].map(id => ({ id, color: "#888", candles: [bar(180), bar(240)] })));
+  const shifted = (b: ChartEngineCandle, d: number) => ({ ...b, high: b.high + d, low: b.low + d, close: b.close + d });
+  adapter.setGhostPaths([
+    { id: "BULL", color: "#0a0", label: "Bull", candles: [shifted(bar(180), 0.2), shifted(bar(240), 0.4)] },
+    { id: "MIDDLE", color: "#00a", label: "Middle", candles: [bar(180), bar(240)] },
+    { id: "BEAR", color: "#a00", label: "Bear", candles: [shifted(bar(180), -0.2), shifted(bar(240), -0.4)] },
+  ]);
   expect(chart.addSeries).toHaveBeenCalledTimes(5); // closed, forming, three forecast paths
+  const calls = chart.addSeries.mock.calls.slice(2);
+  expect(calls.every((call: unknown[]) => (call[0] as { __kind: string }).__kind === "LineSeries")).toBe(true);
+  const opts = calls.map((call: unknown[]) => call[1] as Record<string, unknown>);
+  expect(opts.map(o => o.endLabel)).toEqual(["Bull", "Middle", "Bear"]);
+  expect(opts.map(o => o.forecastPath)).toEqual([true, true, true]);
+  const bullData = chart.addSeries.mock.results[2].value.setData.mock.calls[0][0];
+  const bearData = chart.addSeries.mock.results[4].value.setData.mock.calls[0][0];
+  expect(bullData[0]).toEqual({ time: 120, value: bar(180).open }); // starts one bar before, at the issue price
+  expect(opts[0]!.bandLower).toEqual(bearData);
+  expect(opts[1]!.bandLower).toBeUndefined();
   expect(realSeries.setData.mock.calls.length).toBe(before);
   adapter.setGhostPaths([]);
   expect(chart.removeSeries).toHaveBeenCalledTimes(3);

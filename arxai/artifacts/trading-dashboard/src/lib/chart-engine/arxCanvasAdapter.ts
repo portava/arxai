@@ -162,6 +162,21 @@ const CAPABILITIES: ChartEngineCapabilities = {
  * Series, markers and primitives are adapted through the local Canvas renderer;
  * no third-party chart runtime is loaded.
  */
+
+/**
+ * A projected path as line points: it starts at the price and time the
+ * forecast was issued (the first candle's open, one bar before it), then
+ * follows each projected close.
+ */
+export function forecastLinePoints(candles: readonly ChartEngineCandle[]): Array<{ time: UTCTimestamp; value: number }> {
+  const bars = sanitizeCandlestickData([...candles]);
+  const first = bars[0];
+  if (!first) return [];
+  const step = bars.length > 1 ? bars[1]!.time - first.time : 60;
+  return [{ time: (first.time - step) as UTCTimestamp, value: first.open },
+    ...bars.map((b) => ({ time: b.time as UTCTimestamp, value: b.close }))];
+}
+
 export class ArxCanvasAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
@@ -226,7 +241,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
   // OWN line series + marker channel, separate from trade-plan price lines, so
   // clearing one never disturbs the other. Display-only.
   private structureSeries: ISeriesApi<"Line">[] = [];
-  private ghostSeries: ISeriesApi<"Candlestick">[] = [];
+  private ghostSeries: ISeriesApi<"Line">[] = [];
   private researchSeries: ISeriesApi<"Line">[] = [];
   private structureMarkersApi: { detach: () => void } | null = null;
   // Raw (un-snapped) structural overlay as last handed to setStructureLines, so
@@ -854,31 +869,26 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     const hadPaths = this.ghostSeries.length > 0;
     for (const series of this.ghostSeries) chart.removeSeries(series);
     this.ghostSeries = [];
-    for (const path of paths.slice(0, 3)) {
-      if (!path.candles.length) continue;
-      const series = chart.addSeries(CandlestickSeries, {
-        upColor: path.color,
-        downColor: path.color,
-        wickUpColor: path.color,
-        wickDownColor: path.color,
-        borderVisible: false,
+    // Each path is one line of closes, starting from the price it was issued
+    // at. The highest and lowest paths' ends bound a shaded range.
+    const lines = paths.slice(0, 3).map((path) => ({ path, points: forecastLinePoints(path.candles) }))
+      .filter((l) => l.points.length > 1);
+    const endOf = (l: (typeof lines)[number]) => l.points.at(-1)!.value;
+    const top = lines.length > 1 ? lines.reduce((a, b) => (endOf(b) > endOf(a) ? b : a)) : null;
+    const bottom = lines.length > 1 ? lines.reduce((a, b) => (endOf(b) < endOf(a) ? b : a)) : null;
+    for (const { path, points } of lines) {
+      const series = chart.addSeries(LineSeries, {
+        color: path.color,
+        lineWidth: 2,
         lastValueVisible: false,
         priceLineVisible: false,
-        title: "Illustrative scenario",
+        title: "Forecast path",
+        forecastPath: true,
+        endLabel: path.label ?? "",
+        ...(top && bottom && path === top.path && bottom !== top
+          ? { bandLower: bottom.points, bandColor: "#a88cff" } : {}),
       });
-      const data = sanitizeCandlestickData(path.candles).map((candle) => ({
-        ...candle,
-        time: candle.time as UTCTimestamp,
-      }));
-      series.setData(data);
-      const end = data.at(-1);
-      if (path.label && end) {
-        // Label the path where it ends: above for the highest, below for the lowest.
-        const ends = paths.map((p) => p.candles.at(-1)?.close ?? 0);
-        const position = end.close >= Math.max(...ends) ? "aboveBar" : end.close <= Math.min(...ends) ? "belowBar" : "aboveBar";
-        try { createSeriesMarkers(series, [{ time: end.time, position, color: path.color, shape: "circle", text: path.label }]); }
-        catch { /* labels are decorative — never break the chart */ }
-      }
+      series.setData(points);
       this.ghostSeries.push(series);
     }
     if (!hadPaths && this.ghostSeries.length) {

@@ -19,6 +19,11 @@ export function trajectoryLabel(t: Trajectory, p: Triple | undefined): string {
   return `${pathNames[t.kind]} ${signed(t.endChange)} · ${pct(t.share)} of ${t.analogs} ended ${up ? "higher" : "lower"}`
     + (p ? ` · ${up ? "up" : "down"}-break first ${pct(p[up ? 0 : 1])}` : "");
 }
+/** The short label drawn where a path ends on the chart, e.g. "Bull +0.10% · 42% higher". */
+export function trajectoryChartLabel(t: Trajectory): string {
+  if (t.kind === "MIDDLE") return `Middle ${signed(t.endChange)} · median`;
+  return `${pathNames[t.kind]} ${signed(t.endChange)} · ${pct(t.share)} ${t.kind === "BULL" ? "higher" : "lower"}`;
+}
 /** What the forecast learned from earlier graded forecasts of this window. */
 export function learningSentence(c: CalibrationRecord): string {
   if (c.applied) return `Learned from ${c.graded} graded forecasts: percentages adjusted ${pct(c.weight)} toward how often each outcome happened, `
@@ -65,7 +70,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     if (!current || current.forecast.origin.symbol !== canonicalSymbol) { onPaths([]); return; }
     const f = current.forecast, p = f.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
     onPaths(f.trajectories?.length
-      ? f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryLabel(t, p), candles: t.candles }))
+      ? f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryChartLabel(t), candles: t.candles }))
       : f.paths.filter(path => selected.includes(path.scenario)).map(path => ({ id: path.scenario, scenario: path.scenario,
         label: `${labels[path.scenario]} ${pct(path.probability)}`, candles: path.candles })));
   }, [row, canonicalSymbol, selected, onPaths, horizonId, preset.minutes]);

@@ -75,9 +75,10 @@ describe("ARX structural forecast controls", () => {
     await screen.findByLabelText("Projected paths");
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "MIDDLE", "BEAR"]));
     const labels = onPaths.mock.lastCall![0].map((p: { label: string }) => p.label);
-    expect(labels[0]).toBe("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
-    expect(labels[1]).toBe("Middle +0.10% · median of 120 similar setups");
-    expect(labels[2]).toBe("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
+    // Short labels on the chart; the full sentence stays in the panel's path list.
+    expect(labels).toEqual(["Bull +1.20% · 58% higher", "Middle +0.10% · median", "Bear −0.90% · 40% lower"]);
+    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
+    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
     expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 graded forecasts.*0\.012 Brier better on the 13 newest/);
     const grades = screen.getByTestId("forecast-grades").textContent!;
     expect(grades).toMatch(/Graded 1 hour forecasts: 1/);
