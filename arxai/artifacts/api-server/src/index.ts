@@ -15,6 +15,7 @@ import { startPoolViewAnomalyDetector } from "./lib/audit/poolViewAnomalyDetecto
 import { startAgentEcosystemLifecycleRunner } from "./lib/agentEcosystem/lifecycleRunner";
 import { startDailyHouseholdReportScheduler } from "./lib/agentEcosystem/dailyReportScheduler";
 import { startHeatSnapshotRetentionWorker } from "./lib/timing/heatSnapshotRetention";
+import { startStructuralGradingWorker } from "./lib/structural/gradingWorker";
 import { startExpiredKeySweepWorker } from "./lib/registrationKeys/expiredKeySweepWorker";
 import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKeysDigestWorker";
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
@@ -184,6 +185,11 @@ ensureSafetyCoreInitialized()
       // (advisory learning surface, never an execution gate) on a safe, decision
       // -linked-protected policy. Fail-soft; first cycle after one interval.
       startHeatSnapshotRetentionWorker();
+      // Structural forecast grader — scores saved forecasts whose window has
+      // closed, so grades no longer wait for someone to reopen the panel.
+      // Same scoring path as the history read; writes only append-only
+      // evaluation rows. Fail-soft; first cycle after one interval.
+      startStructuralGradingWorker();
       // Expired-registration-key sweep worker — automatically transitions
       // past-expiry PENDING keys to the terminal EXPIRED status so cohort/active
       // counts and the admin Registration Keys list stay honest. Idempotent,
