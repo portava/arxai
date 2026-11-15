@@ -606,7 +606,7 @@ export function ARXNativeChart({
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
   useEffect(() => {
     setScenarioGhostPaths([]);
-  }, [chartContext]);
+  }, [resolvedSymbol]);
   const tickSource = chartTickSource(data?.feedStatus?.source);
   const streamEnabled = data?.feedStatus?.notLiveReason !== "stored_history" &&
     resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
@@ -669,12 +669,23 @@ export function ARXNativeChart({
         })),
       })));
   }, []);
-  const visibleScenarioPaths = useMemo(
+  // A path is drawn only on a chart whose candles have the path's own length:
+  // a 30-minute scenario candle on a 1-minute axis would compress half an hour
+  // of movement into one slot and overlap bars that already happened.
+  const chartStepSec = chartIntervalSeconds(timeframe);
+  const scenarioPathsOnThisChart = useMemo(
     () => scenarioGhostPaths.filter((path) => {
+      const [a, b] = path.candles;
+      return a != null && (b == null || b.time - a.time === chartStepSec);
+    }),
+    [scenarioGhostPaths, chartStepSec],
+  );
+  const visibleScenarioPaths = useMemo(
+    () => scenarioPathsOnThisChart.filter((path) => {
       const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
       return layer ? layers[layer] : false;
     }),
-    [scenarioGhostPaths, layers],
+    [scenarioPathsOnThisChart, layers],
   );
   const layerAvailability = useMemo(() => {
     const counts: Partial<Record<ChartLayerId, number>> = {
@@ -695,12 +706,12 @@ export function ARXNativeChart({
         counts[layer] = (counts[layer] ?? 0) + 1;
       }
     }
-    for (const path of scenarioGhostPaths) {
+    for (const path of scenarioPathsOnThisChart) {
       const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
       if (layer) counts[layer] = (counts[layer] ?? 0) + path.candles.length;
     }
     return counts;
-  }, [overlays, intelligenceState?.trendlineOverlay, scenarioGhostPaths]);
+  }, [overlays, intelligenceState?.trendlineOverlay, scenarioPathsOnThisChart]);
   const acceptResearchOverlays = useCallback((rows:ChartOverlay[])=>setResearchLayer(rows.length?{context:chartContext,rows}:null),[chartContext]);
   const acceptResearchExplanation = useCallback((evidence:ChartResearchExplanation|null)=>{if(evidence)researchExplanation.current={context:chartContext,evidence};else if(researchExplanation.current?.context===chartContext)researchExplanation.current=null;},[chartContext]);
   const researchVisibleBars = useCallback(()=>activeChartContext.current?.key===chartContext&&activeChartContext.current.adapter===adapterRef.current?adapterRef.current?.getVisibleCandles?.()??[]:[],[chartContext]);
@@ -1926,7 +1937,7 @@ export function ARXNativeChart({
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
     </div>
     <div className={sectionClass("forecast")} data-testid="arx-details-section-forecast">
-    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${chartContext}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} /></div>
+    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${resolvedSymbol}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} chartTimeframe={timeframe} onShowOnTimeframe={tf => { if (isChartInterval(tf)) setTimeframe(tf); }} /></div>
     </div>
     <div className={sectionClass("read")} data-testid="arx-details-section-read">
       <div id="arx-smart-chart-read" data-testid="arx-smart-chart-read"><SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} /></div>

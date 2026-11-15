@@ -8,7 +8,9 @@ const labels: Record<Scenario, string> = { UP_FIRST: "Bullish first", DOWN_FIRST
 const allScenarios: Scenario[] = ["UP_FIRST", "DOWN_FIRST", "NEITHER"];
 const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
-export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, onSelectedScenariosChange }: { symbol: string; onPaths(paths: GhostPath[]): void; selectedScenarios?:Scenario[]; onSelectedScenariosChange?:(next:Scenario[])=>void }) {
+export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, onSelectedScenariosChange, chartTimeframe, onShowOnTimeframe }: { symbol: string; onPaths(paths: GhostPath[]): void; selectedScenarios?:Scenario[]; onSelectedScenariosChange?:(next:Scenario[])=>void;
+  /** The chart's candle length; paths are drawn only on a chart of their own length. */
+  chartTimeframe?: string; onShowOnTimeframe?:(timeframe: string)=>void }) {
   const canonicalSymbol = resolveArxMarket(symbol)?.canonicalSymbol ?? symbol;
   const [row, setRow] = useState<Row | null>(null);
   const [history, setHistory] = useState<Row[]>([]);
@@ -100,7 +102,11 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
           onChange={e => setSelected(e.target.checked ? [...selected, path.scenario] : selected.filter(s => s !== path.scenario))} />
         <span>{labels[path.scenario]} ({(path.probability * 100).toFixed(1)}%){!path.candles.length && " · path unavailable"}</span>
       </label>)}</div>
-      <p className="text-amber-200">Ghost candles are illustrative scenarios, not calibrated price predictions. “Neither” means no confirmed structural break; prices can still move.</p>
+      {chartTimeframe && chartTimeframe !== preset.timeframe && <p role="status" data-testid="forecast-timeframe-mismatch" className="mb-2 flex flex-wrap items-center gap-2 text-sky-200">
+        The {preset.label} paths are {preset.timeframe} candles and are not drawn on this {chartTimeframe} chart.
+        {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
+      </p>}
+      <p className="text-amber-200">Ghost candles are illustrative scenarios, not calibrated price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move.</p>
       <p className="mt-1 text-zinc-400">Model {shown.forecast.version} · {shown.forecast.gateReason.replaceAll("_", " ").toLowerCase()} · Predictive performance not yet validated.</p>
     </>}
     {(row || history.length > 0) && <div aria-label="Forecast performance" className="mt-3 flex flex-wrap gap-4 text-zinc-300">
