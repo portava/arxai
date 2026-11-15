@@ -163,6 +163,8 @@ export interface ChartFeedOptions {
   bridgeConnectionId?: number | null;
   /** Only chart display routes opt in; analysis defaults remain unchanged. */
   storedHistoryFallback?: boolean;
+  /** Providers this read declines (see RouteCandlesOptions.excludeProviders). */
+  excludeProviders?: readonly string[];
 }
 
 export interface ChartCandlesResponse {
@@ -281,10 +283,10 @@ async function buildChartFeed(
   let pinnedResult: Awaited<ReturnType<typeof routeCandles>> | null = null;
   if (pinnedBridge != null) {
     const pinScope = fixedFeedScope(pinnedBridge, currentFeedScope()?.userId ?? null);
-    await runWithFeedScope(pinScope, async () => { pinnedResult = await routeCandles(symbol, timeframe, limit); });
+    await runWithFeedScope(pinScope, async () => { pinnedResult = await routeCandles(symbol, timeframe, limit, opts.excludeProviders ? { excludeProviders: opts.excludeProviders } : undefined); });
   }
   let result = (pinnedResult as Awaited<ReturnType<typeof routeCandles>> | null)
-    ?? (await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null }));
+    ?? (await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null, ...(opts.excludeProviders ? { excludeProviders: opts.excludeProviders } : {}) }));
   // Nothing live answered: the display chart still shows the market up to its
   // last stored bar (closed market or a down feed), labelled as stored.
   if (!result.ok && opts.storedHistoryFallback === true) {

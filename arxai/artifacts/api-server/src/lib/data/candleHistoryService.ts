@@ -177,6 +177,8 @@ export interface GetCandleHistoryArgs {
   source?: string | null;
   /** Opaque expected identity; a consistency constraint, never authorization. */
   expectedSourceIdentity?: string | null;
+  /** Initial page only: providers this read declines when choosing its source. */
+  excludeProviders?: readonly string[];
 }
 
 const DEFAULT_LIMIT = 500;
@@ -348,7 +350,7 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   // provider and SEED the cache from the live newest window. We do this only
   // when no source is being continued, so back-pages don't re-hit the router.
   if (!source) {
-    const routed = await routeCandles(symbol, timeframe, limit);
+    const routed = await routeCandles(symbol, timeframe, limit, args.excludeProviders ? { excludeProviders: args.excludeProviders } : undefined);
     routerOk = routed.ok;
     routerUserMessage = routed.userMessage || null;
     if (routed.ok && routed.primaryProvider && routed.candles.length > 0) {

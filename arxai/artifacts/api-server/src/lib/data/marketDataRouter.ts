@@ -620,6 +620,12 @@ export interface RouteCandlesOptions {
    * never silently serves another bridge's series (Truth audit T2).
    */
   bridgeConnectionId?: number | null;
+  /**
+   * Providers this read declines. For an analysis that already found a
+   * provider's series incomplete for its purpose and asks for the next one in
+   * the chain. The result still names its real provider; nothing is relabelled.
+   */
+  excludeProviders?: readonly string[];
 }
 
 export async function routeCandles(symbol: string, timeframe: string, limit: number, opts?: RouteCandlesOptions): Promise<MarketCandlesResult> {
@@ -638,6 +644,7 @@ export async function routeCandles(symbol: string, timeframe: string, limit: num
   const pin = explicitPin !== undefined ? explicitPin : scopePin;
 
   for (const id of chain) {
+    if (opts?.excludeProviders?.includes(id)) continue;
     if (id === "mt5_broker") {
       let r = await tryMt5Candles(symbol, tf, limit, { bridgeConnectionId: pin });
       attempts.push(stripCandles(r));
