@@ -89,6 +89,20 @@ pairs were trading and one of them was a spliced proxy. From the 1990s on,
 trend following on this universe loses money after costs. H4 loses even
 before financing at short lookbacks.
 
+## 3. Strategy-family rerun on the same history
+
+The existing real-data validation harness (`runRealDataValidation.ts --source
+mt5_db`) was run with the assumed MT5 costs. It covered 43 symbols ×
+M1/M5/M15/H1, using the newest 50,000 closed bars per series. All seven
+strategy families and their walk-forward selections were tested under CPCV,
+the deflated Sharpe ratio, PBO and family-wide FDR.
+
+- 9,288 tests; Benjamini–Hochberg rejections at q = 0.05: **0**.
+- Honesty checks: 2,580 CPCV splits, 6,020 walk-forward folds and 8,084
+  lookahead variants, with 0 violations.
+- **Survivors: none**, in every symbol × timeframe cell, synthetics included.
+- Dataset hash `0c4047a9…`, params `c4f39416…`, result `b300ebaf…`.
+
 ## What this changes
 
 - The scanner's direction calls stay uncalibrated. Nothing here supports

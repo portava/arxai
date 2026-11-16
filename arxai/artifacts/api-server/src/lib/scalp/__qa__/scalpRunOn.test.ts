@@ -34,7 +34,8 @@ const NOW = 1_780_000_000_000;
 // data-sufficiency authority), so every scanner builder must carry it.
 function sufficientVerdict() {
   return evaluateMarketDataSufficiency({
-    symbol: "Volatility 75 Index",
+    // A real market: synthetic indices get no direction (random_by_design).
+    symbol: "XAUUSD",
     timeframe: "M5",
     freshnessVerdict: "LIVE",
     availableClosedCandles: 300,

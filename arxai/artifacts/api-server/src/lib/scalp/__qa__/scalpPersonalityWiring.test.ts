@@ -111,7 +111,8 @@ function buyScanner(conf: number, sniper: number): ScalpScannerInput {
     dataSource: "LIVE_FEED",
     // The engine fail-closes without the shared sufficiency verdict.
     sufficiency: evaluateMarketDataSufficiency({
-      symbol: "Volatility 75 Index",
+      // A real market: synthetic indices get no direction (random_by_design).
+      symbol: "XAUUSD",
       timeframe: "M5",
       freshnessVerdict: "LIVE",
       availableClosedCandles: 300,

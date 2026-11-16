@@ -20,7 +20,8 @@ const NOW = 1_780_000_000_000;
 // this is absent, so every actionable-path builder must carry it.
 function sufficientVerdict() {
   return evaluateMarketDataSufficiency({
-    symbol: "Volatility 75 Index",
+    // A real market: synthetic indices get no direction (random_by_design).
+    symbol: "XAUUSD",
     timeframe: "M5",
     freshnessVerdict: "LIVE",
     availableClosedCandles: 300,
@@ -129,6 +130,19 @@ test("READY: clean in-zone setup is tradeable with full numbers", () => {
   // No internal wording leaks.
   const copy = `${r.plainEnglishReason} ${r.noTradeReason ?? ""} ${r.riskWarning ?? ""}`;
   assert.doesNotMatch(copy, /scanner|endpoint|route|\btable\b|json|undefined/i);
+});
+
+test("random-by-design synthetic: sufficient data, but no direction call and the reason says why", () => {
+  const v75 = evaluateMarketDataSufficiency({
+    symbol: "Volatility 75 Index", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+  });
+  assert.equal(v75.canShowTradeSetup, true, "the data itself is sufficient");
+  assert.equal(v75.reasonCode, "random_by_design");
+  const r = evaluateScalp(baseInput({ scanner: sellScanner({ sufficiency: v75 }) }));
+  assert.equal(r.status, "NO_CLEAN_SCALP");
+  assert.equal(r.canBuildTrade, false);
+  assert.equal(r.flame.blind, true);
+  assert.match(r.plainEnglishReason, /random/i);
 });
 
 test("SPREAD_TOO_WIDE: blocks when spread eats the stop", () => {
