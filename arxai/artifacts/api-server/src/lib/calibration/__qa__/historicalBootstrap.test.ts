@@ -48,8 +48,10 @@ import {
   calibrate,
   clearCalibrationCache,
   replaceCalibrationCache,
+  SCANNER_CALIBRATION_KEY,
   strategyCalibrationKey,
 } from "../cache.js";
+import { fitCalibration } from "@workspace/domain/calibration";
 import { AGENT_REPLAY_SPECS, REPLAYABLE_AGENT_KEYS, replayAgents, type ReplayScorer } from "../agentReplay.js";
 import { REPLAYABLE_STRATEGIES, replayBarAvailableAt } from "../strategyReplay.js";
 import { measuredSnapshot } from "../../agentEcosystem/advisoryInfluence.js";
@@ -272,6 +274,20 @@ describe("controls through the same replay path", () => {
     assert.equal(t.fit.edgeDetected, false, t.basis);
     assert.equal(t.influence, 0, t.basis);
     assert.equal(t.fit.model, "base_rate");
+  });
+});
+
+describe("the scanner row's own score on the committed real history", () => {
+  it("is graded as its own calibration record, not left unmeasured", () => {
+    const samples = ev.strategies.get(SCANNER_CALIBRATION_KEY) ?? [];
+    const { samples: rows, provenance } = composeEvidence(samples);
+    const fit = fitCalibration(rows);
+    process.stdout.write(`[historical-bootstrap] scanner row: N=${fit.n} base=${fit.baseRate} edge=${fit.edgeDetected}\n`);
+    assert.equal(fit.status, "measured");
+    assert.ok(fit.n >= CALIBRATION_MIN_SAMPLE, `N=${fit.n}`);
+    assert.equal(provenance.basis, "replay_only");
+    assert.ok(rows.every((r) => r.score >= 0 && r.score <= 100));
+    assert.equal(ev.agents.has(agentCalibrationKey("__scanner_row")), false, "the scanner row is not an agent");
   });
 });
 

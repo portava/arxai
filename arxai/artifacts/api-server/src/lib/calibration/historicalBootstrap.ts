@@ -13,8 +13,8 @@
 
 import { discoverRealHistoryFixtures, type FixtureDiscovery, type RealHistorySeries } from "./historicalFixtures.js";
 import { replayStrategies } from "./strategyReplay.js";
-import { replayAgents } from "./agentReplay.js";
-import { agentCalibrationKey } from "./cache.js";
+import { coreAgentScorers, replayAgents, scannerRowScorer, SCANNER_ROW_REPLAY_KEY } from "./agentReplay.js";
+import { agentCalibrationKey, SCANNER_CALIBRATION_KEY } from "./cache.js";
 import type { EvidenceComponent, TimedSample } from "./provenance.js";
 import type { Candle } from "../strategyEngine.js";
 
@@ -26,7 +26,7 @@ export interface ReplaySeriesInput {
 }
 
 export interface ReplayEvidence {
-  /** strategy calibration key → samples */
+  /** strategy calibration key (and the scanner key) → samples */
   strategies: Map<string, TimedSample[]>;
   /** agent calibration key (agent:<KEY>) → samples */
   agents: Map<string, TimedSample[]>;
@@ -51,8 +51,12 @@ export async function replaySeries(series: readonly ReplaySeriesInput[]): Promis
     for (const r of replayStrategies(s.candles, s.symbol)) {
       push(out.strategies, r.strategyKey, { ...base, score: r.score, outcome: r.outcome, at: r.at!, resolvedAt: r.resolvedAt });
     }
-    for (const r of replayAgents(s.candles, s.symbol, s.timeframe)) {
-      push(out.agents, agentCalibrationKey(r.agentKey), { ...base, score: r.score, outcome: r.outcome, at: r.at!, resolvedAt: r.resolvedAt });
+    for (const r of replayAgents(s.candles, s.symbol, s.timeframe, { scorers: [...coreAgentScorers(), scannerRowScorer] })) {
+      const sample = { ...base, score: r.score, outcome: r.outcome, at: r.at!, resolvedAt: r.resolvedAt };
+      // The scanner row's own score is fitted per symbol x timeframe like a
+      // strategy, so each scanner row gets a measured probability.
+      if (r.agentKey === SCANNER_ROW_REPLAY_KEY) push(out.strategies, SCANNER_CALIBRATION_KEY, sample);
+      else push(out.agents, agentCalibrationKey(r.agentKey), sample);
     }
     await yieldToLoop();
   }

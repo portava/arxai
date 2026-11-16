@@ -627,6 +627,20 @@ function lowOpportunityScoreReason(opp: ScannerOpportunity): string {
   return `No clean trade right now — the opportunity score ${scanned} is below the scanner's minimum of 60. ${rules}`;
 }
 
+/** Graded outcomes a measured edge needs before it may lift a read to HIGH. */
+export const MEASURED_HIGH_MIN_N = 300;
+
+/** The reason text when this row's calibrated probability is a measured,
+ *  out-of-sample edge over the base rate with enough outcomes; otherwise null. */
+export function measuredEdgeBasis(opp: Pick<ScannerOpportunity, "calibratedProbability" | "calibration">): string | null {
+  const c = opp.calibration;
+  const p = opp.calibratedProbability;
+  if (!c || c.status !== "measured" || !c.edgeDetected) return null;
+  if (typeof p !== "number" || !Number.isFinite(p) || typeof c.baseRate !== "number" || !(p > c.baseRate)) return null;
+  if (!(c.n >= MEASURED_HIGH_MIN_N)) return null;
+  return `Measured edge: ${Math.round(p * 100)}% vs a ${Math.round(c.baseRate * 100)}% base rate on held-out outcomes (N=${c.n}).`;
+}
+
 export function computeFinalRead(
   opp: ScannerOpportunity,
 ): ScannerFinalRead {
@@ -697,6 +711,16 @@ export function computeFinalRead(
   // Typed as the full scale so the downgrade caps below stay in force if a
   // measured basis for HIGH is ever added.
   let confidence: Confidence = (newsAvail ? "MEDIUM" : "LOW") as Confidence;
+  // 4a. MEASURED BASIS (the only way to HIGH). The calibration engine sets
+  //     edgeDetected only when this score beat the base rate on held-out graded
+  //     outcomes. With enough of them, a directional call with clean news may
+  //     read HIGH; every cap below still lowers it. Without that evidence
+  //     nothing here can raise a read.
+  const measured = measuredEdgeBasis(opp);
+  if (measured && confidence === "MEDIUM") {
+    confidence = "HIGH";
+    reasons.push(measured);
+  }
   if (!newsAvail) {
     reasons.push(histAvail
       ? "News feed is unavailable — read is technicals-only."

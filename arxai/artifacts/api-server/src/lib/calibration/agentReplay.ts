@@ -66,8 +66,17 @@ export function scannerContextAt(candles: readonly Candle[], i: number, symbol: 
 /** A read graded on each replayed scanner call: 0..1 strength, or null to abstain. */
 export interface ReplayScorer {
   key: string;
-  strength: (ctx: ScannerAdvisoryContext, candles: readonly Candle[], i: number) => number | null;
+  strength: (ctx: ScannerAdvisoryContext, candles: readonly Candle[], i: number, analysis: ReturnType<typeof analyzeMarketFromCandles>) => number | null;
 }
+
+/** Replay key of the scanner row's own displayed score (analysis confidence,
+ *  the number scannerCalibrationFields calibrates). Its samples are fitted
+ *  under the scanner calibration key, not as an agent. */
+export const SCANNER_ROW_REPLAY_KEY = "__scanner_row";
+export const scannerRowScorer: ReplayScorer = {
+  key: SCANNER_ROW_REPLAY_KEY,
+  strength: (_ctx, _candles, _i, analysis) => analysis.confidenceScore / 100,
+};
 
 /** The core agents' served reads (advisoryInfluence.scannerStrength). */
 export function coreAgentScorers(keys: readonly string[] = REPLAYABLE_AGENT_KEYS): ReplayScorer[] {
@@ -100,7 +109,7 @@ export function replayAgents(
       continue;
     }
     for (const sc of scorers) {
-      const strength = sc.strength(ctx, candles, i);
+      const strength = sc.strength(ctx, candles, i, analysis);
       if (strength === null || !Number.isFinite(strength)) continue;
       out.push({
         agentKey: sc.key,

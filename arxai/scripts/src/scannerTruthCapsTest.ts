@@ -124,6 +124,37 @@ function baseOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity {
     `label=${r.label}`);
 }
 
+// 7b. Measured basis: HIGH only with an out-of-sample edge and enough outcomes,
+//     and every cap still lowers it.
+{
+  const stamp = (over: Partial<NonNullable<ScannerOpportunity["calibration"]>> = {}) => ({
+    probability: 0.58, status: "measured" as const, n: 1200, scope: "exact", model: "isotonic" as const,
+    fitKey: "scanner:EURUSD:M15", fitVersion: 3, baseRate: 0.5, edgeDetected: true,
+    label: "58% (N=1200)", reason: null, source: "historical_replay",
+    provenance: {} as NonNullable<ScannerOpportunity["calibration"]>["provenance"], ...over,
+  });
+  const measured = (over: Partial<NonNullable<ScannerOpportunity["calibration"]>> = {}, opp: Partial<ScannerOpportunity> = {}) =>
+    computeFinalRead(baseOpp({ calibratedProbability: over.probability ?? 0.58, calibration: stamp(over), ...opp }));
+  let r = measured();
+  check("measured out-of-sample edge, N>=300, clean live read → HIGH with the measured reason",
+    r.confidence === "HIGH" && r.label === "TRADE_WATCH" && r.reasons.some((x) => x.startsWith("Measured edge: 58% vs a 50% base rate")),
+    `confidence=${r.confidence} reasons=${r.reasons.join(" | ")}`);
+  r = measured({ edgeDetected: false });
+  check("no out-of-sample edge → never HIGH", r.confidence === "MEDIUM", `confidence=${r.confidence}`);
+  r = measured({ n: 299 });
+  check("edge on fewer than 300 outcomes → never HIGH", r.confidence === "MEDIUM", `confidence=${r.confidence}`);
+  r = measured({ status: "unmeasured" });
+  check("unmeasured stamp → never HIGH", r.confidence === "MEDIUM", `confidence=${r.confidence}`);
+  r = measured({ probability: 0.49 });
+  check("probability not above the base rate → never HIGH", r.confidence === "MEDIUM", `confidence=${r.confidence}`);
+  r = measured({}, { dataSource: "STALE_FEED" });
+  check("measured edge on a stale feed → capped, not HIGH", r.confidence !== "HIGH" && r.label !== "TRADE_WATCH", `confidence=${r.confidence}`);
+  r = measured({}, { chartConfirmed: false });
+  check("measured edge without chart confirmation → capped to MEDIUM", r.confidence === "MEDIUM" && r.label === "WAIT_FOR_CONFIRMATION", `confidence=${r.confidence}`);
+  r = measured({}, { newsContext: undefined });
+  check("measured edge with no news observation → not HIGH", r.confidence === "LOW", `confidence=${r.confidence}`);
+}
+
 // 8. No internal/source tokens leak into user-facing reasons.
 {
   const r = computeFinalRead(baseOpp({ dataSource: "SIMULATOR" }));

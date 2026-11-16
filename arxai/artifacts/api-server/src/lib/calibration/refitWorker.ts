@@ -261,16 +261,20 @@ async function refitOnce(opts: RefitOptions): Promise<RefitCycleReport> {
     written += r.written;
   };
   const useDb = opts.dbSources !== false;
+  let liveScanner: TimedSample[] = [];
   if (useDb) {
     try {
       const { all, scanner } = await eleanorSamples();
       tally(await fitAndPersistGroups(ELEANOR_CALIBRATION_KEY, all));
-      tally(await fitAndPersistGroups(SCANNER_CALIBRATION_KEY, scanner));
+      // Live scanner outcomes join the scanner row's replayed record below and
+      // are fitted together (live takes precedence by the evidence rule).
+      liveScanner = scanner;
     } catch (e) {
       errors.push(`eleanor:${String(e).slice(0, 160)}`);
     }
   }
   const strategies = new Map<string, TimedSample[]>();
+  if (liveScanner.length) strategies.set(SCANNER_CALIBRATION_KEY, [...liveScanner]);
   const agents = new Map<string, TimedSample[]>();
   let historical: RefitCycleReport["historical"] = null;
   if (opts.historical !== false) {
