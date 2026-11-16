@@ -91,14 +91,19 @@ it("retains the source-change evidence hold before H8 structure can return", asy
   await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
 });
 
-it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence on %s", async (display, api) => {
+// Since native calendar boundaries landed (25e886a1), W1/MN1 are exact chart
+// intervals: intelligence is read on that exact interval, while the
+// fixed-duration smart layers stay off.
+it.each([["1w", "W1"], ["1mo", "MN1"]])("reads exact calendar intelligence on %s while smart layers stay off", async (display, api) => {
   h.timeframe = display; fixture(api);
   render(<ScannerChartPanel />);
   await waitFor(() => expect(fetch).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0].timeframe).toBe(api);
-  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
-  expect(h.applyStructure).not.toHaveBeenCalled();
+  // Structure draws only from intelligence carrying this exact interval's evidence.
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  expect(h.intelligence.state.timeframe).toBe(api);
   expect(screen.getByTestId("native-chart").textContent).toBe(api);
 });
 

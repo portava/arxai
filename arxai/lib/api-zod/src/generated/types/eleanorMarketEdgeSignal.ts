@@ -6,8 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EarlyTrendReading } from "./earlyTrendReading";
-import type { FakeoutReading } from "./fakeoutReading";
-import type { LateDetection } from "./lateDetection";
 import type { EleanorMarketEdgeSignalBias } from "./eleanorMarketEdgeSignalBias";
 import type { EleanorMarketEdgeSignalConfidenceBand } from "./eleanorMarketEdgeSignalConfidenceBand";
 import type { EleanorMarketEdgeSignalConfidenceBandBasis } from "./eleanorMarketEdgeSignalConfidenceBandBasis";
@@ -16,6 +14,8 @@ import type { EleanorMarketEdgeSignalFreshness } from "./eleanorMarketEdgeSignal
 import type { EleanorMarketEdgeSignalLifecycleStage } from "./eleanorMarketEdgeSignalLifecycleStage";
 import type { EleanorMarketEdgeSignalRegime } from "./eleanorMarketEdgeSignalRegime";
 import type { EleanorMarketEdgeSignalScannerBinding } from "./eleanorMarketEdgeSignalScannerBinding";
+import type { FakeoutReading } from "./fakeoutReading";
+import type { LateDetection } from "./lateDetection";
 import type { SessionContext } from "./sessionContext";
 import type { SignalEvidence } from "./signalEvidence";
 import type { SignalPriceZone } from "./signalPriceZone";

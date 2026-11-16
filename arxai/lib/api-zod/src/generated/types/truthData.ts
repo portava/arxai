@@ -5,9 +5,10 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
-import type { TruthDataNotLiveReason } from "./truthDataNotLiveReason";
 import type { TruthDataFeedScope } from "./truthDataFeedScope";
 import type { TruthDataLastTickBasis } from "./truthDataLastTickBasis";
+import type { TruthDataNotLiveReason } from "./truthDataNotLiveReason";
+import type { TruthDataPriceBasis } from "./truthDataPriceBasis";
 import type { TruthDataState } from "./truthDataState";
 
 export interface TruthData {
@@ -20,9 +21,10 @@ export interface TruthData {
   sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
-  /** Observation time bound to this price; null when no price-bound timestamp is available. */
+  /** Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp. */
   priceObservedAt?: string | null;
-  priceBasis?: "forming_candle_close" | "closed_candle_close" | null;
+  /** The source observation represented by price, separate from the last closed candle and latest feed tick. */
+  priceBasis?: TruthDataPriceBasis;
   lastCandleAt: string | null;
   lastTickAt: string | null;
   /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */

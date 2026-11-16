@@ -2518,6 +2518,7 @@ export interface TimingDataQuality {
   label: TimingDataQualityLabel;
   hasCandleData: boolean;
   hasQuoteData: boolean;
+  /** Fresh same-feed price including last-only feeds without a bid/ask spread */
   hasLivePriceData?: boolean;
   hasNewsData: boolean;
   hasBroadFlowData: boolean;
@@ -6574,6 +6575,18 @@ export const TruthDataState = {
 } as const;
 
 /**
+ * The source observation represented by price, separate from the last closed candle and latest feed tick.
+ */
+export type TruthDataPriceBasis =
+  | (typeof TruthDataPriceBasis)[keyof typeof TruthDataPriceBasis]
+  | null;
+
+export const TruthDataPriceBasis = {
+  forming_candle_close: "forming_candle_close",
+  closed_candle_close: "closed_candle_close",
+} as const;
+
+/**
  * Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise.
  */
 export type TruthDataNotLiveReason =
@@ -6619,9 +6632,10 @@ export interface TruthData {
   sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
-  /** Observation bound to this price; null when the forming close has no bound tick time. */
+  /** Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp. */
   priceObservedAt?: string | null;
-  priceBasis?: "forming_candle_close" | "closed_candle_close" | null;
+  /** The source observation represented by price, separate from the last closed candle and latest feed tick. */
+  priceBasis?: TruthDataPriceBasis;
   lastCandleAt: string | null;
   lastTickAt: string | null;
   /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
@@ -7011,20 +7025,20 @@ export interface SmartChartHandshakeInputs {
   sourceDataNote?: string | null;
 }
 
+/**
+ * Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict.
+ */
+export type SmartChartLayersResponseTradeLevels = {
+  shown: boolean;
+  reason: string | null;
+};
+
 export type SmartChartLayersResponseSafetyMode =
   (typeof SmartChartLayersResponseSafetyMode)[keyof typeof SmartChartLayersResponseSafetyMode];
 
 export const SmartChartLayersResponseSafetyMode = {
   paper_only: "paper_only",
 } as const;
-
-/**
- * Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict.
- */
-export interface SmartChartLayersResponseTradeLevels {
-  shown: boolean;
-  reason: string | null;
-}
 
 export interface SmartChartLayersResponse {
   symbol: string;
@@ -9465,15 +9479,6 @@ export interface EmergencyStopResult {
   scope?: EmergencyStopResultScope;
 }
 
-export type SignalDirection =
-  (typeof SignalDirection)[keyof typeof SignalDirection];
-
-export const SignalDirection = {
-  BUY: "BUY",
-  SELL: "SELL",
-  WAIT: "WAIT",
-} as const;
-
 export type ScoreBasisKind =
   (typeof ScoreBasisKind)[keyof typeof ScoreBasisKind];
 
@@ -9494,7 +9499,7 @@ export type ScoreBasisTermsItem = {
  */
 export interface ScoreBasis {
   kind: ScoreBasisKind;
-  calibrated: false;
+  calibrated: boolean;
   /** Stable rule id, e.g. "trend_continuation.buy". */
   rule: string;
   /** Whole score as one expression, e.g. "min(95, 70 + floor((rsi - 50) * 1.5))". */
@@ -9506,6 +9511,15 @@ export interface ScoreBasis {
   cap: number | null;
   note: string;
 }
+
+export type SignalDirection =
+  (typeof SignalDirection)[keyof typeof SignalDirection];
+
+export const SignalDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+  WAIT: "WAIT",
+} as const;
 
 export interface Signal {
   id: number;
@@ -9573,6 +9587,7 @@ export interface Trade {
   stopLoss: number;
   takeProfit: number;
   strategy: string;
+  /** Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence. */
   confidence: number;
   status: TradeStatus;
   mode: TradeMode;
@@ -9605,6 +9620,7 @@ export interface TradeInput {
   sl: number;
   tp: number;
   strategy: string;
+  /** Uncalibrated heuristic strategy score (0-100). Name kept for existing API clients that submit trades; not a probability. */
   confidence: number;
   /** @nullable */
   confirmationId?: number | null;

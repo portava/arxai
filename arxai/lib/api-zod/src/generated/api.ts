@@ -2262,16 +2262,18 @@ export const ListMissionProposalsResponseItem = zod
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
         }),
-        expected: zod.object({
-          label: zod.enum(["win", "loss", "expected"]),
-          resultingValue: zod.number(),
-          profitDelta: zod.number(),
-          progressPctAfter: zod.number(),
-          progressPctDelta: zod.number(),
-          remainingProfitAfter: zod.number(),
-          requiredDailyPaceAfter: zod.number(),
-          requiredDailyPaceDelta: zod.number(),
-        }).nullable(),
+        expected: zod
+          .object({
+            label: zod.enum(["win", "loss", "expected"]),
+            resultingValue: zod.number(),
+            profitDelta: zod.number(),
+            progressPctAfter: zod.number(),
+            progressPctDelta: zod.number(),
+            remainingProfitAfter: zod.number(),
+            requiredDailyPaceAfter: zod.number(),
+            requiredDailyPaceDelta: zod.number(),
+          })
+          .nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
@@ -2280,7 +2282,7 @@ export const ListMissionProposalsResponseItem = zod
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+        "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish()
       .describe(
@@ -2428,16 +2430,18 @@ export const RunMissionScanResponse = zod
                 requiredDailyPaceAfter: zod.number(),
                 requiredDailyPaceDelta: zod.number(),
               }),
-              expected: zod.object({
-                label: zod.enum(["win", "loss", "expected"]),
-                resultingValue: zod.number(),
-                profitDelta: zod.number(),
-                progressPctAfter: zod.number(),
-                progressPctDelta: zod.number(),
-                remainingProfitAfter: zod.number(),
-                requiredDailyPaceAfter: zod.number(),
-                requiredDailyPaceDelta: zod.number(),
-              }).nullable(),
+              expected: zod
+                .object({
+                  label: zod.enum(["win", "loss", "expected"]),
+                  resultingValue: zod.number(),
+                  profitDelta: zod.number(),
+                  progressPctAfter: zod.number(),
+                  progressPctDelta: zod.number(),
+                  remainingProfitAfter: zod.number(),
+                  requiredDailyPaceAfter: zod.number(),
+                  requiredDailyPaceDelta: zod.number(),
+                })
+                .nullable(),
               riskAmount: zod.number(),
               takeProfitGain: zod.number(),
               expectedR: zod.number(),
@@ -2446,7 +2450,7 @@ export const RunMissionScanResponse = zod
               isEstimate: zod.boolean(),
             })
             .describe(
-              "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+              "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
             )
             .nullish()
             .describe(
@@ -2561,16 +2565,18 @@ export const RunMissionScanResponse = zod
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
         }),
-        expected: zod.object({
-          label: zod.enum(["win", "loss", "expected"]),
-          resultingValue: zod.number(),
-          profitDelta: zod.number(),
-          progressPctAfter: zod.number(),
-          progressPctDelta: zod.number(),
-          remainingProfitAfter: zod.number(),
-          requiredDailyPaceAfter: zod.number(),
-          requiredDailyPaceDelta: zod.number(),
-        }).nullable(),
+        expected: zod
+          .object({
+            label: zod.enum(["win", "loss", "expected"]),
+            resultingValue: zod.number(),
+            profitDelta: zod.number(),
+            progressPctAfter: zod.number(),
+            progressPctDelta: zod.number(),
+            remainingProfitAfter: zod.number(),
+            requiredDailyPaceAfter: zod.number(),
+            requiredDailyPaceDelta: zod.number(),
+          })
+          .nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
@@ -2579,7 +2585,7 @@ export const RunMissionScanResponse = zod
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+        "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish()
       .describe("Mission-impact preview for the selected proposal (Phase 5)."),
@@ -2676,16 +2682,18 @@ export const ListMissionTradeDraftsResponseItem = zod
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
         }),
-        expected: zod.object({
-          label: zod.enum(["win", "loss", "expected"]),
-          resultingValue: zod.number(),
-          profitDelta: zod.number(),
-          progressPctAfter: zod.number(),
-          progressPctDelta: zod.number(),
-          remainingProfitAfter: zod.number(),
-          requiredDailyPaceAfter: zod.number(),
-          requiredDailyPaceDelta: zod.number(),
-        }).nullable(),
+        expected: zod
+          .object({
+            label: zod.enum(["win", "loss", "expected"]),
+            resultingValue: zod.number(),
+            profitDelta: zod.number(),
+            progressPctAfter: zod.number(),
+            progressPctDelta: zod.number(),
+            remainingProfitAfter: zod.number(),
+            requiredDailyPaceAfter: zod.number(),
+            requiredDailyPaceDelta: zod.number(),
+          })
+          .nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
@@ -2694,7 +2702,7 @@ export const ListMissionTradeDraftsResponseItem = zod
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+        "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -2953,16 +2961,18 @@ export const ApproveMissionProposalDraftResponse = zod
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
         }),
-        expected: zod.object({
-          label: zod.enum(["win", "loss", "expected"]),
-          resultingValue: zod.number(),
-          profitDelta: zod.number(),
-          progressPctAfter: zod.number(),
-          progressPctDelta: zod.number(),
-          remainingProfitAfter: zod.number(),
-          requiredDailyPaceAfter: zod.number(),
-          requiredDailyPaceDelta: zod.number(),
-        }).nullable(),
+        expected: zod
+          .object({
+            label: zod.enum(["win", "loss", "expected"]),
+            resultingValue: zod.number(),
+            profitDelta: zod.number(),
+            progressPctAfter: zod.number(),
+            progressPctDelta: zod.number(),
+            remainingProfitAfter: zod.number(),
+            requiredDailyPaceAfter: zod.number(),
+            requiredDailyPaceDelta: zod.number(),
+          })
+          .nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
@@ -2971,7 +2981,7 @@ export const ApproveMissionProposalDraftResponse = zod
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+        "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -3084,16 +3094,18 @@ export const RejectMissionProposalDraftResponse = zod
           requiredDailyPaceAfter: zod.number(),
           requiredDailyPaceDelta: zod.number(),
         }),
-        expected: zod.object({
-          label: zod.enum(["win", "loss", "expected"]),
-          resultingValue: zod.number(),
-          profitDelta: zod.number(),
-          progressPctAfter: zod.number(),
-          progressPctDelta: zod.number(),
-          remainingProfitAfter: zod.number(),
-          requiredDailyPaceAfter: zod.number(),
-          requiredDailyPaceDelta: zod.number(),
-        }).nullable(),
+        expected: zod
+          .object({
+            label: zod.enum(["win", "loss", "expected"]),
+            resultingValue: zod.number(),
+            profitDelta: zod.number(),
+            progressPctAfter: zod.number(),
+            progressPctDelta: zod.number(),
+            remainingProfitAfter: zod.number(),
+            requiredDailyPaceAfter: zod.number(),
+            requiredDailyPaceDelta: zod.number(),
+          })
+          .nullable(),
         riskAmount: zod.number(),
         takeProfitGain: zod.number(),
         expectedR: zod.number(),
@@ -3102,7 +3114,7 @@ export const RejectMissionProposalDraftResponse = zod
         isEstimate: zod.boolean(),
       })
       .describe(
-        "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+        "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
       )
       .nullish(),
     reason: zod.string().nullish(),
@@ -3549,16 +3561,18 @@ export const ExecuteMissionProposalDraftResponse = zod
               requiredDailyPaceAfter: zod.number(),
               requiredDailyPaceDelta: zod.number(),
             }),
-            expected: zod.object({
-              label: zod.enum(["win", "loss", "expected"]),
-              resultingValue: zod.number(),
-              profitDelta: zod.number(),
-              progressPctAfter: zod.number(),
-              progressPctDelta: zod.number(),
-              remainingProfitAfter: zod.number(),
-              requiredDailyPaceAfter: zod.number(),
-              requiredDailyPaceDelta: zod.number(),
-            }).nullable(),
+            expected: zod
+              .object({
+                label: zod.enum(["win", "loss", "expected"]),
+                resultingValue: zod.number(),
+                profitDelta: zod.number(),
+                progressPctAfter: zod.number(),
+                progressPctDelta: zod.number(),
+                remainingProfitAfter: zod.number(),
+                requiredDailyPaceAfter: zod.number(),
+                requiredDailyPaceDelta: zod.number(),
+              })
+              .nullable(),
             riskAmount: zod.number(),
             takeProfitGain: zod.number(),
             expectedR: zod.number(),
@@ -3567,7 +3581,7 @@ export const ExecuteMissionProposalDraftResponse = zod
             isEstimate: zod.boolean(),
           })
           .describe(
-            "Conditional target/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
+            "Conditional target\/stop mission-impact preview for a setup. Expected return and win probability are unavailable without measured evidence bound to the plan. ESTIMATE ONLY (isEstimate always true), never a promise.\n",
           )
           .nullish(),
         reason: zod.string().nullish(),
@@ -4140,7 +4154,11 @@ export const GetTradesResponseItem = zod.object({
   stopLoss: zod.number(),
   takeProfit: zod.number(),
   strategy: zod.string(),
-  confidence: zod.number(),
+  confidence: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+    ),
   status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
   mode: zod.enum(["DEMO", "LIVE"]),
   pnl: zod.number().nullish(),
@@ -4171,7 +4189,11 @@ export const GetOpenTradesResponseItem = zod.object({
   stopLoss: zod.number(),
   takeProfit: zod.number(),
   strategy: zod.string(),
-  confidence: zod.number(),
+  confidence: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+    ),
   status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
   mode: zod.enum(["DEMO", "LIVE"]),
   pnl: zod.number().nullish(),
@@ -4203,7 +4225,11 @@ export const ExecuteTradeBody = zod.object({
   sl: zod.number(),
   tp: zod.number(),
   strategy: zod.string(),
-  confidence: zod.number(),
+  confidence: zod
+    .number()
+    .describe(
+      "Uncalibrated heuristic strategy score (0-100). Name kept for existing API clients that submit trades; not a probability.",
+    ),
   confirmationId: zod.number().nullish(),
 });
 
@@ -8278,8 +8304,18 @@ export const GetMeMarketTruthResponse = zod.object({
       ),
     sourceLabel: zod.string().nullable(),
     price: zod.number().nullable(),
-    priceObservedAt: zod.string().nullish(),
-    priceBasis: zod.enum(["forming_candle_close", "closed_candle_close"]).nullish(),
+    priceObservedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp.",
+      ),
+    priceBasis: zod
+      .enum(["forming_candle_close", "closed_candle_close"])
+      .nullish()
+      .describe(
+        "The source observation represented by price, separate from the last closed candle and latest feed tick.",
+      ),
     lastCandleAt: zod.string().nullable(),
     lastTickAt: zod.string().nullable(),
     notLiveReason: zod
@@ -8971,6 +9007,15 @@ export const GetMeChartSmartLayersResponse = zod.object({
       .nullish()
       .describe("Plain-English reason the source candles are not live."),
   }),
+  tradeLevels: zod
+    .object({
+      shown: zod.boolean(),
+      reason: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "Whether entry \/ stop \/ target layers are drawn; they follow the per-symbol truth verdict.",
+    ),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),
   readOnlyMode: zod.boolean(),
@@ -10775,7 +10820,11 @@ export const MoveTradeToBreakevenResponse = zod.object({
       stopLoss: zod.number(),
       takeProfit: zod.number(),
       strategy: zod.string(),
-      confidence: zod.number(),
+      confidence: zod
+        .number()
+        .describe(
+          "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+        ),
       status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
       mode: zod.enum(["DEMO", "LIVE"]),
       pnl: zod.number().nullish(),
@@ -10815,7 +10864,11 @@ export const TrailTradeStopResponse = zod.object({
       stopLoss: zod.number(),
       takeProfit: zod.number(),
       strategy: zod.string(),
-      confidence: zod.number(),
+      confidence: zod
+        .number()
+        .describe(
+          "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+        ),
       status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
       mode: zod.enum(["DEMO", "LIVE"]),
       pnl: zod.number().nullish(),
@@ -10859,7 +10912,11 @@ export const PartialCloseTradeResponse = zod.object({
       stopLoss: zod.number(),
       takeProfit: zod.number(),
       strategy: zod.string(),
-      confidence: zod.number(),
+      confidence: zod
+        .number()
+        .describe(
+          "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+        ),
       status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
       mode: zod.enum(["DEMO", "LIVE"]),
       pnl: zod.number().nullish(),
@@ -10899,7 +10956,11 @@ export const CloseTradeManuallyResponse = zod.object({
       stopLoss: zod.number(),
       takeProfit: zod.number(),
       strategy: zod.string(),
-      confidence: zod.number(),
+      confidence: zod
+        .number()
+        .describe(
+          "Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence.",
+        ),
       status: zod.enum(["OPEN", "CLOSED_WIN", "CLOSED_LOSS", "CANCELLED"]),
       mode: zod.enum(["DEMO", "LIVE"]),
       pnl: zod.number().nullish(),
@@ -14163,7 +14224,50 @@ export const GetWatchlistsResponseItem = zod.object({
       marketType: zod.string(),
       favorite: zod.number(),
       signal: zod.string().nullish(),
-      confidence: zod.number().nullish(),
+      score: zod
+        .number()
+        .nullish()
+        .describe(
+          "Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.",
+        ),
+      scoreBasis: zod
+        .union([
+          zod
+            .object({
+              kind: zod.enum(["heuristic_rule"]),
+              calibrated: zod.literal(false),
+              rule: zod
+                .string()
+                .describe('Stable rule id, e.g. \"trend_continuation.buy\".'),
+              formula: zod
+                .string()
+                .describe(
+                  'Whole score as one expression, e.g. \"min(95, 70 + floor((rsi - 50) \* 1.5))\".',
+                ),
+              inputs: zod.record(zod.string(), zod.number()),
+              base: zod.number(),
+              terms: zod.array(
+                zod.object({
+                  label: zod.string(),
+                  expr: zod.string(),
+                  value: zod.number(),
+                }),
+              ),
+              cap: zod.number().nullable(),
+              note: zod.string(),
+            })
+            .describe(
+              "How a strategy score was produced. score = min(cap, base + sum(terms.value)) (plain sum when cap is null), and each term's expr evaluates to its value over inputs, so the number can be recomputed from the payload.",
+            ),
+          zod.null(),
+        ])
+        .optional(),
+      confidence: zod
+        .number()
+        .nullish()
+        .describe(
+          "Deprecated alias of score (same number), kept for existing API clients.",
+        ),
       trend: zod.string().nullish(),
       spread: zod.number().nullish(),
       newsRisk: zod.string().nullish(),
@@ -14192,7 +14296,50 @@ export const CreateWatchlistResponse = zod.object({
       marketType: zod.string(),
       favorite: zod.number(),
       signal: zod.string().nullish(),
-      confidence: zod.number().nullish(),
+      score: zod
+        .number()
+        .nullish()
+        .describe(
+          "Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.",
+        ),
+      scoreBasis: zod
+        .union([
+          zod
+            .object({
+              kind: zod.enum(["heuristic_rule"]),
+              calibrated: zod.literal(false),
+              rule: zod
+                .string()
+                .describe('Stable rule id, e.g. \"trend_continuation.buy\".'),
+              formula: zod
+                .string()
+                .describe(
+                  'Whole score as one expression, e.g. \"min(95, 70 + floor((rsi - 50) \* 1.5))\".',
+                ),
+              inputs: zod.record(zod.string(), zod.number()),
+              base: zod.number(),
+              terms: zod.array(
+                zod.object({
+                  label: zod.string(),
+                  expr: zod.string(),
+                  value: zod.number(),
+                }),
+              ),
+              cap: zod.number().nullable(),
+              note: zod.string(),
+            })
+            .describe(
+              "How a strategy score was produced. score = min(cap, base + sum(terms.value)) (plain sum when cap is null), and each term's expr evaluates to its value over inputs, so the number can be recomputed from the payload.",
+            ),
+          zod.null(),
+        ])
+        .optional(),
+      confidence: zod
+        .number()
+        .nullish()
+        .describe(
+          "Deprecated alias of score (same number), kept for existing API clients.",
+        ),
       trend: zod.string().nullish(),
       spread: zod.number().nullish(),
       newsRisk: zod.string().nullish(),
@@ -14230,7 +14377,50 @@ export const AddWatchlistItemResponse = zod.object({
   marketType: zod.string(),
   favorite: zod.number(),
   signal: zod.string().nullish(),
-  confidence: zod.number().nullish(),
+  score: zod
+    .number()
+    .nullish()
+    .describe(
+      "Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.",
+    ),
+  scoreBasis: zod
+    .union([
+      zod
+        .object({
+          kind: zod.enum(["heuristic_rule"]),
+          calibrated: zod.literal(false),
+          rule: zod
+            .string()
+            .describe('Stable rule id, e.g. \"trend_continuation.buy\".'),
+          formula: zod
+            .string()
+            .describe(
+              'Whole score as one expression, e.g. \"min(95, 70 + floor((rsi - 50) \* 1.5))\".',
+            ),
+          inputs: zod.record(zod.string(), zod.number()),
+          base: zod.number(),
+          terms: zod.array(
+            zod.object({
+              label: zod.string(),
+              expr: zod.string(),
+              value: zod.number(),
+            }),
+          ),
+          cap: zod.number().nullable(),
+          note: zod.string(),
+        })
+        .describe(
+          "How a strategy score was produced. score = min(cap, base + sum(terms.value)) (plain sum when cap is null), and each term's expr evaluates to its value over inputs, so the number can be recomputed from the payload.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
+  confidence: zod
+    .number()
+    .nullish()
+    .describe(
+      "Deprecated alias of score (same number), kept for existing API clients.",
+    ),
   trend: zod.string().nullish(),
   spread: zod.number().nullish(),
   newsRisk: zod.string().nullish(),
@@ -14261,7 +14451,50 @@ export const ToggleWatchlistItemFavoriteResponse = zod.object({
   marketType: zod.string(),
   favorite: zod.number(),
   signal: zod.string().nullish(),
-  confidence: zod.number().nullish(),
+  score: zod
+    .number()
+    .nullish()
+    .describe(
+      "Uncalibrated heuristic strategy score, 0-100. Hand-written rule arithmetic, NOT a probability or a confidence; scoreBasis shows the rule and inputs. The measured probability, when one exists, is calibratedProbability.",
+    ),
+  scoreBasis: zod
+    .union([
+      zod
+        .object({
+          kind: zod.enum(["heuristic_rule"]),
+          calibrated: zod.literal(false),
+          rule: zod
+            .string()
+            .describe('Stable rule id, e.g. \"trend_continuation.buy\".'),
+          formula: zod
+            .string()
+            .describe(
+              'Whole score as one expression, e.g. \"min(95, 70 + floor((rsi - 50) \* 1.5))\".',
+            ),
+          inputs: zod.record(zod.string(), zod.number()),
+          base: zod.number(),
+          terms: zod.array(
+            zod.object({
+              label: zod.string(),
+              expr: zod.string(),
+              value: zod.number(),
+            }),
+          ),
+          cap: zod.number().nullable(),
+          note: zod.string(),
+        })
+        .describe(
+          "How a strategy score was produced. score = min(cap, base + sum(terms.value)) (plain sum when cap is null), and each term's expr evaluates to its value over inputs, so the number can be recomputed from the payload.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
+  confidence: zod
+    .number()
+    .nullish()
+    .describe(
+      "Deprecated alias of score (same number), kept for existing API clients.",
+    ),
   trend: zod.string().nullish(),
   spread: zod.number().nullish(),
   newsRisk: zod.string().nullish(),
@@ -27212,7 +27445,12 @@ export const GetTimingBrainResponse = zod.object({
     ]),
     hasCandleData: zod.boolean(),
     hasQuoteData: zod.boolean(),
-    hasLivePriceData: zod.boolean().optional(),
+    hasLivePriceData: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Fresh same-feed price including last-only feeds without a bid\/ask spread",
+      ),
     hasNewsData: zod.boolean(),
     hasBroadFlowData: zod.boolean(),
     note: zod.string(),
@@ -27341,7 +27579,12 @@ export const GetTimingBrainMultiResponse = zod.object({
         ]),
         hasCandleData: zod.boolean(),
         hasQuoteData: zod.boolean(),
-        hasLivePriceData: zod.boolean().optional(),
+        hasLivePriceData: zod
+          .boolean()
+          .optional()
+          .describe(
+            "Fresh same-feed price including last-only feeds without a bid\/ask spread",
+          ),
         hasNewsData: zod.boolean(),
         hasBroadFlowData: zod.boolean(),
         note: zod.string(),
@@ -27691,7 +27934,13 @@ export const GetAdminAaciDecisionQueryParams = zod.object({
 export const GetAdminAaciDecisionResponse = zod.object({
   decisionId: zod.string(),
   timestamp: zod.string(),
-  actorType: zod.enum(["user", "eleanor", "self_trade_agent", "admin", "system"]),
+  actorType: zod.enum([
+    "user",
+    "eleanor",
+    "self_trade_agent",
+    "admin",
+    "system",
+  ]),
   actorId: zod.string().nullish(),
   symbol: zod.string().nullish(),
   timeframe: zod.string().nullish(),

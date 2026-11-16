@@ -11,6 +11,7 @@ export interface TimingDataQuality {
   label: TimingDataQualityLabel;
   hasCandleData: boolean;
   hasQuoteData: boolean;
+  /** Fresh same-feed price including last-only feeds without a bid/ask spread */
   hasLivePriceData?: boolean;
   hasNewsData: boolean;
   hasBroadFlowData: boolean;

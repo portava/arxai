@@ -46,6 +46,10 @@ import type {
   AdminConfigureSelfTradeAgentInput,
   AdminCreateSelfTradeAgentInput,
   AdminDrawdownResp,
+  AdminEleanorInvestorSummaryResp,
+  AdminEleanorQualityMetricsResp,
+  AdminEleanorThresholdsResp,
+  AdminEleanorThresholdsUpdateReq,
   AdminFixAgentDiagnose400,
   AdminFixAgentDiagnose409,
   AdminFixAgentListRunsParams,
@@ -79,10 +83,6 @@ import type {
   AdminPoolTierStateResp,
   AdminReconcileDetailResp,
   AdminReconcileSummaryResp,
-  AdminEleanorInvestorSummaryResp,
-  AdminEleanorQualityMetricsResp,
-  AdminEleanorThresholdsResp,
-  AdminEleanorThresholdsUpdateReq,
   AdminSecurityOverview,
   AdminSecurityTimeline,
   AdminSetAutonomyInput,
@@ -259,6 +259,9 @@ import type {
   DiscrepancyActionReq,
   EconomicCalendarEnvelope,
   EconomicEvent,
+  EleanorDraftReadRequest,
+  EleanorDraftReadResponse,
+  EleanorQualityErrorResp,
   EmergencyStopProfitMission200,
   EmergencyStopProfitMission404,
   EmergencyStopResult,
@@ -331,6 +334,8 @@ import type {
   GetAdminChartBenchmarkParams,
   GetAdminChartDecisionReceiptsParams,
   GetAdminCockpitAuditLogParams,
+  GetAdminEleanorMissedOpportunitiesParams,
+  GetAdminEleanorQualityMetricsParams,
   GetAdminFundBookDrawdownParams,
   GetAdminFundBookPoolTierEventsParams,
   GetAdminFundBookTradeAllocationsParams,
@@ -340,8 +345,6 @@ import type {
   GetAdminMissionDetail403,
   GetAdminMissionDetail404,
   GetAdminOneClickSharedBridgeUsers200,
-  GetAdminEleanorMissedOpportunitiesParams,
-  GetAdminEleanorQualityMetricsParams,
   GetAdminSecurityTimelineParams,
   GetAdminSharedMasterAttributionsParams,
   GetAdminSharedMasterUnattributedParams,
@@ -668,9 +671,6 @@ import type {
   RiskSettings,
   RiskSettingsUpdate,
   RollbackAdminAaciLearningChange400,
-  EleanorDraftReadRequest,
-  EleanorDraftReadResponse,
-  EleanorQualityErrorResp,
   RunAdminTimingBrainRetentionPrune400,
   RunAdminTimingBrainRetentionPrune403,
   RunAutonomousCycleInput,
@@ -9369,12 +9369,15 @@ export const postMeAssistantDraftRead = async (
   eleanorDraftReadRequest: EleanorDraftReadRequest,
   options?: RequestInit,
 ): Promise<EleanorDraftReadResponse> => {
-  return customFetch<EleanorDraftReadResponse>(getPostMeAssistantDraftReadUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(eleanorDraftReadRequest),
-  });
+  return customFetch<EleanorDraftReadResponse>(
+    getPostMeAssistantDraftReadUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(eleanorDraftReadRequest),
+    },
+  );
 };
 
 export const getPostMeAssistantDraftReadMutationOptions = <
@@ -37179,7 +37182,9 @@ export const useUpdateAdminInvestorStrategyConfig = <
 /**
  * @summary My tracked Eleanor signal outcomes (read-only, user-simple)
  */
-export const getGetMyEleanorOutcomesUrl = (params?: GetMyEleanorOutcomesParams) => {
+export const getGetMyEleanorOutcomesUrl = (
+  params?: GetMyEleanorOutcomesParams,
+) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -37199,10 +37204,13 @@ export const getMyEleanorOutcomes = async (
   params?: GetMyEleanorOutcomesParams,
   options?: RequestInit,
 ): Promise<MyEleanorOutcomesResp> => {
-  return customFetch<MyEleanorOutcomesResp>(getGetMyEleanorOutcomesUrl(params), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<MyEleanorOutcomesResp>(
+    getGetMyEleanorOutcomesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getGetMyEleanorOutcomesQueryKey = (
@@ -37235,7 +37243,8 @@ export const getGetMyEleanorOutcomesQueryOptions = <
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getMyEleanorOutcomes>>
-  > = ({ signal }) => getMyEleanorOutcomes(params, { signal, ...requestOptions });
+  > = ({ signal }) =>
+    getMyEleanorOutcomes(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
@@ -37279,7 +37288,9 @@ export function useGetMyEleanorOutcomes<
 /**
  * @summary My Eleanor signal self-reviews (read-only, plain-language only)
  */
-export const getGetMyEleanorReviewsUrl = (params?: GetMyEleanorReviewsParams) => {
+export const getGetMyEleanorReviewsUrl = (
+  params?: GetMyEleanorReviewsParams,
+) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -37308,7 +37319,10 @@ export const getMyEleanorReviews = async (
 export const getGetMyEleanorReviewsQueryKey = (
   params?: GetMyEleanorReviewsParams,
 ) => {
-  return [`/api/me/eleanor-quality/reviews`, ...(params ? [params] : [])] as const;
+  return [
+    `/api/me/eleanor-quality/reviews`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getGetMyEleanorReviewsQueryOptions = <
@@ -37332,7 +37346,8 @@ export const getGetMyEleanorReviewsQueryOptions = <
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getMyEleanorReviews>>
-  > = ({ signal }) => getMyEleanorReviews(params, { signal, ...requestOptions });
+  > = ({ signal }) =>
+    getMyEleanorReviews(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getMyEleanorReviews>>,
@@ -37604,10 +37619,13 @@ export const getGetAdminEleanorThresholdsUrl = () => {
 export const getAdminEleanorThresholds = async (
   options?: RequestInit,
 ): Promise<AdminEleanorThresholdsResp> => {
-  return customFetch<AdminEleanorThresholdsResp>(getGetAdminEleanorThresholdsUrl(), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<AdminEleanorThresholdsResp>(
+    getGetAdminEleanorThresholdsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getGetAdminEleanorThresholdsQueryKey = () => {
@@ -37644,7 +37662,8 @@ export const getGetAdminEleanorThresholdsQueryOptions = <
 export type GetAdminEleanorThresholdsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getAdminEleanorThresholds>>
 >;
-export type GetAdminEleanorThresholdsQueryError = ErrorType<EleanorQualityErrorResp>;
+export type GetAdminEleanorThresholdsQueryError =
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
  * @summary Current Eleanor quality tuning thresholds (ADMIN/OWNER)

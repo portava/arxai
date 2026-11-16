@@ -19,6 +19,7 @@ export interface Trade {
   stopLoss: number;
   takeProfit: number;
   strategy: string;
+  /** Uncalibrated heuristic strategy score (0-100) recorded with the trade. Field name kept because it is the stored trades.confidence column; it is not a probability or a confidence. */
   confidence: number;
   status: TradeStatus;
   mode: TradeMode;

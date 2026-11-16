@@ -84,9 +84,11 @@ it("uses the latest in-memory timeframe even when storage writes are denied", as
   act(() => h.result.current.tf[1]("M2"));
   await act(async () => h.result.current.warm("/market-scanner"));
   expect(fetchChartCandles).toHaveBeenCalledWith("EURUSD", "M2", 200, expect.any(AbortSignal));
+  // W1 is an exact interval since native calendar boundaries (25e886a1).
   act(() => h.result.current.tf[1]("W1"));
   await act(async () => h.result.current.warm("/market-scanner"));
-  expect(fetchChartCandles).toHaveBeenCalledOnce();
+  expect(fetchChartCandles).toHaveBeenLastCalledWith("EURUSD", "W1", 200, expect.any(AbortSignal));
+  expect(fetchChartCandles).toHaveBeenCalledTimes(2);
 });
 
 it("survives blocked storage and failed prefetch without retries or fabricated data", async () => {

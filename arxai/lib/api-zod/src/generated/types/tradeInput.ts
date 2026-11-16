@@ -15,6 +15,7 @@ export interface TradeInput {
   sl: number;
   tp: number;
   strategy: string;
+  /** Uncalibrated heuristic strategy score (0-100). Name kept for existing API clients that submit trades; not a probability. */
   confidence: number;
   /** @nullable */
   confirmationId?: number | null;

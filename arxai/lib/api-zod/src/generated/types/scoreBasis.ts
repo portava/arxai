@@ -14,7 +14,7 @@ import type { ScoreBasisTermsItem } from "./scoreBasisTermsItem";
  */
 export interface ScoreBasis {
   kind: ScoreBasisKind;
-  calibrated: false;
+  calibrated: boolean;
   /** Stable rule id, e.g. "trend_continuation.buy". */
   rule: string;
   /** Whole score as one expression, e.g. "min(95, 70 + floor((rsi - 50) * 1.5))". */

@@ -9,6 +9,7 @@ import type { MarketImpactRadar } from "./marketImpactRadar";
 import type { SmartChartHandshakeInputs } from "./smartChartHandshakeInputs";
 import type { SmartChartLayer } from "./smartChartLayer";
 import type { SmartChartLayersResponseSafetyMode } from "./smartChartLayersResponseSafetyMode";
+import type { SmartChartLayersResponseTradeLevels } from "./smartChartLayersResponseTradeLevels";
 import type { SmartChartNewsBehavior } from "./smartChartNewsBehavior";
 import type { SmartChartOverlayHandshake } from "./smartChartOverlayHandshake";
 import type { SmartChartSignalProjection } from "./smartChartSignalProjection";
@@ -22,6 +23,8 @@ export interface SmartChartLayersResponse {
   newsBehavior: SmartChartNewsBehavior;
   handshake: SmartChartOverlayHandshake;
   handshakeInputs: SmartChartHandshakeInputs;
+  /** Whether entry / stop / target layers are drawn; they follow the per-symbol truth verdict. */
+  tradeLevels?: SmartChartLayersResponseTradeLevels;
   safetyMode: SmartChartLayersResponseSafetyMode;
   liveLocked: boolean;
   readOnlyMode: boolean;
