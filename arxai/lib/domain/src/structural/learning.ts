@@ -1,7 +1,60 @@
 import { STRUCTURAL_VERSION, type CalibrationRecord, type ForecastGrade, type StructuralBar, type StructuralForecast,
   type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
 import { brier } from "./math.js";
-import type { StructuralModel } from "./model.js";
+import { lowerMeanGain, type Episode, type StructuralModel } from "./model.js";
+
+export type RangeEngine = "HISTORY" | "VOLATILITY";
+/** Which engine draws a market's range, and the out-of-sample evidence for the choice. */
+export interface RangeEngineChoice {
+  engine: RangeEngine; reason: "HISTORY_RELIABLY_BETTER" | "HISTORY_NOT_RELIABLY_BETTER" | "TOO_FEW_TEST_SETUPS";
+  /** Setups scored: fitted-on data excluded; each one's past analogs closed before it. */
+  tested: number;
+  /** Share of outcomes inside each engine's 25%-75% range (ideal 0.5), across 15/30/60 bars ahead. */
+  historyInside: number | null; volatilityInside: number | null;
+  /** Up/down call from the analogs: Brier (coin flip = 0.25) and whether it reliably beat a coin flip. */
+  directionBrier: number | null; directionEdge: boolean;
+}
+export const RANGE_ENGINE_POLICY = Object.freeze({ minTested: 40, checkpoints: [15, 30, 60] as const });
+
+/**
+ * Choose, per market, the engine that drew the better range on setups the
+ * model was not fitted on (its selection and gate partitions). Each range is
+ * judged by the 50% interval score (width plus 4x any miss: lower is better),
+ * which rewards a range that is both narrow and holds half the outcomes.
+ * History is chosen only when its advantage holds at the bootstrap lower
+ * bound; otherwise the simpler volatility range is kept. The same setups
+ * decide whether the analogs' up/down share beats a coin flip.
+ */
+export function chooseRangeEngine(model: StructuralModel, tests: readonly Episode[]): RangeEngineChoice {
+  const gains: number[] = [], directionGains: number[] = [];
+  let hIn = 0, vIn = 0, checks = 0, dirBrier = 0;
+  for (const e of tests) {
+    if (e.future.length < 60) continue;
+    const hist = analogTrajectories(model, e.history, e.features, 60, "HISTORY");
+    const vol = analogTrajectories(model, e.history, e.features, 60, "VOLATILITY");
+    if (hist.length !== 3 || vol.length !== 3) continue;
+    const start = e.history.at(-1)!.close;
+    let gain = 0;
+    for (const j of RANGE_ENGINE_POLICY.checkpoints) {
+      const y = e.future[j - 1]!.close / start - 1;
+      const score = (t: Trajectory[]) => {
+        const hi = t[0]!.candles[j - 1]!.close / start - 1, lo = t[2]!.candles[j - 1]!.close / start - 1;
+        return { s: (hi - lo) + 4 * Math.max(0, lo - y) + 4 * Math.max(0, y - hi), inside: y >= lo && y <= hi };
+      };
+      const h = score(hist), v = score(vol);
+      gain += v.s - h.s; hIn += +h.inside; vIn += +v.inside; checks++;
+    }
+    gains.push(gain);
+    const up = +(e.future[59]!.close > start), b = (hist[0]!.share - up) ** 2;
+    dirBrier += b; directionGains.push(.25 - b);
+  }
+  const tested = gains.length;
+  if (tested < RANGE_ENGINE_POLICY.minTested) return { engine: "VOLATILITY", reason: "TOO_FEW_TEST_SETUPS", tested,
+    historyInside: checks ? hIn / checks : null, volatilityInside: checks ? vIn / checks : null, directionBrier: tested ? dirBrier / tested : null, directionEdge: false };
+  const historyWins = lowerMeanGain(gains) > 0;
+  return { engine: historyWins ? "HISTORY" : "VOLATILITY", reason: historyWins ? "HISTORY_RELIABLY_BETTER" : "HISTORY_NOT_RELIABLY_BETTER", tested,
+    historyInside: hIn / checks, volatilityInside: vIn / checks, directionBrier: dirBrier / tested, directionEdge: lowerMeanGain(directionGains) > 0 };
+}
 
 /**
  * Projected paths from the most similar past setups. Similarity is distance in
@@ -9,7 +62,8 @@ import type { StructuralModel } from "./model.js";
  * episodes whose whole future closed before the forecast are eligible, so no
  * path can contain anything that happened after it was issued.
  */
-export function analogTrajectories(model: StructuralModel, history: readonly StructuralBar[], features: readonly number[], horizonBars = 60): Trajectory[] {
+export function analogTrajectories(model: StructuralModel, history: readonly StructuralBar[], features: readonly number[], horizonBars = 60,
+  engine: RangeEngine = model.rangeEngine?.engine ?? "VOLATILITY"): Trajectory[] {
   const last = history.at(-1);
   if (!last) return [];
   const asOf = last.closeTime, start = last.close, step = model.stepMs ?? 60_000;
@@ -41,7 +95,17 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
     const open = start * (1 + (j ? path[j - 1]! : 0)), close = start * (1 + c);
     return { openTime: asOf + j * step, closeTime: asOf + (j + 1) * step, open, high: Math.max(open, close), low: Math.min(open, close), close, isFinal: false };
   });
-  const bullPath = band(.75), middlePath = band(.5), bearPath = band(.25);
+  // Bull and bear come from the engine chosen for this market when the model
+  // was fitted (see chooseRangeEngine):
+  // VOLATILITY: the 25%-75% range of a random walk at the volatility of the
+  //   forecast's own recent bars (+-0.6745 sigma sqrt(bars ahead), in logs).
+  // HISTORY: the analogs' own drift-free 25th/75th percentiles, bar by bar.
+  const returns = history.slice(1).map((b, j) => Math.log(b.close / history[j]!.close)).filter(Number.isFinite);
+  const sigma = returns.length ? Math.sqrt(returns.reduce((s, r) => s + r * r, 0) / returns.length) : 0;
+  const edge = (sign: 1 | -1) => Array.from({ length: horizonBars }, (_, j) => Math.exp(sign * .6745 * sigma * Math.sqrt(j + 1)) - 1);
+  const bullPath = engine === "HISTORY" ? band(.75) : edge(1), bearPath = engine === "HISTORY" ? band(.25) : edge(-1);
+  // The middle stays the analogs' drift-free median, kept inside the range.
+  const middlePath = band(.5).map((x, j) => Math.min(bullPath[j]!, Math.max(bearPath[j]!, x)));
   const ends = adj.map(r => r.at(-1)!), bullEnd = bullPath.at(-1)!, bearEnd = bearPath.at(-1)!;
   const share: Record<TrajectoryKind, number> = {
     BULL: ends.filter(c => c > 0).length / n,
@@ -49,7 +113,7 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
     MIDDLE: ends.filter(c => c >= bearEnd && c <= bullEnd).length / n,
   };
   const make = (kind: TrajectoryKind, percentile: 75 | 50 | 25, path: number[]): Trajectory =>
-    ({ kind, percentile, label: "ANALOG_PERCENTILE_PATH", candles: candlesOf(path), endChange: path.at(-1)!, share: share[kind], analogs: n, sourceEnd });
+    ({ kind, percentile, label: kind === "MIDDLE" || engine === "HISTORY" ? "ANALOG_PERCENTILE_PATH" : "VOLATILITY_BAND_EDGE", candles: candlesOf(path), endChange: path.at(-1)!, share: share[kind], analogs: n, sourceEnd });
   return [make("BULL", 75, bullPath), make("MIDDLE", 50, middlePath), make("BEAR", 25, bearPath)];
 }
 

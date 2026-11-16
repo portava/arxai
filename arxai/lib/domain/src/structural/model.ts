@@ -2,7 +2,7 @@ import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type 
   type StructuralEvent, type DataOrigin, type StructuralForecast, type GhostPath } from "./contracts.js";
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
-import { analogTrajectories } from "./learning.js";
+import { analogTrajectories, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
 export const MODEL_POLICY = Object.freeze({ stride: 15, purgeMinutes: 60, minTraining: 80,
@@ -23,6 +23,8 @@ export interface StructuralModel {
   training: Episode[]; partitions: Record<string, { n: number; first: number | null; last: number | null }>;
   holdout: Array<{ origin: number; eligible: boolean; baselineBrier: number; selectedBrier: number }>;
   dataQuality: { inputBars: number; acceptedEpisodes: number; rejectedWindows: number };
+  /** Range engine chosen for this market; absent on older models (volatility, no direction edge). */
+  rangeEngine?: RangeEngineChoice;
 }
 
 function standardize(head: LinearHead, x: number[]): number[] {
@@ -243,6 +245,8 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   model.confirmationGate = chooseGate(parts.gate, e => baseFor(model, e.features), e => hazardPrediction(model.confirmation, e.features, false), 5, true, confirmationBlend);
   if (model.prebreak) model.prebreakGate = chooseGate(parts.gate.filter(e => e.eligible), confirmationBase,
     e => prebreakCandidate(confirmationBase(e), predictHead(model.prebreak!, e.features) as Triple), 5, true, prebreakBlend);
+  // Range engine and direction evidence, from the same not-fitted-on setups.
+  model.rangeEngine = chooseRangeEngine(model, [...parts.selection, ...parts.gate]);
   // Untouched holdout is diagnostic only. No model/threshold writes below here.
   model.holdout = parts.holdout.map(e => {
     const p = predictMass(model, e.features, e.eligible), y = truth(e, 5);
@@ -289,5 +293,8 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
     horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars),
     trajectories: analogTrajectories(model, h, features.values, horizonBars), history: h,
+    range: { engine: model.rangeEngine?.engine ?? "VOLATILITY", reason: model.rangeEngine?.reason ?? "TOO_FEW_TEST_SETUPS",
+      tested: model.rangeEngine?.tested ?? 0, historyInside: model.rangeEngine?.historyInside ?? null, volatilityInside: model.rangeEngine?.volatilityInside ?? null },
+    directionEdge: model.rangeEngine?.directionEdge ?? false,
     executionAuthority: "NONE", stepMs, horizonBars, ...(horizonId ? { horizonId } : {}) };
 }

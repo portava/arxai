@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StructuralForecastPanel } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
 
 const row = { id: "saved-1", issuedAt: 1800000000000, scores: [], forecast: {
   asOf: 1800000000000, origin: { symbol: "V75", provider: "deriv" }, mode: "BASELINE", version: "arx-v6.7-implementation-1",
@@ -66,7 +66,8 @@ describe("ARX structural forecast controls", () => {
     const bar = (close: number) => ({ openTime: 1800000000000, closeTime: 1800000060000, open: 100, high: Math.max(100, close), low: Math.min(100, close), close, isFinal: true });
     const trajectories = [["BULL", 75, .012, .58], ["MIDDLE", 50, .001, .5], ["BEAR", 25, -.009, .4]].map(([kind, percentile, endChange, share]) =>
       ({ kind, percentile, label: "ANALOG_PERCENTILE_PATH", candles: [bar(100 * (1 + (endChange as number)))], endChange, share, analogs: 120, sourceEnd: 1 }));
-    const forecast = { ...row.forecast, trajectories, calibration: { applied: true, reason: "IMPROVED_ON_HELD_OUT_FORECASTS", graded: 42, heldOut: 13, weight: .25, frequencies: [.4, .4, .2], holdoutGain: .012, raw: [.55, .25, .2] } };
+    const forecast = { ...row.forecast, trajectories, directionEdge: false,
+      range: { engine: "VOLATILITY", reason: "HISTORY_NOT_RELIABLY_BETTER", tested: 88, historyInside: .477, volatilityInside: .511 }, calibration: { applied: true, reason: "IMPROVED_ON_HELD_OUT_FORECASTS", graded: 42, heldOut: 13, weight: .25, frequencies: [.4, .4, .2], holdoutGain: .012, raw: [.55, .25, .2] } };
     const graded = { ...row, id: "old", issuedAt: 1799990000000, forecast, scores: [{ horizon: 60, outcome: "DOWN_FIRST", brier: .3, baselineBrier: .4, logLoss: .5,
       grade: { gradeVersion: "g", letter: "B", skill: .3, probabilityOfOutcome: .6, actualEndChange: -.004, nearestPath: "MIDDLE", insideRange: true, middlePathError: .001 } }] };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [graded] })).mockResolvedValueOnce(response({ saved: true, ...row, forecast })));
@@ -76,11 +77,14 @@ describe("ARX structural forecast controls", () => {
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "MIDDLE", "BEAR"]));
     const labels = onPaths.mock.lastCall![0].map((p: { label: string }) => p.label);
     // Short labels on the chart; the full sentence stays in the panel's path list.
-    expect(labels).toEqual(["Bull +1.20% · 58% higher", "Middle +0.10% · median", "Bear −0.90% · 40% lower"]);
-    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
-    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · 40% of 120 ended lower · down-break first 30%");
+    // No tested direction edge on this market: the "x% higher" share is not shown.
+    expect(labels).toEqual(["Bull +1.20% · range top", "Middle +0.10% · median", "Bear −0.90% · range bottom"]);
+    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · top of the range · up-break first 50%");
+    expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · bottom of the range · down-break first 30%");
+    expect(screen.getByLabelText("Projected paths").textContent).not.toMatch(/ended higher|ended lower/);
+    expect(screen.getByTestId("forecast-range-engine").textContent).toBe("Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here. On 88 setups the model did not learn from, the history range held 48% of outcomes and the volatility range 51% (ideal 50%). Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.");
     // The explanation matches what is drawn and what was learned (audit 2026-11-15).
-    expect(screen.getByText(/The paths are not price predictions: .*shaded range spans bull to bear.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
+    expect(screen.getByText(/The paths are not price predictions: .*shaded range from bull to bear is where about half of outcomes should end.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
     expect(screen.queryByText(/Ghost candles/)).toBeNull();
     expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 independent graded forecasts.*0\.012 Brier better on the 13 newest/);
     const grades = screen.getByTestId("forecast-grades").textContent!;
@@ -88,6 +92,15 @@ describe("ARX structural forecast controls", () => {
     expect(grades).toMatch(/B .*broke down first, gave it 60% · ended −0\.40% · nearest middle path · inside bull–bear range/);
     fireEvent.click(screen.getByLabelText(/^Middle /));
     await waitFor(() => expect(onPaths.mock.lastCall?.[0].map((p: { id: string }) => p.id)).toEqual(["BULL", "BEAR"]));
+  });
+  it("shows the up/down share only on a market where history beat a coin flip", () => {
+    const t = { kind: "BULL", percentile: 75, label: "ANALOG_PERCENTILE_PATH", candles: [], endChange: .012, share: .58, analogs: 120, sourceEnd: 1 } as const;
+    expect(trajectoryChartLabel(t as never, true)).toBe("Bull +1.20% · 58% higher");
+    expect(trajectoryLabel(t as never, [.5, .3, .2], true)).toBe("Bull +1.20% · 58% of 120 ended higher · up-break first 50%");
+    expect(trajectoryChartLabel(t as never)).toBe("Bull +1.20% · range top");
+    expect(rangeSentence({ range: { engine: "HISTORY", reason: "HISTORY_RELIABLY_BETTER", tested: 109, historyInside: .24, volatilityInside: .09 }, directionEdge: true } as never))
+      .toBe("Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here. On 109 setups the model did not learn from, the history range held 24% of outcomes and the volatility range 9% (ideal 50%). Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown.");
+    expect(rangeSentence({} as never)).toBeNull();
   });
   it("in dynamic mode shows an update over its faint original and grades updates apart from fresh forecasts", async () => {
     const onPaths = vi.fn();

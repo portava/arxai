@@ -62,7 +62,9 @@ export interface GhostPath {
  */
 export type TrajectoryKind = "BULL" | "MIDDLE" | "BEAR";
 export interface Trajectory {
-  kind: TrajectoryKind; percentile: 75 | 50 | 25; label: "ANALOG_PERCENTILE_PATH";
+  kind: TrajectoryKind; percentile: 75 | 50 | 25;
+  /** Bull and bear are the edges of the recent-volatility range; middle is the analogs' median. */
+  label: "ANALOG_PERCENTILE_PATH" | "VOLATILITY_BAND_EDGE";
   candles: StructuralBar[];
   /** End close relative to the starting close, as a fraction (0.01 = +1%). */
   endChange: number;
@@ -125,6 +127,10 @@ export interface StructuralForecast {
   stepMs?: number;
   /** Bars of the 60 modelled that the requested window covers; absent means 60. */
   horizonBars?: number;
+  /** Which engine drew the bull-bear range for this market, and the out-of-sample evidence. Absent on older forecasts. */
+  range?: { engine: "HISTORY" | "VOLATILITY"; reason: string; tested: number; historyInside: number | null; volatilityInside: number | null };
+  /** True only when the analogs' up/down share reliably beat a coin flip on this market's untested setups. */
+  directionEdge?: boolean;
   horizonId?: string;
   /** Bull / middle / bear projected paths; absent on forecasts saved before them. */
   trajectories?: Trajectory[];

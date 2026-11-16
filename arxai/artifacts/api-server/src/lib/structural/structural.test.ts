@@ -351,6 +351,27 @@ test("projected paths drop the training period's drift and are smooth band edges
   // Each drawn bar opens where the previous one closed.
   for (const p of t) for (let j = 1; j < 30; j++) close(p.candles[j]!.open, p.candles[j - 1]!.close);
 });
+test("each market gets the range engine that tested better on its own untested setups", () => {
+  // A random walk: past setups say nothing, so the simpler volatility range stays and no direction is claimed.
+  const walk = model();
+  assert.equal(walk.rangeEngine!.engine, "VOLATILITY"); assert.equal(walk.rangeEngine!.directionEdge, false);
+  assert.ok(walk.rangeEngine!.tested >= 40);
+  const f = forecastStructural(walk, bars.slice(4680, 4800), origin, false, 30);
+  assert.equal(f.range!.engine, "VOLATILITY"); assert.equal(f.directionEdge, false);
+  assert.equal(f.trajectories![0]!.label, "VOLATILITY_BAND_EDGE");
+  // A repeating cycle: similar past setups predict what follows, so history wins and its up/down share is trusted.
+  let seed = 11; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32 - .5; };
+  const cycle: StructuralBar[] = Array.from({ length: 6000 }, (_, i) => {
+    const c = (k: number) => 100 + 2 * Math.sin(2 * Math.PI * k / 240), open = c(i), close = c(i + 1) + rnd() * .01;
+    return { openTime: i * 60_000, closeTime: (i + 1) * 60_000, open, high: Math.max(open, close) + .02, low: Math.min(open, close) - .02, close, isFinal: true };
+  });
+  const cyc = fitStructuralModel(cycle, { ...origin, symbol: "CYCLE" });
+  assert.equal(cyc.rangeEngine!.engine, "HISTORY"); assert.equal(cyc.rangeEngine!.reason, "HISTORY_RELIABLY_BETTER");
+  assert.equal(cyc.rangeEngine!.directionEdge, true);
+  const g = forecastStructural(cyc, cycle.slice(5880, 6000), { ...origin, symbol: "CYCLE" }, false, 30);
+  assert.equal(g.range!.engine, "HISTORY"); assert.equal(g.directionEdge, true);
+  assert.ok(g.trajectories!.every(t => t.label === "ANALOG_PERCENTILE_PATH"));
+});
 test("a finished forecast is graded on its whole window, against the probabilities it showed", () => {
   const m = model(), index = 4800, history = bars.slice(index - 120, index);
   const f = forecastStructural(m, history, origin, false, 15);

@@ -14,17 +14,38 @@ export interface ForecastDrawPath { id: Scenario | TrajectoryKind; scenario?: Sc
   faded?: boolean }
 const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
 const signed = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(2)}%`;
-/** Chart label: where the path ends, how many similar setups went that way, and the break odds. */
-export function trajectoryLabel(t: Trajectory, p: Triple | undefined): string {
+/**
+ * Chart label: where the path ends and the break odds. The share of similar
+ * setups that ended higher/lower is shown only when that share beat a coin
+ * flip on this market's untested setups (forecast.directionEdge).
+ */
+export function trajectoryLabel(t: Trajectory, p: Triple | undefined, directionEdge = false): string {
   if (t.kind === "MIDDLE") return `Middle ${signed(t.endChange)} · median of ${t.analogs} similar setups`;
   const up = t.kind === "BULL";
-  return `${pathNames[t.kind]} ${signed(t.endChange)} · ${pct(t.share)} of ${t.analogs} ended ${up ? "higher" : "lower"}`
+  return `${pathNames[t.kind]} ${signed(t.endChange)} · ${directionEdge ? `${pct(t.share)} of ${t.analogs} ended ${up ? "higher" : "lower"}` : `${up ? "top" : "bottom"} of the range`}`
     + (p ? ` · ${up ? "up" : "down"}-break first ${pct(p[up ? 0 : 1])}` : "");
 }
-/** The short label drawn where a path ends on the chart, e.g. "Bull +0.10% · 42% higher". */
-export function trajectoryChartLabel(t: Trajectory): string {
+/** The short label drawn where a path ends on the chart, e.g. "Bull +0.10% · range top". */
+export function trajectoryChartLabel(t: Trajectory, directionEdge = false): string {
   if (t.kind === "MIDDLE") return `Middle ${signed(t.endChange)} · median`;
-  return `${pathNames[t.kind]} ${signed(t.endChange)} · ${pct(t.share)} ${t.kind === "BULL" ? "higher" : "lower"}`;
+  const up = t.kind === "BULL";
+  return `${pathNames[t.kind]} ${signed(t.endChange)} · ${directionEdge ? `${pct(t.share)} ${up ? "higher" : "lower"}` : `range ${up ? "top" : "bottom"}`}`;
+}
+/** Which engine drew the range on this market, why, and whether up/down has a tested edge. */
+export function rangeSentence(f: StructuralForecast): string | null {
+  const r = f.range;
+  if (!r) return null;
+  const share = (x: number | null) => x == null ? "—" : pct(x);
+  const evidence = r.tested ? ` On ${r.tested} setups the model did not learn from, the history range held ${share(r.historyInside)} of outcomes and the volatility range ${share(r.volatilityInside)} (ideal 50%).` : "";
+  const engine = r.engine === "HISTORY"
+    ? "Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here."
+    : r.reason === "TOO_FEW_TEST_SETUPS"
+      ? "Range engine for this market: volatility — too little tested history to judge the history engine yet."
+      : "Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here.";
+  const direction = f.directionEdge
+    ? " Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown."
+    : " Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.";
+  return engine + evidence + direction;
 }
 /** What the forecast learned from earlier graded forecasts of this window. */
 export function learningSentence(c: CalibrationRecord): string {
@@ -75,7 +96,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     const original = f.update ? [...history, row].find(r => r?.id === f.update!.of)?.forecast.trajectories ?? [] : [];
     onPaths(f.trajectories?.length
       ? [...original.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: "", candles: t.candles, faded: true })),
-        ...f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryChartLabel(t), candles: t.candles }))]
+        ...f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryChartLabel(t, f.directionEdge), candles: t.candles }))]
       : f.paths.filter(path => selected.includes(path.scenario)).map(path => ({ id: path.scenario, scenario: path.scenario,
         label: `${labels[path.scenario]} ${pct(path.probability)}`, candles: path.candles })));
   }, [row, history, canonicalSymbol, selected, onPaths, horizonId]);
@@ -153,7 +174,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         {shown.forecast.trajectories.map(t => <label key={t.kind} className="flex items-center gap-2">
           <input type="checkbox" checked={selected.includes(t.kind)}
             onChange={e => setSelected(e.target.checked ? [...selected, t.kind] : selected.filter(s => s !== t.kind))} />
-          <span>{trajectoryLabel(t, probability)}</span>
+          <span>{trajectoryLabel(t, probability, shown.forecast.directionEdge)}</span>
         </label>)}</div>
       : <div className="my-2 flex flex-wrap gap-4"><span>{preset.label} ghost paths ({preset.timeframe} candles):</span>{shown.forecast.paths.map(path => <label key={path.scenario} className="flex items-center gap-2">
         <input type="checkbox" checked={selected.includes(path.scenario)} disabled={!path.candles.length}
@@ -165,8 +186,9 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
       </p>}
       <p className="text-amber-200">{shown.forecast.trajectories?.length
-        ? `The paths are not price predictions: the bull, middle and bear lines are the 75th, 50th and 25th percentile of where the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market ended, rescaled to the current price, and the shaded range spans bull to bear. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
+        ? `The paths are not price predictions: the shaded range from bull to bear is where about half of outcomes should end (see the range engine below), and the middle line is the median of the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market, rescaled to the current price. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
         : "Ghost paths are illustrative scenarios, not price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move."}</p>
+      {rangeSentence(shown.forecast) && <p data-testid="forecast-range-engine" className="mt-1 text-zinc-300">{rangeSentence(shown.forecast)}</p>}
       {shown.forecast.calibration && <p data-testid="forecast-learning" className="mt-1 text-zinc-300">{learningSentence(shown.forecast.calibration)}</p>}
       <p className="mt-1 text-zinc-400">Model {shown.forecast.version} · {shown.forecast.gateReason.replaceAll("_", " ").toLowerCase()} · Predictive performance not yet validated.</p>
     </>}

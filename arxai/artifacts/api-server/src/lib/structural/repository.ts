@@ -26,7 +26,7 @@ export const structuralRepository: ForecastRepository = {
       trainedThrough: model.trainedThrough, availableAt: model.availableAt, baseline: model.baseline,
       geometry: model.geometry, confirmation: model.confirmation, prebreak: model.prebreak,
       geometryGate: model.geometryGate, confirmationGate: model.confirmationGate, prebreakGate: model.prebreakGate,
-      partitions: model.partitions, dataQuality: model.dataQuality, holdout: model.holdout, policy: MODEL_POLICY };
+      partitions: model.partitions, dataQuality: model.dataQuality, holdout: model.holdout, rangeEngine: model.rangeEngine ?? null, policy: MODEL_POLICY };
     const inserted = await db.insert(receipts).values({ receiptId: row.id, userId,
       symbol: row.forecast.origin.symbol, timeframe: FORECAST_HORIZONS.find(h => h.stepMs === forecastStepMs(row.forecast))?.timeframe ?? "M1", source: SOURCE,
       marketSentence: "Structural event forecast; ghost paths are illustrations.",
