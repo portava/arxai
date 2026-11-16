@@ -422,6 +422,26 @@ test("calibration learns only from forecasts graded before this one and keeps a 
   assert.equal(matched.record.applied, false);
   assert.deepEqual(matched.shown, [1 / 3, 1 / 3, 1 / 3]);
 });
+test("a window scored before grades existed gets its grade appended once, beside the original score", async () => {
+  const repository = memory(), index = 4800;
+  const f = { ...forecastStructural(model(), bars.slice(index - 120, index), origin, false, 15), origin: { ...origin, kind: "BROKER_HISTORY" as const } };
+  // Scored by the old scorer: every horizon through 60, no letter on the window.
+  const legacy = evaluateForecast(f, bars.slice(index, index + 60), f.asOf + 3_600_000).map(({ grade, shownBrier, ...s }) => ({ ...s, evaluationVersion: "old:scoring-1" }));
+  assert.ok(legacy.some(s => s.horizon === 60) && legacy.every(s => !("grade" in s)));
+  repository.rows.set("1:legacy", { id: "legacy", issuedAt: f.asOf, forecast: f, scores: structuredClone(legacy) });
+  const service = new StructuralForecastService({ repository, now: () => f.asOf + 7_200_000,
+    readFeed: async () => ({ bars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null }), fit: () => structuredClone(model()) });
+  const read = (await service.history(1, "V75")).find(r => r.id === "legacy")!;
+  const window = read.scores.filter(s => s.horizon === 15);
+  assert.equal(window.length, 1); assert.ok(window[0]!.grade); assert.equal(window[0]!.lateGrade, true);
+  // Same bars, same outcome as the original score.
+  assert.equal(window[0]!.outcome, legacy.find(s => s.horizon === 15)!.outcome);
+  const stored = repository.rows.get("1:legacy")!.scores;
+  assert.equal(stored.length, legacy.length + 1);
+  assert.ok(stored.some(s => s.horizon === 15 && !s.grade), "the original score is kept");
+  await service.history(1, "V75");
+  assert.equal(repository.rows.get("1:legacy")!.scores.length, legacy.length + 1, "graded only once");
+});
 test("the service shows learned probabilities for a window once enough of its forecasts are graded", async () => {
   const repository = memory();
   const template = forecastStructural(model(), bars.slice(-120), origin, false, 60, "1h");

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
-  forecastHorizon, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
+  forecastHorizon, forecastHorizonBars, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
   regradeAgainstBaseline, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
 
 export interface StoredForecast { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[] }
@@ -153,13 +153,23 @@ export class StructuralForecastService {
     for (const row of rows) {
       const step = forecastStepMs(row.forecast);
       const preset = forecastHorizon(forecastHorizonId(row.forecast)) ?? FORECAST_HORIZONS.find(h => h.stepMs === step);
-      if (!preset || row.scores.some(s => s.horizon === 60) || now < row.forecast.asOf + step) continue;
+      // A window scored before grades existed has no letter; it is still due.
+      const windowBars = forecastHorizonBars(row.forecast);
+      const windowScores = row.scores.filter(s => s.horizon === windowBars);
+      const ungradedWindow = windowScores.length > 0 && !windowScores.some(s => s.grade);
+      if (!preset || (row.scores.some(s => s.horizon === 60) && !ungradedWindow) || now < row.forecast.asOf + step) continue;
       const feed = await feedFor(preset);
       if (row.forecast.origin.provider !== feed.origin.provider) continue;
       try {
         const future = feed.bars.filter(b => b.openTime >= row.forecast.asOf && b.closeTime <= row.forecast.asOf + 60 * step);
-        const scores = evaluateForecast(row.forecast, future, now).filter(s => !row.scores.some(old => old.horizon === s.horizon));
-        if (scores.length) { await this.deps.repository.appendScores(userId, row.id, scores); row.scores.push(...scores); }
+        const scores = evaluateForecast(row.forecast, future, now).flatMap(s => {
+          if (!row.scores.some(old => old.horizon === s.horizon)) return [s];
+          return s.horizon === windowBars && ungradedWindow && s.grade ? [{ ...s, lateGrade: true }] : [];
+        });
+        if (scores.length) {
+          await this.deps.repository.appendScores(userId, row.id, scores);
+          row.scores = [...row.scores.filter(old => !scores.some(s => s.horizon === old.horizon)), ...scores];
+        }
       } catch (error) {
         // Missing/gapped history is unresolved, never scored as NEITHER.
         if (!(error instanceof Error) || !["OUTCOME_HISTORY_GAP", "GAP_DUPLICATE_OR_OUT_OF_ORDER", "INVALID_OHLC", "NON_FINAL_OR_NON_M1"].includes(error.message)) throw error;

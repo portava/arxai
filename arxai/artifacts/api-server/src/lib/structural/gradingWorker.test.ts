@@ -52,8 +52,16 @@ test("pending query lists closed unscored forecasts only, per owner", { skip: !t
     assert.deepEqual(mine(await listPendingGrades(Date.now())), [{ userId, symbol: "GRADERTEST" }]);
     // Before its window closes it is not due.
     assert.deepEqual(mine(await listPendingGrades(forecast.asOf)), []);
-    await repository.appendScores(userId, id, [{ evaluationVersion: "test-scoring-1", horizon: 60, observedThrough: forecast.asOf + 3_600_000,
-      outcome: "NEITHER", event: null, brier: .2, baselineBrier: .3, logLoss: .4 } as never]);
+    const score = { evaluationVersion: "test-scoring-1", horizon: 60, observedThrough: forecast.asOf + 3_600_000,
+      outcome: "NEITHER", event: null, brier: .2, baselineBrier: .3, logLoss: .4 } as const;
+    // Scored without a grade (the pre-grade scorer): still due.
+    await repository.appendScores(userId, id, [score as never]);
+    assert.deepEqual(mine(await listPendingGrades(Date.now())), [{ userId, symbol: "GRADERTEST" }]);
+    // A late grade is appended beside it, read in its place, and clears the backlog.
+    await repository.appendScores(userId, id, [{ ...score, lateGrade: true, grade: { letter: "C" } } as never]);
+    await repository.appendScores(userId, id, [{ ...score, lateGrade: true, grade: { letter: "A" } } as never]);
+    const row = (await repository.list(userId, "GRADERTEST")).find(r => r.id === id)!;
+    assert.equal(row.scores.length, 1); assert.equal((row.scores[0]!.grade as { letter: string }).letter, "C");
     assert.deepEqual(mine(await listPendingGrades(Date.now())), []);
   } finally {
     await db.delete(outcomes).where(eq(outcomes.receiptRef, id));

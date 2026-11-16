@@ -15,8 +15,11 @@ export const structuralRepository: ForecastRepository = {
       const payload = r.intelligenceSnapshot as { forecast: StructuralForecast; issuedAt: number };
       if (payload?.forecast?.executionAuthority !== "NONE") throw new Error("INVALID_STORED_FORECAST");
       const scores = evaluations.filter(e => e.receiptRef === r.receiptId).map(e => e.evidence as ForecastScore);
+      // One score per horizon; where a late grade was appended beside an
+      // older ungraded score, the graded one is read.
+      const pick = (h: number) => scores.find(x => x.horizon === h && x.grade) ?? scores.find(x => x.horizon === h)!;
       return { id: r.receiptId, issuedAt: payload.issuedAt, forecast: payload.forecast,
-        scores: scores.filter((s, i) => scores.findIndex(x => x.horizon === s.horizon) === i) };
+        scores: [...new Set(scores.map(s => s.horizon))].map(pick) };
     });
   },
   async save(userId: number, row: StoredForecast, model: StructuralModel) {
@@ -47,7 +50,11 @@ export const structuralRepository: ForecastRepository = {
       const owned = await tx.select({ id: receipts.id }).from(receipts).where(and(eq(receipts.receiptId, id), eq(receipts.userId, userId), eq(receipts.source, SOURCE))).for("update");
       if (!owned.length) throw new Error("FORECAST_NOT_FOUND");
       const old = await tx.select({ evidence: outcomes.evidence }).from(outcomes).where(and(eq(outcomes.receiptRef, id), eq(outcomes.userId, userId), eq(outcomes.kind, "STRUCTURAL_EVALUATION")));
-      const missing = scores.filter(s => !old.some(r => (r.evidence as ForecastScore).horizon === s.horizon));
+      // New horizons, plus a late grade for a horizon whose rows all lack one.
+      const missing = scores.filter(s => {
+        const same = old.map(r => r.evidence as ForecastScore).filter(r => r.horizon === s.horizon);
+        return !same.length || (s.lateGrade === true && !!s.grade && !same.some(r => r.grade));
+      });
       if (missing.length) await tx.insert(outcomes).values(missing.map(score => ({ receiptRef: id, userId,
         kind: "STRUCTURAL_EVALUATION", outcome: score.outcome, evidence: score })));
     });

@@ -151,6 +151,9 @@ export interface ForecastScore {
   grade?: ForecastGrade;
   /** Brier of the probabilities the user was shown (after any calibration). */
   shownBrier?: number;
+  /** Grade added later to a window first scored before grades existed. The
+   * original score row is kept; this one is appended beside it. */
+  lateGrade?: boolean;
 }
 export const scenarioOf = (event?: StructuralEvent | null): Scenario =>
   !event ? "NEITHER" : event.cause.endsWith("UP") ? "UP_FIRST" : "DOWN_FIRST";

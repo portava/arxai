@@ -32,7 +32,8 @@ export const GRADING_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 export const GRADING_MAX_PAIRS = 50;
 export const GRADING_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Distinct (user, market) pairs with a closed forecast that has no evaluation yet. */
+/** Distinct (user, market) pairs with a closed forecast whose window has no grade yet
+ * (including windows scored before grades existed). */
 export async function listPendingGrades(now: number): Promise<PendingGrade[]> {
   const rows = await db.selectDistinct({ userId: receipts.userId, symbol: receipts.symbol }).from(receipts)
     .where(and(
@@ -40,7 +41,8 @@ export async function listPendingGrades(now: number): Promise<PendingGrade[]> {
       gt(receipts.createdAt, new Date(now - GRADING_LOOKBACK_MS)),
       lt(receipts.expiresAt, new Date(now)),
       sql`not exists (select 1 from ${outcomes} where ${outcomes.receiptRef} = ${receipts.receiptId}
-        and ${outcomes.userId} = ${receipts.userId} and ${outcomes.kind} = 'STRUCTURAL_EVALUATION')`,
+        and ${outcomes.userId} = ${receipts.userId} and ${outcomes.kind} = 'STRUCTURAL_EVALUATION'
+        and ${outcomes.evidence} ? 'grade')`,
     ))
     .limit(GRADING_MAX_PAIRS);
   return rows.filter((r): r is PendingGrade => typeof r.userId === "number" && typeof r.symbol === "string");
