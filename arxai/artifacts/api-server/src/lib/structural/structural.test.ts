@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -336,6 +336,20 @@ test("three projected paths: bull above middle above bear, from similar past set
     assert.ok(path.analogs >= 30 && path.share >= 0 && path.share <= 1);
     close(path.candles.at(-1)!.close / history.at(-1)!.close - 1, path.endChange);
   }
+});
+test("projected paths drop the training period's drift and are smooth band edges, not one past path", () => {
+  const m = structuredClone(model()), index = 4800, history = bars.slice(index - 120, index);
+  // Give every past setup the same strong upward drift: +0.03% a bar.
+  for (const e of m.training) e.future = e.future.map((b, j) => ({ ...b, close: b.close * (1 + .0003 * (j + 1)) }));
+  const t = analogTrajectories(m, history, structuralFeatures(history, history.at(-1)!.closeTime).values, 30);
+  const [bull, middle, bear] = t;
+  // The drift alone would put the middle 0.9% up; with it removed the middle stays near flat.
+  assert.ok(Math.abs(middle!.endChange) < .0009, `middle ${middle!.endChange}`);
+  assert.ok(bull!.endChange > 0 && bear!.endChange < 0);
+  // Bar-by-bar percentiles: the bull edge never dips below the middle, the middle never below the bear.
+  for (let j = 0; j < 30; j++) assert.ok(bull!.candles[j]!.close >= middle!.candles[j]!.close && middle!.candles[j]!.close >= bear!.candles[j]!.close);
+  // Each drawn bar opens where the previous one closed.
+  for (const p of t) for (let j = 1; j < 30; j++) close(p.candles[j]!.open, p.candles[j - 1]!.close);
 });
 test("a finished forecast is graded on its whole window, against the probabilities it showed", () => {
   const m = model(), index = 4800, history = bars.slice(index - 120, index);

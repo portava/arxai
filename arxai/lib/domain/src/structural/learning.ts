@@ -23,22 +23,34 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
   const distance = (x: readonly number[]) => Math.sqrt(x.reduce((s, v, k) => s + ((v - features[k]!) / scale[k]!) ** 2, 0));
   const nearest = eligible.map(e => ({ e, d: distance(e.features) })).sort((a, b) => a.d - b.d);
   const k = Math.min(nearest.length, Math.max(30, Math.round(nearest.length * .25)));
-  const analogs = nearest.slice(0, k).map(({ e }) => {
-    const ratio = start / e.history.at(-1)!.close;
-    const candles = e.future.slice(0, horizonBars).map((b, j) => ({ ...b, openTime: asOf + j * step, closeTime: asOf + (j + 1) * step,
-      open: b.open * ratio, high: b.high * ratio, low: b.low * ratio, close: b.close * ratio }));
-    return { candles, end: e.future.at(-1)!.closeTime, change: candles.at(-1)!.close / start - 1 };
-  }).sort((a, b) => a.change - b.change);
-  const at = (q: number) => analogs[Math.round(q * (analogs.length - 1))]!;
-  const bear = at(.25), middle = at(.5), bull = at(.75), n = analogs.length;
+  const used = nearest.slice(0, k).map(({ e }) => e);
+  const n = used.length, sourceEnd = Math.max(...used.map(e => e.future.at(-1)!.closeTime));
+  // Each analog as change from its own start, bar by bar.
+  const rel = used.map(e => e.future.slice(0, horizonBars).map(b => b.close / e.history.at(-1)!.close - 1));
+  // Remove the analog set's average drift. Walk-forward on 41k real bars per
+  // market: the drift came from the training period, pushed the range up
+  // (more outcomes fell below it than above) and made the middle path 17-19%
+  // worse than a flat line; without it the middle path matches a flat line.
+  const drift = Array.from({ length: horizonBars }, (_, j) => rel.reduce((s, r) => s + r[j]!, 0) / n);
+  const adj = rel.map(r => r.map((x, j) => x - drift[j]!));
+  // Percentiles are taken bar by bar, so each path is a smooth band edge
+  // rather than one noisy past path (a single path adds its own noise).
+  const quantile = (xs: number[], q: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.round(q * (s.length - 1))]!; };
+  const band = (q: number) => Array.from({ length: horizonBars }, (_, j) => quantile(adj.map(r => r[j]!), q));
+  const candlesOf = (path: number[]) => path.map((c, j) => {
+    const open = start * (1 + (j ? path[j - 1]! : 0)), close = start * (1 + c);
+    return { openTime: asOf + j * step, closeTime: asOf + (j + 1) * step, open, high: Math.max(open, close), low: Math.min(open, close), close, isFinal: false };
+  });
+  const bullPath = band(.75), middlePath = band(.5), bearPath = band(.25);
+  const ends = adj.map(r => r.at(-1)!), bullEnd = bullPath.at(-1)!, bearEnd = bearPath.at(-1)!;
   const share: Record<TrajectoryKind, number> = {
-    BULL: analogs.filter(a => a.change > 0).length / n,
-    BEAR: analogs.filter(a => a.change < 0).length / n,
-    MIDDLE: analogs.filter(a => a.change >= bear.change && a.change <= bull.change).length / n,
+    BULL: ends.filter(c => c > 0).length / n,
+    BEAR: ends.filter(c => c < 0).length / n,
+    MIDDLE: ends.filter(c => c >= bearEnd && c <= bullEnd).length / n,
   };
-  const make = (kind: TrajectoryKind, percentile: 75 | 50 | 25, a: typeof bull): Trajectory =>
-    ({ kind, percentile, label: "ANALOG_PERCENTILE_PATH", candles: a.candles, endChange: a.change, share: share[kind], analogs: n, sourceEnd: a.end });
-  return [make("BULL", 75, bull), make("MIDDLE", 50, middle), make("BEAR", 25, bear)];
+  const make = (kind: TrajectoryKind, percentile: 75 | 50 | 25, path: number[]): Trajectory =>
+    ({ kind, percentile, label: "ANALOG_PERCENTILE_PATH", candles: candlesOf(path), endChange: path.at(-1)!, share: share[kind], analogs: n, sourceEnd });
+  return [make("BULL", 75, bullPath), make("MIDDLE", 50, middlePath), make("BEAR", 25, bearPath)];
 }
 
 const UNIFORM_BRIER = 2 / 3;
