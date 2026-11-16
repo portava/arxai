@@ -419,6 +419,7 @@ export * from "./marketCandles";
 // read path. MARKET-DATA / TELEMETRY ONLY — never touches execution, the
 // 16-gate pipeline, arx_live_*, balances, or fills.
 export * from "./brokerCandles";
+export * from "./brokerCandleBars";
 export * from "./brokerCandleBackfillStatus";
 
 // ── Task #617 — Chart Pattern Truth learning loop. Append-only, per-user

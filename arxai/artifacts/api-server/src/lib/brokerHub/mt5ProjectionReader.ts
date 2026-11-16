@@ -1,9 +1,16 @@
 import {
   arxSymbolSpecsTable,
-  brokerCandlesTable,
   db,
   mt5ConnectionTable,
 } from "@workspace/db";
+import { findSeries, readBars, type BrokerCandleRow } from "../data/brokerCandleRows.js";
+
+/** The candle fields the projection exposes (unchanged from the old reads). */
+const projectedCandle = (r: BrokerCandleRow) => ({
+  brokerSymbol: r.brokerSymbol, timeframe: r.timeframe, openTimeUtc: r.openTimeUtc, closeTimeUtc: r.closeTimeUtc,
+  open: r.open, high: r.high, low: r.low, close: r.close, tickVolume: r.tickVolume, realVolume: r.realVolume,
+  source: r.source, terminalId: r.terminalId, isClosedBar: r.isClosedBar, receivedAt: r.receivedAt,
+});
 import { and, desc, eq } from "drizzle-orm";
 import { brokerHistoryIdentity } from "../data/brokerHistoryPolicy.js";
 async function ownedHistory(userId: number, connectionId: number) {
@@ -62,54 +69,17 @@ export const mt5ProjectionReader: Mt5ProjectionReader = {
   async readLatestOwnedCandle(userId, connectionId) {
     const identity = await ownedHistory(userId, connectionId);
     if (!identity) return null;
-    const rows = await db.select({
-      brokerSymbol: brokerCandlesTable.brokerSymbol,
-      timeframe: brokerCandlesTable.timeframe,
-      openTimeUtc: brokerCandlesTable.openTimeUtc,
-      closeTimeUtc: brokerCandlesTable.closeTimeUtc,
-      open: brokerCandlesTable.open,
-      high: brokerCandlesTable.high,
-      low: brokerCandlesTable.low,
-      close: brokerCandlesTable.close,
-      tickVolume: brokerCandlesTable.tickVolume,
-      realVolume: brokerCandlesTable.realVolume,
-      source: brokerCandlesTable.source,
-      terminalId: brokerCandlesTable.terminalId,
-      isClosedBar: brokerCandlesTable.isClosedBar,
-      receivedAt: brokerCandlesTable.receivedAt,
-    }).from(brokerCandlesTable).where(and(
-      eq(brokerCandlesTable.userId, userId),
-      eq(brokerCandlesTable.historyIdentity, identity),
-      eq(brokerCandlesTable.bridgeConnectionId, connectionId),
-    )).orderBy(desc(brokerCandlesTable.receivedAt)).limit(1);
+    const series = await findSeries(db, { userId, historyIdentity: identity, bridgeConnectionIds: [connectionId] });
+    const rows = (await readBars(db, series, { orderBy: "receivedAt", order: "desc", limit: 1 })).map(projectedCandle);
     return rows[0] ?? null;
   },
 
   async readOwnedCandles(userId, connectionId, exactBrokerSymbol, timeframe, limit) {
     const identity = await ownedHistory(userId, connectionId);
     if (!identity) return [];
-    const rows = await db.select({
-      brokerSymbol: brokerCandlesTable.brokerSymbol,
-      timeframe: brokerCandlesTable.timeframe,
-      openTimeUtc: brokerCandlesTable.openTimeUtc,
-      closeTimeUtc: brokerCandlesTable.closeTimeUtc,
-      open: brokerCandlesTable.open,
-      high: brokerCandlesTable.high,
-      low: brokerCandlesTable.low,
-      close: brokerCandlesTable.close,
-      tickVolume: brokerCandlesTable.tickVolume,
-      realVolume: brokerCandlesTable.realVolume,
-      source: brokerCandlesTable.source,
-      terminalId: brokerCandlesTable.terminalId,
-      isClosedBar: brokerCandlesTable.isClosedBar,
-      receivedAt: brokerCandlesTable.receivedAt,
-    }).from(brokerCandlesTable).where(and(
-      eq(brokerCandlesTable.userId, userId),
-      eq(brokerCandlesTable.historyIdentity, identity),
-      eq(brokerCandlesTable.bridgeConnectionId, connectionId),
-      eq(brokerCandlesTable.brokerSymbol, exactBrokerSymbol),
-      eq(brokerCandlesTable.timeframe, timeframe),
-    )).orderBy(desc(brokerCandlesTable.openTimeUtc)).limit(limit);
+    const series = await findSeries(db, { userId, historyIdentity: identity, bridgeConnectionIds: [connectionId],
+      brokerSymbol: exactBrokerSymbol, timeframe });
+    const rows = (await readBars(db, series, { order: "desc", limit })).map(projectedCandle);
     return rows.reverse();
   },
 };

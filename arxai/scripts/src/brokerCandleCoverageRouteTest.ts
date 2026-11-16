@@ -65,10 +65,10 @@ import {
   usersTable,
   authUserSessionsTable,
   mt5ConnectionTable,
-  brokerCandlesTable,
   brokerCandleBackfillStatusTable,
   marketCandlesTable,
 } from "@workspace/db";
+import { deleteSeries, insertFullRows } from "../../artifacts/api-server/src/lib/data/brokerCandleRows.js";
 import { upsertCandles } from "../../artifacts/api-server/src/lib/data/candleCache.js";
 import { getSharedBaseUrl, isEntrypoint, type CiTestResultLike } from "./ci/inProcessAppHarness.js";
 
@@ -121,7 +121,7 @@ async function cleanup(): Promise<void> {
     .where(like(usersTable.email, `${EMAIL_PREFIX}%`));
   const ids = users.map((u) => u.id);
   if (ids.length > 0) {
-    await db.delete(brokerCandlesTable).where(inArray(brokerCandlesTable.userId, ids));
+    for (const userId of ids) await deleteSeries(db, { userId });
     await db
       .delete(brokerCandleBackfillStatusTable)
       .where(inArray(brokerCandleBackfillStatusTable.userId, ids));
@@ -263,7 +263,7 @@ export async function run(): Promise<CiTestResultLike> {
     const history1 = brokerHistoryIdentity({ userId: bridgeUser.id, bridgeConnectionId: conn.id, accountNumber: "9991001", serverName: conn.serverName, clockBasis: "broker_server" });
     const history2 = brokerHistoryIdentity({ userId: bridgeUser2.id, bridgeConnectionId: conn2.id, accountNumber: "9992002", serverName: conn2.serverName, clockBasis: "broker_server" });
     // ── Seed broker_candles (a few rows, for fidelity / provenance) ───────────
-    await db.insert(brokerCandlesTable).values([
+    await insertFullRows(db, [
       {
         userId: bridgeUser.id, bridgeConnectionId: conn.id, historyIdentity: history1, accountNumber: "9991001",
         brokerSymbol: SYM_A, symbol: SYM_A, timeframe: "M5",
@@ -301,7 +301,7 @@ export async function run(): Promise<CiTestResultLike> {
     ]);
 
     // ── Seed SYM_C under the SECOND bridge user (isolation fixture) ───────────
-    await db.insert(brokerCandlesTable).values([
+    await insertFullRows(db, [
       {
         userId: bridgeUser2.id, bridgeConnectionId: conn2.id, historyIdentity: history2, accountNumber: "9992002",
         brokerSymbol: SYM_C, symbol: SYM_C, timeframe: "M15",

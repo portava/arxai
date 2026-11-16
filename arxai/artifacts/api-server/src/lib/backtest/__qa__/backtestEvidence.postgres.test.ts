@@ -1,7 +1,7 @@
 // Real disposable database and actual route handlers; no HTTP server or broker.
 import { test, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
-import { and, desc, eq, getTableColumns, getTableName, SQL } from "drizzle-orm";
+import { getTableColumns, getTableName, SQL } from "drizzle-orm";
 import { writeFileSync } from "node:fs";
 import type { Request, Response } from "express";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -11,7 +11,8 @@ assert.equal(destination.pathname, "/arx_backtest_evidence_test");
 assert.match(destination.searchParams.get("host") ?? "", /\/arx-backtest-evidence-[^/]+\/socket$/);
 assert.equal(destination.username, "arx_qa");
 mock.method(globalThis, "fetch", async () => { throw new Error("External request forbidden"); });
-const { db, pool, backtestRunsTable: runs, backtestTradesTable: trades, vaultEventsTable: vault, brokerCandlesTable: bars, mt5ConnectionTable: bridges } = await import("@workspace/db");
+const { db, pool, backtestRunsTable: runs, backtestTradesTable: trades, vaultEventsTable: vault, brokerCandleSeriesTable: series, brokerCandleAttrsTable: attrs, brokerCandleBarsTable: bars, mt5ConnectionTable: bridges } = await import("@workspace/db");
+const { insertFullRows } = await import("../../data/brokerCandleRows.js");
 const { loadDiagnosticBrokerHistory } = await import("../backtestHistory.js");
 const { default: router, getLatestVerifiedRunForStrategy } = await import("../../../routes/backtestRuns.js");
 const dialect = new PgDialect();
@@ -22,20 +23,23 @@ function value(v: unknown): string {
   return `'${(typeof v === "string" ? v : JSON.stringify(v)).replaceAll("'", "''")}'`;
 }
 before(async () => {
-  for (const table of [runs, trades, vault, bars, bridges]) {
+  for (const table of [runs, trades, vault, series, attrs, bars, bridges]) {
     const columns = Object.values(getTableColumns(table)).map((c) => `${quote(c.name)} ${c.getSQLType()}${c.notNull ? " NOT NULL" : ""}${c.default !== undefined ? ` DEFAULT ${value(c.default)}` : ""}${c.primary ? " PRIMARY KEY" : ""}`);
     await pool.query(`CREATE TABLE ${quote(getTableName(table))} (${columns.join(",")})`);
   }
-  await pool.query("CREATE UNIQUE INDEX broker_candles_bridge_sym_tf_time_uq ON broker_candles (bridge_connection_id,broker_symbol,timeframe,open_time_utc)");
-  await pool.query("CREATE INDEX broker_candles_user_read_idx ON broker_candles (user_id,symbol,timeframe,open_time_utc)");
+  await pool.query("CREATE UNIQUE INDEX broker_candle_series_key_uq ON broker_candle_series (series_key)");
+  await pool.query("CREATE INDEX broker_candle_series_read_idx ON broker_candle_series (user_id,symbol,timeframe)");
+  await pool.query("CREATE UNIQUE INDEX broker_candle_attrs_key_uq ON broker_candle_attrs (attrs_key)");
+  await pool.query("ALTER TABLE broker_candle_bars ADD CONSTRAINT broker_candle_bars_pk PRIMARY KEY (series_id, open_time_utc)");
 });
 after(async () => { await pool.end(); });
 beforeEach(async () => {
-  await pool.query("TRUNCATE backtest_runs, backtest_trades, vault_events, broker_candles, mt5_connection RESTART IDENTITY");
+  await pool.query("TRUNCATE backtest_runs, backtest_trades, vault_events, broker_candle_bars, broker_candle_series, broker_candle_attrs, mt5_connection RESTART IDENTITY");
   await db.insert(bridges).values([{ id: 1, userId: 10 }, { id: 2, userId: 11 }, { id: 3, userId: 10 }]);
 });
-async function candle(patch: Partial<typeof bars.$inferInsert> = {}) {
-  await db.insert(bars).values({ userId: 10, bridgeConnectionId: 1, accountNumber: "test-era", brokerSymbol: "EURUSD", symbol: "EURUSD", timeframe: "M15", openTimeUtc: new Date("2026-01-01"), isClosedBar: true, open: 1.1, high: 1.2, low: 1, close: 1.15, ...patch });
+type CandleRow = Parameters<typeof insertFullRows>[1][number];
+async function candle(patch: Partial<CandleRow> = {}) {
+  await insertFullRows(db, [{ userId: 10, bridgeConnectionId: 1, accountNumber: "test-era", brokerSymbol: "EURUSD", symbol: "EURUSD", timeframe: "M15", openTimeUtc: new Date("2026-01-01"), isClosedBar: true, open: 1.1, high: 1.2, low: 1, close: 1.15, ...patch }]);
 }
 const historyArgs = { userId: 10, symbol: "EURUSD", timeframe: "M15", rangeStart: null, rangeEnd: null, maxBars: 500 };
 async function invoke(method: string, path: string, args: { id?: number; userId?: number; body?: unknown } = {}) {
@@ -79,7 +83,7 @@ test("not-yet-closed interval cannot become historical input from a final flag a
   assert.equal((await loadDiagnosticBrokerHistory(historyArgs)).reason, "invalid_bars");
 });
 test("invalid infinite timestamp is unavailable without a formatter crash", async () => {
-  await candle(); await pool.query("UPDATE broker_candles SET open_time_utc='infinity'::timestamptz");
+  await candle(); await pool.query("UPDATE broker_candle_bars SET open_time_utc='infinity'::timestamptz");
   assert.equal((await loadDiagnosticBrokerHistory(historyArgs)).reason, "invalid_bars");
 });
 test("actual list/detail/AI routes ignore old VERIFIED flags and preserve stored history", async () => {
@@ -115,36 +119,24 @@ test("ambiguous history never silently falls back to generated prices", async ()
   assert.equal(out.body.dataSource, "broker"); assert.equal((await pool.query("SELECT count(*)::int AS n FROM backtest_trades")).rows[0].n, 0);
 });
 
-test("paired local history-processing benchmark with real indexes", { skip: !process.env.ARX_BACKTEST_BENCHMARK_PATH }, async () => {
+test("local history-processing benchmark on the compact store", { skip: !process.env.ARX_BACKTEST_BENCHMARK_PATH }, async () => {
   for (let offset = 0; offset < 5000; offset += 500) {
-    await db.insert(bars).values(Array.from({ length: 500 }, (_, n) => ({
+    await insertFullRows(db, Array.from({ length: 500 }, (_, n) => ({
       userId: 10, bridgeConnectionId: 1, accountNumber: "test-era", brokerSymbol: "EURUSD", symbol: "EURUSD", timeframe: "M15",
       openTimeUtc: new Date(Date.UTC(2026, 0, 1) + (offset + n) * 900000), isClosedBar: true,
       open: 1.1, high: 1.2, low: 1, close: 1.15, tickVolume: 10,
     })));
   }
-  // Exact old loader algorithm from7cf745ff, on a single-owner source where
-  // output is comparable. Its cross-owner failure is tested separately.
-  const before = async () => {
-    const rows = await db.select({ openTimeUtc: bars.openTimeUtc, open: bars.open, high: bars.high, low: bars.low, close: bars.close, tickVolume: bars.tickVolume })
-      .from(bars).where(and(eq(bars.symbol, "EURUSD"), eq(bars.timeframe, "M15"), eq(bars.isClosedBar, true)))
-      .orderBy(desc(bars.openTimeUtc)).limit(15000);
-    const byOpen = new Map<number, typeof rows[number]>();
-    for (const row of rows) if (!byOpen.has(row.openTimeUtc.getTime())) byOpen.set(row.openTimeUtc.getTime(), row);
-    return [...byOpen.entries()].sort((a, b) => a[0] - b[0]).slice(-5000).map(([, r]) => ({ time: r.openTimeUtc.toISOString(), open: r.open, high: r.high, low: r.low, close: r.close, volume: r.tickVolume ?? 0 }));
-  };
   const current = async () => (await loadDiagnosticBrokerHistory({ ...historyArgs, maxBars: 5000 })).candles;
-  assert.deepEqual(await current(), await before());
-  const samples = { before: [] as number[], current: [] as number[] };
+  const samples: number[] = [];
   for (let i = 0; i < 110; i++) {
-    for (const name of i % 2 ? ["before", "current"] as const : ["current", "before"] as const) {
-      const at = performance.now(); const rows = await (name === "before" ? before() : current());
-      const elapsed = performance.now() - at; assert.equal(rows.length, 5000);
-      if (i >= 10) samples[name].push(elapsed);
-    }
+    const at = performance.now(); const rows = await current();
+    const elapsed = performance.now() - at; assert.equal(rows.length, 5000);
+    if (i >= 10) samples.push(elapsed);
   }
-  const summary = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b); return { median: sorted[Math.ceil(sorted.length * .5) - 1]!, p95: sorted[Math.ceil(sorted.length * .95) - 1]!, p99: sorted[Math.ceil(sorted.length * .99) - 1]!, max: sorted[sorted.length - 1]! }; };
-  const result = { workload: "5000 closed bars; one source; actual local PostgreSQL and existing indexes;100 paired trials after10warmups", before: summary(samples.before), current: summary(samples.current), samples, budgetP95Ms: 50, units: "milliseconds", scope: "completed database+mapping read; no browser/network/broker time" };
+  const sorted = [...samples].sort((a, b) => a - b);
+  const summary = { median: sorted[Math.ceil(sorted.length * .5) - 1]!, p95: sorted[Math.ceil(sorted.length * .95) - 1]!, p99: sorted[Math.ceil(sorted.length * .99) - 1]!, max: sorted[sorted.length - 1]! };
+  const result = { workload: "5000 closed bars; one source; actual local PostgreSQL, compact store primary key; 100 trials after 10 warmups", current: summary, samples, budgetP95Ms: 50, units: "milliseconds", scope: "completed database+mapping read; no browser/network/broker time" };
   writeFileSync(process.env.ARX_BACKTEST_BENCHMARK_PATH!, JSON.stringify(result, null, 2));
-  assert.ok(result.current.p95 < 50, `current p95 ${result.current.p95}ms exceeds50ms`);
+  assert.ok(summary.p95 < 50, `current p95 ${summary.p95}ms exceeds 50ms`);
 });

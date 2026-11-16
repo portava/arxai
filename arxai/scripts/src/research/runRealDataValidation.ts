@@ -107,6 +107,12 @@ export function inferAssetClass(symbol: string): AssetClass {
   return "index";
 }
 
+/** The stored MT5 bars as the old wide rows' columns this module reads: bars
+ * joined to their series and per-bar attributes (lossless compact store). */
+const BROKER_BARS = `(SELECT s.bridge_connection_id, s.symbol, s.timeframe, b.open_time_utc, b.open, b.high, b.low, b.close,
+  b.is_closed_bar, a.quality_status FROM broker_candle_bars b
+  JOIN broker_candle_series s ON s.id = b.series_id JOIN broker_candle_attrs a ON a.id = b.attrs_id) broker_bars`;
+
 /**
  * Stored MT5 bars (broker_candles) at the intraday timeframes, Deriv synthetics
  * INCLUDED — this source exists to validate the feeds ARX trades. Only closed
@@ -118,14 +124,14 @@ export async function mt5DbInstruments(pool: QueryPool, opts: { minBars: number;
   const skipped: string[] = [];
   const goodState = "is_closed_bar AND quality_status IN ('accepted','finalized','idempotent')";
   const groups = await pool.query<{ bridge_connection_id: number; symbol: string; timeframe: string; n: string }>(
-    `SELECT bridge_connection_id,symbol,timeframe,count(*)::text AS n FROM broker_candles
+    `SELECT bridge_connection_id,symbol,timeframe,count(*)::text AS n FROM ${BROKER_BARS}
      WHERE ${goodState} AND timeframe = ANY($1) GROUP BY 1,2,3 ORDER BY 1,2,3`, [[...INTRADAY_TIMEFRAMES]]);
   for (const g of groups.rows) {
     const tf = g.timeframe as IntradayTimeframe;
     const label = `db:broker_candles/bridge${g.bridge_connection_id}/${g.symbol}/${tf}`;
     if (Number(g.n) < opts.minBars) { skipped.push(`${label} (${g.n} bars < ${opts.minBars})`); continue; }
     const rows = await pool.query<{ t: Date; open: number; high: number; low: number; close: number }>(
-      `SELECT * FROM (SELECT open_time_utc AS t,open,high,low,close FROM broker_candles
+      `SELECT * FROM (SELECT open_time_utc AS t,open,high,low,close FROM ${BROKER_BARS}
          WHERE bridge_connection_id=$1 AND symbol=$2 AND timeframe=$3 AND ${goodState}
          ORDER BY open_time_utc DESC LIMIT $4) newest ORDER BY t`,
       [g.bridge_connection_id, g.symbol, tf, opts.maxBars]);
@@ -182,13 +188,13 @@ export async function dbInstruments(pool: QueryPool, minBars: number): Promise<{
       groups.push({ table: "market_candles", key: "bar_time", where: "symbol=$1 AND timeframe=$2 AND source=$3", params: [g.symbol, g.timeframe, g.source], label, symbol: g.symbol, timeframe: g.timeframe });
     }
     const bc = await pool.query<{ bridge_connection_id: number; symbol: string; timeframe: string; n: string }>(
-      `SELECT bridge_connection_id,symbol,timeframe,count(*)::text AS n FROM broker_candles
+      `SELECT bridge_connection_id,symbol,timeframe,count(*)::text AS n FROM ${BROKER_BARS}
        WHERE is_closed_bar AND quality_status='accepted' GROUP BY 1,2,3 ORDER BY 1,2,3`);
     for (const g of bc.rows) {
       const label = `db:broker_candles/bridge${g.bridge_connection_id}/${g.symbol}/${g.timeframe}`;
       if (DERIV_SYNTHETIC.test(g.symbol)) { skipped.push(`${label} (Deriv synthetic)`); continue; }
       if (Number(g.n) < minBars) { skipped.push(`${label} (${g.n} bars < ${minBars})`); continue; }
-      groups.push({ table: "broker_candles", key: "open_time_utc",
+      groups.push({ table: BROKER_BARS, key: "open_time_utc",
         where: "bridge_connection_id=$1 AND symbol=$2 AND timeframe=$3 AND is_closed_bar AND quality_status='accepted'",
         params: [g.bridge_connection_id, g.symbol, g.timeframe], label, symbol: g.symbol, timeframe: g.timeframe });
     }

@@ -33,9 +33,9 @@ import {
   db,
   agentPredictionsTable,
   agentsTable,
-  brokerCandlesTable,
   eleanorSignalOutcomesTable,
 } from "@workspace/db";
+import { closedBarCounts, readBars } from "../data/brokerCandleRows.js";
 import { POOLED } from "@workspace/domain/calibration";
 import { startIntervalWorker } from "../perf/intervalWorker.js";
 import { logger } from "../logger.js";
@@ -123,20 +123,10 @@ async function eleanorSamples(): Promise<{ all: TimedSample[]; scanner: TimedSam
 
 /** Strategies + replayable agents replayed on stored broker candles. */
 async function brokerReplayEvidence(): Promise<ReplayEvidence> {
-  const series = await db
-    .select({
-      symbol: brokerCandlesTable.symbol,
-      timeframe: brokerCandlesTable.timeframe,
-      bridgeConnectionId: brokerCandlesTable.bridgeConnectionId,
-      historyIdentity: brokerCandlesTable.historyIdentity,
-      brokerSymbol: brokerCandlesTable.brokerSymbol,
-      bars: sql<number>`count(*)::int`,
-    })
-    .from(brokerCandlesTable)
-    .where(eq(brokerCandlesTable.isClosedBar, true))
-    .groupBy(brokerCandlesTable.symbol, brokerCandlesTable.timeframe, brokerCandlesTable.bridgeConnectionId, brokerCandlesTable.historyIdentity, brokerCandlesTable.brokerSymbol)
-    .orderBy(desc(sql`count(*)`))
-    .limit(REPLAY_SERIES_CAP * 4);
+  const series = (await closedBarCounts(db, REPLAY_SERIES_CAP * 4)).map(({ series: s, bars }) => ({
+    symbol: s.symbol, timeframe: s.timeframe, bridgeConnectionId: s.bridgeConnectionId,
+    historyIdentity: s.historyIdentity, brokerSymbol: s.brokerSymbol, bars, row: s,
+  }));
   // One series (the longest) per symbol × timeframe.
   const picked = new Map<string, (typeof series)[number]>();
   for (const s of series) {
@@ -146,26 +136,7 @@ async function brokerReplayEvidence(): Promise<ReplayEvidence> {
   }
   const inputs: ReplaySeriesInput[] = [];
   for (const s of picked.values()) {
-    const bars = await db
-      .select({
-        openTimeUtc: brokerCandlesTable.openTimeUtc,
-        open: brokerCandlesTable.open,
-        high: brokerCandlesTable.high,
-        low: brokerCandlesTable.low,
-        close: brokerCandlesTable.close,
-        tickVolume: brokerCandlesTable.tickVolume,
-      })
-      .from(brokerCandlesTable)
-      .where(and(
-        eq(brokerCandlesTable.symbol, s.symbol),
-        eq(brokerCandlesTable.timeframe, s.timeframe),
-        eq(brokerCandlesTable.bridgeConnectionId, s.bridgeConnectionId),
-        eq(brokerCandlesTable.historyIdentity, s.historyIdentity),
-        eq(brokerCandlesTable.brokerSymbol, s.brokerSymbol),
-        eq(brokerCandlesTable.isClosedBar, true),
-      ))
-      .orderBy(desc(brokerCandlesTable.openTimeUtc))
-      .limit(REPLAY_BARS);
+    const bars = await readBars(db, [s.row], { closedOnly: true, order: "desc", limit: REPLAY_BARS });
     const candles: Candle[] = bars.reverse().map((b) => ({
       time: b.openTimeUtc.toISOString(),
       open: b.open,

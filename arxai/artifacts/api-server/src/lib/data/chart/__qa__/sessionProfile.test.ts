@@ -52,13 +52,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   db,
   usersTable,
   mt5ConnectionTable,
-  brokerCandlesTable,
 } from "@workspace/db";
+import { deleteSeries, insertFullRows, type FullRowInput } from "../../brokerCandleRows.js";
 import {
   getSessionProfile,
   _resetSessionProfileCache,
@@ -99,7 +99,7 @@ let connId = 0;
  * the number of distinct weeks seeded (== observedWeeks the wrapper should see).
  */
 async function seedWeekdayHistory(symbol: string, weeks: number): Promise<number> {
-  const rows: (typeof brokerCandlesTable.$inferInsert)[] = [];
+  const rows: FullRowInput[] = [];
   for (let i = 1; i <= weeks; i++) {
     const w = BASE_WEEK - i; // strictly past, within 8-week lookback for weeks<=4
     for (let dow = 0; dow < 5; dow++) {
@@ -119,7 +119,7 @@ async function seedWeekdayHistory(symbol: string, weeks: number): Promise<number
       });
     }
   }
-  await db.insert(brokerCandlesTable).values(rows);
+  await insertFullRows(db, rows);
   return weeks;
 }
 
@@ -141,7 +141,7 @@ async function seedM15DstSplitHistory(
   weeks: number,
   fullFridayWeeks: number,
 ): Promise<number> {
-  const rows: (typeof brokerCandlesTable.$inferInsert)[] = [];
+  const rows: FullRowInput[] = [];
   for (let i = 1; i <= weeks; i++) {
     const w = BASE_WEEK - i; // strictly past; weeks<=8 sit inside the 8-week lookback
     for (let dow = 0; dow < 5; dow++) {
@@ -167,12 +167,12 @@ async function seedM15DstSplitHistory(
       }
     }
   }
-  await db.insert(brokerCandlesTable).values(rows);
+  await insertFullRows(db, rows);
   return weeks;
 }
 
 async function cleanup(): Promise<void> {
-  await db.delete(brokerCandlesTable).where(inArray(brokerCandlesTable.symbol, ALL_SYMS));
+  for (const symbol of ALL_SYMS) await deleteSeries(db, { symbol });
   if (connId) await db.delete(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, connId));
   if (userId) await db.delete(usersTable).where(eq(usersTable.id, userId));
 }

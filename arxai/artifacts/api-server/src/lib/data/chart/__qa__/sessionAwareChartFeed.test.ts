@@ -58,13 +58,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   db,
   usersTable,
   mt5ConnectionTable,
-  brokerCandlesTable,
 } from "@workspace/db";
+import { deleteSeries, insertFullRows, type FullRowInput } from "../../brokerCandleRows.js";
 import { getChartCandles } from "../chartDataService.js";
 import { _resetSessionProfileCache } from "../sessionProfile.js";
 import { updateCandlesFromMT5, __resetMt5ProviderStore } from "../../providers/mt5Provider.js";
@@ -120,7 +120,7 @@ let connId = 0;
  */
 async function seedWeekdayHistory(weeks: number): Promise<void> {
   const dow0OfAnchorWeek = ANCHOR_DAY - 2;
-  const rows: (typeof brokerCandlesTable.$inferInsert)[] = [];
+  const rows: FullRowInput[] = [];
   for (let wk = 1; wk <= weeks; wk++) {
     const weekStartDay = dow0OfAnchorWeek - 7 * wk; // strictly past, dow0
     for (let dow = 0; dow < 5; dow++) {
@@ -140,11 +140,11 @@ async function seedWeekdayHistory(weeks: number): Promise<void> {
       });
     }
   }
-  await db.insert(brokerCandlesTable).values(rows);
+  await insertFullRows(db, rows);
 }
 
 async function cleanup(): Promise<void> {
-  await db.delete(brokerCandlesTable).where(eq(brokerCandlesTable.symbol, SESSION_SYM));
+  await deleteSeries(db, { symbol: SESSION_SYM });
   if (connId) await db.delete(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, connId));
   if (userId) await db.delete(usersTable).where(eq(usersTable.id, userId));
 }

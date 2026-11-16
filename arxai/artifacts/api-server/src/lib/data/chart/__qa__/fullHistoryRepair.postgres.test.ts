@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { db, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { deleteSeries, findSeries, readBars } from "../../brokerCandleRows.js";
 import { ingestBrokerCandles } from "../../brokerCandleStore.js";
 if (process.env.ARX_REQUIRE_INTEGRATION_DB !== "true" || !["127.0.0.1", "localhost"].includes(new URL(process.env.DATABASE_URL!).hostname)) throw new Error("History integration tests require an explicitly disposable local database");
 const id = 931113, origin = Date.parse("2020-06-04T00:00:00Z"), now = Date.now();
@@ -13,7 +14,7 @@ function payload(from: number, count: number) {
       closeTime: origin + (from + i + 1) * 60000, open: 1, high: 2, low: .5, close: 1.5, isClosed: true, tickVolume: 2 })) };
 }
 async function clean() {
-  await db.delete(brokerCandlesTable).where(eq(brokerCandlesTable.userId, id));
+  await deleteSeries(db, { userId: id });
   await db.delete(brokerCandleBackfillStatusTable).where(eq(brokerCandleBackfillStatusTable.userId, id));
 }
 test("durable sequential backfill, raw time, account isolation, conflicts and live completion", async () => {
@@ -28,7 +29,7 @@ test("durable sequential backfill, raw time, account isolation, conflicts and li
       copiedBars: 200, requestedEndRawMs: Date.parse(cursor), serverFirstRawMs: origin, boundaryReached: true } }, ctx, { now });
     assert.equal(completed.nextBackfillHints[0]?.status, "COMPLETE");
     assert.equal(completed.latestStoredBySymbolTimeframe[0]?.barsStored, 400);
-    const [bar] = await db.select().from(brokerCandlesTable).where(and(eq(brokerCandlesTable.userId,id),eq(brokerCandlesTable.openTimeUtc,new Date(origin))));
+    const [bar] = await readBars(db, await findSeries(db, { userId: id, historyIdentity: seeded.nextBackfillHints[0]!.historyIdentity }), { openTimes: [new Date(origin)] });
     assert.equal(bar.rawOpenTime?.getTime(), origin); assert.equal(bar.clockBasis, "broker_server");
     const live = await ingestBrokerCandles(payload(400,1), ctx, { now });
     assert.equal(live.nextBackfillHints[0]?.status, "COMPLETE");
@@ -61,8 +62,7 @@ test("first-day native range completes a durable later-session history without i
         firstOpenRawMs: first, localFirstRawMs: first, copiedBars: 1, error: 0, synchronized: true } } }, ctx, { now });
     assert.equal(verified.nextBackfillHints[0]?.status, "COMPLETE");
     assert.equal(verified.latestStoredBySymbolTimeframe[0]?.barsStored, 400);
-    const rows = await db.select({ opened: brokerCandlesTable.rawOpenTime }).from(brokerCandlesTable)
-      .where(eq(brokerCandlesTable.userId, id));
+    const rows = (await readBars(db, await findSeries(db, { userId: id }))).map(row => ({ opened: row.rawOpenTime }));
     assert.equal(Math.min(...rows.map(row => row.opened!.getTime())), first);
   } finally { await clean(); }
 });

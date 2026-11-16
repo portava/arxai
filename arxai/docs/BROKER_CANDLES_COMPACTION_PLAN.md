@@ -1,6 +1,6 @@
 # broker_candles compaction plan (2026-11-16)
 
-Status: **proposed, measured on a real sample, not applied anywhere.** Needs the owner's approval because it changes the dev database schema.
+Status: **built and tested; not applied to the Replit database.** Applying the migration and running the copy there needs the owner's approval because it changes the dev database schema.
 
 ## Why
 
@@ -16,11 +16,12 @@ A bar's market data is ~60 bytes. The rest is per-row repetition: a 64-character
 
 | Table | Holds | Rows |
 |---|---|---|
-| `broker_candle_series` | one row per (bridge, history identity, broker symbol, timeframe) with its constant attributes: user, symbol, account, server, clock basis | ~1.8k |
-| `broker_candle_provenance` | distinct (source, terminal id, price basis) | tens |
-| `broker_candle_quality` | distinct (status, reason) | a few |
+| `broker_candle_series` | one row per distinct (bridge, history identity, broker symbol, timeframe, user, symbol, account, server, clock basis); `series_key` is their exact JSON | ~1.8k |
+| `broker_candle_attrs` | distinct (source, terminal id, price basis, quality status, quality reason) | tens |
 | `broker_candle_bars` | per bar: series id, open time, OHLC, volumes, spread, flags, receipt/update times, original id | all bars |
+| `broker_candle_compact_progress` | one row: how far the copy has got | 1 |
 
+- For a current history identity the series values are part of the identity hash, so there is one series per native key; the live writer refuses a push that would relabel one (`series_<field>_conflict`). Legacy-identity rows can differ in account or symbol inside one native key; each variant becomes its own series, so nothing is relabelled.
 - Primary key `(series_id, open_time_utc)` replaces the unique key and the read index: same dedupe, one index.
 - Time columns that equal a value computable from the bar itself are stored NULL, and a `derived` bitmask records which: `created_at = received_at`, `close = open + interval`, `raw_open = open`, `raw_close = raw_open + interval`. A clear bit with NULL is a real NULL. MN1 is never derived (no fixed length).
 - Every original column and value is reproducible. Reads use the series first, then a primary-key range scan.
@@ -40,13 +41,23 @@ A bar's market data is ~60 bytes. The rest is per-row repetition: a 64-character
 
 Prototype SQL: `scratchpad/bcsample/compact.sql`, `compact2.sql` in the session that produced this. The real migration is to be written as reviewed SQL, not drizzle push-force.
 
-## Migration steps (no deletion until verified)
+## Built (branch codex/arx-history-system-repair-20261113)
 
-1. Create the new tables with an explicit SQL migration (never push-force on Replit).
-2. Switch the writer (`brokerCandleStore.ts`) to the new tables, keeping its validation, immutability and idempotency rules. The old table stops growing. Readers go through one read function that checks the new tables first, then the old one.
-3. Copy old rows into the new tables in id-ordered batches (for example 500k), each batch verified with the `EXCEPT ALL` round trip before the next. Resumable and read-only on the old table. Needs ~35-40 GB of temporary headroom.
-4. Point every reader (about 29 non-test files mention the table) at the new tables and run the full suite plus the CI integration lane.
-5. After the full copy verifies, **the owner** decides when to drop the old table (frees ~128 GB). Until then it is the rollback.
+- Migration `lib/db/migrations/2026-11-16_broker_candle_compact.sql` (additive; rollback file alongside) and drizzle schema `lib/db/src/schema/brokerCandleBars.ts`.
+- `artifacts/api-server/src/lib/data/brokerCandleRows.ts`: the one read/write layer. Reads are series-first (`findSeries` then `readBars` on the primary key); the writer (`brokerCandleStore.ts`) keeps its validation, immutability and idempotency rules through `upsertBars`. Every reader of the old table now reads the new tables.
+- `scripts/src/compactBrokerCandles.ts` (`pnpm --filter @workspace/scripts run compact:broker-candles`): copies broker_candles in id batches, one transaction each; every batch is verified row by row (each old column rebuilt from the compact tables, `IS NOT DISTINCT FROM`) before its progress is saved, and a batch that fails is rolled back and stops the run. Dry run by default, `--apply` to write, `--catch-up` after deploy, `--final` to verify every row. Never modifies the old table.
+- Tests: `scripts/src/compactBrokerCandles.test.ts` (every encoding branch, decoder agreement, missing/changed/superseded detection, catch-up), plus every converted reader and writer test.
+
+Measured with the real script on the 750,000-row sample: **750,000 identical, 0 missing or different**; 399 MB old vs 136 MB new (~181 bytes per bar including the copy's original id), so roughly **36 GB for the current ~198M bars**.
+
+## Cutover on Replit (needs the owner's approval; nothing done yet)
+
+1. Check storage headroom (~40 GB) and apply the migration with `psql -f` (never drizzle push-force).
+2. Run the copy while the current build is still writing the old table: `compact:broker-candles -- --apply` (resumable; about 1,000 batches).
+3. Deploy the new build. The old table stops growing; new bars go to the compact tables.
+4. Run `--apply --catch-up` once: copies ids written between step 2 and the deploy, and applies later old-writer changes to bars copied earlier. A bar the new writer has rewritten since is newer and is kept (reported as superseded).
+5. Run `--final`: every old row must be identical or superseded.
+6. **The owner** decides when to drop `broker_candles` (frees ~128 GB). Until then it is the rollback.
 
 ## Not changed
 

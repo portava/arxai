@@ -1,8 +1,8 @@
 // Legacy broker rows can be used as diagnostic inputs only. Row ownership and
 // one observed source tuple prevent cross-user/cross-bridge mixing; they do not
 // attest historical account-era identity, which the store does not preserve.
-import { db, brokerCandlesTable } from "@workspace/db";
-import { and, desc, eq, gte, lte, isNull, inArray, type SQL } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { findSeries, readBars } from "../data/brokerCandleRows.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import type { Candle } from "../strategyEngine.js";
 import { timeframeMs } from "../backtestStrategyRegistry.js";
@@ -12,41 +12,23 @@ export async function loadDiagnosticBrokerHistory(args: {
   rangeStart: Date | null; rangeEnd: Date | null; maxBars: number;
 }): Promise<{ candles: Candle[]; reason: "available_unattested" | "unavailable" | "ambiguous_source" | "invalid_bars" }> {
   const observedAt = Date.now();
-  const conds: SQL[] = [
-    eq(brokerCandlesTable.userId, args.userId),
-    eq(brokerCandlesTable.symbol, args.symbol),
-    eq(brokerCandlesTable.timeframe, args.timeframe),
-    eq(brokerCandlesTable.isClosedBar, true),
-  ];
-  if (args.rangeStart) conds.push(gte(brokerCandlesTable.openTimeUtc, args.rangeStart));
-  if (args.rangeEnd) conds.push(lte(brokerCandlesTable.openTimeUtc, args.rangeEnd));
+  const range = { closedOnly: true, ...(args.rangeStart ? { from: args.rangeStart } : {}), ...(args.rangeEnd ? { atOrBefore: args.rangeEnd } : {}) };
   return db.transaction(async (tx) => {
     const ownedIds = (await listUserConnections(args.userId, {}, tx)).map((connection) => connection.id);
     if (!ownedIds.length) return { candles: [], reason: "unavailable" };
-    const ownerConds = [...conds, inArray(brokerCandlesTable.bridgeConnectionId, ownedIds)];
     // One consistent snapshot for source selection and bars. Never select an
-    // arbitrary newest bridge, or collapse two native symbols by timestamp.
-    const identities = await tx.selectDistinct({
-      bridgeId: brokerCandlesTable.bridgeConnectionId,
-      brokerSymbol: brokerCandlesTable.brokerSymbol,
-      accountNumber: brokerCandlesTable.accountNumber,
-      historyIdentity: brokerCandlesTable.historyIdentity,
-    }).from(brokerCandlesTable)
-      .where(and(...ownerConds)).limit(2);
-    if (identities.length !== 1) return { candles: [], reason: identities.length ? "ambiguous_source" : "unavailable" };
-    const identity = identities[0]!;
-    const rows = await tx.select({
-      time: brokerCandlesTable.openTimeUtc, open: brokerCandlesTable.open,
-      high: brokerCandlesTable.high, low: brokerCandlesTable.low,
-      close: brokerCandlesTable.close, volume: brokerCandlesTable.tickVolume,
-    }).from(brokerCandlesTable)
-      .where(and(...ownerConds,
-        eq(brokerCandlesTable.bridgeConnectionId, identity.bridgeId),
-        eq(brokerCandlesTable.historyIdentity, identity.historyIdentity),
-        eq(brokerCandlesTable.brokerSymbol, identity.brokerSymbol),
-        identity.accountNumber == null ? isNull(brokerCandlesTable.accountNumber)
-          : eq(brokerCandlesTable.accountNumber, identity.accountNumber)))
-      .orderBy(desc(brokerCandlesTable.openTimeUtc)).limit(args.maxBars);
+    // arbitrary newest bridge, or collapse two native symbols by timestamp:
+    // exactly one native series (bridge, account era, broker symbol) may have
+    // closed bars in range.
+    const candidates = await findSeries(tx, { userId: args.userId, symbol: args.symbol, timeframe: args.timeframe, bridgeConnectionIds: ownedIds });
+    const withBars = [];
+    for (const s of candidates) {
+      if ((await readBars(tx, [s], { ...range, limit: 1 })).length) withBars.push(s);
+      if (withBars.length > 1) break;
+    }
+    if (withBars.length !== 1) return { candles: [], reason: withBars.length ? "ambiguous_source" : "unavailable" };
+    const rows = (await readBars(tx, withBars, { ...range, order: "desc", limit: args.maxBars }))
+      .map((r) => ({ time: r.openTimeUtc, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.tickVolume }));
     if (rows.some((row) => !(row.time instanceof Date) || !Number.isFinite(row.time.getTime())
       || row.time.getTime() + timeframeMs(args.timeframe) > observedAt)) {
       return { candles: [], reason: "invalid_bars" };

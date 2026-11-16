@@ -1,7 +1,8 @@
 import { beforeEach, mock, test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { MarketCandlesResult } from "../marketDataRouter.js";
-import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { db, brokerCandleBackfillStatusTable } from "@workspace/db";
+import * as candleRows from "../brokerCandleRows.js";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import * as connections from "../../brokerHub/connections.js";
@@ -35,25 +36,42 @@ mock.module("../../brokerHub/connections.js", { namedExports: { ...connections,
   },
 } });
 
+// Native bars are read series-first through brokerCandleRows; the fixture
+// records the series filter and the bar query the reader asks for.
+let nativeComplete = false;
+const seriesFilters: candleRows.SeriesFilter[] = [];
+const barQueries: candleRows.BarQuery[] = [];
+mock.module("../brokerCandleRows.js", { namedExports: { ...candleRows,
+  findSeries: async (_q: unknown, filter: candleRows.SeriesFilter) => {
+    seriesFilters.push(filter);
+    return [{ id: 1, userId: OWNER, bridgeConnectionId: BRIDGE, historyIdentity: nativeIdentity,
+      brokerSymbol: "Volatility 75 Index", timeframe: "M1", symbol: "V75" }];
+  },
+  readBars: async (_q: unknown, _series: unknown[], query: candleRows.BarQuery) => {
+    barQueries.push(query);
+    const bars = nativeComplete ? pageBars : [bar(now - 11 * 60_000), ...pageBars];
+    return bars.slice().reverse().map(c => ({
+      rawOpenTime: new Date(c.time), openTimeUtc: new Date(c.time), brokerSymbol: "Volatility 75 Index",
+      open: c.open, high: c.high, low: c.low, close: c.close, tickVolume: 0, tickVolumeObserved: false,
+      historyIdentity: nativeIdentity, clockBasis: "broker_server", source: "mt5_ea",
+    }));
+  },
+} });
+
 function nativeReadFixture(context: TestContext, complete: boolean) {
+  nativeComplete = complete; seriesFilters.length = 0; barQueries.length = 0;
   const queries: Array<{ table: unknown; params: unknown[]; sql: string; limit: number }> = [];
   context.mock.method(db, "select", (() => ({
     from: (table: unknown) => ({ where: (condition: SQL) => {
       const compiled = new PgDialect().sqlToQuery(condition);
       const finish = (limit: number) => {
         queries.push({ table, ...compiled, limit });
-        if (table === brokerCandleBackfillStatusTable) return Promise.resolve([{
+        assert.equal(table, brokerCandleBackfillStatusTable, "bars are read through the compact store, not db.select");
+        return Promise.resolve([{
           brokerSymbol: "Volatility 75 Index", status: complete ? "COMPLETE" : "BUILDING",
           statusReason: complete ? "all_available_native_pages_verified" : "backfill_pending",
           barsStored: 200, coverageDays: 10, oldestStoredAt: new Date(pageBars[0]!.time), boundaryRaw: null,
         }]);
-        assert.equal(table, brokerCandlesTable);
-        const bars = complete ? pageBars : [bar(now - 11 * 60_000), ...pageBars];
-        return Promise.resolve(bars.slice().reverse().map(c => ({
-          rawOpenTime: new Date(c.time), openTimeUtc: new Date(c.time), brokerSymbol: "Volatility 75 Index",
-          open: c.open, high: c.high, low: c.low, close: c.close, tickVolume: 0, tickVolumeObserved: false,
-          historyIdentity: nativeIdentity, clockBasis: "broker_server", source: "mt5_ea",
-        })));
       };
       return { limit: finish, orderBy: () => ({ limit: finish }) };
     } }),
@@ -161,13 +179,13 @@ test("native MT5 history remains pageable within its owner and immutable account
   assert.deepEqual(writtenSources, []);
   assert.deepEqual(cacheRequests, [], "native history never reads the mixed legacy cache");
   assert.deepEqual(connectionReads, [[OWNER, BRIDGE]]);
-  assert.equal(queries.length, 2);
-  for (const query of queries) {
-    assert.deepEqual(query.params.slice(0, 3), [OWNER, BRIDGE, nativeIdentity]);
-    assert.match(query.sql, /"user_id" = .*"bridge_connection_id" = .*"history_identity" = /);
-  }
-  assert.equal(queries[1]!.limit, 3, "one extra row establishes whether another page exists");
-  assert.deepEqual(queries[1]!.params.slice(3), ["Volatility 75 Index", "M1", true, before]);
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0]!.params.slice(0, 3), [OWNER, BRIDGE, nativeIdentity]);
+  assert.match(queries[0]!.sql, /"user_id" = .*"bridge_connection_id" = .*"history_identity" = /);
+  assert.deepEqual(seriesFilters, [{ userId: OWNER, bridgeConnectionIds: [BRIDGE], historyIdentity: nativeIdentity,
+    brokerSymbol: "Volatility 75 Index", timeframe: "M1" }], "bars come only from the owner's native era series");
+  assert.deepEqual(barQueries, [{ closedOnly: true, before: new Date(before), order: "desc", limit: 3 }],
+    "one extra row establishes whether another page exists");
 });
 
 test("native MT5 exhaustion requires a verified importer boundary within the owner scope", async (context) => {

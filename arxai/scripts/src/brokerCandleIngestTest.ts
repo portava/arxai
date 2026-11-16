@@ -45,10 +45,10 @@ import {
   usersTable,
   authUserSessionsTable,
   mt5ConnectionTable,
-  brokerCandlesTable,
   brokerCandleBackfillStatusTable,
   marketCandlesTable,
 } from "@workspace/db";
+import { deleteSeries, findSeries, readBars } from "../../artifacts/api-server/src/lib/data/brokerCandleRows.js";
 import {
   normalizeBrokerTimeframe,
   computeBackfillStatus,
@@ -106,7 +106,7 @@ async function seededUserIds(): Promise<number[]> {
 async function cleanup(): Promise<void> {
   const ids = await seededUserIds();
   if (ids.length > 0) {
-    await db.delete(brokerCandlesTable).where(inArray(brokerCandlesTable.userId, ids));
+    for (const userId of ids) await deleteSeries(db, { userId });
     await db
       .delete(brokerCandleBackfillStatusTable)
       .where(inArray(brokerCandleBackfillStatusTable.userId, ids));
@@ -312,11 +312,10 @@ export async function run(): Promise<CiTestResultLike> {
         `${tf} closed bar accepted + stored (status=${r.status}, accepted=${r.body.acceptedBars}, note=${r.body.note ?? "none"})`,
       );
     }
-    const tfRows = await db
-      .select({ tf: brokerCandlesTable.timeframe })
-      .from(brokerCandlesTable)
-      .where(and(eq(brokerCandlesTable.bridgeConnectionId, conn.id), eq(brokerCandlesTable.brokerSymbol, SYM_TFS)));
-    const storedTfs = new Set(tfRows.map((row) => row.tf));
+    const storedTfs = new Set<string>();
+    for (const series of await findSeries(db, { bridgeConnectionIds: [conn.id], brokerSymbol: SYM_TFS })) {
+      if ((await readBars(db, [series], { limit: 1 })).length) storedTfs.add(series.timeframe);
+    }
     for (const [tf] of newTfs) {
       assert(storedTfs.has(tf), `broker_candles holds a ${tf} row for the extended-enum series`);
     }
@@ -420,16 +419,7 @@ export async function run(): Promise<CiTestResultLike> {
     assert(invalid.status === 200 && invalid.body.note === "invalid_push_timestamp" && invalid.body.acceptedBars === 0, `invalid sentAt fails closed (note=${invalid.body.note}, accepted=${invalid.body.acceptedBars})`);
 
     // ── DURABLE STORE: rows + backfill status really persist ─────────────────────
-    const stored = await db
-      .select({ id: brokerCandlesTable.id })
-      .from(brokerCandlesTable)
-      .where(
-        and(
-          eq(brokerCandlesTable.bridgeConnectionId, conn.id),
-          eq(brokerCandlesTable.brokerSymbol, SYM),
-          eq(brokerCandlesTable.timeframe, "M5"),
-        ),
-      );
+    const stored = await readBars(db, await findSeries(db, { bridgeConnectionIds: [conn.id], brokerSymbol: SYM, timeframe: "M5" }));
     // T0, T1 (closed) + TF (finalized) = 3 durable rows.
     assert(stored.length === 3, `broker_candles persisted 3 rows for the series (got ${stored.length})`);
 

@@ -28,7 +28,8 @@ import { getConnection } from "../../brokerHub/connections.js";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { currentFeedScopeBridge } from "../feedScope.js";
 import { brokerHistoryIdentity } from "../brokerHistoryPolicy.js";
-import { db, brokerCandlesTable } from "@workspace/db";
+import { db } from "@workspace/db";
+import { findSeries, readBars } from "../brokerCandleRows.js";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -207,20 +208,10 @@ async function readBrokerOpenTimes(
   identity: string | null,
 ): Promise<number[]> {
   const sinceMs = now - PROFILE_LOOKBACK_WEEKS * WEEK_MS;
-  const rows = await db
-    .select({ openTimeUtc: brokerCandlesTable.openTimeUtc, bridge: brokerCandlesTable.bridgeConnectionId, identity: brokerCandlesTable.historyIdentity })
-    .from(brokerCandlesTable)
-    .where(
-      and(
-        eq(brokerCandlesTable.symbol, symbol.toUpperCase()),
-        ...(bridge != null ? [eq(brokerCandlesTable.bridgeConnectionId, bridge)] : []),
-        ...(identity != null ? [eq(brokerCandlesTable.historyIdentity, identity)] : []),
-        eq(brokerCandlesTable.timeframe, timeframe),
-        gte(brokerCandlesTable.openTimeUtc, new Date(sinceMs)),
-      ),
-    )
-    .orderBy(desc(brokerCandlesTable.openTimeUtc))
-    .limit(PROFILE_MAX_ROWS);
+  const series = await findSeries(db, { symbol: symbol.toUpperCase(), timeframe,
+    ...(bridge != null ? { bridgeConnectionIds: [bridge] } : {}), ...(identity != null ? { historyIdentity: identity } : {}) });
+  const rows = (await readBars(db, series, { from: new Date(sinceMs), order: "desc", limit: PROFILE_MAX_ROWS }))
+    .map((r) => ({ openTimeUtc: r.openTimeUtc, bridge: r.bridgeConnectionId, identity: r.historyIdentity }));
   if (new Set(rows.map(r => `${r.bridge}:${r.identity}`)).size > 1) return [];
   return rows.map((r) => new Date(r.openTimeUtc as unknown as Date).getTime());
 }

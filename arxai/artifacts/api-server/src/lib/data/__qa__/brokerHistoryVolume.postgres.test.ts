@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { db, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { deleteSeries, findSeries, readBars } from "../brokerCandleRows.js";
 import { ingestBrokerCandles, isMinorTickRevision } from "../brokerCandleStore.js";
 import { brokerHistoryCandle } from "../brokerHistoryCandle.js";
 import { __resetBrokerClockOffsets, getBrokerClockOffset, recordBrokerClockSample } from "../../brokerHub/brokerClockOffset.js";
@@ -21,12 +22,11 @@ function payload(fields: { tickVolume?: number; volume?: number; close?: number 
     bars: [{ openTime: time, closeTime: time + 60_000, open: 1, high: 2, low: .5, close: 1.5, isClosed: true, ...fields }] };
 }
 async function clean() {
-  await db.delete(brokerCandlesTable).where(eq(brokerCandlesTable.userId, id));
+  await deleteSeries(db, { userId: id });
   await db.delete(brokerCandleBackfillStatusTable).where(eq(brokerCandleBackfillStatusTable.userId, id));
 }
 async function stored(index = 0) {
-  const [row] = await db.select().from(brokerCandlesTable).where(and(eq(brokerCandlesTable.userId, id),
-    eq(brokerCandlesTable.openTimeUtc, new Date(origin + index * 60_000))));
+  const [row] = await readBars(db, await findSeries(db, { userId: id }), { openTimes: [new Date(origin + index * 60_000)] });
   assert.ok(row); return row;
 }
 

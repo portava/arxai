@@ -32,10 +32,10 @@ import { z } from "zod/v4";
 import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   db,
-  brokerCandlesTable,
   brokerCandleBackfillStatusTable,
-  type NewBrokerCandle,
+  type BrokerCandleSeries,
 } from "@workspace/db";
+import { ensureSeries, readBars, seriesExtent, upsertBars, SeriesAttributeConflict, type BarWrite } from "./brokerCandleRows.js";
 import { brokerHistoryIdentity, advanceHistoryPage } from "./brokerHistoryPolicy.js";
 import { brokerHistoryCandle } from "./brokerHistoryCandle.js";
 import { barCloseMs } from "./chart/timeframes.js";
@@ -524,17 +524,20 @@ export async function ingestBrokerCandles(
   // ── Closed-bar finalization rule (per bar, against the existing stored row) ──
   let accepted = 0;
   const mirrorClosed: Candle[] = [];
-  const scope = and(
-    eq(brokerCandlesTable.userId, ctx.userId),
-    eq(brokerCandlesTable.bridgeConnectionId, ctx.bridgeConnectionId),
-    eq(brokerCandlesTable.historyIdentity, historyIdentity),
-    eq(brokerCandlesTable.brokerSymbol, brokerSymbol),
-    eq(brokerCandlesTable.timeframe, timeframe),
-  );
-  const existing = await tx.select().from(brokerCandlesTable).where(and(scope,
-    inArray(brokerCandlesTable.openTimeUtc, incoming.map(bar => bar.openTime))));
+  const seriesKey = { bridgeConnectionId: ctx.bridgeConnectionId, historyIdentity, brokerSymbol, timeframe };
+  const seriesAttrs = { userId: ctx.userId, symbol, accountNumber, serverName, clockBasis };
+  let series: BrokerCandleSeries;
+  try {
+    series = await ensureSeries(tx, seriesKey, seriesAttrs, { strict: true });
+  } catch (e) {
+    // One native series has one display symbol and owner; a push that would
+    // relabel stored bars is refused rather than mixing two labels.
+    if (e instanceof SeriesAttributeConflict) return { ...empty, note: `series_${e.field}_conflict` };
+    throw e;
+  }
+  const existing = await readBars(tx, [series], { openTimes: incoming.map(bar => bar.openTime) });
   const previous = new Map(existing.map(row => [row.openTimeUtc.getTime(), row]));
-  const writes: NewBrokerCandle[] = [];
+  const writes: BarWrite[] = [];
   for (const bar of incoming) {
     const prev = previous.get(bar.openTime.getTime());
 
@@ -592,16 +595,10 @@ export async function ingestBrokerCandles(
       continue;
     }
 
-    const row: NewBrokerCandle = {
-      userId: ctx.userId,
-      bridgeConnectionId: ctx.bridgeConnectionId,
-      accountNumber,
-      historyIdentity, serverName, clockBasis,
+    // Source, terminal and price basis keep their first stored values on an
+    // update (the store never rewrote them); quality follows this push.
+    const row: BarWrite = {
       rawOpenTime: bar.rawOpenTime, rawCloseTime: bar.rawCloseTime,
-      priceBasis: payload.priceBasis ?? null,
-      brokerSymbol,
-      symbol,
-      timeframe,
       openTimeUtc: bar.openTime,
       closeTimeUtc: bar.closeTime,
       open: bar.open,
@@ -612,13 +609,11 @@ export async function ingestBrokerCandles(
       tickVolumeObserved: bar.volumeEvidence.kind === "tick_count",
       realVolume: bar.realVolume,
       spread: bar.spread,
-      source,
-      terminalId,
       isClosedBar: bar.isClosedBar,
-      brokerServerTime: brokerServerTime ?? undefined,
-      qualityStatus,
-      qualityReason,
-      updatedAt: new Date(),
+      brokerServerTime: brokerServerTime ?? null,
+      attrs: prev
+        ? { source: prev.source, terminalId: prev.terminalId, priceBasis: prev.priceBasis, qualityStatus, qualityReason }
+        : { source, terminalId, priceBasis: payload.priceBasis ?? null, qualityStatus, qualityReason },
     };
 
     if (!unchanged) writes.push(row);
@@ -643,24 +638,8 @@ export async function ingestBrokerCandles(
 
   const insertedTimes: number[] = [];
   for (let offset = 0; offset < writes.length; offset += 500) {
-    const written = await tx.insert(brokerCandlesTable).values(writes.slice(offset, offset + 500))
-      .onConflictDoUpdate({
-        target: [brokerCandlesTable.bridgeConnectionId, brokerCandlesTable.historyIdentity,
-          brokerCandlesTable.brokerSymbol, brokerCandlesTable.timeframe, brokerCandlesTable.openTimeUtc],
-        set: { open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`, close: sql`excluded.close`,
-          closeTimeUtc: sql`excluded.close_time_utc`, tickVolume: sql`excluded.tick_volume`,
-          tickVolumeObserved: sql`excluded.tick_volume_observed`,
-          realVolume: sql`excluded.real_volume`, spread: sql`excluded.spread`, isClosedBar: sql`excluded.is_closed_bar`,
-          qualityStatus: sql`excluded.quality_status`, qualityReason: sql`excluded.quality_reason`, updatedAt: new Date() },
-        setWhere: sql`NOT ${brokerCandlesTable.isClosedBar} OR (excluded.is_closed_bar
-          AND abs(${brokerCandlesTable.open} - excluded.open) <= greatest(1e-9,abs(excluded.open)*1e-9)
-          AND abs(${brokerCandlesTable.high} - excluded.high) <= greatest(1e-9,abs(excluded.high)*1e-9)
-          AND abs(${brokerCandlesTable.low} - excluded.low) <= greatest(1e-9,abs(excluded.low)*1e-9)
-          AND abs(${brokerCandlesTable.close} - excluded.close) <= greatest(1e-9,abs(excluded.close)*1e-9)
-          AND (NOT ${brokerCandlesTable.tickVolumeObserved} OR (excluded.tick_volume_observed
-            AND ${brokerCandlesTable.tickVolume} = excluded.tick_volume)))`,
-      }).returning({ time: brokerCandlesTable.openTimeUtc });
-    insertedTimes.push(...written.filter(row => !previous.has(row.time.getTime())).map(row => row.time.getTime()));
+    const written = await upsertBars(tx, series, writes.slice(offset, offset + 500));
+    insertedTimes.push(...written.filter(time => !previous.has(time.getTime())).map(time => time.getTime()));
     const lost = Math.min(500, writes.length - offset) - written.length;
     accepted -= lost; if (lost > 0) refuse("concurrent_write_lost", lost);
   }
@@ -681,10 +660,9 @@ export async function ingestBrokerCandles(
       if (current.historyIdentity === historyIdentity && current.candles.length > 0 && current.candles.length < 200) {
         try {
           const observedTip = new Date(current.candles.at(-1)!.time);
-          const rows = await db.select().from(brokerCandlesTable).where(and(scope,
-            eq(brokerCandlesTable.symbol, symbol), eq(brokerCandlesTable.isClosedBar, true),
-            lte(brokerCandlesTable.openTimeUtc, observedTip),
-          )).orderBy(desc(brokerCandlesTable.openTimeUtc)).limit(500);
+          const rows = series.symbol === symbol
+            ? await readBars(db, [series], { closedOnly: true, atOrBefore: observedTip, order: "desc", limit: 500 })
+            : [];
           const latest = readMt5Candles(symbol, timeframe, 1500, writer);
           // A concurrent account change or expired live observation cannot be
           // revived by this delayed read. Current observations win duplicates.
@@ -713,12 +691,10 @@ export async function ingestBrokerCandles(
     oldest = times.length ? new Date(Math.min(...times)) : null;
     newest = times.length ? new Date(Math.max(...times)) : null;
   } else {
-    const [extent] = await tx.select({ count: sql<number>`count(*)::int`,
-      oldest: sql<string>`min(${brokerCandlesTable.openTimeUtc})`, newest: sql<string>`max(${brokerCandlesTable.openTimeUtc})`,
-    }).from(brokerCandlesTable).where(scope);
-    barsStored = extent?.count ?? 0;
-    oldest = extent?.oldest ? new Date(extent.oldest) : null;
-    newest = extent?.newest ? new Date(extent.newest) : null;
+    const extent = await seriesExtent(tx, series.id);
+    barsStored = extent.count;
+    oldest = extent.oldest;
+    newest = extent.newest;
   }
   const progress = advanceHistoryPage({ priorCursor: prior?.nextBeforeRaw ?? null,
     priorComplete: prior?.status === "COMPLETE" && prior.statusReason === "all_available_native_pages_verified",

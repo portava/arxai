@@ -255,6 +255,8 @@
     "maintenance:prod": "tsx ./src/runProductionMaintenance.ts",
     "backfill:legacy-unknown-pnl": "tsx ./src/backfillLegacyUnknownPnl.ts",
     "purge:pre-utc-mt5-bars": "tsx ./src/purgePreUtcMt5Bars.ts",
+    "compact:broker-candles": "tsx ./src/compactBrokerCandles.ts",
+    "test:compact-broker-candles": "node --import tsx --test --test-force-exit ./src/compactBrokerCandles.test.ts",
     "backfill:unknown-pnl-ea-version": "tsx ./src/backfillUnknownPnlEaVersion.ts",
     "test:aggregates-exclude-unknown": "tsx ./src/aggregatesExcludeUnknownPnlTest.ts",
     "test:backfill-ea-version": "tsx ./src/backfillUnknownPnlEaVersionTest.ts",

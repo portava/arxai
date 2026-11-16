@@ -7,12 +7,12 @@
 // from their own bridge here first; the shared mirror stays the fallback and
 // is labelled platform-wide.
 //
-// Read side only; no schema change. Closed bars only, one broker symbol only
+// Read side only. Closed bars only, one broker symbol only
 // (series are never blended).
 
-import { db, brokerCandlesTable } from "@workspace/db";
+import { db } from "@workspace/db";
+import { findSeries, readBars } from "./brokerCandleRows.js";
 import { getConnection } from "../brokerHub/connections.js";
-import { and, desc, eq } from "drizzle-orm";
 import { normalizeBrokerTimeframe, TIMEFRAME_MS } from "./brokerCandleStore.js";
 import { brokerHistoryIdentity } from "./brokerHistoryPolicy.js";
 import type { Candle } from "./types.js";
@@ -37,30 +37,11 @@ export async function readBridgeStoredCandles(
   const connection = await getConnection(bridgeConnectionId);
   if (!connection || connection.userId == null) return null;
   const identity = brokerHistoryIdentity({ userId: connection.userId, bridgeConnectionId, accountNumber: connection.accountNumber, serverName: connection.serverName, clockBasis: "broker_server" });
-  const rows = await db
-    .select({
-      time: brokerCandlesTable.openTimeUtc,
-      open: brokerCandlesTable.open,
-      high: brokerCandlesTable.high,
-      low: brokerCandlesTable.low,
-      close: brokerCandlesTable.close,
-      volume: brokerCandlesTable.tickVolume,
-      brokerSymbol: brokerCandlesTable.brokerSymbol,
-      historyIdentity: brokerCandlesTable.historyIdentity,
-      closeTime: brokerCandlesTable.closeTimeUtc,
-      userId: brokerCandlesTable.userId,
-    })
-    .from(brokerCandlesTable)
-    .where(and(
-      eq(brokerCandlesTable.bridgeConnectionId, bridgeConnectionId),
-      eq(brokerCandlesTable.userId, connection.userId),
-      eq(brokerCandlesTable.historyIdentity, identity),
-      eq(brokerCandlesTable.symbol, symbol.trim().toUpperCase()),
-      eq(brokerCandlesTable.timeframe, tf),
-      eq(brokerCandlesTable.isClosedBar, true),
-    ))
-    .orderBy(desc(brokerCandlesTable.openTimeUtc))
-    .limit(Math.min(Math.floor(limit), 5000));
+  const series = await findSeries(db, { bridgeConnectionIds: [bridgeConnectionId], userId: connection.userId,
+    historyIdentity: identity, symbol: symbol.trim().toUpperCase(), timeframe: tf });
+  const rows = (await readBars(db, series, { closedOnly: true, order: "desc", limit: Math.min(Math.floor(limit), 5000) }))
+    .map((r) => ({ time: r.openTimeUtc, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.tickVolume,
+      brokerSymbol: r.brokerSymbol, historyIdentity: r.historyIdentity, closeTime: r.closeTimeUtc, userId: r.userId }));
   const tfMs = TIMEFRAME_MS[tf];
   const first = rows.find((r) => r.time instanceof Date && (r.closeTime?.getTime() ?? r.time.getTime() + tfMs) <= nowMs);
   if (!first) return null;

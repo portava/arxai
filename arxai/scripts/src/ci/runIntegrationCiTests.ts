@@ -126,6 +126,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/scripts", script: "test:bridge-mode-and-toggles" },
   { pkg: "@workspace/scripts", script: "test:bridge-v2-ingest-feed" },
   { pkg: "@workspace/scripts", script: "test:broker-candle-coverage-route", inProcess: true },
+  { pkg: "@workspace/scripts", script: "test:compact-broker-candles" },
   { pkg: "@workspace/scripts", script: "test:candle-depth-route", inProcess: true },
   { pkg: "@workspace/scripts", script: "test:chart-brain-benchmark" },
   { pkg: "@workspace/scripts", script: "test:chart-decision-receipts" },

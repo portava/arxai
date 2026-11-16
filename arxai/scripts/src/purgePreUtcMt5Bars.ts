@@ -12,7 +12,7 @@
 //
 // SCOPE (nothing else is touched):
 //   - market_candles rows with source = 'mt5_broker' (the durable MT5 mirror)
-//   - broker_candles rows (the bridge-scoped EA history store)
+//   - broker_candle_bars rows (the bridge-scoped EA history store)
 //   both only where updated_at < --before. A row re-written after the switch
 //   has a newer updated_at and is kept.
 //
@@ -28,7 +28,7 @@
 //     chart's stored-history fallback has less to show for those symbols.
 
 import { and, eq, lt, sql } from "drizzle-orm";
-import { db, brokerCandlesTable, marketCandlesTable } from "@workspace/db";
+import { db, brokerCandleBarsTable, marketCandlesTable } from "@workspace/db";
 
 const MT5_MIRROR_SOURCE = "mt5_broker";
 
@@ -48,13 +48,13 @@ function parseArgs(argv: string[]): { before: Date; apply: boolean } {
 async function main() {
   const { before, apply } = parseArgs(process.argv.slice(2));
   const mirrorWhere = and(eq(marketCandlesTable.source, MT5_MIRROR_SOURCE), lt(marketCandlesTable.updatedAt, before));
-  const brokerWhere = lt(brokerCandlesTable.updatedAt, before);
+  const brokerWhere = lt(brokerCandleBarsTable.updatedAt, before);
 
   const [mirror] = await db.select({ n: sql<number>`count(*)::int` }).from(marketCandlesTable).where(mirrorWhere);
-  const [broker] = await db.select({ n: sql<number>`count(*)::int` }).from(brokerCandlesTable).where(brokerWhere);
+  const [broker] = await db.select({ n: sql<number>`count(*)::int` }).from(brokerCandleBarsTable).where(brokerWhere);
   console.log(`Stored MT5 bars last written before ${before.toISOString()}:`);
   console.log(`  market_candles (source=${MT5_MIRROR_SOURCE}): ${mirror?.n ?? 0}`);
-  console.log(`  broker_candles: ${broker?.n ?? 0}`);
+  console.log(`  broker_candle_bars: ${broker?.n ?? 0}`);
 
   if (!apply) {
     console.log("Dry run: nothing deleted. Re-run with --apply to delete these rows.");
@@ -62,7 +62,7 @@ async function main() {
   }
   await db.transaction(async (tx) => {
     await tx.delete(marketCandlesTable).where(mirrorWhere);
-    await tx.delete(brokerCandlesTable).where(brokerWhere);
+    await tx.delete(brokerCandleBarsTable).where(brokerWhere);
   });
   console.log("Deleted. The EA's next history push refills these series on the UTC clock.");
 }

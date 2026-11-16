@@ -1,6 +1,7 @@
-import { db, brokerCandlesTable, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { db, brokerCandleBackfillStatusTable } from "@workspace/db";
+import { findSeries, readBars } from "./brokerCandleRows.js";
 import { getUserConnection } from "../brokerHub/connections.js";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { brokerHistoryIdentity } from "./brokerHistoryPolicy.js";
 import { currentFeedScopeBridge } from "./feedScope.js";
 import { barCloseMs, normalizeChartTimeframe } from "./chart/timeframes.js";
@@ -40,11 +41,9 @@ export async function readBrokerHistory(args: GetCandleHistoryArgs): Promise<Can
     eq(brokerCandleBackfillStatusTable.timeframe, timeframe))).limit(2);
   if (status.length !== 1) return refuse(status.length ? "Multiple native symbols need source selection." : "The broker history import is starting.");
   const progress = status[0]!;
-  const rows = await db.select().from(brokerCandlesTable).where(and(
-    eq(brokerCandlesTable.userId, args.userId), eq(brokerCandlesTable.bridgeConnectionId, bridge),
-    eq(brokerCandlesTable.historyIdentity, identity), eq(brokerCandlesTable.brokerSymbol, progress.brokerSymbol),
-    eq(brokerCandlesTable.timeframe, timeframe), eq(brokerCandlesTable.isClosedBar, true),
-    lt(brokerCandlesTable.openTimeUtc, before))).orderBy(desc(brokerCandlesTable.openTimeUtc)).limit(limit + 1);
+  const series = await findSeries(db, { userId: args.userId, bridgeConnectionIds: [bridge], historyIdentity: identity,
+    brokerSymbol: progress.brokerSymbol, timeframe });
+  const rows = await readBars(db, series, { closedOnly: true, before, order: "desc", limit: limit + 1 });
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit).reverse();
   const complete = progress.status === "COMPLETE" && progress.statusReason === "all_available_native_pages_verified";
