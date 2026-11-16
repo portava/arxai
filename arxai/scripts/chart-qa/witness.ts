@@ -16,6 +16,8 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
     if (found === undefined) { found = ++sequence; ids.set(value, found); }
     return found;
   };
+  // The ARX canvas series holds its points in a `data` array; older renderers exposed `data()`.
+  const seriesData = (series: any): any[] => typeof series?.data === "function" ? series.data() : (series?.data ?? []);
   const bar = (value: any) => value ? {time:value.time,open:value.open,high:value.high,low:value.low,close:value.close} : null;
   prototype.init = function (...args: any[]) {
     const result = original.init.apply(this, args);
@@ -105,7 +107,7 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
             const options = line.options();
             return {visible:options.visible,color:options.color,lineWidth:options.lineWidth,lineStyle:options.lineStyle,title:options.title};
           }),
-          lines: study.lines.map((line: any) => line.data().map((point: any) => ({ ...point }))),
+          lines: study.lines.map((line: any) => seriesData(line).map((point: any) => ({ ...point }))),
         })),
       };
     },
@@ -138,13 +140,13 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
       const {adapter}=found;
       return {overlays:JSON.parse(JSON.stringify(adapter.overlaysRaw ?? [])),
         markers:adapter.markersApi?.markers?.().map((marker:any)=>({...marker})) ?? [],
-        segments:(adapter.researchSeries ?? []).map((series:any)=>({data:series.data().map((point:any)=>({...point})),options:{color:series.options().color,priceLineVisible:series.options().priceLineVisible}}))};
+        segments:(adapter.researchSeries ?? []).map((series:any)=>({data:seriesData(series).map((point:any)=>({...point})),options:{color:series.options().color,priceLineVisible:series.options().priceLineVisible}}))};
     },
     // Expensive full snapshots are captured outside timed actions. No cached
     // checksum can conceal an in-place mutation or a hash collision.
     data(index = 0) {
       const found = adapterFor(index); if (!found) return null;
-      return {canonical:found.adapter.candles.map(bar),display:found.adapter.series.data().map((point: any) => ({...point}))};
+      return {canonical:found.adapter.candles.map(bar),display:seriesData(found.adapter.series).map((point: any) => ({...point}))};
     },
   };
   (window as any).__arxChartQa = api;

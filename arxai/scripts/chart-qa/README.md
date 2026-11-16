@@ -1,9 +1,11 @@
 # Smart Chart browser acceptance
 
-This isolated fixture mounts the real `ARXNativeChart` and real Lightweight Charts
-renderer. Only data hooks, history loading and EventSource are replaced. All bars
-are explicitly synthetic. It opens no broker/API connection and contains no order
-entry surface. It is outside the production dashboard entry and build output.
+This isolated fixture mounts the real `ARXNativeChart` and its real ARX canvas
+renderer (`ArxCanvasAdapter`). Only data hooks, history loading, EventSource and
+`/api` fetches are replaced (`/api` requests are answered locally with 503, never
+sent). All bars are explicitly synthetic, and none opens before the Unix epoch, so
+W1 and MN1 (UTC calendar-month opens) carry fewer than 5,000 bars. It opens no
+broker/API connection and contains no order entry surface. It is outside the production dashboard entry and build output.
 
 From the repository root, with dashboard dependencies installed:
 
@@ -57,7 +59,7 @@ authenticated application shell is present, so these browser checks are not
 end-to-end deployment or broker tests.
 
 For a same-machine comparison, the benchmark optionally accepts a module URL
-exporting the baseline LightweightChartsAdapter. The recorded baseline was copied
+exporting a baseline adapter (`ArxCanvasAdapter`, or the older `LightweightChartsAdapter`). The recorded baseline was copied
 from main commit 76cdbdc9 into a temporary sibling module and removed afterwards.
 Do not ship an old adapter or expose this harness through production routes.
 

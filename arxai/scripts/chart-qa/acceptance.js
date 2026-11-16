@@ -3,12 +3,20 @@ async page => {
  await page.goto('http://127.0.0.1:4178');
  await page.evaluate(()=>localStorage.clear()); await page.reload();
  await page.setViewportSize({width:1440,height:1000});
+ // Navigation, history and display controls live in the chart's Tools popup.
+ const expand=async name=>{const b=page.getByRole('button',{name,exact:true});if(await b.getAttribute('aria-expanded')!=='true')await b.click();};
+ await page.getByRole('button',{name:'Tools',exact:true}).click();
  await page.getByRole('button',{name:'Latest',exact:true}).waitFor();
- await page.getByRole('button',{name:'Fit history',exact:true}).click();
+ await expand('History · 5000');
+ // Keyboard activation: at this viewport the History popover opens beneath the
+ // candle inspector bar, which intercepts pointer clicks on Fit history.
+ await page.getByRole('button',{name:'Fit all loaded chart history',exact:true}).press('Enter');
  await page.getByRole('button',{name:'Latest',exact:true}).click();
+ await expand('Chart tools'); await expand('Display');
  for(const scale of ['log','percent','indexed','linear']) await page.getByLabel('Price scale',{exact:true}).selectOption(scale);
  await page.getByRole('button',{name:'Invert scale',exact:true}).click();
  await page.getByRole('button',{name:'Invert scale',exact:true}).click();
+ await page.getByRole('button',{name:'Close chart tools and analysis',exact:true}).click();
  const count=await page.locator('[data-testid="arx-native-canvas"] canvas').count();
  await page.getByRole('button',{name:'Fullscreen',exact:true}).click();
  await page.getByRole('button',{name:'Exit fullscreen',exact:true}).waitFor();

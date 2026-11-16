@@ -1,4 +1,4 @@
-import { LightweightChartsAdapter } from "../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter";
+import { ArxCanvasAdapter } from "../../artifacts/trading-dashboard/src/lib/chart-engine/arxCanvasAdapter";
 import { STUDY_CATALOG } from "../../artifacts/trading-dashboard/src/lib/chart-engine/chartStudies";
 import { ChartViewLink } from "../../artifacts/trading-dashboard/src/lib/chart-engine/chartViewLink";
 
@@ -7,7 +7,7 @@ export async function runWorkspaceBenchmark() {
   const host=document.createElement("div");
   host.style.cssText="position:fixed;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;background:#09090b;z-index:99999;gap:8px";
   document.body.append(host);
-  const adapters:LightweightChartsAdapter[]=[], unlinks:(()=>void)[]=[], links=new ChartViewLink();
+  const adapters:ArxCanvasAdapter[]=[], unlinks:(()=>void)[]=[], links=new ChartViewLink();
   const frame=()=>new Promise<number>(requestAnimationFrame), longTasks:number[]=[];
   const observer=new PerformanceObserver(list=>longTasks.push(...list.getEntries().map(item=>item.duration)));
   try {observer.observe({type:"longtask",buffered:false});}catch{/* Optional browser API. */}
@@ -17,7 +17,7 @@ export async function runWorkspaceBenchmark() {
     const start=performance.now();
     for(let n=0;n<4;n++) {
       const panel=document.createElement("div");panel.style.cssText="min-width:0;min-height:0";host.append(panel);
-      const adapter=new LightweightChartsAdapter();adapters.push(adapter);adapter.init({container:panel,height:(innerHeight-8)/2});adapter.setTimeframe("M1");adapter.setCandles(bars);
+      const adapter=new ArxCanvasAdapter();adapters.push(adapter);adapter.init({container:panel,height:(innerHeight-8)/2});adapter.setTimeframe("M1");adapter.setCandles(bars);
       adapter.setStudies(STUDY_CATALOG.slice(0,12).map(item=>({...item.defaults})));
       adapter.setDrawings(Array.from({length:40},(_,i)=>({id:`view-${n}-${i}`,kind:"fibonacci" as const,start:{time:bars[4850+i]!.time,price:1.099+i*.00005},end:{time:bars[4950+i]!.time,price:1.101-i*.00004},color:"#fbbf24"})));
       unlinks.push(links.register(String(n),adapter));

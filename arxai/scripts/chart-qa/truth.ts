@@ -1,1 +1,2 @@
-export const useScannerTruth = () => ({truth:null,feedStatus:null,isLoading:false,isError:false});
+// Offline fixture: no scanner truth request. Mirrors useScannerTruth's return.
+export const useScannerTruth = (..._args: unknown[]) => ({truth:null,feedStatus:null,sourceIdentity:null,lastClosedCandleAt:null,isLoading:false,isError:false,refetch:()=>{}});

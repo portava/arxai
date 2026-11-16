@@ -3,12 +3,20 @@ import {createRoot} from "react-dom/client";
 import "./styles.css";
 import {ARXNativeChart} from "../../artifacts/trading-dashboard/src/components/charts/ARXNativeChart";
 import {SmartChartLayout} from "../../artifacts/trading-dashboard/src/components/charts/SmartChartLayout";
-import {LightweightChartsAdapter} from "../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter";
+import {ArxCanvasAdapter} from "../../artifacts/trading-dashboard/src/lib/chart-engine/arxCanvasAdapter";
 import {installChartQaWitnesses} from "./witness";
-const removeQaWitnesses = installChartQaWitnesses(LightweightChartsAdapter);
+const removeQaWitnesses = installChartQaWitnesses(ArxCanvasAdapter);
 // This browser-only fixture cannot open a network stream or execute an order.
 class OfflineEventSource { onmessage: any; onerror: any; constructor(){ (window as any).chartStream=this; } close(){} }
 (window as any).EventSource=OfflineEventSource;
+// No API exists behind this fixture. Answer every /api request locally (the
+// chart's render-evidence reporter posts and reads one) without any network.
+const realFetch=window.fetch.bind(window);
+window.fetch=(input:RequestInfo|URL,init?:RequestInit)=>{
+ const url=new URL(typeof input==="string"||input instanceof URL?String(input):input.url,location.href);
+ if(url.origin===location.origin&&url.pathname.startsWith("/api/")) return Promise.resolve(new Response(JSON.stringify({error:"offline_fixture"}),{status:503,headers:{"content-type":"application/json"}}));
+ return realFetch(input,init);
+};
 function Workbench(){
  const [symbol,setSymbol]=useState("EURUSD");
  return <main style={{background:"#09090b",minHeight:"100vh",color:"#fafafa",padding:24}}>
@@ -24,11 +32,11 @@ if(import.meta.hot) import.meta.hot.dispose(()=>{root.unmount();removeQaWitnesse
 
 // Exposed only by this isolated fixture, never by the shipped application.
 (window as any).runChartBenchmark = async (moduleUrl?: string, withStudies = false) => {
- const {LightweightChartsAdapter} = moduleUrl
-  ? await import(/* @vite-ignore */ moduleUrl)
-  : await import("../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter");
+ const baseline = moduleUrl ? await import(/* @vite-ignore */ moduleUrl) : null;
+ // A baseline module may export the old adapter name or the current one.
+ const Adapter = baseline ? (baseline.ArxCanvasAdapter ?? baseline.LightweightChartsAdapter) : ArxCanvasAdapter;
  const el=document.createElement("div"); el.style.cssText="width:1200px;height:500px;position:fixed;left:-2000px;top:0"; document.body.append(el);
- const adapter=new LightweightChartsAdapter(); adapter.init({container:el,height:500});
+ const adapter=new Adapter(); adapter.init({container:el,height:500});
  const bars=Array.from({length:5000},(_,i)=>({time:1700000000+i*60,open:1.1,high:1.2,low:1.0,close:1.15}));
  const series=(adapter as any).series;
  let replacements=0, updates=0;
@@ -64,12 +72,11 @@ if(import.meta.hot) import.meta.hot.dispose(()=>{root.unmount();removeQaWitnesse
 // the browser's exact paint completion or an equal-data competitor benchmark.
 (window as any).runChartStressBenchmark = async (barCount = 10000) => {
  barCount=Math.min(100000,Math.max(1000,Math.floor(barCount)));
- const {LightweightChartsAdapter}=await import("../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter");
  const {STUDY_CATALOG}=await import("../../artifacts/trading-dashboard/src/lib/chart-engine/chartStudies");
  const el=document.createElement("div");
  el.style.cssText="position:fixed;inset:0;background:#09090b;z-index:99999";
  document.body.append(el);
- const adapter=new LightweightChartsAdapter();
+ const adapter=new ArxCanvasAdapter();
  const frame=()=>new Promise<number>(requestAnimationFrame);
  const longTasks:number[]=[];
  const observer=new PerformanceObserver(list=>longTasks.push(...list.getEntries().map(entry=>entry.duration)));
