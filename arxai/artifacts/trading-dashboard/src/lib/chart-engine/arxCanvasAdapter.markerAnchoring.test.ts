@@ -104,7 +104,7 @@ beforeEach(() => {
   createSeriesMarkersMock.mockClear();
 });
 
-describe("LightweightChartsAdapter marker re-anchoring (repaint-crash lock)", () => {
+describe("ArxCanvasAdapter marker re-anchoring (repaint-crash lock)", () => {
   it("anchors research entries/exits to exact historical bars, sorted alongside current positions", () => {
     const adapter=makeAdapter(); adapter.setCandles([bar(100),bar(200),bar(300)]);
     const marker=(id:string,startTime:number,source:ChartOverlay["source"]="research"):ChartOverlay=>({id,type:"marker",symbol:"EURUSD",source,label:id,startTime,marker:{side:"BUY"}});

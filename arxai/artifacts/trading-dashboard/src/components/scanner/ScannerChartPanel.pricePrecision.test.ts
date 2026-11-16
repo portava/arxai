@@ -37,7 +37,7 @@ describe("ScannerChartPanel — one instrument precision, one current-price obse
   it("creates the candlestick series with the instrument priceFormat and re-applies it without a rebuild", () => {
     // The Smart Chart hands the engine the instrument precision before every
     // data push; the engine applies it to the series' priceFormat in place
-    // (behaviour: lib/chart-engine/lightweightChartsAdapter.precision.test.ts).
+    // (behaviour: lib/chart-engine/arxCanvasAdapter.precision.test.ts).
     const push = smart.indexOf("adapter.setDisplayPricePrecision?.(pricePrecision);");
     expect(push).toBeGreaterThan(-1);
     expect(smart.indexOf("adapter.setCandles(mergedEngineCandles);", push)).toBeGreaterThan(push);

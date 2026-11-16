@@ -1,4 +1,46 @@
-async page => {
+async qaPage => {
+ // Most chart controls live in the Tools popup and its collapsed sections. Before
+ // an action on a hidden control, open each closed ancestor through the button
+ // that controls it (aria-controls), outermost first. Visibility checks
+ // (isVisible, waitFor, count) are never altered, so hidden-state assertions hold.
+ const revealing=raw=>{
+  const ACT=new Set(['click','dblclick','selectOption','fill','check','uncheck','setChecked','press','pressSequentially','type','hover','focus','inputValue','setInputFiles','dragTo','tap','clear','selectText']);
+  const CHAIN=new Set(['first','last','nth','locator','filter','getByLabel','getByRole','getByTestId','getByText','getByPlaceholder','getByTitle','getByAltText','and','or']);
+  const openAncestor=el=>{
+   const chain=[];for(let e=el;e;e=e.parentElement)if(e.id||/^arx-details-section-/.test(e.dataset?.testid??''))chain.unshift(e);
+   const shown=e=>!e.hidden&&getComputedStyle(e).display!=='none';
+   // The tools window shows one section at a time (Tools, Forecast, Chart read);
+   // open the window on the section that holds the control.
+   const section=chain.find(e=>/^arx-details-section-/.test(e.dataset?.testid??'')), popup=chain.find(e=>e.id==='arx-advanced-chart-content');
+   if(popup&&(!shown(popup)||(section&&!shown(section)))){
+    const name=section?section.dataset.testid.replace('arx-details-section-',''):'tools';
+    const b=popup.closest('[data-testid="arx-native-chart"]')?.querySelector(`[data-testid="arx-native-open-${name}"]`);
+    if(b){b.click();return true;}
+   }
+   for(const e of chain){
+    if(shown(e)||e===popup||e===section)continue;
+    const b=document.querySelector(`[aria-controls="${CSS.escape(e.id)}"]`);
+    if(b&&b.getAttribute('aria-expanded')!=='true'){b.click();return true;}
+   }
+   return false;
+  };
+  // `hidden` matches the same element even while collapsed (role queries skip hidden nodes).
+  const reveal=async(loc,hidden)=>{for(let i=0;i<6;i++){
+   if(await loc.first().isVisible().catch(()=>false))return;
+   if(!await hidden.first().evaluate(openAncestor,undefined,{timeout:5000}).catch(()=>false))return;
+   await raw.waitForTimeout(60);
+  }};
+  const twin=(base,p,a)=>p==='getByRole'?base[p](a[0],{...a[1],includeHidden:true}):base[p](...a);
+  const wrap=(loc,hidden)=>new Proxy(loc,{get(t,p){const v=t[p];if(typeof v!=='function')return v;
+   if(CHAIN.has(p))return(...a)=>wrap(v.apply(t,a),twin(hidden,p,a));
+   if(ACT.has(p))return async(...a)=>{await reveal(t,hidden);return v.apply(t,a);};
+   // Waiting for a control to become visible opens its section first.
+   if(p==='waitFor')return async(o)=>{if(!o?.state||o.state==='visible')await reveal(t,hidden);return v.call(t,o);};
+   return v.bind(t);}});
+  return new Proxy(raw,{get(t,p){const v=t[p];if(typeof v!=='function')return v;
+   if(CHAIN.has(p))return(...a)=>wrap(v.apply(t,a),twin(t,p,a));return v.bind(t);}});
+ };
+ const page=revealing(qaPage);
   const base=typeof CHART_QA_BASE_URL==='string'?CHART_QA_BASE_URL:'http://127.0.0.1:4178';
   page.setDefaultTimeout(10000);
   const check=(value,message)=>{if(!value)throw Error(message);};
@@ -42,18 +84,15 @@ async page => {
     await price.focus(); await page.keyboard.press('Escape');
     check(await toggle.getAttribute('aria-expanded')==='false','Escape failed to close tools');
     check(await toggle.evaluate(el=>document.activeElement===el),'Escape lost focus');
-    // Per-container breakpoint, independent of the desktop viewport.
+    // Desktop moves the tools into the floating window, which opens on the
+    // focused control's section, so focus never drops to <body>.
     await page.setViewportSize({width:1440,height:1100});
-    await page.waitForFunction(()=>document.activeElement?.textContent?.trim()==='Pan');
-    await chart.evaluate(el=>el.style.width='550px');
-    await toggle.waitFor({state:'visible'});
-    check(await advanced.evaluate(el=>getComputedStyle(el).display==='none'),'Narrow desktop pane is not compact');
-    await toggle.focus(); await chart.evaluate(el=>el.style.width='');
-    await page.waitForFunction(()=>document.activeElement?.textContent?.trim()==='Pan');
-    // Focused desktop setting moves to Tools when its pane becomes narrow.
+    await page.waitForFunction(()=>{const a=document.activeElement;return !!a&&a!==document.body&&a.getClientRects().length>0;});
+    check(await toggle.evaluate(el=>document.activeElement===el),'Widening moved focus off the Tools toggle');
+    // The window is narrower than the workbench breakpoint (per container, not
+    // per viewport), so its advanced tools stay folded behind the toggle.
+    check(await advanced.evaluate(el=>getComputedStyle(el).display==='none'),'Floating tools window is not compact');
     const style=page.getByLabel('Chart style',{exact:true});
-    await style.focus(); await chart.evaluate(el=>el.style.width='550px');
-    await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Chart tools');
     await toggle.click(); await style.selectOption('heikinAshi'); await toggle.click();
     check(await page.getByTestId('chart-style-note').isVisible(),'Averaged-price explanation hidden with tools');
     check((await page.getByTestId('chart-style-note').textContent()).includes('averaged'),'Wrong style explanation');
@@ -63,7 +102,11 @@ async page => {
     await page.getByRole('button',{name:'Fullscreen',exact:true}).click();
     check(await toggle.isVisible(),'Fullscreen removed compact controls');
     await toggle.click(); await page.getByLabel('Price scale',{exact:true}).focus();
+    // Each Escape closes the innermost layer: the Display popup, then Tools, then fullscreen.
     await page.keyboard.press('Escape');
+    check(await page.getByLabel('Price scale',{exact:true}).isHidden(),'Escape left the Display popup open');
+    await page.keyboard.press('Escape');
+    check(await toggle.getAttribute('aria-expanded')==='false','Second Escape failed to close tools');
     check(await page.getByRole('button',{name:'Exit fullscreen',exact:true}).isVisible(),'Closing tools also exited fullscreen');
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Fullscreen',exact:true}).waitFor();
@@ -71,7 +114,7 @@ async page => {
     check(errors.length===0,`Page errors: ${errors}`);
     return {base,fixture:'synthetic offline',initialPlotVisiblePx:visible,
       mobileViewport:'390x844',containerWidthResponsive:true,preservedDrawingEditAndUndo:true,
-      touchCancel:true,focusBothResizeDirections:true,escapeAndFullscreen:true,
+      touchCancel:true,focusKeptOnWiden:true,escapeAndFullscreen:true,
       chartContainerRetained:true,errors,scope:'functional geometry/interaction, not timing or active-reader evidence'};
   } finally {page.off('pageerror',onError);}
 }

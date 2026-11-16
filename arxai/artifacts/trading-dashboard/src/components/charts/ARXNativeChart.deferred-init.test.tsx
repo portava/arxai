@@ -186,6 +186,11 @@ describe("initial responsive chart height", () => {
     expect(engine.setStudies.mock.lastCall![0]).toEqual(expect.arrayContaining([expect.objectContaining({kind:"tick_volume"})]));
     fireEvent.click(screen.getByTestId("chart-volume-toggle"));
     expect(screen.getByTestId("chart-volume-toggle").getAttribute("aria-pressed")).toBe("false");
+    // Volume off leaves only the built-in 20/50 moving averages, which have their own toggle.
+    expect(engine.setStudies.mock.lastCall![0].map((s:{id?:string})=>s.id)).toEqual(["arx-trend-ma-20","arx-trend-ma-50"]);
+    expect(screen.getByTestId("chart-moving-averages-toggle").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("chart-moving-averages-toggle"));
+    expect(screen.getByTestId("chart-moving-averages-toggle").getAttribute("aria-pressed")).toBe("false");
     expect(engine.setStudies.mock.lastCall![0]).toEqual([]);
     expect(inspector.closest("[hidden]")).toBeNull();
   });
@@ -233,6 +238,20 @@ describe("initial responsive chart height", () => {
     vi.stubGlobal("innerHeight",800);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(560);
     fireEvent.click(screen.getByRole("button",{name:"Exit fullscreen",exact:true}));assertHeight(700);
     vi.stubGlobal("innerWidth",390);act(()=>window.dispatchEvent(new Event("resize")));assertHeight(420);
+  });
+
+  it("keeps a focused inline tool visible when the phone layout widens into the desktop window",()=>{
+    vi.stubGlobal("innerWidth",390);vi.stubGlobal("innerHeight",844);
+    candleResponse=liveResponse("EURUSD","H1");
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    const popup=screen.getByTestId("arx-native-details-popup");
+    const control=within(screen.getByTestId("arx-details-section-tools")).getAllByRole("button")[0]!;
+    control.focus();expect(document.activeElement).toBe(control);
+    vi.stubGlobal("innerWidth",1440);act(()=>window.dispatchEvent(new Event("resize")));
+    // The tools moved into the floating window; it opens on the Tools section instead of hiding the focused control.
+    expect(popup.className).not.toContain("hidden");
+    expect(screen.getByTestId("arx-details-section-tools").className).not.toContain("hidden");
+    expect(popup.contains(control)).toBe(true);
   });
 
   it("uses the latest viewport when a deferred comparison engine starts",()=>{

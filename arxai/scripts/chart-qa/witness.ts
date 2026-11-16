@@ -45,6 +45,8 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
   };
   const api = {
     schemaVersion: 1,
+    // Raw adapter for fixture debugging only; never used by an acceptance verdict.
+    adapter(index = 0) { return adapterFor(index)?.adapter ?? null; },
     snapshot(index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const {container,adapter} = found;
@@ -56,6 +58,7 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         candlesId:id(adapter.candles),dataRevision:revisions.get(adapter) ?? 0,
         barCount:adapter.candles.length,first:bar(adapter.candles[0]),last:bar(adapter.candles.at(-1)),
         symbol:adapter.symbol,intervalSeconds:adapter.intervalSeconds,style:adapter.style,
+        panes:adapter.chart.panes().length,
         feed:{source:adapter.feedState.source,livePriceAffordance:adapter.feedState.livePriceAffordance},
         range:range ? {from:range.from,to:range.to} : null,
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},

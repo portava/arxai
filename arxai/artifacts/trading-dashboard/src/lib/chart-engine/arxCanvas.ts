@@ -407,7 +407,9 @@ export class CanvasChart {
         }
       }
       for (const f of this.crosshairListeners)
-        f({ point: p, time: this.times[Math.round(this.indexAt(p.x))] });
+        // sourceEvent marks user input: linked charts follow it, and never echo
+        // positions they were given programmatically.
+        f({ point: p, time: this.times[Math.round(this.indexAt(p.x))], sourceEvent: e });
       this.paintSoon();
     });
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"])
@@ -834,7 +836,10 @@ export class CanvasChart {
         this.rangeListeners.delete(fn),
       timeToCoordinate: (time: number) =>
         this.times.length ? this.x(this.logicalIndexAtTime(time)) : null,
-      coordinateToTime: (x: number) => this.timeAtIndex(this.indexAt(x)),
+      // The time of the bar under x (bars are centred on their index), as in
+      // lightweight-charts: drawing anchors and fidelity checks look it up as
+      // an exact candle open. Past the newest bar it steps at the bar spacing.
+      coordinateToTime: (x: number) => this.timeAtIndex(Math.round(this.indexAt(x))),
       getVisibleRange: () => {
         if (!this.times.length) return null;
         const from = this.timeAtIndex(this.range.from);
@@ -1045,11 +1050,23 @@ export class CanvasChart {
         c.setLineDash(s.options().lineStyle === 1 ? [1, 3] : s.options().lineStyle === 2 ? [5, 4] : []);
         c.beginPath();
         let drawing = false;
+        // A line point may carry its own colour, which paints the segment that
+        // ends at it (as in lightweight-charts). Uncoloured lines stay one path.
+        const pointColours = s.kind === "Line" && s.data.some(p => "value" in p && typeof (p as LineData).color === "string");
+        let px = 0, py = 0;
         for (const p of s.data) {
           if (!("value" in p)) { drawing = false; continue; }
           const x = this.x(this.indexForTime(p.time)), y = localY(p.value);
+          if (pointColours) {
+            if (drawing) {
+              c.beginPath(); c.strokeStyle = (p as LineData).color ?? s.options().color ?? "#60a5fa";
+              c.moveTo(px, py); c.lineTo(x, y); c.stroke();
+            }
+            px = x; py = y; drawing = true; continue;
+          }
           if (drawing) c.lineTo(x, y); else { c.moveTo(x, y); drawing = true; }
         }
+        if (pointColours) { c.beginPath(); drawing = false; }
         if (s.kind === "Baseline") {
           const base = Number(s.options().baseValue?.price ?? s.options().base ?? 0);
           const baseY = localY(base);
@@ -1079,7 +1096,7 @@ export class CanvasChart {
             });
           }
         }
-        c.stroke();
+        if (!pointColours) c.stroke();
         c.setLineDash([]);
       } else if (s.kind === "Histogram") {
         const base = Number(s.options().base) || 0;

@@ -1,5 +1,6 @@
 import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { marketAxisTimeLabel } from "./chartTimeZone";
+import { withTrendAverages, trendAverageColor, TREND_AVERAGE_BULL, TREND_AVERAGE_BEAR } from "./chartTrendAverages";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import {
   createChart,
@@ -101,6 +102,34 @@ describe("ARX renderer market-data and viewport contract", () => {
     const before = chart.timeScale().getVisibleLogicalRange()!;
     s.update({ ...bars[99], time: bars[99].time + 60 });
     expect(chart.timeScale().getVisibleLogicalRange()!.to).toBe(before.to + 1);
+    chart.remove();
+  });
+  it("maps a pixel to the time of the bar under it, never an interpolated instant", () => {
+    const chart = createChart(container, { width: 900, height: 400 });
+    chart.addSeries(CandlestickSeries).setData(bars);
+    const scale = chart.timeScale();
+    scale.setVisibleLogicalRange({ from: 10, to: 40 });
+    const times = new Set(bars.map(bar => bar.time));
+    const bar20 = scale.timeToCoordinate(bars[20]!.time)!, bar21 = scale.timeToCoordinate(bars[21]!.time)!;
+    // Drawing anchors look this time up as an exact candle open.
+    expect(scale.coordinateToTime(bar20)).toBe(bars[20]!.time);
+    expect(scale.coordinateToTime(bar20 + (bar21 - bar20) * 0.3)).toBe(bars[20]!.time);
+    expect(scale.coordinateToTime(bar20 + (bar21 - bar20) * 0.7)).toBe(bars[21]!.time);
+    for (let x = 0; x <= 400; x += 7) expect(times.has(scale.coordinateToTime(x) as number)).toBe(true);
+    chart.remove();
+  });
+  it("marks pointer crosshair moves as user input so linked charts follow them", () => {
+    const chart = createChart(container, { width: 900, height: 400 });
+    chart.addSeries(CandlestickSeries).setData(bars);
+    const seen: any[] = [];
+    chart.subscribeCrosshairMove((event: any) => seen.push(event));
+    const move = new MouseEvent("pointermove", { clientX: 200, clientY: 100, bubbles: true });
+    chart.canvas.dispatchEvent(move);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].sourceEvent).toBe(move);
+    // Programmatic positions (from a linked chart) carry no source event, so they never echo back.
+    chart.setCrosshairPosition(100, bars[20]!.time, chart.series?.[0]);
+    expect(seen.every((event, i) => i === 0 || !event.sourceEvent)).toBe(true);
     chart.remove();
   });
   it("draws candles timed after the last observed bar forward at the bar spacing, not stacked on it", () => {
@@ -361,5 +390,67 @@ describe("real canvas with paged native history", () => {
     expect(study.data.some((point: any) => point.time === history[910]!.time && Number.isFinite(point.value))).toBe(true);
     expect(study.data.every((point: any) => point.time >= history[900]!.time)).toBe(true);
     adapter.destroy();
+  });
+});
+
+describe("20 and 50 period moving averages", () => {
+  // Closes rise for 80 bars, then fall for 80: both averages turn from rising to falling.
+  const wave = Array.from({ length: 160 }, (_, i) => {
+    const close = 100 + (i < 80 ? i : 160 - i);
+    return { time: 1_700_000_000 + i * 60, open: close, high: close + 1, low: close - 1, close };
+  });
+  it("draws each average blue where it rises and red where it falls", () => {
+    Object.defineProperty(container, "clientWidth", { value: 900, configurable: true });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const adapter = new ArxCanvasAdapter();
+    adapter.init({ container, height: 400 });
+    adapter.setTimeframe("M1");
+    adapter.setCandles(wave);
+    adapter.setStudies(withTrendAverages([], true));
+    (adapter as any).chart.timeScale().setVisibleLogicalRange({ from: 0, to: 159 });
+    const lines = (adapter as any).chart.series.filter((s: any) => s.kind === "Line");
+    expect(lines).toHaveLength(2);
+    for (const [line, period] of [[lines[0], 20], [lines[1], 50]] as const) {
+      const points = line.data.filter((p: any) => "value" in p);
+      expect(points[0].time).toBe(wave[period - 1]!.time);
+      for (let i = 1; i < points.length; i++) {
+        const rising = points[i].value >= points[i - 1].value;
+        expect(points[i].color).toBe(rising ? TREND_AVERAGE_BULL : TREND_AVERAGE_BEAR);
+      }
+      expect(points.some((p: any) => p.color === TREND_AVERAGE_BULL)).toBe(true);
+      expect(points.some((p: any) => p.color === TREND_AVERAGE_BEAR)).toBe(true);
+    }
+    // Off leaves only the user's own studies.
+    adapter.setStudies(withTrendAverages([], false));
+    expect((adapter as any).chart.series.filter((s: any) => s.kind === "Line")).toHaveLength(0);
+    adapter.destroy();
+  });
+  it("keeps the user's studies separate and never duplicates the averages", () => {
+    const own = [{ kind: "sma" as const, period: 20, color: "#ffffff" }];
+    const shown = withTrendAverages(own, true);
+    expect(shown.map(s => s.id ?? s.kind)).toEqual(["arx-trend-ma-20", "arx-trend-ma-50", "sma"]);
+    expect(withTrendAverages(shown, true)).toHaveLength(3);
+    expect(withTrendAverages(shown, false)).toEqual(own);
+    expect(trendAverageColor(2, 1)).toBe(TREND_AVERAGE_BULL);
+    expect(trendAverageColor(1, 1)).toBe(TREND_AVERAGE_BULL);
+    expect(trendAverageColor(0.5, 1)).toBe(TREND_AVERAGE_BEAR);
+    expect(trendAverageColor(0.5, null)).toBe(TREND_AVERAGE_BULL);
+  });
+  it("paints a coloured line segment by segment in the colour of the point it ends at", () => {
+    const strokes: string[] = [];
+    const context = new Proxy({ measureText: (text: string) => ({ width: text.length * 6 }) } as any, {
+      get: (target, name) => name in target ? target[name] : name === "stroke" ? function (this: any) { strokes.push(String(context.strokeStyle)); } : () => {},
+      set: (target, name, value) => { target[name] = value; return true; },
+    });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(context);
+    const chart = createChart(container, { width: 900, height: 400 });
+    chart.addSeries(CandlestickSeries).setData(bars);
+    chart.addSeries(LineSeries, { color: "#ffffff" }).setData(bars.slice(0, 4).map((b, i) => ({ time: b.time, value: b.close, color: i === 2 ? "#ef4444" : "#3b82f6" })));
+    chart.timeScale().setVisibleLogicalRange({ from: 0, to: 10 });
+    strokes.length = 0;
+    chart.paint();
+    const segment = strokes.filter(color => color === "#3b82f6" || color === "#ef4444");
+    expect(segment).toEqual(["#3b82f6", "#ef4444", "#3b82f6"]);
+    chart.remove();
   });
 });

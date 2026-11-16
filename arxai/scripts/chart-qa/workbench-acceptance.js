@@ -1,4 +1,46 @@
-async page => {
+async qaPage => {
+ // Most chart controls live in the Tools popup and its collapsed sections. Before
+ // an action on a hidden control, open each closed ancestor through the button
+ // that controls it (aria-controls), outermost first. Visibility checks
+ // (isVisible, waitFor, count) are never altered, so hidden-state assertions hold.
+ const revealing=raw=>{
+  const ACT=new Set(['click','dblclick','selectOption','fill','check','uncheck','setChecked','press','pressSequentially','type','hover','focus','inputValue','setInputFiles','dragTo','tap','clear','selectText']);
+  const CHAIN=new Set(['first','last','nth','locator','filter','getByLabel','getByRole','getByTestId','getByText','getByPlaceholder','getByTitle','getByAltText','and','or']);
+  const openAncestor=el=>{
+   const chain=[];for(let e=el;e;e=e.parentElement)if(e.id||/^arx-details-section-/.test(e.dataset?.testid??''))chain.unshift(e);
+   const shown=e=>!e.hidden&&getComputedStyle(e).display!=='none';
+   // The tools window shows one section at a time (Tools, Forecast, Chart read);
+   // open the window on the section that holds the control.
+   const section=chain.find(e=>/^arx-details-section-/.test(e.dataset?.testid??'')), popup=chain.find(e=>e.id==='arx-advanced-chart-content');
+   if(popup&&(!shown(popup)||(section&&!shown(section)))){
+    const name=section?section.dataset.testid.replace('arx-details-section-',''):'tools';
+    const b=popup.closest('[data-testid="arx-native-chart"]')?.querySelector(`[data-testid="arx-native-open-${name}"]`);
+    if(b){b.click();return true;}
+   }
+   for(const e of chain){
+    if(shown(e)||e===popup||e===section)continue;
+    const b=document.querySelector(`[aria-controls="${CSS.escape(e.id)}"]`);
+    if(b&&b.getAttribute('aria-expanded')!=='true'){b.click();return true;}
+   }
+   return false;
+  };
+  // `hidden` matches the same element even while collapsed (role queries skip hidden nodes).
+  const reveal=async(loc,hidden)=>{for(let i=0;i<6;i++){
+   if(await loc.first().isVisible().catch(()=>false))return;
+   if(!await hidden.first().evaluate(openAncestor,undefined,{timeout:5000}).catch(()=>false))return;
+   await raw.waitForTimeout(60);
+  }};
+  const twin=(base,p,a)=>p==='getByRole'?base[p](a[0],{...a[1],includeHidden:true}):base[p](...a);
+  const wrap=(loc,hidden)=>new Proxy(loc,{get(t,p){const v=t[p];if(typeof v!=='function')return v;
+   if(CHAIN.has(p))return(...a)=>wrap(v.apply(t,a),twin(hidden,p,a));
+   if(ACT.has(p))return async(...a)=>{await reveal(t,hidden);return v.apply(t,a);};
+   // Waiting for a control to become visible opens its section first.
+   if(p==='waitFor')return async(o)=>{if(!o?.state||o.state==='visible')await reveal(t,hidden);return v.call(t,o);};
+   return v.bind(t);}});
+  return new Proxy(raw,{get(t,p){const v=t[p];if(typeof v!=='function')return v;
+   if(CHAIN.has(p))return(...a)=>wrap(v.apply(t,a),twin(t,p,a));return v.bind(t);}});
+ };
+ const page=revealing(qaPage);
  const base=typeof CHART_QA_BASE_URL==='string'?CHART_QA_BASE_URL:'http://127.0.0.1:4178';
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);
@@ -15,20 +57,24 @@ async page => {
  await chart.hover({position:{x:300,y:120}});
  await page.waitForFunction(()=>document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent.includes('UTC'));
  const canonicalLegend=await page.getByTestId('chart-candle-inspector').textContent();
- if(canonicalLegend.includes(' HA O ')) throw Error('HA legend shown in candles style');
+ if(canonicalLegend.includes('  ·  HA ')) throw Error('HA legend shown in candles style');
  for(const style of ['bars','line','area','baseline','heikinAshi','hollow','candles']) {
    await styleSelect.selectOption(style);
    await page.waitForFunction(([canonical,ha])=>{
      const text=document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent ?? '';
-     return ha ? text.startsWith(`${canonical}  ·  HA O `) : text===canonical;
+     // The Heikin Ashi suffix is labelled as averaged, not tradable.
+     return ha ? text.startsWith(`${canonical}  ·  HA (averaged, not tradable) O `) : text===canonical;
    },[canonicalLegend,style==='heikinAshi'],{timeout:5000}).catch(async()=>{throw Error(`Legend after ${style}: ${await page.getByTestId('chart-candle-inspector').textContent()}`);});
  }
+ // Panes before any study (price plus the default volume pane).
+ const basePanes=await page.evaluate(()=>window.__arxChartQa.snapshot().panes);
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
  for(const name of ['Simple moving average','Exponential moving average','Bollinger Bands','Relative strength index','MACD']) await page.getByRole('button',{name:`Add ${name}`,exact:true}).click();
  await page.getByLabel('SMA 1 Period',{exact:true}).fill('10');
  await page.getByLabel('SMA 1 Period',{exact:true}).blur();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
- if(await chart.locator('tr').count()!==6) throw Error('Expected price, RSI, MACD panes and time-axis row');
+ // The ARX canvas draws every pane on one canvas; count panes through the witness.
+ if(await page.evaluate(()=>window.__arxChartQa.snapshot().panes)!==basePanes+2) throw Error('Expected RSI and MACD panes below the price pane');
  for(const tool of ['horizontal','trend','fibonacci']) {
    await page.getByLabel('Drawing tool',{exact:true}).selectOption(tool);
    await chart.click({position:{x:300,y:80}});
@@ -92,9 +138,9 @@ async page => {
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
  for(let i=0;i<5;i++) await page.getByRole('button',{name:'Remove study 1',exact:true}).click();
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
- if(await page.getByTestId('arx-native-canvas').locator('tr').count()!==2) throw Error('Empty indicator panes leaked');
+ if(await page.evaluate(()=>window.__arxChartQa.snapshot().panes)!==basePanes) throw Error('Empty indicator panes leaked');
  const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
- const touch=await touchContext.newPage();
+ const touch=revealing(await touchContext.newPage());
  await touch.goto(base);
  await touch.getByRole('button',{name:'Chart tools',exact:true}).click();
  await touch.getByLabel('Drawing tool',{exact:true}).selectOption('trend');

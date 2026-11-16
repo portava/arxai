@@ -7,6 +7,7 @@ import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { formatStudyNumber } from "@/lib/chart-engine/chartStudies";
+import { withTrendAverages } from "@/lib/chart-engine/chartTrendAverages";
 import { chartVolumeEvidence, observedTickVolume, observedTradeVolume, chartDisplayStudies, candleVolumeLabel } from "@/lib/chart-engine/chartVolume";
 import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-engine/chartStudyAssistant";
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
@@ -791,6 +792,16 @@ export function ARXNativeChart({
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
+      // Phone -> desktop moves the inline tools into the floating window. If a
+      // control in them has focus, open the window on its section in the same
+      // render, so the control stays visible instead of focus dropping to <body>.
+      const active = document.activeElement;
+      const content = cardRef.current?.querySelector("#arx-advanced-chart-content");
+      if (!isMobile && active instanceof HTMLElement && content?.contains(active)) {
+        const section = active.closest<HTMLElement>('[data-testid^="arx-details-section-"]')?.dataset.testid?.replace("arx-details-section-", "");
+        setDetailsSection(section === "forecast" || section === "read" ? section : "tools");
+        setAdvancedToolsOpen(true);
+      }
       setMobileLayout(isMobile);
       setEffectiveHeight(viewportChartHeight(height,mobileHeight,expanded,compactWorkspace));
     };
@@ -1072,7 +1083,7 @@ export function ARXNativeChart({
 
   const hasQualifiedTickVolume = useMemo(() => displayEngineCandles.some(candle => observedTickVolume(candle.volumeEvidence) != null), [displayEngineCandles]);
   const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
-  const displayStudies = useMemo(() => chartDisplayStudies(preferences.studies, preferences.volumePane !== false, hasQualifiedTickVolume, hasQualifiedTradeVolume), [preferences.studies, preferences.volumePane, hasQualifiedTickVolume, hasQualifiedTradeVolume]);
+  const displayStudies = useMemo(() => withTrendAverages(chartDisplayStudies(preferences.studies, preferences.volumePane !== false, hasQualifiedTickVolume, hasQualifiedTradeVolume), preferences.movingAverages !== false), [preferences.studies, preferences.volumePane, preferences.movingAverages, hasQualifiedTickVolume, hasQualifiedTradeVolume]);
   const tradeVolumeSelected = displayStudies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
   const tickVolumeSelected = displayStudies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
   useEffect(() => {
@@ -1875,6 +1886,8 @@ export function ARXNativeChart({
   const sectionClass = (name: "tools" | "forecast" | "read") => !detailsAsPopup || detailsSection === "all" || detailsSection === name ? "contents" : "hidden";
   const clockStatus = utcClockQualified ? "Clock: UTC" : "Source clock · UTC unverified";
   const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
+  // 20 and 50 period moving averages: blue where rising (bull), red where falling (bear).
+  const averagesToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.movingAverages !== false} title="20 and 50 period simple moving averages of the close. Blue where the average rises, red where it falls." onClick={() => setPreferences(previous => ({ ...previous, movingAverages: previous.movingAverages === false }))} data-testid="chart-moving-averages-toggle">MA 20/50 {preferences.movingAverages === false ? "off" : "on"}</Button>;
   const compactQuickTools = compactDesktopWorkspace ? (
     <div
       className="flex min-w-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-2 py-1.5"
@@ -1896,6 +1909,7 @@ export function ARXNativeChart({
       </Button>
       {layersMenu}
       {volumeToggle}
+      {averagesToggle}
       <div className="ml-auto flex min-w-0 items-center" aria-label="Candle close timer">
         {compactTimer}
       </div>
@@ -1917,6 +1931,7 @@ export function ARXNativeChart({
           <ChartTemplatesPanel key={JSON.stringify([resolvedSymbol,timeframe])} preferences={preferences} onPreferences={setPreferences}/>
           {!compactDesktopWorkspace && layersMenu}
           {!compactDesktopWorkspace && volumeToggle}
+          {!compactDesktopWorkspace && averagesToggle}
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} aria-expanded={researchOpen} onClick={()=>{setResearchRequest(null);setResearchOpen(open=>!open);}}>Test an idea</Button>
 
         </div>

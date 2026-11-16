@@ -21,7 +21,7 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 // A launcher that sets NODE_ENV=test (or development) would otherwise make Vite resolve
-// React and lightweight-charts development builds and define process.env.NODE_ENV to match.
+// React's development build and define process.env.NODE_ENV to match.
 process.env.NODE_ENV = "production";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(root, "../..");
@@ -154,18 +154,13 @@ for (const [signal, number] of [["SIGINT", 2], ["SIGTERM", 15], ["SIGHUP", 1]])
 
 // ---- Bundle guard ------------------------------------------------------------------------
 // String literals (they survive minification) that occur only in development builds:
-// React 19 component stacks, and lightweight-charts 5 development-only data checks and
-// warnings (lightweight-charts.development.mjs has them, .production.mjs has none).
-const DEV_MARKERS = [
-  "react-stack-bottom-frame",
-  "data must be asc ordered by time",
-  "series item data value must be",
-  "should not be changed once the chart has been created",
-];
+// React 19 component stacks. The chart renderer is ARX's own canvas (arxCanvas.ts), which
+// has no separate development build.
+const DEV_MARKERS = ["react-stack-bottom-frame"];
 // Literals that must be present: React DOM's production error formatter (absent from its
-// development build), and lightweight-charts' container class (present in both of its
-// builds, so together with the absent development literals it shows the production build).
-const PROD_MARKERS = ["Minified React error #", "tv-lightweight-charts"];
+// development build), and the ARX canvas renderer's element tag (a property assignment,
+// which minification keeps), so the bundle demonstrably contains the real chart renderer.
+const PROD_MARKERS = ["Minified React error #", "dataset.arxChart"];
 const scanBundle = async dir => {
   const files = [];
   const walk = async d => { for (const e of await readdir(d, { withFileTypes: true })) {

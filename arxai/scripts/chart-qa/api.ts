@@ -25,7 +25,9 @@ export function useGetChartCandles({symbol,timeframe,limit}: {symbol:string;time
  const time=openSec*1000;
  const open=base+Math.sin(i/17)*step+Math.sin(i/3)*step/5;
  const close=open+Math.sin(i*7)*step/8;
- return {symbol,displaySymbol:symbol,timeframe,openTime:new Date(time).toISOString(),closeTime:new Date(chartBarCloseSeconds(openSec,timeframe)!*1000).toISOString(),open:+open.toFixed(5),high:+(Math.max(open,close)+step/7).toFixed(5),low:+(Math.min(open,close)-step/7).toFixed(5),close:+close.toFixed(5),source:"offline_fixture",isComplete:true};
+ return {symbol,displaySymbol:symbol,timeframe,openTime:new Date(time).toISOString(),closeTime:new Date(chartBarCloseSeconds(openSec,timeframe)!*1000).toISOString(),open:+open.toFixed(5),high:+(Math.max(open,close)+step/7).toFixed(5),low:+(Math.min(open,close)-step/7).toFixed(5),close:+close.toFixed(5),source:"offline_fixture",isComplete:true,
+  // The fixture generates every open in UTC, so its time basis is original UTC.
+  timeBasisEvidence:{kind:"original_utc",basis:"UTC",reason:null,authority:"offline_fixture"}};
  });
  return {symbol,timeframe,candles,feedStatus:{symbol,source:"offline_fixture",quality:"delayed",isLive:false,stale:false,aiUsable:false,latencyMs:0,missingCandleCount:0,warning:"Synthetic fixture — not market data"}};
  },[symbol,timeframe,limit]);
