@@ -457,12 +457,14 @@ describe("deferred comparison engine init", () => {
     expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
     if ((CHART_QUICK_INTERVALS as readonly string[]).includes(timeframe)) {
       expect(screen.getByRole("button",{name:`${timeframe} timeframe`,exact:true}).getAttribute("aria-pressed")).toBe("true");
-    } else expect((screen.getByLabelText("More chart intervals") as HTMLSelectElement).value).toBe(timeframe);
+    }
+    // The timeframe dropdown always shows the current interval, quick or not.
+    expect((screen.getByLabelText("Chart timeframe") as HTMLSelectElement).value).toBe(timeframe);
   });
   it("selects additional intervals without remounting canvas, saves them and supports native calendar intervals", () => {
     render(<ARXNativeChart symbol="EURUSD" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
-    const canvas=screen.getByTestId("arx-native-canvas"), select=screen.getByLabelText("More chart intervals") as HTMLSelectElement;
-    for (const timeframe of CHART_INTERVALS.filter(tf=>!(CHART_QUICK_INTERVALS as readonly string[]).includes(tf))) {
+    const canvas=screen.getByTestId("arx-native-canvas"), select=screen.getByLabelText("Chart timeframe") as HTMLSelectElement;
+    for (const timeframe of CHART_INTERVALS.filter(tf=>tf!=="M15")) {
       fireEvent.change(select,{target:{value:timeframe}});
       expect(created[0]!.setTimeframe).toHaveBeenLastCalledWith(timeframe);
       expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});

@@ -25,7 +25,7 @@ import {
 import type { ChartGhostPath } from "@/lib/chart-engine/types";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { CHART_INTERVALS, CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds, chartBarCloseSeconds } from "@/lib/chart-engine/chartIntervals";
+import { CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds, chartBarCloseSeconds } from "@/lib/chart-engine/chartIntervals";
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -67,6 +67,7 @@ import { publishChartPricePrecision } from "@/components/charts/chartPricePrecis
 import { CHART_TIME_AXIS_LABEL, CHART_TIME_AXIS_TITLE, type ServerClockSample } from "@/components/scanner/scannerChartFormat";
 import { publishScannerTip } from "@/lib/scannerLiveTipStore";
 import { bareSymbol } from "@/lib/use-chart-symbol";
+import { ChartMarketSelect, ChartTimeframeSelect } from "./ChartPickers";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { ChartHistoryControls } from "@/components/charts/ChartHistoryControls";
@@ -138,7 +139,6 @@ const u = (p: string) => `${BASE}${p}`;
 export type ArxTimeframe = (typeof GetChartCandlesTimeframe)[keyof typeof GetChartCandlesTimeframe];
 
 const TIMEFRAMES = CHART_QUICK_INTERVALS.map(id => ({id,label:id}));
-const MORE_TIMEFRAMES = CHART_INTERVALS.filter(id => !(CHART_QUICK_INTERVALS as readonly string[]).includes(id));
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
@@ -248,6 +248,9 @@ export interface ARXNativeChartProps {
   onTimeframeChange?: (tf: ArxTimeframe) => void;
   /** Notified with the resolved (bare, upper-cased) symbol the chart is showing. */
   onSymbolChange?: (symbol: string) => void;
+  /** When set, the header shows a market dropdown; the parent owns the switch
+   *  (e.g. the shared chart-symbol bus). Omitted: the market is plain text. */
+  onMarketSelect?: (symbol: string) => void;
   /** Visual hint only — never gates anything (e.g. "live" | "demo" | "paper"). */
   mode?: string;
   /** Chart pixel height (default 520). */
@@ -333,6 +336,7 @@ export function ARXNativeChart({
   timeframe: controlledTf,
   onTimeframeChange,
   onSymbolChange,
+  onMarketSelect,
   mode,
   height = 520,
   mobileHeight,
@@ -1732,12 +1736,7 @@ export function ARXNativeChart({
                 {tf.label}
               </Button>
             ))}
-            <select className={`h-7 max-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-100 ${compactDesktopWorkspace ? "shrink-0" : ""}`} aria-label="More chart intervals" title="All native broker intervals, including calendar weeks and months"
-              value={(MORE_TIMEFRAMES as readonly string[]).includes(timeframe) ? timeframe : ""}
-              onChange={event => {if (isChartInterval(event.target.value)) setTimeframe(event.target.value);}}>
-              <option value="" disabled>More intervals</option>
-              {MORE_TIMEFRAMES.map(id => <option key={id} value={id}>{id}</option>)}
-            </select>
+            <ChartTimeframeSelect timeframe={timeframe} onSelect={setTimeframe} className={compactDesktopWorkspace ? "shrink-0" : ""}/>
             {(hasCandles || compactDesktopWorkspace) && (
               <Button
                 size="sm"
@@ -1974,9 +1973,11 @@ export function ARXNativeChart({
                   : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true"/>}
               </Button>
             )}
-            <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
-              {resolvedSymbol}
-            </span>
+            {onMarketSelect
+              ? <ChartMarketSelect symbol={resolvedSymbol} onSelect={onMarketSelect}/>
+              : <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
+                  {resolvedSymbol}
+                </span>}
             {mode && (
               <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground" data-testid="arx-native-mode">
                 {mode}

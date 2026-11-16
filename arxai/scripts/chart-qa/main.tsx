@@ -15,7 +15,7 @@ function Workbench(){
  <h1 style={{fontSize:24,fontWeight:600}}>Smart Chart · Browser acceptance</h1>
  <p style={{color:"#fbbf24",margin:"8px 0 20px"}}>OFFLINE FIXTURE — synthetic candles, no market connection or trading</p>
  <button onClick={()=>setSymbol(s=>s==="EURUSD"?"XAUUSD":"EURUSD")} style={{marginBottom:12}}>Switch instrument</button>
- <SmartChartLayout symbol={symbol}><ARXNativeChart symbol={symbol} limit={5000} height={520} showFeedStatus={false}/></SmartChartLayout>
+ <SmartChartLayout symbol={symbol}><ARXNativeChart symbol={symbol} onMarketSelect={setSymbol} limit={5000} height={520} showFeedStatus={false}/></SmartChartLayout>
  </main>;
 }
 const root=createRoot(document.getElementById("root")!);

@@ -10,7 +10,7 @@ async page => {
     await page.setViewportSize({width:1440,height:1100});
     for(const [interval,seconds] of Object.entries(expected)){
       if(quick.includes(interval))await page.getByRole('button',{name:`${interval} timeframe`,exact:true}).click();
-      else await page.getByLabel('More chart intervals',{exact:true}).selectOption(interval);
+      else await page.getByLabel('Chart timeframe',{exact:true}).selectOption(interval);
       await page.waitForFunction(seconds=>{
         const state=window.__arxChartQa?.snapshot(),data=window.__arxChartQa?.data();
         return state?.intervalSeconds===seconds && state.barCount===5000 && state.feed.source==='offline_fixture'
@@ -19,15 +19,15 @@ async page => {
       },seconds);
       checks.push({interval,seconds,renderedBars:5000,source:'offline_fixture'});
     }
-    await page.getByLabel('More chart intervals',{exact:true}).selectOption('H12');await page.reload();
+    await page.getByLabel('Chart timeframe',{exact:true}).selectOption('H12');await page.reload();
     await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.intervalSeconds===43200);
-    check(await page.getByLabel('More chart intervals',{exact:true}).inputValue()==='H12','Saved H12 selection lost');
+    check(await page.getByLabel('Chart timeframe',{exact:true}).inputValue()==='H12','Saved H12 selection lost');
     const unsupported=[];
     for(const interval of ['W1','MN1']){
       await page.evaluate(value=>localStorage.setItem('arx.nativeChart.timeframe',value),interval);await page.reload();
       await page.getByText(interval==='W1'?'Weekly charts are unavailable until source-verified week boundaries are supported. Provider weeks cannot be aligned by a fixed epoch offset.':'Monthly charts are unavailable until source-verified calendar-month boundaries are supported. A month is not a fixed 30 or 31 days.',{exact:true}).waitFor();
       await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.barCount===0);
-      check(await page.getByLabel('More chart intervals',{exact:true}).locator(`option[value="${interval}"]`).isDisabled(),`${interval} offered without source boundaries`);
+      check(await page.getByLabel('Chart timeframe',{exact:true}).locator(`option[value="${interval}"]`).isDisabled(),`${interval} offered without source boundaries`);
       unsupported.push({interval,visibleRefusal:true,renderedBars:0});
     }
     check(errors.length===0,`Page exceptions: ${errors}`);

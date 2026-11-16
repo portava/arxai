@@ -22,7 +22,11 @@ async page => {
  await page.getByRole('button',{name:'M5 timeframe',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-M5"]')?.getAttribute('aria-pressed')==='true');
  await page.getByRole('button',{name:'Switch instrument',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-symbol"]')?.textContent==='XAUUSD');
+ await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-market-select"]')?.value==='XAUUSD');
+ await page.getByLabel('Chart market',{exact:true}).selectOption('EURUSD');
+ await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-market-select"]')?.value==='EURUSD');
+ await page.getByLabel('Chart timeframe',{exact:true}).selectOption('H4');
+ await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-H4"]')?.getAttribute('aria-pressed')==='true');
  await page.setViewportSize({width:390,height:844});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
  if(overflow) throw Error('Mobile horizontal page overflow');

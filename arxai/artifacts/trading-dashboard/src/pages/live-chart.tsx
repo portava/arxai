@@ -54,7 +54,7 @@ export default function LiveChartPage() {
   // as a small label so the Shell is honest about which engine is drawing and so
   // a future engine swap is visible without code spelunking.
   const activeEngine = CHART_ENGINE_DESCRIPTORS[DEFAULT_CHART_ENGINE_ID];
-  const [chartSymbol] = useChartSymbol();
+  const [chartSymbol, setChartSymbol] = useChartSymbol();
   // The Shell owns the timeframe (controlled). The Native renderer reflects this
   // value and reports user changes back via onTimeframeChange, so the Shell — not
   // the renderer — is the single source of truth for the timeframe on screen.
@@ -170,6 +170,7 @@ export default function LiveChartPage() {
               mode={mode.cleanModeLabel}
               timeframe={timeframe}
               onTimeframeChange={onTimeframeChange}
+              onMarketSelect={setChartSymbol}
               height={chartHeight}
               mobileHeight={360}
               compactWorkspace
