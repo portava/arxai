@@ -31,7 +31,7 @@ import { loadVerifiedFixture } from "./realHistoryFixture.js";
 import { loadVerifiedIntradayFixture, TIMEFRAME_SECONDS, type IntradayTimeframe } from "./intradayHistoryFixture.js";
 import { loadVerifiedMarketsFixture, MARKETS_FIXTURE_DIR_NAME } from "./marketsHistoryFixture.js";
 import {
-  runRealDataValidation, INTRADAY_RUNNER_PARAMS, MARKETS_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams,
+  runRealDataValidation, INTRADAY_RUNNER_PARAMS, MARKETS_RUNNER_PARAMS, MT5_BROKER_RUNNER_PARAMS, DEFAULT_RUNNER_PARAMS, grossParams,
   type AssetClass, type PlantedEdgeSpec, type RealDataRunResult, type RunnerInstrument, type RunnerParams,
 } from "./realDataValidation.js";
 import { isEntrypoint } from "../ci/inProcessAppHarness.js";
@@ -298,7 +298,7 @@ async function main() {
     }
     ({ datasetHash, instruments } = loaded);
     datasetSource = "db:broker_candles(mt5,intraday)";
-    params = INTRADAY_RUNNER_PARAMS;
+    params = MT5_BROKER_RUNNER_PARAMS;
   } else throw new Error(`unknown --source ${source}`);
 
   if (flag("--gross")) { params = grossParams(params); datasetSource += " gross-of-costs diagnostic"; }

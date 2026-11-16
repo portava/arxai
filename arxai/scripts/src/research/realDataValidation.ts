@@ -133,6 +133,17 @@ export const MARKETS_RUNNER_PARAMS: RunnerParams = {
   costPerTurnover: { fx: 0.00005, metal: 0.00005, index: 0.0001 },
 };
 
+/**
+ * Stored MT5 broker lane (every approved market: FX, gold/silver, index and
+ * crypto CFDs, Deriv synthetics). Same assumed half-spreads as the intraday
+ * and markets lanes; crypto CFDs 5bp (about $29 on a ~$58,000 BTC, above the
+ * broker's recorded median). Assumed, not measured: run --gross alongside.
+ */
+export const MT5_BROKER_RUNNER_PARAMS: RunnerParams = {
+  ...INTRADAY_RUNNER_PARAMS,
+  costPerTurnover: { fx: 0.00005, metal: 0.00005, index: 0.0001, crypto: 0.0005, synthetic: 0.0001 },
+};
+
 /** The same parameters with every cost set to zero — a diagnostic, never the headline. */
 export function grossParams(p: RunnerParams): RunnerParams {
   return { ...p, costPerTurnover: Object.fromEntries(Object.keys(p.costPerTurnover).map((k) => [k, 0])) as RunnerParams["costPerTurnover"] };
