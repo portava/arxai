@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
  * a row of their own. The controls stay mounted while closed, so their state,
  * focus targets and labels are unchanged; only their visibility differs.
  *
- * The popup opens under its button and flips to the button's right edge when
- * it would otherwise run off the side of the window.
+ * The popup opens under its button. It stays inside the nearest ancestor that
+ * clips it (a scrolling tools panel, or the chart card): it flips to the
+ * button's right edge, or else shifts and narrows, rather than being cut off.
  */
 export function ToolbarPopup({ label, title, popupLabel, testId, children, open: controlled, onOpenChange, disabled }: {
   label: ReactNode; title?: string; popupLabel: string; testId: string; children: ReactNode;
@@ -20,17 +21,14 @@ export function ToolbarPopup({ label, title, popupLabel, testId, children, open:
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const id = useId();
-  const [alignEnd, setAlignEnd] = useState(false);
+  // Horizontal placement relative to the trigger: null = default left edge.
+  const [placement, setPlacement] = useState<PopupPlacement | null>(null);
   useEffect(() => {
     if (!open || typeof window === "undefined") return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // The chart card clips its contents, so fit inside it rather than the window.
-    const card = triggerRef.current?.closest<HTMLElement>('[data-testid="arx-native-chart"]')?.getBoundingClientRect();
-    const left = card?.left ?? 0, right = card?.right ?? window.innerWidth;
-    const width = Math.min(416, window.innerWidth * 0.9);
-    // Prefer the left edge; flip only when that overflows and the flip fits.
-    setAlignEnd(rect.left + width > right - 8 && rect.right - width >= left + 8);
+    const trigger = triggerRef.current;
+    const rect = trigger?.getBoundingClientRect();
+    if (!trigger || !rect) return;
+    setPlacement(fitPopup(rect, popupBounds(trigger)));
   }, [open]);
   const latest = useRef(setOpen); latest.current = setOpen;
   useEffect(() => {
@@ -51,9 +49,41 @@ export function ToolbarPopup({ label, title, popupLabel, testId, children, open:
     </Button>
     <div id={id} role="group" aria-label={popupLabel} data-testid={`${testId}-controls`}
       className={open
-        ? `absolute z-40 mt-1 flex flex-wrap items-center gap-2 rounded-md border border-zinc-700 bg-zinc-950 p-3 text-xs shadow-xl shadow-black/50 top-full w-max max-w-[min(90vw,26rem)] ${alignEnd ? "right-0" : "left-0"}`
-        : "hidden"}>
+        ? `absolute z-40 mt-1 flex flex-wrap items-center gap-2 rounded-md border border-zinc-700 bg-zinc-950 p-3 text-xs shadow-xl shadow-black/50 top-full w-max max-w-[min(90vw,26rem)]`
+        : "hidden"}
+      style={open ? { ...(placement?.alignEnd ? { right: 0 } : { left: placement?.left ?? 0 }), ...(placement ? { maxWidth: placement.maxWidth } : {}) } : undefined}>
       {children}
     </div>
   </div>;
+}
+
+const POPUP_WIDTH = 416, POPUP_GAP = 8;
+
+/** The horizontal box the popup must stay inside: the nearest ancestor that
+ * clips overflow, else the chart card, else the window. */
+export function popupBounds(trigger: HTMLElement): { left: number; right: number } {
+  for (let el = trigger.parentElement; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowX;
+    if (overflow !== "visible" && overflow !== "") {
+      const box = el.getBoundingClientRect();
+      if (box.width > 0) return { left: box.left, right: box.right };
+    }
+    if (el.dataset.testid === "arx-native-chart") break;
+  }
+  const card = trigger.closest<HTMLElement>('[data-testid="arx-native-chart"]')?.getBoundingClientRect();
+  return { left: card?.left ?? 0, right: card?.right ?? window.innerWidth };
+}
+
+/** Popup left offset (relative to the trigger) and maximum width. Prefer the
+ * trigger's left edge, then its right edge; otherwise shift so the popup starts
+ * inside the bounds and narrow it to fit. */
+export interface PopupPlacement { alignEnd: boolean; left: number; maxWidth: number }
+export function fitPopup(trigger: { left: number; right: number }, bounds: { left: number; right: number },
+  viewportWidth = typeof window === "undefined" ? POPUP_WIDTH : window.innerWidth): PopupPlacement {
+  const room = Math.max(0, bounds.right - bounds.left - 2 * POPUP_GAP);
+  const width = Math.min(POPUP_WIDTH, viewportWidth * 0.9, room);
+  const min = bounds.left + POPUP_GAP, max = bounds.right - POPUP_GAP;
+  if (trigger.left + width <= max) return { alignEnd: false, left: 0, maxWidth: width };
+  if (trigger.right - width >= min) return { alignEnd: true, left: 0, maxWidth: width };
+  return { alignEnd: false, left: Math.max(min, max - width) - trigger.left, maxWidth: width };
 }

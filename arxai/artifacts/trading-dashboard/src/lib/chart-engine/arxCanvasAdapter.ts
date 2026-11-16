@@ -1134,18 +1134,25 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     if (lo > 0 && range.from < this.barEnd(displayed[lo - 1]!.time)) from--;
     lo = 0; hi = displayed.length;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (displayed[mid]!.time <= range.to) lo = mid + 1; else hi = mid; }
-    const to = lo - 1;
+    let to = lo - 1;
     if (from > to || from >= displayed.length || to < 0) {
       this.viewLinkStatusHandler?.("Linked time range is outside loaded history. This view has not moved.");
       return;
     }
     // Map UTC time to this instrument's real bars, never copy logical indices
     // between intervals or create candles across a closed-market gap.
+    // Empty space after the newest bar (the source's right offset) is mirrored
+    // at this view's own bar spacing, so linked views end at the same time.
+    // No candle is created there; it is the same blank margin the canvas draws.
+    if (to === displayed.length - 1 && range.to >= this.barEnd(last.time) && this.intervalSeconds > 0) {
+      to += (range.to - last.time) / this.intervalSeconds;
+    }
     const current = this.chart.timeScale().getVisibleLogicalRange();
     if (!current || Math.abs(current.from-from) > 1e-6 || Math.abs(current.to-to) > 1e-6) {
       this.chart.timeScale().setVisibleLogicalRange({from,to});
     }
-    this.viewLinkStatusHandler?.(range.from < first.time || range.to >= this.barEnd(last.time)
+    // Blank future margin is not missing history; only an earlier start clips.
+    this.viewLinkStatusHandler?.(range.from < first.time || (range.to >= this.barEnd(last.time) && this.intervalSeconds <= 0)
       ? "Linked time range is clipped to this view's loaded history." : "");
   }
 

@@ -222,6 +222,16 @@ describe("linked view adapter boundaries", () => {
     mocks.scale.setVisibleLogicalRange.mockClear();adapter.setLinkedTimeRange({from:300,to:400});expect(mocks.scale.setVisibleLogicalRange).not.toHaveBeenCalled();expect(status).toHaveBeenLastCalledWith(expect.stringContaining("has not moved"));
     adapter.setLinkedTimeRange(null);expect(status).toHaveBeenLastCalledWith("");
   });
+  it("mirrors a linked view's blank margin after the newest bar instead of clipping it", () => {
+    adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160),bar(220)]);
+    const status=vi.fn();adapter.setViewLinkStatusHandler(status);
+    // The source ends 8 bars past its newest candle (its right offset).
+    adapter.setLinkedTimeRange({from:160,to:220+8*60});
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:1,to:10});expect(status).toHaveBeenLastCalledWith("");
+    // Inside the newest bar there is no margin to mirror.
+    adapter.setLinkedTimeRange({from:160,to:250});
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:1,to:2});
+  });
   it("publishes user navigation but suppresses deferred range echoes until a new local gesture", () => {
     vi.useFakeTimers();adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160),bar(220),bar(400)]);
     const publish=vi.fn();adapter.setViewLinkHandler(publish);

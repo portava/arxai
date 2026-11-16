@@ -8,9 +8,7 @@ async page => {
  await page.getByRole('button',{name:'Tools',exact:true}).click();
  await page.getByRole('button',{name:'Latest',exact:true}).waitFor();
  await expand('History · 5000');
- // Keyboard activation: at this viewport the History popover opens beneath the
- // candle inspector bar, which intercepts pointer clicks on Fit history.
- await page.getByRole('button',{name:'Fit all loaded chart history',exact:true}).press('Enter');
+ await page.getByRole('button',{name:'Fit all loaded chart history',exact:true}).click();
  await page.getByRole('button',{name:'Latest',exact:true}).click();
  await expand('Chart tools'); await expand('Display');
  for(const scale of ['log','percent','indexed','linear']) await page.getByLabel('Price scale',{exact:true}).selectOption(scale);
