@@ -145,6 +145,13 @@ ensureSafetyCoreInitialized()
       startHeapWatch();
       if (isPreviewSafeStart()) {
         logger.warn("Development preview safe start: background jobs paused; authentication available; no schema migration performed");
+        // One exception: the structural forecast grader. It only scores
+        // forecasts whose window has closed and appends evaluation rows; it
+        // never sends broker work. Opt out with ARX_STRUCTURAL_GRADER=off.
+        if (process.env.ARX_STRUCTURAL_GRADER !== "off") {
+          startStructuralGradingWorker();
+          logger.warn("Preview safe start: structural forecast grader running (set ARX_STRUCTURAL_GRADER=off to pause)");
+        }
       } else {
       // Truth audit T1 follow-up — persist / reseed each bridge's measured
       // broker clock offset across restarts (best-effort, never blocks ingest).
@@ -189,7 +196,7 @@ ensureSafetyCoreInitialized()
       // closed, so grades no longer wait for someone to reopen the panel.
       // Same scoring path as the history read; writes only append-only
       // evaluation rows. Fail-soft; first cycle after one interval.
-      startStructuralGradingWorker();
+      if (process.env.ARX_STRUCTURAL_GRADER !== "off") startStructuralGradingWorker();
       // Expired-registration-key sweep worker — automatically transitions
       // past-expiry PENDING keys to the terminal EXPIRED status so cohort/active
       // counts and the admin Registration Keys list stay honest. Idempotent,
