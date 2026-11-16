@@ -64,8 +64,10 @@ function baseOpp(over: Partial<ScannerOpportunity> = {}): ScannerOpportunity {
 // 1. The clean, live, chart-confirmed baseline CAN be HIGH + TRADE_WATCH.
 {
   const r = computeFinalRead(baseOpp());
-  check("live + chart-confirmed + clean → HIGH / TRADE_WATCH",
-    r.confidence === "HIGH" && r.label === "TRADE_WATCH",
+  // Since 8ad9fd71 nothing reaches HIGH without a measured basis: the best a
+  // clean live read can be is MEDIUM, still actionable.
+  check("live + chart-confirmed + clean → MEDIUM / TRADE_WATCH (never HIGH without a measured basis)",
+    r.confidence === "MEDIUM" && r.label === "TRADE_WATCH",
     `confidence=${r.confidence} label=${r.label}`);
 }
 
