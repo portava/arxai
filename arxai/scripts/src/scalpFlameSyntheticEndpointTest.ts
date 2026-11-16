@@ -16,12 +16,14 @@
 //   - POST /api/me/scalp/build  (Eleanor Scalp Builder over the synthetic universe)
 //
 // WHAT IT PROVES
-//   1. LIVE-DATA case (flame.blind === false): Focus on a synthetic symbol with
-//      a REAL pushed candle window (via the genuine mt5Provider injection seam
-//      the EA bridge uses — FIRST in the synthetic chain) returns a fully-formed
-//      flame whose `blind` is false. Focus is the only path that fetches a
-//      per-symbol candle window, so it is the only one that can legitimately be
-//      non-blind.
+//   1. LIVE-DATA case (flame.blind === true, by design): Focus on a synthetic
+//      symbol with a REAL pushed candle window (via the genuine mt5Provider
+//      injection seam the EA bridge uses — FIRST in the synthetic chain) has
+//      sufficient data, yet returns a well-formed BLIND flame and no scalp:
+//      generated synthetic indices are random by design, so the shared verdict
+//      withholds direction (reason random_by_design) and the scalp says so
+//      instead of building a direction call. (Owner ruling 2026-11-16; measured:
+//      replayed scanner calls on synthetics score about 0 R before costs.)
 //   2. AWAITING-DATA case (flame.blind === true): Focus on a synthetic symbol
 //      with a REAL but sub-threshold candle window (< MIN_FLAME_CANDLES) pushed
 //      through the same mt5_broker seam returns a well-formed flame whose `blind`
@@ -31,8 +33,7 @@
 //   3. NO-FABRICATION on the hot path: Broad + Builder evaluate the same live
 //      synthetic universe, yet they intentionally do NOT re-fetch a per-symbol
 //      candle window (rate-limit guard → candles:null), so EVERY flame they
-//      return is honestly blind. We assert the only non-blind flame anywhere in
-//      the run is the single Focus live read.
+//      return is honestly blind. No flame anywhere in the run is non-blind.
 //   4. SHAPE: every returned flame carries all required keys with valid enum
 //      values (a contract guard against a future refactor dropping a field or
 //      emitting an off-contract enum through the API projection).
@@ -332,28 +333,24 @@ async function main(): Promise<void> {
     return { status: res.status, json } as { status: number; json: any };
   };
 
-  // Track: the ONLY non-blind flame allowed in the whole run is the Focus live read.
+  // Track: no non-blind flame is allowed anywhere in the run on synthetics.
   let nonBlindCount = 0;
   const countFlame = (flame: any) => {
     if (flame && flame.blind === false) nonBlindCount++;
   };
 
-  // ── 1. Focus — LIVE synthetic data → flame present, well-formed, blind===false
+  // ── 1. Focus — LIVE synthetic data → sufficient, but direction withheld:
+  //    blind flame, no scalp, and the reason names the random-by-design rule.
   // eslint-disable-next-line no-console
-  console.log(`POST /api/me/scalp/focus (${LIVE_SYMBOL}) — live synthetic candle window → non-blind flame`);
+  console.log(`POST /api/me/scalp/focus (${LIVE_SYMBOL}) — live synthetic candle window → direction withheld, blind flame`);
   const focusLive = await postJson("/api/me/scalp/focus", { symbol: LIVE_SYMBOL });
   assert(focusLive.status === 200, `focus(live) HTTP 200 (got ${focusLive.status})`);
   const liveFlame = focusLive.json?.flame;
   assertWellFormedFlame(liveFlame, "focus(live)");
-  assert(liveFlame?.blind === false, `focus(live): flame.blind === false (got ${String(liveFlame?.blind)})`);
-  // The flame age proves the REAL candle window was actually consumed and
-  // analyzed (a blind read reports age 0). A non-blind read need not be
-  // actionable — a long unbroken run reads as overextended — but it MUST
-  // reflect genuine candle analysis of the injected synthetic window.
-  assert(
-    typeof liveFlame?.flameAgeCandles === "number" && liveFlame.flameAgeCandles >= 1,
-    `focus(live): real synthetic candle window was consumed (flameAgeCandles >= 1, got ${String(liveFlame?.flameAgeCandles)})`,
-  );
+  assert(liveFlame?.blind === true, `focus(live): flame.blind === true — no direction is read on a random-by-design index (got ${String(liveFlame?.blind)})`);
+  assert(focusLive.json?.canBuildTrade === false, `focus(live): no scalp is built (canBuildTrade=${String(focusLive.json?.canBuildTrade)})`);
+  const liveReason = String(focusLive.json?.plainEnglishReason ?? "");
+  assert(/random/i.test(liveReason), `focus(live): the reason says the index is random by design (got "${liveReason}")`);
   countFlame(liveFlame);
 
   // ── 2. Focus — AWAITING synthetic data → flame present, well-formed, blind===true
@@ -420,8 +417,8 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log("\nNo-fabrication invariant across all synthetic routes");
   assert(
-    nonBlindCount === 1,
-    `exactly ONE non-blind flame in the entire run — the Focus live synthetic read (got ${nonBlindCount})`,
+    nonBlindCount === 0,
+    `no non-blind flame anywhere in the synthetic run (got ${nonBlindCount})`,
   );
 
   // ── Cleanup ──────────────────────────────────────────────────────────────

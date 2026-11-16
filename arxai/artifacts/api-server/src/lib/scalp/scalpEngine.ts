@@ -304,6 +304,14 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   else if (scanner.bias === "bullish") direction = "BUY";
   else if (scanner.bias === "bearish") direction = "SELL";
 
+  // A generated synthetic index has no direction to read: the shared verdict
+  // withholds it, and the scalp says why instead of "no clear direction".
+  if (sufficiency.reasonCode === "random_by_design") {
+    return rejectResult(input, "NO_CLEAN_SCALP", sufficiency.humanReason, {
+      canWatch: true,
+      plain: sufficiency.humanReason,
+    });
+  }
   if (!direction || scanner.recommendedAction === "REJECT") {
     return rejectResult(input, "NO_CLEAN_SCALP", NO_DIRECTION_NO_TRADE_REASON, {
       canWatch: true,
