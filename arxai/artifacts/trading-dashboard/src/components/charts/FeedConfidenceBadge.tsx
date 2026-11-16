@@ -115,6 +115,12 @@ export interface FeedConfidenceBadgeProps {
    * timeframe's feed it graded.
    */
   timeframeLabel?: string;
+  /**
+   * One chip instead of three: the source is folded into the quality chip as
+   * "· <source>" (same colour by severity). Provenance warnings stay separate,
+   * amber and always visible; the popover details are unchanged.
+   */
+  compact?: boolean;
 }
 
 export function FeedConfidenceBadge({
@@ -122,6 +128,7 @@ export function FeedConfidenceBadge({
   aiUsableResolved,
   showTrailingGap = false,
   timeframeLabel,
+  compact = false,
 }: FeedConfidenceBadgeProps) {
   const rawConf = feedConfidence(feedStatus);
   // Cap the raw feed verdict by the resolved verdict when one is supplied, so
@@ -188,14 +195,16 @@ export function FeedConfidenceBadge({
         >
           {/* Source sub-chip — distinct icon + colour per trust tier. Names the
               primary broker feed vs. whatever fallback is actually serving. */}
-          <Badge
-            variant="outline"
-            data-testid="arx-feed-provider"
-            className={`flex items-center gap-1 text-[10px] font-medium ${TIER_CHIP[provider.tier]}`}
-          >
-            <ProviderIcon className="h-3 w-3" />
-            {provider.label}
-          </Badge>
+          {!compact && (
+            <Badge
+              variant="outline"
+              data-testid="arx-feed-provider"
+              className={`flex items-center gap-1 text-[10px] font-medium ${TIER_CHIP[provider.tier]}`}
+            >
+              <ProviderIcon className="h-3 w-3" />
+              {provider.label}
+            </Badge>
+          )}
           {timeframeLabel ? (
             <Badge
               variant="outline"
@@ -229,6 +238,11 @@ export function FeedConfidenceBadge({
                 <ShieldAlert className="h-3 w-3" /> No&nbsp;AI
               </span>
             )}
+            {compact ? (
+              <span data-testid="arx-feed-provider" className="inline-flex items-center gap-0.5 opacity-90">
+                · <ProviderIcon className="h-3 w-3" />{provider.label}
+              </span>
+            ) : null}
           </Badge>
           {provenance.map((chip) => (
             <Badge

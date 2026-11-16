@@ -25,14 +25,14 @@ async page => {
  await chart.hover({position:{x:400,y:180}});
  const legend=await page.getByTestId('chart-candle-inspector').textContent();
  if(!legend.includes('UTC')||!legend.includes(' O ')) throw Error('No candle inspection');
- await page.getByRole('button',{name:'M5 timeframe',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-M5"]')?.getAttribute('aria-pressed')==='true');
+ await page.getByLabel('Chart timeframe',{exact:true}).selectOption('M5');
+ await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-select"]')?.value==='M5');
  await page.getByRole('button',{name:'Switch instrument',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-market-select"]')?.value==='XAUUSD');
  await page.getByLabel('Chart market',{exact:true}).selectOption('EURUSD');
  await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-market-select"]')?.value==='EURUSD');
  await page.getByLabel('Chart timeframe',{exact:true}).selectOption('H4');
- await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-H4"]')?.getAttribute('aria-pressed')==='true');
+ await page.waitForFunction(()=>document.querySelector('[data-testid="arx-native-tf-select"]')?.value==='H4');
  await page.setViewportSize({width:390,height:844});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
  if(overflow) throw Error('Mobile horizontal page overflow');

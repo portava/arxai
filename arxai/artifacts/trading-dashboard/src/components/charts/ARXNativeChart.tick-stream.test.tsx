@@ -307,8 +307,10 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
   it("keeps Drawing tools, all 18 layers and an honest timer control visible in compact mode", async () => {
     currentCandleResponse = makeResponse(liveFeedStatus());
     renderCompactChart();
-    expect(screen.getByTestId("arx-native-compact-tools")).toBeTruthy();
-    expect(screen.getByTestId("arx-native-drawing-tools")).toBeTruthy();
+    // Secondary tools sit in the header's one chart menu, mounted while closed.
+    const menu = screen.getByTestId("arx-native-chart-menu-controls");
+    expect(menu.contains(screen.getByTestId("arx-native-drawing-tools"))).toBe(true);
+    expect(menu.contains(screen.getByTestId("chart-layers-menu"))).toBe(true);
     const layers = screen.getByTestId("chart-layers-menu");
     expect(layers.textContent).toContain("/18");
     expect(screen.getByTestId("arx-native-candle-timer").textContent).toMatch(/waiting for a verified candle-close timestamp/);
@@ -713,19 +715,21 @@ describe("Smart Chart view controls", () => {
   it("reports timeframe selection in the click turn without a debounce timer",()=>{
     const changed=vi.fn();
     const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} onTimeframeChange={changed} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
-    fireEvent.click(view.getByTestId("arx-native-tf-M15"));
+    const select=view.getByLabelText("Chart timeframe") as HTMLSelectElement;
+    fireEvent.change(select,{target:{value:"M15"}});
     expect(changed).toHaveBeenLastCalledWith("M15");
-    fireEvent.click(view.getByTestId("arx-native-tf-H1"));
+    fireEvent.change(select,{target:{value:"H1"}});
     expect(changed.mock.calls).toEqual([["M15"],["H1"]]);
     expect(adapterSpies.init).toHaveBeenCalledOnce();
   });
   it("updates an uncontrolled selection immediately while retaining the chart instance",()=>{
     const view=render(<ARXNativeChart symbol={SYMBOL} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
-    fireEvent.click(view.getByTestId("arx-native-tf-M15"));
-    expect(view.getByTestId("arx-native-tf-M15").getAttribute("aria-pressed")).toBe("true");
+    const select=view.getByLabelText("Chart timeframe") as HTMLSelectElement;
+    fireEvent.change(select,{target:{value:"M15"}});
+    expect(select.value).toBe("M15");
     expect(adapterSpies.setTimeframe).toHaveBeenLastCalledWith("M15");
-    fireEvent.click(view.getByTestId("arx-native-tf-H1"));
-    expect(view.getByTestId("arx-native-tf-H1").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.change(select,{target:{value:"H1"}});
+    expect(select.value).toBe("H1");
     expect(adapterSpies.init).toHaveBeenCalledOnce();
   });
   it("renders safely without an overlays prop", () => {
@@ -950,7 +954,10 @@ describe("chart-first layout", () => {
       const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
       expect(precedes(view.getByTestId("arx-native-safe-mode"), plot)).toBe(true);
       expect(precedes(view.getByRole("button", { name: "Fullscreen" }), plot)).toBe(true);
-      expect(precedes(plot, view.getByRole("button", { name: "M1 timeframe" }))).toBe(true);
+      // Phones use the same one-row header: the interval dropdown and chart menu
+      // precede the plot; detailed tools still follow it.
+      expect(precedes(view.getByLabelText("Chart timeframe"), plot)).toBe(true);
+      expect(precedes(view.getByTestId("arx-native-chart-menu-toggle"), plot)).toBe(true);
       expect(precedes(plot, view.getByRole("toolbar", { name: "Chart view controls" }))).toBe(true);
       expect(precedes(plot, view.getByRole("group", { name: "Zoom and pan" }))).toBe(true);
       expect(precedes(plot, view.getByTestId("chart-assistant-activate"))).toBe(true);
@@ -1171,5 +1178,52 @@ describe("stored-history chart (no live feed answered)", () => {
     renderChart();
     expect(openedStreams).toHaveLength(0);
     expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+  });
+});
+
+describe("one-row chart header", () => {
+  it("puts the market, price and interval in one row and every secondary action in one menu", () => {
+    const width = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+      currentCandleResponse = makeResponse(liveFeedStatus());
+      const view = render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} mode="DEMO" onMarketSelect={vi.fn()} showFeedStatus={false} overlays={NO_OVERLAYS} compactWorkspace />);
+      const row = view.getByTestId("arx-native-header-market").parentElement!;
+      const cluster = view.getByTestId("arx-native-tf-controls");
+      expect(cluster.parentElement).toBe(row);
+      for (const id of ["arx-native-mode", "arx-native-last"]) expect(view.getByTestId("arx-native-header-market").contains(view.getByTestId(id))).toBe(true);
+      expect(cluster.contains(view.getByLabelText("Chart timeframe"))).toBe(true);
+      expect(cluster.contains(view.getByRole("button", { name: "Fullscreen" }))).toBe(true);
+      // No quick-interval buttons, and no secondary action outside the menu.
+      expect(view.queryByTestId(`arx-native-tf-${TF}`)).toBeNull();
+      expect(view.queryByTestId("arx-native-compact-tools")).toBeNull();
+      const toggle = view.getByTestId("arx-native-chart-menu-toggle"), menu = view.getByTestId("arx-native-chart-menu-controls");
+      for (const id of ["arx-native-forecast-open", "arx-native-advanced-toggle", "arx-native-reset-scale", "arx-native-reload", "arx-native-drawing-tools", "chart-layers-menu", "chart-volume-toggle", "chart-moving-averages-toggle"]) {
+        expect(menu.contains(view.getAllByTestId(id)[0]!)).toBe(true);
+      }
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(view.getByTestId("arx-native-reset-scale"));
+      expect(adapterSpies.resetScale).toHaveBeenCalled();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      // An action that opens a panel closes the menu and opens that panel.
+      fireEvent.click(toggle);
+      fireEvent.click(view.getByTestId("arx-native-advanced-toggle"));
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect((view.getByTestId("arx-native-advanced-details") as HTMLDivElement).hidden).toBe(false);
+    } finally { Object.defineProperty(window, "innerWidth", { configurable: true, value: width }); }
+  });
+  it("keeps truth notices on a visible line, never inside the menu", () => {
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), aiUsable: false });
+    const view = render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus overlays={NO_OVERLAYS} compactWorkspace />);
+    const notices = view.getByTestId("arx-native-header-notices");
+    const notAi = view.getByTestId("arx-native-not-ai");
+    expect(notices.contains(notAi)).toBe(true);
+    expect(view.getByTestId("arx-native-chart-menu-controls").contains(notAi)).toBe(false);
+    // The feed is one chip: quality with its source folded in.
+    const feed = view.getByTestId("arx-feed-badge");
+    expect(feed.contains(view.getByTestId("arx-feed-provider"))).toBe(true);
+    expect(feed.querySelectorAll('[data-testid="arx-feed-provider"]')).toHaveLength(1);
   });
 });

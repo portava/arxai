@@ -92,7 +92,7 @@ vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => nu
 
 import { ARXNativeChart } from "./ARXNativeChart";
 import { SmartChartLayout } from "./SmartChartLayout";
-import { CHART_INTERVALS, CHART_QUICK_INTERVALS } from "@/lib/chart-engine/chartIntervals";
+import { CHART_INTERVALS } from "@/lib/chart-engine/chartIntervals";
 import { CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
 
 let frames: FrameRequestCallback[] = [];
@@ -474,10 +474,7 @@ describe("deferred comparison engine init", () => {
     expect(screen.getByRole("region",{name:new RegExp(`EURUSD ${timeframe} price chart`)})).toBeTruthy();
     expect(created[0]!.setTimeframe).toHaveBeenLastCalledWith(timeframe);
     expect(candleRequests.at(-1)).toEqual({timeframe,enabled:true});
-    if ((CHART_QUICK_INTERVALS as readonly string[]).includes(timeframe)) {
-      expect(screen.getByRole("button",{name:`${timeframe} timeframe`,exact:true}).getAttribute("aria-pressed")).toBe("true");
-    }
-    // The timeframe dropdown always shows the current interval, quick or not.
+    // The header's one timeframe dropdown shows the current interval.
     expect((screen.getByLabelText("Chart timeframe") as HTMLSelectElement).value).toBe(timeframe);
   });
   it("selects additional intervals without remounting canvas, saves them and supports native calendar intervals", () => {

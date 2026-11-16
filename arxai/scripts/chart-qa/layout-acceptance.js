@@ -49,10 +49,10 @@ async qaPage => {
  if(await page.getByTestId('arx-native-chart').count()!==4)throw Error('Four charts did not mount');
  const second=page.getByRole('region',{name:'Comparison chart 1',exact:true});
  await second.locator('summary').first().click();await second.getByTestId('input-symbol-search').fill('gold');await second.getByTestId('suggestion-XAUUSD').click();
- await second.getByRole('button',{name:'H1 timeframe',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('[aria-label="Comparison chart 1"] [data-testid="arx-native-tf-H1"]')?.getAttribute('aria-pressed')==='true');
+ await second.getByLabel('Chart timeframe',{exact:true}).selectOption('H1');
+ await page.waitForFunction(()=>document.querySelector('[aria-label="Comparison chart 1"] [data-testid="arx-native-tf-select"]')?.value==='H1');
  if(await primary.getByLabel('Chart style',{exact:true}).inputValue()!=='line')throw Error('Layout reset primary preferences');
- if(await primary.getByTestId('arx-native-tf-M15').getAttribute('aria-pressed')!=='true')throw Error('Comparison changed primary interval');
+ if(await primary.getByTestId('arx-native-tf-select').inputValue()!=='M15')throw Error('Comparison changed primary interval');
  await page.getByLabel('Link crosshair',{exact:true}).check();await page.getByLabel('Link time range',{exact:true}).check();
  const canvas=primary.getByTestId('arx-native-canvas');await canvas.hover({position:{x:300,y:100}});
  await page.waitForFunction(()=>{const texts=[...document.querySelectorAll('[data-testid="chart-candle-inspector"]')].map(node=>node.textContent);const stamp=text=>Date.parse(text.slice(0,16).replace(' ','T')+':00Z');const delta=stamp(texts[0])-stamp(texts[1]);return Number.isFinite(delta)&&delta>=0&&delta<3600000;});

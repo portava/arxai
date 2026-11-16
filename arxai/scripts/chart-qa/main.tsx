@@ -1,7 +1,7 @@
 import React, {useState} from "react";
 import {createRoot} from "react-dom/client";
 import "./styles.css";
-import {ARXNativeChart} from "../../artifacts/trading-dashboard/src/components/charts/ARXNativeChart";
+import {ARXNativeChart, type ArxTimeframe} from "../../artifacts/trading-dashboard/src/components/charts/ARXNativeChart";
 import {SmartChartLayout} from "../../artifacts/trading-dashboard/src/components/charts/SmartChartLayout";
 import {ArxCanvasAdapter} from "../../artifacts/trading-dashboard/src/lib/chart-engine/arxCanvasAdapter";
 import {installChartQaWitnesses} from "./witness";
@@ -19,11 +19,17 @@ window.fetch=(input:RequestInfo|URL,init?:RequestInit)=>{
 };
 function Workbench(){
  const [symbol,setSymbol]=useState("EURUSD");
+ // ?compact=1 mounts the chart the way /live-chart does (compact workspace, mode
+ // badge, feed chip, controlled timeframe); the default is the plain workbench.
+ const compact=new URLSearchParams(location.search).get("compact")==="1";
+ const [timeframe,setTimeframe]=useState<ArxTimeframe>("M15");
  return <main style={{background:"#09090b",minHeight:"100vh",color:"#fafafa",padding:24}}>
  <h1 style={{fontSize:24,fontWeight:600}}>Smart Chart · Browser acceptance</h1>
  <p style={{color:"#fbbf24",margin:"8px 0 20px"}}>OFFLINE FIXTURE — synthetic candles, no market connection or trading</p>
  <button onClick={()=>setSymbol(s=>s==="EURUSD"?"XAUUSD":"EURUSD")} style={{marginBottom:12}}>Switch instrument</button>
- <SmartChartLayout symbol={symbol}><ARXNativeChart symbol={symbol} onMarketSelect={setSymbol} limit={5000} height={520} showFeedStatus={false}/></SmartChartLayout>
+ <SmartChartLayout symbol={symbol}>{compact
+  ? <ARXNativeChart symbol={symbol} mode="DEMO" timeframe={timeframe} onTimeframeChange={setTimeframe} onMarketSelect={setSymbol} limit={5000} height={520} mobileHeight={360} compactWorkspace showFeedStatus/>
+  : <ARXNativeChart symbol={symbol} onMarketSelect={setSymbol} limit={5000} height={520} showFeedStatus={false}/>}</SmartChartLayout>
  </main>;
 }
 const root=createRoot(document.getElementById("root")!);

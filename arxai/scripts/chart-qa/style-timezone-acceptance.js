@@ -107,13 +107,13 @@ async qaPage => {
     await page.getByLabel('Go to America/New_York date and time', { exact: true }).fill('2026-03-08T02:30');
     await page.getByRole('button', { name: 'Go to America/New_York', exact: true }).click();
     await page.getByText('That time does not exist in America/New_York (clock change). Choose another time.', { exact: true }).waitFor();
-    await page.getByRole('button', { name: 'D1 timeframe', exact: true }).click();
+    await page.getByLabel('Chart timeframe', { exact: true }).selectOption('D1');
     await page.getByTestId('chart-daily-zone-note').waitFor();
     await page.getByLabel('Go to UTC date and time', { exact: true }).waitFor();
     check(await zone.inputValue() === 'America/New_York', 'Daily view discarded the chosen zone');
     await chart.hover({ position: { x: 300, y: 120 } });
     await page.waitForFunction(() => /^\d{4}-\d{2}-\d{2} 00:00 UTC  ·  O /.test(document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent ?? ''));
-    await page.getByRole('button', { name: 'M15 timeframe', exact: true }).click();
+    await page.getByLabel('Chart timeframe', { exact: true }).selectOption('M15');
     await page.getByLabel('Go to America/New_York date and time', { exact: true }).waitFor();
     await chart.hover({ position: { x: 300, y: 120 } });
     await page.waitForFunction(() => / (EDT|EST)  ·  O /.test(document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent ?? ''));

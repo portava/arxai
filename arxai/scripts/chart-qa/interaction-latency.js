@@ -151,9 +151,8 @@ async outer => {
   let horizontalId = null, horizontalY = 80;
 
   const groups = [
-    { name: 'timeframes', step: async ctx => {
-      for (const tf of ['M30', 'H1', 'H4', 'D1', 'M1', 'M5', 'M15']) await click(`Timeframe ${tf}`, primary.getByTestId(`arx-native-tf-${tf}`), { type: 'pressed', selector: `[data-testid="arx-native-tf-${tf}"]`, value: true })(ctx);
-    } },
+    // The header has one timeframe dropdown (no quick buttons): step M15 -> M20 -> M15.
+    { name: 'timeframes', step: selectStep('Chart timeframe', ['M15', 'M20']) },
     { name: 'chart style', step: selectStep('Chart style', ['candles', 'bars']) },
     { name: 'price scale', step: selectStep('Price scale', ['linear', 'log']) },
     { name: 'invert scale', step: pair(click('Invert scale (on)', button('Invert scale'), { type: 'pressed', text: 'Invert scale', value: true }),

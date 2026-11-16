@@ -26,7 +26,7 @@ import {
 import type { ChartGhostPath } from "@/lib/chart-engine/types";
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { CHART_QUICK_INTERVALS, isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds, chartBarCloseSeconds } from "@/lib/chart-engine/chartIntervals";
+import { isChartInterval, restoreChartInterval, chartIntervalLimitation, chartIntervalSeconds, chartBarCloseSeconds } from "@/lib/chart-engine/chartIntervals";
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext, type ReactNode, type HTMLAttributes, Fragment } from "react";
 import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -56,7 +56,9 @@ import {
   Maximize2,
   Minimize2,
   ArrowRightToLine,
+  SlidersHorizontal,
 } from "lucide-react";
+import { ToolbarPopup } from "./ToolbarPopup";
 import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
@@ -139,7 +141,6 @@ const u = (p: string) => `${BASE}${p}`;
 
 export type ArxTimeframe = (typeof GetChartCandlesTimeframe)[keyof typeof GetChartCandlesTimeframe];
 
-const TIMEFRAMES = CHART_QUICK_INTERVALS.map(id => ({id,label:id}));
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
@@ -784,6 +785,8 @@ export function ARXNativeChart({
   const [mobileLayout, setMobileLayout] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [advancedToolsMounted, setAdvancedToolsMounted] = useState(false);
+  // The header's one menu: every secondary chart action lives here.
+  const [chartMenuOpen, setChartMenuOpen] = useState(false);
   // Which part the small details window shows, and where it was dragged to.
   const [detailsSection, setDetailsSection] = useState<"all" | "tools" | "forecast" | "read">("all");
   const [detailsOffset, setDetailsOffset] = useState({ x: 0, y: 0 });
@@ -1722,89 +1725,9 @@ export function ARXNativeChart({
   // follows the visual order, including keyboard focus; source/quality notices
   // remain above the plot. Keyed controls and the plot survive breakpoint moves.
   const fullscreenToggle = (
-    <Button size="sm" variant="outline" className={mobileLayout ? "ml-auto h-7 px-2 text-xs" : "h-8 text-xs"} aria-pressed={expanded} aria-label={expanded ? "Exit fullscreen" : "Fullscreen"} onClick={() => setExpanded((v) => !v)}>
-          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
-          <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
-        </Button>);
-  const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full flex-nowrap overflow-x-auto py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
-            {hasCandles && (
-              <span className={`mr-1 text-[10px] text-zinc-500 ${compactDesktopWorkspace ? "shrink-0 whitespace-nowrap" : ""}`} data-testid="arx-native-timezone" title={timeAxisTitle}>
-                {timeAxisLabel}
-              </span>
-            )}
-            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>{setReplayError(null);void replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}).then(setReplayError);}}>Replay loaded bars</Button>}
-            {TIMEFRAMES.map((tf) => (
-              <Button
-                key={tf.id}
-                size="sm"
-                variant={timeframe === tf.id ? "default" : "outline"}
-                className={`h-7 px-2 text-xs ${compactDesktopWorkspace ? "shrink-0 whitespace-nowrap" : ""}`}
-                onClick={() => setTimeframe(tf.id)}
-                aria-pressed={timeframe === tf.id}
-                aria-label={`${tf.label} timeframe`}
-                data-testid={`arx-native-tf-${tf.id}`}
-              >
-                {tf.label}
-              </Button>
-            ))}
-            <ChartTimeframeSelect timeframe={timeframe} onSelect={setTimeframe} className={compactDesktopWorkspace ? "shrink-0" : ""}/>
-            {(hasCandles || compactDesktopWorkspace) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className={`h-7 text-zinc-500 hover:text-zinc-300 ${compactDesktopWorkspace ? "w-7 shrink-0 p-0" : "px-2 text-[11px]"}`}
-                disabled={!hasCandles}
-                onClick={resetScale}
-                aria-label="Reset chart scale"
-                title="Reset scale — restore default visible range"
-                data-testid="arx-native-reset-scale"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {compactDesktopWorkspace && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                aria-label="Open the projected path forecast"
-                title="Forecast — pick a window from 15 minutes to 1 week; scenario paths are drawn ahead of the latest candle"
-                aria-controls="arx-structural-forecast"
-                data-testid="arx-native-forecast-open"
-                onClick={() => {
-                  // The forecast panel lived only inside the collapsed Advanced
-                  // section, so the dashboard chart showed no way to reach it.
-                  setAdvancedToolsMounted(true);
-                  setDetailsSection("forecast");
-                  setAdvancedToolsOpen(true);
-                  const reveal = () => document.getElementById("arx-structural-forecast")?.scrollIntoView?.({ block: "nearest" });
-                  if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
-                  else reveal();
-                }}
-              >
-                Forecast
-              </Button>
-            )}
-            {compactDesktopWorkspace && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                aria-label="Advanced chart details"
-                aria-expanded={advancedToolsOpen}
-                aria-controls="arx-advanced-chart-content"
-                data-testid="arx-native-advanced-toggle"
-                onClick={() => {
-                  const next = !advancedToolsOpen;
-                  setDetailsSection("all");
-                  setAdvancedToolsOpen(next);
-                  if (next) setAdvancedToolsMounted(true);
-                }}
-              >
-                Advanced
-              </Button>
-            )}
-          </div>);
+    <Button size="sm" variant="outline" className="h-8 w-8 shrink-0 p-0" aria-pressed={expanded} aria-label={expanded ? "Exit fullscreen" : "Fullscreen"} title={expanded ? "Exit fullscreen (Esc)" : "Fullscreen"} onClick={() => setExpanded((v) => !v)}>
+      {expanded ? <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />}
+    </Button>);
   const layersMenu = (
     <ChartLayersMenu
       value={layers}
@@ -1888,39 +1811,104 @@ export function ARXNativeChart({
   const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
   // 20 and 50 period moving averages: blue where rising (bull), red where falling (bear).
   const averagesToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.movingAverages !== false} title="20 and 50 period simple moving averages of the close. Blue where the average rises, red where it falls." onClick={() => setPreferences(previous => ({ ...previous, movingAverages: previous.movingAverages === false }))} data-testid="chart-moving-averages-toggle">MA 20/50 {preferences.movingAverages === false ? "off" : "on"}</Button>;
-  const compactQuickTools = compactDesktopWorkspace ? (
-    <div
-      className="flex min-w-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-2 py-1.5"
-      role="toolbar"
-      aria-label="Smart Chart quick tools"
-      data-testid="arx-native-compact-tools"
+  const menuItem = "h-8 justify-start px-2 text-xs";
+  const closeMenu = () => setChartMenuOpen(false);
+  // Secondary actions, one menu. The controls stay mounted while it is closed.
+  // In the compact workspace the history, drawing, layer, volume and average
+  // controls live here; otherwise they are in the Tools window below the plot.
+  const chartMenu = (
+    <ToolbarPopup
+      label={<><SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" /><span className={mobileLayout ? "sr-only" : undefined}>Chart menu</span></>}
+      title="Replay, forecast, history, drawing tools, layers, volume, scale"
+      popupLabel="Chart menu"
+      testId="arx-native-chart-menu"
+      open={chartMenuOpen}
+      onOpenChange={setChartMenuOpen}
     >
-      {historyControls}
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7 px-2 text-xs"
-        aria-label="Open drawing tools"
-        aria-controls="arx-chart-workbench-tools"
-        onClick={openDrawingTools}
-        data-testid="arx-native-drawing-tools"
-      >
-        Drawing tools
-      </Button>
-      {layersMenu}
-      {volumeToggle}
-      {averagesToggle}
-      <div className="ml-auto flex min-w-0 items-center" aria-label="Candle close timer">
-        {compactTimer}
+      <div className="flex w-full flex-col gap-1" data-testid="arx-native-tf-menu-actions">
+        {replay && <Button size="sm" variant="outline" className={menuItem} title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>{closeMenu();setReplayError(null);void replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}).then(setReplayError);}}>Replay loaded bars</Button>}
+        <Button
+          size="sm"
+          variant="outline"
+          className={menuItem}
+          aria-label="Open the projected path forecast"
+          title="Forecast — pick a window from 15 minutes to 1 week; scenario paths are drawn ahead of the latest candle"
+          aria-controls="arx-structural-forecast"
+          data-testid="arx-native-forecast-open"
+          onClick={() => { closeMenu(); openDetails("arx-structural-forecast"); }}
+        >
+          Forecast
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className={menuItem}
+          aria-label="Advanced chart details"
+          aria-expanded={advancedToolsOpen}
+          aria-controls="arx-advanced-chart-content"
+          data-testid="arx-native-advanced-toggle"
+          onClick={() => {
+            const next = !advancedToolsOpen;
+            setDetailsSection("all");
+            setAdvancedToolsOpen(next);
+            if (next) setAdvancedToolsMounted(true);
+            closeMenu();
+          }}
+        >
+          Advanced
+        </Button>
+        {compactDesktopWorkspace && <>
+          <Button size="sm" variant="outline" className={menuItem} aria-label="Open drawing tools" aria-controls="arx-chart-workbench-tools" onClick={() => { closeMenu(); openDrawingTools(); }} data-testid="arx-native-drawing-tools">Drawing tools</Button>
+          <div className="flex flex-wrap items-center gap-1">{historyControls}{layersMenu}</div>
+          <div className="flex flex-wrap items-center gap-1">{volumeToggle}{averagesToggle}</div>
+        </>}
+        <div className="flex flex-wrap items-center gap-1 border-t border-zinc-800 pt-1">
+          <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" disabled={!hasCandles} onClick={() => { closeMenu(); resetScale(); }} aria-label="Reset chart scale" title="Reset scale — restore default visible range" data-testid="arx-native-reset-scale">
+            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Reset scale
+          </Button>
+          {compactWorkspace && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs"
+              aria-label="Reload chart candles"
+              title="Reload chart candles"
+              data-testid="arx-native-reload"
+              disabled={externalFeed?.isFetching ?? query.isFetching}
+              onClick={() => { if (externalFeed) void externalFeed.refetch(); else void query.refetch(); }}
+            >
+              {(externalFeed?.isFetching ?? query.isFetching)
+                ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true"/>
+                : <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true"/>} Reload
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
-  ) : null;
+    </ToolbarPopup>
+  );
+  const headerTimer = compactWorkspace
+    ? compactTimer
+    : formingCloseMs != null && isLivePriceAffordance && !marketFrozen
+      ? <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} />
+      : null;
+  // Right side of the one header row: time basis, interval, candle timer,
+  // fullscreen and the chart menu.
+  const timeframeControls = (<div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1" role="toolbar" aria-label="Chart interval and menu" data-testid="arx-native-tf-controls">
+            {hasCandles && (
+              <span className="mr-1 whitespace-nowrap text-[10px] text-zinc-500" data-testid="arx-native-timezone" title={timeAxisTitle}>
+                {timeAxisLabel}
+              </span>
+            )}
+            <ChartTimeframeSelect timeframe={timeframe} onSelect={setTimeframe} className="h-8"/>
+            {!mobileLayout && headerTimer}
+            {fullscreenToggle}
+            {chartMenu}
+          </div>);
   const chartControls = <Fragment key="chart-controls">
     <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-3 py-2">
             <button type="button" className="min-h-11 rounded border border-zinc-700 px-2 text-xs text-cyan-300 disabled:opacity-50" aria-pressed={assistantPane.active} disabled={!hasCandles||query.isError||!adapterRef.current} onClick={()=>assistantPane.activate()} data-testid="chart-assistant-activate">{assistantPane.active?"Assistant selected":"Use chart with assistant"}</button>
             <span className="text-[11px] text-zinc-400" data-testid="chart-assistant-pane-context">{assistantPane.active?"Selected for local chart tools: ":"Select to use local chart tools: "}{resolvedSymbol} · {timeframe} · {data?.feedStatus?.source??"Unknown source"}{workspaceId!=="primary"?" · analysis only; primary trading unchanged":" · primary chart"}</span>
     </div>
-    {mobileLayout && <div className="px-3 py-2">{timeframeControls}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
         <div className="flex flex-wrap items-center gap-1">
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
@@ -1965,39 +1953,18 @@ export function ARXNativeChart({
 
   return (
     <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "relative overflow-hidden border-zinc-800 bg-zinc-950/40"}>
-      <CardHeader className={compactDesktopWorkspace ? "arx-native-chart-header-compact px-2 py-1 md:px-3" : "py-3 px-3 md:px-4"}>
-        <CardTitle className={compactDesktopWorkspace ? "arx-native-chart-title-compact flex flex-col items-stretch gap-1 text-sm" : "flex flex-wrap items-center justify-between gap-2 text-sm"}>
-          <div className={`flex flex-wrap items-center ${compactDesktopWorkspace ? "min-w-0 gap-1" : "gap-2"}`}>
-            <CandlestickChart className="h-4 w-4 text-primary" />
-            <Badge variant="outline" className="text-[10px]">ARX SMART CHART</Badge>
+      <CardHeader className={compactDesktopWorkspace ? "arx-native-chart-header-compact px-2 py-1 md:px-3" : "px-3 py-2 md:px-4"}>
+        {/* One header row: the market and its price on the left, the interval,
+            candle timer, fullscreen and the chart menu on the right. Every
+            secondary action is in the chart menu. */}
+        <CardTitle className={compactDesktopWorkspace ? "arx-native-chart-title-compact flex flex-wrap items-center gap-1 text-sm" : "flex flex-wrap items-center gap-2 text-sm"}>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="arx-native-header-market">
             {workspaceId === "primary" ? <AssistantDockSlot assistantEnabled={assistantPane.active}/> : assistantPane.active ? <AssistantDockSlot assistantOnly/> : null}
-            {fullscreenToggle}
-            {compactWorkspace && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 w-7 p-0"
-                aria-label="Reload chart candles"
-                title="Reload chart candles"
-                data-testid="arx-native-reload"
-                disabled={externalFeed?.isFetching ?? query.isFetching}
-                onClick={() => { if (externalFeed) void externalFeed.refetch(); else void query.refetch(); }}
-              >
-                {(externalFeed?.isFetching ?? query.isFetching)
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true"/>
-                  : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true"/>}
-              </Button>
-            )}
             {onMarketSelect
               ? <ChartMarketSelect symbol={resolvedSymbol} onSelect={onMarketSelect}/>
               : <span data-testid="arx-native-symbol" className="text-base font-semibold text-zinc-100">
                   {resolvedSymbol}
                 </span>}
-            {mode && (
-              <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground" data-testid="arx-native-mode">
-                {mode}
-              </Badge>
-            )}
             {lastClose != null && (
               // The canvas removes its live-price line/label when the feed is not
               // live-confirmed; the header must say the same thing in words.
@@ -2015,6 +1982,11 @@ export function ARXNativeChart({
                 {formatInstrumentPrice(lastClose, pricePrecision)}
               </Badge>
             )}
+            {mode && (
+              <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground" data-testid="arx-native-mode">
+                {mode}
+              </Badge>
+            )}
             {positionCount > 0 && (
               <Badge
                 variant="outline"
@@ -2028,8 +2000,17 @@ export function ARXNativeChart({
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
                 aiUsableResolved={badgeAiUsableResolved}
+                compact
               />
             )}
+          </div>
+          {timeframeControls}
+        </CardTitle>
+        {/* Truth notices are never behind a menu: one compact line, always
+            visible whenever any of them applies. */}
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 empty:hidden" aria-label="Chart data notices" data-testid="arx-native-header-notices">
+            {/* Phones keep the candle timer, full wording included, on this line so the header stays one row. */}
+            {mobileLayout && headerTimer}
             {refreshFailed && (
               <Badge
                 variant="outline"
@@ -2078,9 +2059,6 @@ export function ARXNativeChart({
                 <RefreshCw className="h-3 w-3 animate-spin" /> Reconnecting — prices delayed
               </Badge>
             )}
-            {!compactDesktopWorkspace && formingCloseMs != null && isLivePriceAffordance && !marketFrozen && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} />
-            )}
             {hasCandles && (
               <ChartHistoryBadge
                 loading={deepHistory.loading}
@@ -2104,11 +2082,8 @@ export function ARXNativeChart({
               </Badge>
             )}
           </div>
-          {!mobileLayout && timeframeControls}
-        </CardTitle>
       </CardHeader>
 
-      {compactQuickTools}
       {replayError && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{replayError}</p>}
       {tradeVolumeSelected && hasCandles && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
       {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
