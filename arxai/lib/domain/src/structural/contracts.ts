@@ -93,8 +93,16 @@ export interface ForecastUpdate { of: string; anchorAsOf: number; barsIntoWindow
 export interface ForecastGrade {
   gradeVersion: string;
   letter: "A" | "B" | "C" | "D" | "F";
-  /** 1 − Brier/uniform Brier of the probabilities shown: > 0 beats a coin toss among three outcomes. */
+  /**
+   * 1 − Brier of the probabilities shown / Brier of the baseline (the
+   * training period's own outcome frequencies). 0 = no better than always
+   * guessing those odds; > 0 = better; < 0 = worse. Floored at −1.
+   */
   skill: number;
+  /** The older yardstick: 1 − Brier/uniform Brier (beats a coin toss among three). Kept for comparison. */
+  skillVsUniform?: number;
+  /** True when this grade was re-derived on read from a stored older grade; the stored record is unchanged. */
+  rederived?: boolean;
   /** Probability the forecast gave the outcome that actually happened. */
   probabilityOfOutcome: number;
   /** Where price actually ended relative to the start, and which path ended nearest to it. */

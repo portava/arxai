@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -359,12 +359,32 @@ test("a finished forecast is graded on its whole window, against the probabiliti
   const window = evaluateForecast(f, future, f.asOf + 3_600_000).find(s => s.horizon === 15)!;
   const g = window.grade!;
   assert.ok(["A", "B", "C", "D", "F"].includes(g.letter));
-  close(g.skill, 1 - window.shownBrier! / (2 / 3));
+  // Skill is measured against the baseline odds, not a three-way coin toss.
+  close(g.skill, Math.max(-1, 1 - window.shownBrier! / window.baselineBrier));
+  close(g.skillVsUniform!, 1 - window.shownBrier! / (2 / 3));
   close(g.actualEndChange, bars[index + 14]!.close / history.at(-1)!.close - 1);
   assert.ok(["BULL", "MIDDLE", "BEAR"].includes(g.nearestPath!));
+  const base: [number, number, number] = [.45, .45, .1];
   // A confident correct call earns an A; a confident wrong one an F.
-  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 0).letter, "A");
-  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 1).letter, "F");
+  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 0, base).letter, "A");
+  assert.equal(gradeForecast(f, future.slice(0, 15), [.9, .05, .05], 1, base).letter, "F");
+  // Showing the baseline's own odds is a C, however well that beats a coin toss among three.
+  const same = gradeForecast(f, future.slice(0, 15), base, 0, base);
+  assert.equal(same.letter, "C"); close(same.skill, 0); assert.ok(same.skillVsUniform! > .1);
+});
+test("older coin-toss grades are re-derived against the baseline on read, without changing the stored score", () => {
+  const stored = { horizon: 60, outcome: "UP_FIRST", brier: .5, baselineBrier: .5, shownBrier: .5,
+    grade: { gradeVersion: "v:grade-1", letter: "B", skill: .25, probabilityOfOutcome: .5, actualEndChange: .001, nearestPath: null, insideRange: null, middlePathError: null } } as never as Parameters<typeof regradeAgainstBaseline>[0];
+  const frozen = structuredClone(stored);
+  const read = regradeAgainstBaseline(stored);
+  assert.equal(read.grade!.letter, "C"); close(read.grade!.skill, 0);
+  assert.equal(read.grade!.skillVsUniform, .25); assert.equal(read.grade!.rederived, true);
+  assert.deepEqual(stored, frozen);
+  // New grades and scores without the Briers pass through unchanged.
+  const fresh = { ...stored, grade: { ...stored.grade!, gradeVersion: "v:grade-2" } };
+  assert.equal(regradeAgainstBaseline(fresh), fresh);
+  const noBrier = { ...stored, shownBrier: undefined };
+  assert.equal(regradeAgainstBaseline(noBrier), noBrier);
 });
 test("calibration learns only from forecasts graded before this one and keeps a change only if it helps unseen forecasts", () => {
   const raw: [number, number, number] = [.45, .45, .1];

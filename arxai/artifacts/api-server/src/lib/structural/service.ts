@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
   forecastHorizon, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
-  type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
+  regradeAgainstBaseline, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
 
 export interface StoredForecast { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[] }
 export interface ForecastRepository {
@@ -165,6 +165,8 @@ export class StructuralForecastService {
         if (!(error instanceof Error) || !["OUTCOME_HISTORY_GAP", "GAP_DUPLICATE_OR_OUT_OF_ORDER", "INVALID_OHLC", "NON_FINAL_OR_NON_M1"].includes(error.message)) throw error;
       }
     }
-    return rows;
+    // Older grades are re-derived against the baseline for the reader; the
+    // stored evaluation rows are never rewritten.
+    return rows.map(r => ({ ...r, scores: r.scores.map(regradeAgainstBaseline) }));
   }
 }

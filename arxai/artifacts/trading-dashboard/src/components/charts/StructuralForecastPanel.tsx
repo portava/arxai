@@ -182,11 +182,11 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     {graded.length > 0 && <div aria-label="Graded forecasts" data-testid="forecast-grades" className="mt-3 text-zinc-300">
       <p><strong className="text-zinc-100">Graded {preset.label} forecasts: {graded.length}</strong>
         {" · "}{(["A", "B", "C", "D", "F"] as const).map(l => `${l} ${graded.filter(g => g.grade.letter === l).length}`).join(" · ")}
-        {" · "}average skill {(graded.reduce((s, g) => s + g.grade.skill, 0) / graded.length).toFixed(2)} (0 = coin toss among three)
+        {" · "}average skill {(graded.reduce((s, g) => s + g.grade.skill, 0) / graded.length).toFixed(2)} (against always guessing the training period's odds: 0 = no better, above 0 = better; C = about the same)
         {inRange.length > 0 && ` · ended inside bull–bear range ${pct(inRange.filter(g => g.grade.insideRange).length / inRange.length)}`}</p>
       <p data-testid="forecast-grade-cohorts">Fresh forecasts: {cohortSummary(graded.filter(g => !g.update))} · Updates mid-window: {cohortSummary(graded.filter(g => g.update))} (less time left, so not comparable)</p>
       <ul className="mt-1 space-y-0.5 text-zinc-400">{graded.slice(0, 8).map(g => <li key={g.id}>
-        <strong className="text-zinc-100">{g.grade.letter}</strong> {new Date(g.issuedAt).toLocaleString()}{g.update ? ` · update +${g.update.barsIntoWindow} bars` : ""} · {gradeLine(g.grade, g.outcome)}</li>)}</ul>
+        <strong className="text-zinc-100">{g.grade.letter}</strong> {new Date(g.issuedAt).toLocaleString()}{g.update ? ` · update +${g.update.barsIntoWindow} bars` : ""} · {gradeLine(g.grade, g.outcome)}{g.grade.rederived ? " · re-graded against the baseline" : ""}</li>)}</ul>
     </div>}
     {windowHistory.length > 0 && <label className="mt-2 block text-zinc-400">Review a saved forecast <select aria-label="Saved forecast" className="ml-2 rounded bg-zinc-900 p-1" value={shown?.id ?? ""} onChange={e => setRow(windowHistory.find(r => r.id === e.target.value) ?? row)}>
       <option value="">Select issuance time</option>{shown && !windowHistory.some(r => r.id === shown.id) && <option value={shown.id}>Current forecast</option>}

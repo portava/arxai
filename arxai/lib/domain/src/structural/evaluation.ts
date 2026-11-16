@@ -21,9 +21,10 @@ export function evaluateForecast(f: StructuralForecast, future: StructuralBar[],
     // What the user saw for the window may be calibrated; every other horizon is the raw model.
     const window = horizon === forecastHorizonBars(f);
     const shown = (window ? f.horizons.find(h => h.bars === horizon)?.probabilities : null) ?? p;
+    const baseline = probabilities(f.baselineMass, horizon);
     return { evaluationVersion: `${STRUCTURAL_VERSION}:scoring-1`, horizon, minutes: horizon * step / 60_000, observedThrough: f.asOf + horizon * step, outcome, event,
-      brier: brier(p, y), baselineBrier: brier(probabilities(f.baselineMass, horizon), y), logLoss: logLoss(p, y),
-      ...(window ? { shownBrier: brier(shown, y), grade: gradeForecast(f, eligible.slice(0, horizon), shown, y) } : {}) };
+      brier: brier(p, y), baselineBrier: brier(baseline, y), logLoss: logLoss(p, y),
+      ...(window ? { shownBrier: brier(shown, y), grade: gradeForecast(f, eligible.slice(0, horizon), shown, y, baseline) } : {}) };
   });
 }
 export interface CompletedObservation { asOf: number; completedAt: number; brier: number; baselineBrier: number }

@@ -54,21 +54,46 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
 }
 
 const UNIFORM_BRIER = 2 / 3;
+/**
+ * Letters judge the shown odds against the baseline, not against a coin toss
+ * among three outcomes. On long windows one outcome ("neither") almost never
+ * happens, so beating the three-way coin toss took no skill: a walk-forward on
+ * real V75/V25 bars scored ~0.25 that way (a B/C) while calling direction
+ * 50% of the time. C means about as good as the baseline.
+ */
+export const GRADE_POLICY = Object.freeze({ A: .25, B: .1, C: -.1, D: -.25 });
 const letter = (skill: number): ForecastGrade["letter"] =>
-  skill >= .5 ? "A" : skill >= .25 ? "B" : skill >= 0 ? "C" : skill >= -.25 ? "D" : "F";
+  skill >= GRADE_POLICY.A ? "A" : skill >= GRADE_POLICY.B ? "B" : skill >= GRADE_POLICY.C ? "C" : skill >= GRADE_POLICY.D ? "D" : "F";
+/** 1 − shown Brier / baseline Brier, floored at −1. */
+export function skillOverBaseline(shownBrier: number, baselineBrier: number): number {
+  if (baselineBrier <= 1e-12) return shownBrier <= 1e-12 ? 0 : -1;
+  return Math.max(-1, 1 - shownBrier / baselineBrier);
+}
 
 /** Judge a finished forecast against the bars of its whole window. */
-export function gradeForecast(f: StructuralForecast, windowBars: readonly StructuralBar[], shown: Triple, outcome: number): ForecastGrade {
+export function gradeForecast(f: StructuralForecast, windowBars: readonly StructuralBar[], shown: Triple, outcome: number, baseline: Triple): ForecastGrade {
   const start = f.history.at(-1)!.close, end = windowBars.at(-1)!.close;
-  const actualEndChange = end / start - 1, shownBrier = brier(shown, outcome), skill = 1 - shownBrier / UNIFORM_BRIER;
+  const actualEndChange = end / start - 1, shownBrier = brier(shown, outcome), skill = skillOverBaseline(shownBrier, brier(baseline, outcome));
   const paths = f.trajectories ?? [];
   const nearest = paths.length ? paths.reduce((a, b) => Math.abs(b.endChange - actualEndChange) < Math.abs(a.endChange - actualEndChange) ? b : a) : null;
   const bull = paths.find(p => p.kind === "BULL"), bear = paths.find(p => p.kind === "BEAR"), middle = paths.find(p => p.kind === "MIDDLE");
   const n = middle ? Math.min(middle.candles.length, windowBars.length) : 0;
-  return { gradeVersion: `${STRUCTURAL_VERSION}:grade-1`, letter: letter(skill), skill, probabilityOfOutcome: shown[outcome]!,
+  return { gradeVersion: `${STRUCTURAL_VERSION}:grade-2`, letter: letter(skill), skill, skillVsUniform: 1 - shownBrier / UNIFORM_BRIER, probabilityOfOutcome: shown[outcome]!,
     actualEndChange, nearestPath: nearest?.kind ?? null,
     insideRange: bull && bear ? actualEndChange >= bear.endChange && actualEndChange <= bull.endChange : null,
     middlePathError: n ? Array.from({ length: n }, (_, j) => Math.abs(middle!.candles[j]!.close - windowBars[j]!.close) / start).reduce((s, x) => s + x, 0) / n : null };
+}
+
+/**
+ * Older grades (grade-1) measured skill against a three-way coin toss. Their
+ * stored record stays as it is; on read, the baseline-relative grade is
+ * re-derived from the Briers saved with the same score.
+ */
+export function regradeAgainstBaseline<S extends { grade?: ForecastGrade; shownBrier?: number; baselineBrier: number }>(score: S): S {
+  const g = score.grade;
+  if (!g || !g.gradeVersion.endsWith(":grade-1") || score.shownBrier == null || !Number.isFinite(score.baselineBrier)) return score;
+  const skill = skillOverBaseline(score.shownBrier, score.baselineBrier);
+  return { ...score, grade: { ...g, skill, letter: letter(skill), skillVsUniform: g.skill, rederived: true } };
 }
 
 export interface GradedObservation {
