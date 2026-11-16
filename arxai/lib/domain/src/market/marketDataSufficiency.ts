@@ -46,6 +46,7 @@ export type MarketDataReasonCode =
   | "partial_history" // some history, not yet enough (reserved for callers)
   | "analysis_only" // simulator / non-real source (reserved for callers)
   | "source_not_ai_usable" // symbol is not an approved ARX market
+  | "random_by_design" // a generated synthetic index: past bars carry no direction
   | "unknown";
 
 export interface MarketDataSufficiencyVerdict {
@@ -153,6 +154,24 @@ function deriveReadabilityPermissions(
   };
 }
 
+// Generated synthetic indices whose next move does not depend on past bars
+// (Volatility / 1s, Crash, Boom, Jump, Step, Range Break, DEX and their short
+// aliases). Bull/Bear Market and Drift Switch indices are left out: their
+// generator has a designed drift, so "no direction" would not be accurate.
+const RANDOM_BY_DESIGN_PREFIX = /^(Volatility|Crash|Boom|Step|Jump|Range Break|Multi Step|DEX)\b/i;
+const RANDOM_BY_DESIGN_ALIAS = /^(Vol|V|R_|1HZ|JD|RB|CRASH|BOOM|JUMP)\d+/i;
+
+/** True for a generated synthetic index whose direction past bars cannot predict. */
+export function isRandomByDesignSymbol(symbol: string): boolean {
+  const s = String(symbol ?? "").trim();
+  return RANDOM_BY_DESIGN_PREFIX.test(s) || RANDOM_BY_DESIGN_ALIAS.test(s);
+}
+
+/** User-safe reason shown instead of a direction on those indices. */
+export const RANDOM_BY_DESIGN_HUMAN_REASON =
+  "This is a synthetic index generated at random: its past bars do not predict its direction " +
+  "(measured on real history), so no buy/sell call is shown. Volatility and range reads still apply.";
+
 export interface EvaluateMarketDataSufficiencyInput {
   symbol: string;
   timeframe: string;
@@ -227,11 +246,19 @@ export function evaluateMarketDataSufficiency(
     humanReason = "Enough recent closed candles on a live feed to support a read.";
   }
 
-  const readability = deriveReadabilityPermissions(
+  let readability = deriveReadabilityPermissions(
     status,
     input.freshnessVerdict,
     status === "partial" && input.freshnessVerdict === "LIVE" && input.quoteBinding === "LAST_ONLY",
   );
+  // A directional read on a random-by-design index would be a guess shown as
+  // analysis. Display-only and downgrade-only: status and canShowTradeSetup
+  // (execution inputs) are unchanged; only the mayShow* direction flags close.
+  if (status === "sufficient" && isRandomByDesignSymbol(input.symbol)) {
+    humanReason = RANDOM_BY_DESIGN_HUMAN_REASON;
+    readability = { ...readability, reasonCode: "random_by_design", mayShowBias: false, mayShowDirection: false,
+      mayShowTrend: false, mayShowConfidence: false, mayShowTradeIdea: false, mayShowRecommendation: false };
+  }
 
   return {
     status,

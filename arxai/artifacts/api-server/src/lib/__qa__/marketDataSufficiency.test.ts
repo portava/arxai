@@ -242,3 +242,28 @@ test("quoteBinding never overrides a harder gate and is a no-op when BOUND/absen
     assert.equal(v.canShowTradeSetup, true);
   }
 });
+
+// Random-by-design synthetics: real history shows no direction, so a live,
+// sufficient read withholds every directional flag (display only). The
+// execution inputs (status, canShowTradeSetup) are unchanged.
+test("random-by-design synthetic + LIVE + enough bars => direction withheld, execution inputs unchanged", async () => {
+  const { isRandomByDesignSymbol, RANDOM_BY_DESIGN_HUMAN_REASON } = await import("@workspace/domain/market");
+  for (const symbol of ["V75", "V25_1S", "Volatility 75 Index", "Volatility 75 (1s) Index", "R_100", "1HZ75V", "Crash 500 Index", "BOOM1000", "JUMP10", "CRASH300", "V10", "Jump 25 Index", "Step Index"]) {
+    assert.equal(isRandomByDesignSymbol(symbol), true, symbol);
+  }
+  for (const symbol of ["EURUSD", "XAUUSD", "US30", "SPX500", "VIX", "Bull Market Index", "Drift Switch Index 10"]) {
+    assert.equal(isRandomByDesignSymbol(symbol), false, symbol);
+  }
+  const v = evaluateMarketDataSufficiency({ symbol: "V75", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 50 });
+  assert.equal(v.status, "sufficient");
+  assert.equal(v.canShowTradeSetup, true, "execution input untouched");
+  assert.equal(v.reasonCode, "random_by_design");
+  assert.equal(v.humanReason, RANDOM_BY_DESIGN_HUMAN_REASON);
+  for (const k of ["mayShowBias", "mayShowDirection", "mayShowTrend", "mayShowConfidence", "mayShowTradeIdea", "mayShowRecommendation"] as const) {
+    assert.equal(v[k], false, k);
+  }
+  assert.equal(v.mayShowReadOnlyContext, true);
+  // A non-sufficient synthetic keeps its own (more basic) reason.
+  const thin = evaluateMarketDataSufficiency({ symbol: "V75", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 2 });
+  assert.equal(thin.reasonCode, "not_enough_bars");
+});
