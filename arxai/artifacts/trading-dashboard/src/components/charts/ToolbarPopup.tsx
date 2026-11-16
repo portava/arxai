@@ -63,8 +63,10 @@ const POPUP_WIDTH = 416, POPUP_GAP = 8;
  * clips overflow, else the chart card, else the window. */
 export function popupBounds(trigger: HTMLElement): { left: number; right: number } {
   for (let el = trigger.parentElement; el; el = el.parentElement) {
-    const overflow = getComputedStyle(el).overflowX;
-    if (overflow !== "visible" && overflow !== "") {
+    // overflow-x clips horizontally; the shorthand's first value is the x axis.
+    const style = getComputedStyle(el);
+    const clips = [style.overflowX, style.overflow?.split(" ")[0]].some(value => !!value && value !== "visible");
+    if (clips) {
       const box = el.getBoundingClientRect();
       if (box.width > 0) return { left: box.left, right: box.right };
     }
