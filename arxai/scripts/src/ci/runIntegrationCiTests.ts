@@ -74,6 +74,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // disposable DB. Set ARX_STRUCTURAL_TEST_DATABASE_URL as well as DATABASE_URL;
   // the test refuses to skip in CI/release when this dedicated URL is missing.
   { pkg: "@workspace/api-server", script: "test:structural-db" },
+  { pkg: "@workspace/api-server", script: "test:structural-grader" },
   // @workspace/scripts — DB-backed / in-process-app safety + contract tests.
   // Session 2 Phase 6 — the Black Box. Needs a real Postgres: row_hash is
   // computed by pgcrypto's digest() inside the database, which has no offline
