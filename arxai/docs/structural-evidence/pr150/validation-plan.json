@@ -1,0 +1,42 @@
+{
+  "version": "arx-v6.7-implementation-1",
+  "policy": {
+    "stride": 15,
+    "purgeMinutes": 60,
+    "minTraining": 80,
+    "minGate": 30,
+    "iterations": 120,
+    "learningRate": 0.08,
+    "ridge": 0.01,
+    "oodZ": 6,
+    "blends": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1
+    ],
+    "minimumGain": 0.005,
+    "brakeWindow": 30,
+    "brakeExcess": 0.03,
+    "bootstrapReplicates": 400
+  },
+  "symbols": [
+    "V75",
+    "V75_1S",
+    "V50",
+    "V50_1S",
+    "V25_1S"
+  ],
+  "sourceHashes": {
+    "contracts": "096615bc8924ffd37d689c992aa67bbe37dbec3136656ed88ceb6348600ca073",
+    "observer": "e781bdf1d8967a7999b43f20c782eb865d64c7a4d53fd23acc256037a0eb9e8a",
+    "math": "f3022b53495af3f0eb487f2056b8ad9ae8c7f6d65ac8f015ba783b2b5b5801b7",
+    "model": "11c27d578de99803d8ee9f598c93296d4e63073c5e5e3c53c18bc86cf524ea2b",
+    "evaluation": "fb622154ed5aebdddd9e12a8c4521883e296d4e0e2eae9ecc8fc636b5f9e51cb"
+  },
+  "split": "chronological 55/15/15/15, 60m purge",
+  "endpoint": "wss://api.derivws.com/trading/v1/options/ws/public",
+  "claims": "Exploratory real-feed replay; not a market-edge acceptance test; no historical arrival times.",
+  "planHash": "9ba579c34068fa911f5b3b3d2515099ef22dabae14b26c046ad93ca65dd3e8aa"
+}
