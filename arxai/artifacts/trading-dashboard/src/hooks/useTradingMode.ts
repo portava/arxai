@@ -1,0 +1,202 @@
+// Unified trading-mode hook — T003.
+//
+// Single source of truth for "what mode is this user in?" across every
+// page. Wraps /api/me/account-mode (see meUnifiedMode.ts) and exposes
+// stable derived booleans + clean user-safe strings.
+//
+// SAFETY: read-only. Never dispatches trades. The raw envelope's
+// `adminDiagnostics` is `null` for non-admin sessions by server-side
+// design; the hook does NOT attempt to elevate.
+
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+export type CurrentAccountMode = "LIVE_SHARED" | "DEMO" | "PAPER";
+export type AccountModeRole = "OWNER" | "ADMIN" | "USER";
+
+export interface UnifiedAccountModeEnvelope {
+  ok: true;
+  userId: number;
+  currentAccountMode: CurrentAccountMode;
+  cleanModeLabel: string;
+  cleanUserMessage: string;
+  cleanBlockedReason: string | null;
+  role: AccountModeRole;
+  isAdmin: boolean;
+  isAdminPreviewingUserMode: boolean;
+  adminDiagnosticsAvailable: boolean;
+  liveExecutionArmed: boolean;
+  userSharedMasterAssignment: { attached: boolean };
+  accountShellStatus: {
+    accountMode: "DEMO" | "PERSONAL_MT5" | "SHARED_MASTER_MT5";
+    tradingMode: "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
+    tradingModeLabel: string;
+    approvalStatus: string;
+    tradingStatus: string;
+  };
+  userAllocation: {
+    hasAllocation: boolean;
+    // null = not available / not measured (the server never sends a placeholder 0).
+    currentBalance: number | null;
+    assignedStartingBalance: number | null;
+    equity: number | null;
+    marginUsed: number | null;
+  };
+  userRiskCaps: {
+    maxLotSize: number | null;
+    maxOpenTrades: number | null;
+    maxDailyLossAmount: number | null;
+    allowedSymbols: string[] | null;
+    requireStopLoss: boolean;
+  };
+  userFrozenStatus: { isFrozen: boolean; freezeMessage: string | null };
+  userApprovalStatus: string;
+  userCanManualTrade: boolean;
+  userCanAutoTrade: boolean;
+  aiSleeveStatus: { enabled: boolean; autoEnabled: boolean };
+  demoAvailable: boolean;
+  paperAvailable: boolean;
+  modeSwitchOptions: CurrentAccountMode[];
+  adminDiagnostics: unknown | null;
+}
+
+export interface UseTradingModeResult {
+  isLoading: boolean;
+  isError: boolean;
+  /**
+   * True when the account-mode check failed (HTTP error, network error, or a
+   * non-ok envelope). The mode is then UNKNOWN: not loading, not demo/paper,
+   * and no permission or mode claim from an earlier check is carried forward.
+   */
+  isModeUnknown: boolean;
+  envelope: UnifiedAccountModeEnvelope | null;
+
+  // Mode booleans
+  isLiveShared: boolean;
+  isDemo: boolean;
+  isPaper: boolean;
+  isLiveArmed: boolean;
+  isFrozen: boolean;
+
+  // Role
+  isAdmin: boolean;
+  isAdminPreviewingUserMode: boolean;
+  shouldShowAdminDiagnostics: boolean;
+
+  // Permissions
+  canManualTrade: boolean;
+  canAutoTrade: boolean;
+
+  // Allocation
+  isSharedMasterAssigned: boolean;
+  hasAllocation: boolean;
+  hasRiskCaps: boolean;
+
+  // Display
+  cleanModeLabel: string;
+  cleanUserMessage: string;
+  cleanBlockedReason: string | null;
+
+  // UI control
+  /** Live pages must hide demo/paper copy when the user is live-armed. */
+  shouldShowDemoPaperCopy: boolean;
+}
+
+// A failed check throws so React Query records an error. Returning null here
+// used to read as a successful "no mode" answer: a live user's pages flipped to
+// "Loading…" and demo/paper copy ("no real broker order is placed").
+async function fetchAccountMode(): Promise<UnifiedAccountModeEnvelope> {
+  const res = await fetch("/api/me/account-mode", { credentials: "include" });
+  if (!res.ok) throw new Error(`/api/me/account-mode failed: ${res.status}`);
+  const json = (await res.json()) as UnifiedAccountModeEnvelope | { ok: false };
+  if (!("ok" in json) || json.ok !== true) throw new Error("/api/me/account-mode returned no mode");
+  return json;
+}
+
+export function useTradingMode(): UseTradingModeResult {
+  // Account-mode rarely changes mid-session — arming/disarming, frozen
+  // status flips, master-live approval. None of those need 15s polling.
+  // 60s + 30s staleTime cuts /api/me/account-mode traffic 4x while still
+  // surfacing arming changes within a minute. Critical surfaces that
+  // need instant reflection (after arm/disarm mutations) should call
+  // queryClient.invalidateQueries({queryKey:["me","account-mode"]}) in
+  // their onSuccess handler.
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["me", "account-mode"],
+    queryFn: fetchAccountMode,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  // Foreground resync: when the tab becomes visible again after being
+  // hidden, immediately refetch account-mode. This closes the freshness
+  // gap introduced by background-polling pause + 60s interval — without
+  // it, a user returning to the tab could see stale arming/freeze state
+  // for up to a minute.
+  useEffect(() => {
+    const onVis = () => {
+      if (!document.hidden) {
+        void qc.invalidateQueries({ queryKey: ["me", "account-mode"] });
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [qc]);
+
+  // After a failed check the mode is unknown: an earlier envelope is not shown
+  // as current, and every permission it granted reads as not granted.
+  const isModeUnknown = q.isError;
+  const env = isModeUnknown ? null : q.data ?? null;
+
+  const isLiveShared = env?.currentAccountMode === "LIVE_SHARED";
+  const isDemo = env?.currentAccountMode === "DEMO";
+  const isPaper = env?.currentAccountMode === "PAPER";
+  const isLiveArmed = env?.liveExecutionArmed === true;
+  const isFrozen = env?.userFrozenStatus.isFrozen === true;
+
+  const isAdmin = env?.isAdmin === true;
+  const isAdminPreviewingUserMode = env?.isAdminPreviewingUserMode === true;
+  const shouldShowAdminDiagnostics = isAdmin && env?.adminDiagnosticsAvailable === true;
+
+  const canManualTrade = env?.userCanManualTrade === true;
+  const canAutoTrade = env?.userCanAutoTrade === true;
+
+  const isSharedMasterAssigned = env?.userSharedMasterAssignment.attached === true;
+  const hasAllocation = env?.userAllocation.hasAllocation === true;
+  const hasRiskCaps = env?.userRiskCaps.maxLotSize != null;
+
+  const cleanModeLabel = env?.cleanModeLabel ?? (isModeUnknown ? "Mode unknown" : "Loading…");
+  const cleanUserMessage =
+    env?.cleanUserMessage ??
+    (isModeUnknown ? "Your account mode could not be checked just now. ARX will check again." : "");
+  const cleanBlockedReason = env?.cleanBlockedReason ?? null;
+
+  // Demo/paper copy needs a known demo/paper mode: never while the mode is
+  // loading or could not be checked (the user may be live).
+  const shouldShowDemoPaperCopy = env != null && !isLiveShared && !isLiveArmed;
+
+  return {
+    isLoading: q.isLoading,
+    isError: q.isError,
+    isModeUnknown,
+    envelope: env,
+    isLiveShared,
+    isDemo,
+    isPaper,
+    isLiveArmed,
+    isFrozen,
+    isAdmin,
+    isAdminPreviewingUserMode,
+    shouldShowAdminDiagnostics,
+    canManualTrade,
+    canAutoTrade,
+    isSharedMasterAssigned,
+    hasAllocation,
+    hasRiskCaps,
+    cleanModeLabel,
+    cleanUserMessage,
+    cleanBlockedReason,
+    shouldShowDemoPaperCopy,
+  };
+}

@@ -1,0 +1,158 @@
+{
+  "at": "2026-10-25T12:14:21.366722+00:00",
+  "status": "LAUNCH PREPARATION VERIFIED; NOT PUBLISHED",
+  "source_release": "8764b4df1c390df10c969599d30bd4346c03d13c",
+  "production_config": {
+    "api-server": {
+      "build": {
+        "args": [
+          "bash",
+          "scripts/build-arx-production.sh",
+          "api"
+        ],
+        "env": {
+          "NODE_ENV": "production"
+        }
+      },
+      "run": {
+        "args": [
+          "bash",
+          "scripts/run-arx-production.sh"
+        ],
+        "env": {
+          "PORT": "8080",
+          "NODE_ENV": "production"
+        }
+      },
+      "health": {
+        "startup": {
+          "path": "/api/healthz"
+        }
+      }
+    },
+    "trading-dashboard": {
+      "build": [
+        "bash",
+        "scripts/build-arx-production.sh",
+        "web"
+      ],
+      "publicDir": "arxai/artifacts/trading-dashboard/dist/public",
+      "serve": "static",
+      "rewrites": [
+        {
+          "from": "/*",
+          "to": "/index.html"
+        }
+      ]
+    }
+  },
+  "isolated_rehearsal": {
+    "launcher-tests": {
+      "exit_code": 0,
+      "seconds": 0,
+      "log_sha256": "111e47a2fde293b1806d6d96816cf7750563f2b007b0b8c8ec3e97c21cd17ffe"
+    },
+    "build-api": {
+      "exit_code": 0,
+      "seconds": 3,
+      "log_sha256": "983e7f7fa287b572f4da28b108c28397f11b8365b34b53826f743aa28bbf6050"
+    },
+    "build-web": {
+      "exit_code": 0,
+      "seconds": 16,
+      "log_sha256": "c7eb647c2d943bb3e991ee3f8696e92ea1c022a5ab81d83c07c7e05b633dc1c2"
+    },
+    "start-isolated-postgres": {
+      "exit_code": 0,
+      "seconds": 0,
+      "log_sha256": "66afd0411ccc09366e99fdd99b85f21899c8d2d064f5835126859618802153ad"
+    },
+    "create-rehearsal-database": {
+      "exit_code": 0,
+      "seconds": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "schema-isolated-only": {
+      "exit_code": 0,
+      "seconds": 4,
+      "log_sha256": "51c5f126f772ff96959b733f203ea69fbad46fe260032739989ebc9e2c7ad3ca"
+    },
+    "production-http": {
+      "exit_code": 0,
+      "checks": [
+        {
+          "name": "API health",
+          "ok": true
+        },
+        {
+          "name": "anonymous identity denied",
+          "ok": true
+        },
+        {
+          "name": "anonymous role stays VIEWER",
+          "ok": true
+        },
+        {
+          "name": "development role header ignored",
+          "ok": true
+        },
+        {
+          "name": "legacy signed role cookie ignored",
+          "ok": true
+        },
+        {
+          "name": "development owner login blocked",
+          "ok": true
+        },
+        {
+          "name": "no accounts or broker commands created",
+          "ok": true
+        }
+      ]
+    }
+  },
+  "provider_probe_before_freshness_fix": {
+    "at": "2026-10-25T12:00:14.451Z",
+    "scope": "Read-only development provider probe; no orders",
+    "provider": "composite(polygon,finnhub,alpha_vantage)",
+    "configured": true,
+    "features": {
+      "quotes": true,
+      "news": true,
+      "snapshots": true,
+      "economicCalendar": false,
+      "candles": true,
+      "currentEvents": false
+    },
+    "quotes": [
+      {
+        "symbol": "AAPL",
+        "price": 347.725,
+        "bid": null,
+        "ask": null,
+        "asOf": "2026-10-23T20:00:00.000Z",
+        "freshness": "REALTIME",
+        "stale": false,
+        "source": "finnhub"
+      },
+      {
+        "symbol": "EURUSD",
+        "price": 1.1202,
+        "bid": null,
+        "ask": null,
+        "asOf": "2026-10-23T23:59:59.999Z",
+        "freshness": "DELAYED",
+        "stale": false,
+        "source": "polygon"
+      }
+    ],
+    "candles": {
+      "source": "finnhub",
+      "count": 0,
+      "asOf": null,
+      "freshness": "UNAVAILABLE"
+    }
+  },
+  "live_execution_enabled": false,
+  "accounts_or_broker_commands_created": false
+}

@@ -3,15 +3,15 @@
 ## Structural Intelligence V6.7 active task
 
 If working on ARX Structural Intelligence / PR #150, start at:
-- `docs/arx-structural-intelligence/CODEX_START_HERE.md`
-- `docs/arx-structural-intelligence/ARX_STRUCTURAL_INTELLIGENCE_MASTER_BUILD_V6_7.md`
-- `docs/ARX_STRUCTURAL_ENGINE_AUDIT.md` (preliminary evidence, complete remaining audit)
-- `docs/ARX_PROGRESS_MATRIX.md`
+- `arxai/docs/arx-structural-intelligence/CODEX_START_HERE.md`
+- `arxai/docs/arx-structural-intelligence/ARX_STRUCTURAL_INTELLIGENCE_MASTER_BUILD_V6_7.md`
+- `arxai/docs/ARX_STRUCTURAL_ENGINE_AUDIT.md` (preliminary evidence, complete remaining audit)
+- `arxai/docs/ARX_PROGRESS_MATRIX.md`
 
 Audit **before** implementing. Check earlier branches and features first; use existing modules, do not duplicate.
 
 ## Architectural non-negotiables
-- Follow owner decision registry `docs/OWNER_DECISIONS.md`; multi-broker integration in this monorepo must be **TypeScript**, not a parallel Python trading service.
+- Follow owner decision registry `arxai/docs/OWNER_DECISIONS.md`; multi-broker integration in this monorepo must be **TypeScript**, not a parallel Python trading service.
 - Reuse existing market-data, Pattern Sync, scanner, scalp, chart, prediction memory, risk governor and trade-engine services where suitable.
 - Treat LIVE/DEMO execution and analysis as separate authorities. No broker orders, risk control bypasses, production migrations, deployment, or trader permission changes as part of the research task.
 - Respect the 18-gate execution architecture and kill switch; emergency close exception is owned by its existing canonical predicate.

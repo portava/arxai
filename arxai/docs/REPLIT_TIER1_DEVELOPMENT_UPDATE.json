@@ -1,0 +1,200 @@
+{
+  "scope": "Replit development only; no deployment or broker orders",
+  "at": "2026-10-25T11:15:23.638935+00:00",
+  "workspace": "https://replit.com/@portavainc/ARX-AI-baseline-import",
+  "tested_release_commit": "41d7b34336be86581b986204e2b5c8a03346b4d7",
+  "upstream_release": "0810fba83910c55c062e71d1b95ecc0d3678fca3",
+  "upstream_pr": "https://github.com/portava/arxai/pull/69",
+  "recovery_branch": "codex/backup-before-tier1-20261025",
+  "recovery_commit": "9d03d8f680c971f3485dfbd2ba3c222e29dec3a3",
+  "preserved_files": 6522,
+  "checks": {
+    "integration": {
+      "lane": "integration",
+      "exit_code": 0,
+      "seconds": 510,
+      "log_sha256": "79efc0f993cf77e55d9d53a37dc2f92fcad04a856f28b4e5489f38e472caecaf"
+    },
+    "full-ci": {
+      "lane": "full-ci",
+      "exit_code": 0,
+      "seconds": 631,
+      "log_sha256": "85c0c3fe39489629769ebef6bb7b1290aa53b082d2ca35e1db418fecf5398ca0"
+    },
+    "frontend-build": {
+      "lane": "frontend-build",
+      "exit_code": 0,
+      "seconds": 14,
+      "log_sha256": "3a06f16a4fbc4ce19b5dfa33e193f05d2a4ee84e68b60acf9ae9bb595fe8138a"
+    },
+    "types": {
+      "exit_code": 0,
+      "log_sha256": "241b1b810a5623031e62ab554ff327ec8b70bdae712764dca6009eb439c639a1"
+    }
+  },
+  "guard_count": 87,
+  "integration_count": 133,
+  "ci_command_count": 301,
+  "runtime_smoke": [
+    {
+      "port": 8080,
+      "path": "/api/healthz",
+      "http_status": 200
+    },
+    {
+      "port": 8080,
+      "path": "/api/auth/session",
+      "http_status": 200
+    },
+    {
+      "port": 8080,
+      "path": "/api/me",
+      "http_status": 401
+    },
+    {
+      "port": 24210,
+      "path": "/login",
+      "http_status": 200
+    }
+  ],
+  "migration_receipt": {
+    "scope": "Replit development database only",
+    "at": "2026-10-25T11:02:45.003639+00:00",
+    "migration_count": 9,
+    "exit_code": 0,
+    "protected_state_unchanged": {
+      "users": true,
+      "safety": true,
+      "platform": true,
+      "demo_commands": true,
+      "live_commands": true,
+      "broker_controls": true
+    },
+    "backup_sha256": "22d2301b320cf906dfa0492f67a8c5c1d80777afb2c08eb8bbbc6b65e278890f"
+  },
+  "development_database_preflight": {
+    "at": "2026-10-25T11:04:35.405Z",
+    "scope": "Read-only database preflight. No deployment, real provider, broker fill or migration execution history is proven by this report.",
+    "migrations": {
+      "status": "SCHEMA INDICATORS PRESENT \u2014 APPLY HISTORY UNVERIFIED",
+      "pending": [],
+      "checks": [
+        {
+          "name": "2026-10-24_trading_on_by_default",
+          "ok": true,
+          "detail": "global_trading_settings defaults: platform_mode LIVE, live_enabled true, emergency_kill_switch false"
+        },
+        {
+          "name": "2026-10-24_owner_columns",
+          "ok": true,
+          "detail": "user_id + per-user unique indexes on 3 shared tables"
+        },
+        {
+          "name": "2026-10-24_per_user_risk_limits",
+          "ok": true,
+          "detail": "exposure limit columns + user_equity_peaks"
+        },
+        {
+          "name": "2026-10-24_user_risk_profile",
+          "ok": true,
+          "detail": "risk_preset + prop_firm on user_risk_settings"
+        },
+        {
+          "name": "2026-10-24_learning_scopes",
+          "ok": true,
+          "detail": "scope columns + scoped unique indexes on strategy_edges / mistake_patterns"
+        },
+        {
+          "name": "2026-10-24_trade_action_venue_command",
+          "ok": true,
+          "detail": "execution_venue + venue_command_id on trade_action_requests"
+        },
+        {
+          "name": "2026-10-24_one_limit_store",
+          "ok": true,
+          "detail": "legacy_merged_at column present; data fold requires separate apply/backfill evidence"
+        },
+        {
+          "name": "2026-10-25_paper_order_request_key",
+          "ok": true,
+          "detail": "client_request_key + per-user unique index on paper_orders (owner decision 13)"
+        },
+        {
+          "name": "2026-10-25_trade_action_request_key",
+          "ok": true,
+          "detail": "user-scoped retry key and immutable request hash on trade actions"
+        }
+      ]
+    },
+    "trading": {
+      "verdict": "TRADING HALTED",
+      "checks": [
+        {
+          "name": "global settings inventory",
+          "ok": true,
+          "detail": "1 row(s); exactly one is expected; duplicates need owner inspection; more than 16 fails closed"
+        },
+        {
+          "name": "global settings readable",
+          "ok": true,
+          "detail": "canonical safety reader"
+        },
+        {
+          "name": "platform emergency stop",
+          "ok": false,
+          "detail": "ENGAGED \u2014 only an owner/operator may release it"
+        },
+        {
+          "name": "safety-core kill switch",
+          "ok": true,
+          "detail": "released"
+        },
+        {
+          "name": "platform mode",
+          "ok": false,
+          "detail": "OFF"
+        },
+        {
+          "name": "demo venue",
+          "ok": false,
+          "detail": "closed by mode or enable flag"
+        },
+        {
+          "name": "live venue",
+          "ok": false,
+          "detail": "closed by mode or enable flag"
+        },
+        {
+          "name": "broker operator controls",
+          "ok": false,
+          "detail": "broker_execution_disabled"
+        },
+        {
+          "name": "live execution arm (informational)",
+          "ok": true,
+          "detail": "environment disabled; operator disarmed; individual order gates still apply"
+        },
+        {
+          "name": "trader kill switches (per user, informational)",
+          "ok": true,
+          "detail": "0 trader(s) halted themselves"
+        }
+      ]
+    },
+    "legacyOwnerRows": [
+      {
+        "name": "all claimable tables",
+        "ok": true,
+        "detail": "no ownerless rows"
+      }
+    ]
+  },
+  "private_evidence_path": "/home/runner/workspace/.arx-tier1-private/evidence-20261025",
+  "private_backup_path": "/home/runner/workspace/.arx-tier1-private/development-before-tier1-20261025.dump",
+  "limitations": [
+    "No published deployment exists per owner confirmation.",
+    "Development checks do not prove production controls, provider provenance/freshness, alerting, or real DEMO broker validation.",
+    "The development API retains NODE_ENV=development; production must use a reviewed production launcher.",
+    "No production migrations, live arming, broker commands, owner claims, or real-money trades were performed."
+  ]
+}

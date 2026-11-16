@@ -1,0 +1,797 @@
+import { useState } from "react";
+import { useProductRole } from "@/hooks/useProductRole";
+import {
+  useGetSystemStatus,
+  useSetSystemMode,
+  useEngageKillSwitch,
+  useResetKillSwitch,
+  useGetSystemVault,
+  useGetSystemStateTransitions,
+  getGetSystemStatusQueryKey,
+  getGetSystemVaultQueryKey,
+  getGetSystemStateTransitionsQueryKey,
+  type SystemStatus,
+  type SetSystemModeBodyMode,
+  type VaultEvent,
+  type StateTransitionEntry,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertOctagon,
+  ShieldAlert,
+  ShieldCheck,
+  Activity,
+  Eye,
+  Lightbulb,
+  FileText,
+  Zap,
+  XCircle,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+// The safety core's operating mode. The governed order pipeline (paper, demo
+// and live tickets) does not read it; only the legacy /mt5 command endpoints
+// and broker reconnect do, and they act only in LIVE_TRADING. The subs name
+// the posture each mode records, not something the order paths enforce.
+// PAPER_TRADING is simulated execution (safetyCore.ts), not an MT5 demo account.
+const MODE_DEFS: { mode: SetSystemModeBodyMode; label: string; sub: string; icon: typeof Eye }[] = [
+  { mode: "OBSERVE_ONLY", label: "OBSERVE", sub: "Watch-only posture", icon: Eye },
+  { mode: "SUGGEST_ONLY", label: "SUGGEST", sub: "Signals-only posture", icon: Lightbulb },
+  { mode: "PAPER_TRADING", label: "PAPER", sub: "Simulated-execution posture, not a demo account", icon: FileText },
+  { mode: "LIVE_TRADING", label: "LIVE", sub: "Real-money posture", icon: Zap },
+];
+
+function severityClass(sev: string): string {
+  switch (sev) {
+    case "CRITICAL": return "bg-destructive text-destructive-foreground";
+    case "DANGER": return "bg-destructive/80 text-destructive-foreground";
+    case "WARN": return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+    default: return "bg-muted text-muted-foreground";
+  }
+}
+
+function linkHealthClass(h: string): string {
+  if (h === "OK") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40";
+  if (h === "DEGRADED") return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/40";
+  return "bg-destructive/20 text-destructive border border-destructive/40";
+}
+
+// The stops GET /system/status reports in activeHalts (the pre-trade Risk
+// Governor's own reader). killSwitchEngaged is only the safety-core switch.
+const HALT_NAMES: Record<string, string> = {
+  platform_emergency_stop: "the platform emergency stop",
+  safety_core_kill_switch: "the safety-core kill switch",
+  trader_kill_switch: "your kill switch",
+};
+const haltName = (s: string) => HALT_NAMES[s] ?? s;
+
+/** Stops other than the safety-core switch that halt trading; null when they were not checked. */
+function otherHaltsOf(status: SystemStatus): { sources: string[]; reasons: string[] } | null {
+  if (!Array.isArray(status.activeHalts)) return null;
+  const sources: string[] = [];
+  const reasons: string[] = [];
+  status.activeHalts.forEach((s, i) => {
+    if (s === "safety_core_kill_switch") return;
+    sources.push(s);
+    reasons.push(status.activeHaltReasons?.[i] ?? `${haltName(s)} is engaged.`);
+  });
+  return { sources, reasons };
+}
+
+/**
+ * Why the server refused a Control Tower request, from the error body it
+ * sent (a 409 carries blockers; a 403 / 401 carries a message). Never a bare
+ * "failed".
+ */
+function refusalDetail(err: unknown): { status: number | null; text: string } {
+  const e = (err ?? {}) as { status?: unknown; data?: unknown; message?: unknown };
+  const status = typeof e.status === "number" ? e.status : null;
+  const data = (e.data ?? null) as { blockers?: unknown; message?: unknown; error?: unknown } | null;
+  const rawBlockers = data?.blockers;
+  const blockers = Array.isArray(rawBlockers)
+    ? rawBlockers.filter((b): b is string => typeof b === "string" && b.length > 0)
+    : [];
+  const message = data?.message;
+  const code = data?.error;
+  if (blockers.length > 0) return { status, text: blockers.join("; ") };
+  if (typeof message === "string" && message) return { status, text: message };
+  if (status === 403) return { status, text: "Operator access required." };
+  if (status === 401) return { status, text: "Sign in required." };
+  if (typeof code === "string" && code) return { status, text: code };
+  if (status === null) return { status, text: "The request did not reach the server." };
+  return { status, text: `The server answered ${status} without saying why.` };
+}
+
+type Refusal = { action: string; text: string; at: string };
+
+function RefusalNote({ refusal, testId }: { refusal: Refusal | null; testId: string }) {
+  if (!refusal) return null;
+  return (
+    <div className="mt-3 flex items-start gap-2 text-sm rounded-md border border-destructive/40 bg-destructive/5 p-2" data-testid={testId}>
+      <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+      <div>
+        <span className="font-semibold text-destructive">{refusal.action} refused</span>{" "}
+        <span className="text-xs text-muted-foreground">({new Date(refusal.at).toLocaleTimeString()})</span>: {refusal.text}
+      </div>
+    </div>
+  );
+}
+
+function StatusBanner({ status, stale = false }: { status: SystemStatus; stale?: boolean }) {
+  const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
+  const profile = status.effectiveProfile as { description?: string; executionPermission?: string };
+  const reasons = status.reasons ?? [];
+  const blockers = status.blockers ?? [];
+  const checkedAt = status.activeHaltsCheckedAt ? new Date(status.activeHaltsCheckedAt).toLocaleTimeString() : null;
+  const title = ks
+    ? "KILL SWITCH ENGAGED"
+    : otherHalted
+      ? "Trading halted by another stop"
+      : others === null
+        ? "Safety-core kill switch released"
+        : "Safety Core Online";
+  // A status kept from an earlier read is never shown as a current all-clear.
+  const headline = stale && !ks && !otherHalted ? "Safety core status not current" : title;
+  return (
+    <Card className={ks || otherHalted ? "border-destructive bg-destructive/5" : "border-border"}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            {ks || otherHalted ? (
+              <AlertOctagon className="text-destructive" size={28} />
+            ) : others === null || stale ? (
+              <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={28} />
+            ) : (
+              <ShieldCheck className="text-primary" size={28} />
+            )}
+            <div>
+              <CardTitle className="text-xl tracking-wide" data-testid="safety-core-headline">
+                {headline}
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Operational Mode <Badge variant="outline" className="ml-1 font-mono">{status.operationalMode}</Badge>
+                <span className="mx-2">·</span>
+                Global State <Badge variant="outline" className="font-mono">{status.globalState}</Badge>
+              </CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge className={linkHealthClass(status.mt5LinkHealth)}>
+              MT5 LINK: {status.mt5LinkHealth}
+              {status.secondsSinceMt5Heartbeat !== null && status.secondsSinceMt5Heartbeat !== undefined ? ` · ${status.secondsSinceMt5Heartbeat}s` : ""}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="font-mono text-xs"
+              data-testid="state-profile-exec"
+              title="The execution permission the global state's profile names. It is advisory: no order path reads it, and it does not reflect the operational mode."
+            >
+              STATE PROFILE: {profile.executionPermission ?? "—"} · advisory
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        <div className="text-sm" data-testid="safety-core-halts">
+          {others === null ? (
+            <p className="text-yellow-700 dark:text-yellow-400">
+              The other stops (the platform emergency stop and your kill switch) could not be checked, so this page
+              cannot say whether they halt trading. Only the safety-core kill switch is shown here.
+            </p>
+          ) : otherHalted ? (
+            <div className="flex items-start gap-2">
+              <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-destructive">
+                  Demo and live broker orders are halted by {others.sources.map(haltName).join(" and ")}
+                  {ks ? " as well" : ""}:
+                </span>{" "}
+                {others.reasons.join(" ")}
+                {checkedAt && <span className="text-muted-foreground"> Checked at {checkedAt}.</span>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">
+              {ks
+                ? "No other stop is engaged (the platform emergency stop and your kill switch are released)."
+                : "No stop is engaged: the platform emergency stop, the safety-core kill switch and your kill switch are released."}
+              {checkedAt && ` Checked at ${checkedAt}.`}
+            </p>
+          )}
+        </div>
+      </CardContent>
+      {(reasons.length > 0 || blockers.length > 0 || profile.description) && (
+        <CardContent className="pt-0 space-y-2">
+          {profile.description && (
+            <p className="text-sm text-muted-foreground italic">{profile.description}</p>
+          )}
+          {blockers.length > 0 && (
+            <div className="flex items-start gap-2 text-sm">
+              <XCircle size={16} className="text-destructive shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-destructive">Blockers:</span>{" "}
+                {blockers.join("; ")}
+              </div>
+            </div>
+          )}
+          {reasons.length > 0 && (
+            <div className="flex items-start gap-2 text-sm">
+              <Activity size={16} className="text-muted-foreground shrink-0 mt-0.5" />
+              <div className="text-muted-foreground">{reasons.join("; ")}</div>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function ModeSwitcher({ status }: { status: SystemStatus }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const setMode = useSetSystemMode();
+  const [pendingMode, setPendingMode] = useState<SetSystemModeBodyMode | null>(null);
+  const [confirmLive, setConfirmLive] = useState<{ step: number } | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+
+  const apply = (mode: SetSystemModeBodyMode) => {
+    setMode.mutate(
+      { data: { mode, changedBy: "operator" } },
+      {
+        onSuccess: (res) => {
+          if (res.ok) {
+            setRefusal(null);
+            toast({ title: `Mode → ${res.mode}`, description: (res.reasons ?? []).join("; ") || "Mode changed." });
+          } else {
+            const text = (res.blockers ?? []).join("; ") || "The server refused the change without saying why.";
+            setRefusal({ action: `Mode change to ${mode}`, text, at: new Date().toISOString() });
+            toast({ title: "Mode change blocked", description: text, variant: "destructive" });
+          }
+          void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
+          void queryClient.invalidateQueries({ queryKey: getGetSystemVaultQueryKey() });
+        },
+        onError: (err) => {
+          // A refused change arrives as an error (409 with blockers, 403 for a non-operator).
+          const d = refusalDetail(err);
+          setRefusal({ action: `Mode change to ${mode}`, text: d.text, at: new Date().toISOString() });
+          toast({ title: d.status === 409 ? "Mode change blocked" : "Mode change failed", description: d.text, variant: "destructive" });
+          void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
+        },
+        onSettled: () => {
+          setPendingMode(null);
+          setConfirmLive(null);
+        },
+      },
+    );
+  };
+
+  const handleClick = (mode: SetSystemModeBodyMode) => {
+    if (status.killSwitchEngaged) {
+      toast({ title: "Kill switch engaged", description: "Reset the kill switch first.", variant: "destructive" });
+      return;
+    }
+    setPendingMode(mode);
+    if (mode === "LIVE_TRADING") {
+      setConfirmLive({ step: 1 });
+    } else {
+      apply(mode);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck size={20} /> Operational Mode
+        </CardTitle>
+        <CardDescription data-testid="mode-scope">
+          Records the safety core&apos;s operating mode. The governed order pipeline (paper, demo and live tickets)
+          does not read it: OBSERVE or SUGGEST does not stop those orders (use the kill switch to halt them), and
+          LIVE does not enable live orders. Only the legacy MT5 command endpoints and broker reconnect read it,
+          and they act only in LIVE. LIVE requires multi-step acknowledgement.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {MODE_DEFS.map(({ mode, label, sub, icon: Icon }) => {
+            const isCurrent = status.operationalMode === mode;
+            const isAllowed = status.allowedModes.includes(mode);
+            const isPending = setMode.isPending && pendingMode === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => handleClick(mode)}
+                disabled={!isAllowed || isCurrent || setMode.isPending || status.killSwitchEngaged}
+                className={[
+                  "p-4 rounded-lg border-2 text-left transition-all",
+                  isCurrent
+                    ? "border-primary bg-primary/10 shadow-md"
+                    : isAllowed
+                      ? "border-border hover:border-primary/60 hover:bg-accent/40"
+                      : "border-dashed border-muted opacity-40 cursor-not-allowed",
+                ].join(" ")}
+                data-testid={`button-mode-${mode}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon size={18} className={isCurrent ? "text-primary" : "text-muted-foreground"} />
+                  <span className="font-bold tracking-wide">{label}</span>
+                  {isCurrent && <CheckCircle2 size={14} className="text-primary ml-auto" />}
+                </div>
+                <p className="text-xs text-muted-foreground">{sub}</p>
+                {isPending && <p className="text-xs text-primary mt-1">Switching…</p>}
+                {!isAllowed && !isCurrent && (
+                  <p className="text-xs text-destructive mt-1" data-testid={`mode-blockers-${mode}`}>
+                    {(status.modeBlockers?.[mode] ?? []).length > 0
+                      ? `Not offered: ${(status.modeBlockers?.[mode] ?? []).join("; ")}`
+                      : "Not offered (the server did not say why)"}
+                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <RefusalNote refusal={refusal} testId="mode-refusal" />
+      </CardContent>
+
+      <AlertDialog open={confirmLive !== null} onOpenChange={(o) => !o && setConfirmLive(null)}>
+        <AlertDialogContent className="border-destructive border-2">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Zap /> Enable LIVE Trading — Step {confirmLive?.step ?? 1} of 2
+            </AlertDialogTitle>
+            <AlertDialogDescription className="py-3 text-base">
+              {confirmLive?.step === 1
+                ? "This records LIVE_TRADING as the safety core's mode. The legacy MT5 command endpoints and broker reconnect act only in this mode. Whether a live order can be placed is decided by the live venue switch, the stop switches and the pre-trade Risk Governor, not by this mode, and live executions cannot be undone. Continue?"
+                : "Final confirmation: switching to LIVE_TRADING now. Type-equivalent click required."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmLive(null)}>Cancel</AlertDialogCancel>
+            {confirmLive?.step === 1 ? (
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); setConfirmLive({ step: 2 }); }}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                I understand — continue
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                onClick={() => apply("LIVE_TRADING")}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                Confirm — switch to LIVE
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+function KillSwitchPanel({ status }: { status: SystemStatus }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const engage = useEngageKillSwitch();
+  const reset = useResetKillSwitch();
+  const [engageOpen, setEngageOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [ack, setAck] = useState("");
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: getGetSystemStatusQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetSystemVaultQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetSystemStateTransitionsQueryKey() });
+  };
+
+  const doEngage = () => {
+    const r = reason.trim() || "Operator-triggered emergency stop";
+    engage.mutate(
+      { data: { reason: r, triggeredBy: "operator" } },
+      {
+        onSuccess: () => {
+          setRefusal(null);
+          toast({ title: "KILL SWITCH ENGAGED", description: r, variant: "destructive" });
+          setEngageOpen(false);
+          setReason("");
+          invalidate();
+        },
+        onError: (err) => {
+          const d = refusalDetail(err);
+          setRefusal({ action: "Engage", text: d.text, at: new Date().toISOString() });
+          toast({ title: "Engage failed", description: d.text, variant: "destructive" });
+          invalidate();
+        },
+      },
+    );
+  };
+
+  const doReset = () => {
+    reset.mutate(
+      { data: { acknowledgement: ack, resetBy: "operator" } },
+      {
+        onSuccess: (res) => {
+          if (res.ok) {
+            setRefusal(null);
+            toast({ title: "Kill switch reset", description: "Entered RECOVERY_MODE." });
+            setResetOpen(false);
+            setAck("");
+            invalidate();
+          } else {
+            const text = (res.blockers ?? []).join("; ") || "The server refused the reset without saying why.";
+            setRefusal({ action: "Reset", text, at: new Date().toISOString() });
+            toast({ title: "Reset rejected", description: text, variant: "destructive" });
+          }
+        },
+        onError: (err) => {
+          // A refused reset arrives as an error (409 with blockers, 403 for a non-operator).
+          const d = refusalDetail(err);
+          setRefusal({ action: "Reset", text: d.text, at: new Date().toISOString() });
+          toast({ title: d.status === 409 ? "Reset rejected" : "Reset failed", description: d.text, variant: "destructive" });
+          invalidate();
+        },
+      },
+    );
+  };
+
+  const ks = status.killSwitchEngaged;
+  const others = otherHaltsOf(status);
+  const otherHalted = (others?.sources.length ?? 0) > 0;
+
+  return (
+    <Card className={ks ? "border-destructive/60" : ""}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-destructive">
+          <AlertOctagon size={20} /> Emergency Kill Switch
+        </CardTitle>
+        <CardDescription>
+          {ks
+            ? `Engaged ${status.killSwitchEngagedAt ? new Date(status.killSwitchEngagedAt).toLocaleString() : ""}. Reset requires explicit acknowledgement.`
+            : "Forces SAFE_SHUTDOWN, blocks all execution, drops mode to OBSERVE_ONLY."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!ks && otherHalted && (
+          <p className="mb-4 text-sm text-muted-foreground" data-testid="kill-switch-other-halts">
+            Trading is already halted by {others!.sources.map(haltName).join(" and ")}. This switch is separate:
+            engaging it adds the safety-core stop, and resetting it later does not release the others.
+          </p>
+        )}
+        {ks && status.killSwitchReason && (
+          <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/40 text-sm">
+            <span className="font-semibold">Reason:</span> {status.killSwitchReason}
+          </div>
+        )}
+        <RefusalNote refusal={refusal} testId="kill-switch-refusal" />
+      </CardContent>
+      <CardFooter className="gap-3 flex-wrap">
+        <Button
+          variant="destructive"
+          size="lg"
+          className="font-bold tracking-wider"
+          onClick={() => setEngageOpen(true)}
+          disabled={ks || engage.isPending}
+          data-testid="button-engage-kill-switch"
+        >
+          <AlertOctagon size={18} className="mr-2" />
+          {engage.isPending ? "ENGAGING…" : "ENGAGE KILL SWITCH"}
+        </Button>
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={() => setResetOpen(true)}
+          disabled={!ks || reset.isPending}
+          data-testid="button-reset-kill-switch"
+        >
+          <RefreshCw size={18} className="mr-2" />
+          Reset (Recovery)
+        </Button>
+      </CardFooter>
+
+      <AlertDialog open={engageOpen} onOpenChange={setEngageOpen}>
+        <AlertDialogContent className="border-destructive border-2">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <ShieldAlert /> Confirm Kill Switch
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              All trading will halt immediately. Provide a reason for the audit log.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-3">
+            <Label htmlFor="ks-reason">Reason</Label>
+            <Textarea
+              id="ks-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Unexpected slippage, news event, system anomaly…"
+              className="mt-1"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doEngage} className="bg-destructive hover:bg-destructive/90">
+              ENGAGE NOW
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw /> Reset Kill Switch
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              System will enter RECOVERY_MODE. Type <span className="font-mono font-bold">I_UNDERSTAND_RISK</span> to confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-3">
+            <Label htmlFor="ks-ack">Acknowledgement</Label>
+            <Input
+              id="ks-ack"
+              value={ack}
+              onChange={(e) => setAck(e.target.value)}
+              placeholder="I_UNDERSTAND_RISK"
+              className="mt-1 font-mono"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doReset}
+              disabled={ack !== "I_UNDERSTAND_RISK"}
+            >
+              Confirm Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+function VaultList({ events }: { events: VaultEvent[] }) {
+  if (events.length === 0) {
+    return <p className="text-sm text-muted-foreground p-4 text-center">No vault events yet.</p>;
+  }
+  return (
+    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+      {events.map((ev) => (
+        <div key={ev.id} className="p-3 rounded-md border bg-card text-sm" data-testid={`vault-event-${ev.id}`}>
+          <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Badge className={severityClass(ev.severity)}>{ev.severity}</Badge>
+              <Badge variant="outline" className="font-mono text-xs">{ev.kind}</Badge>
+              <span className="text-xs text-muted-foreground">{ev.source}</span>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              {new Date(ev.generatedAtIso).toLocaleString()}
+            </span>
+          </div>
+          <p className="font-medium">{ev.summary}</p>
+          {ev.reasons && ev.reasons.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">{ev.reasons.join("; ")}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TransitionsList({ transitions }: { transitions: StateTransitionEntry[] }) {
+  if (transitions.length === 0) {
+    return <p className="text-sm text-muted-foreground p-4 text-center">No state transitions yet.</p>;
+  }
+  return (
+    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+      {transitions.map((t) => (
+        <div key={t.id} className="p-3 rounded-md border bg-card text-sm" data-testid={`state-transition-${t.id}`}>
+          <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-mono">{t.fromState}</Badge>
+              <span className="text-muted-foreground">→</span>
+              <Badge className={t.changed ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}>
+                {t.toState}
+              </Badge>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              {new Date(t.generatedAtIso).toLocaleString()}
+            </span>
+          </div>
+          {t.reasons && t.reasons.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">{t.reasons.join("; ")}</p>
+          )}
+          {t.acceptedSources && t.acceptedSources.length > 0 && (
+            <p className="text-xs mt-1">
+              <span className="text-muted-foreground">Sources:</span> {t.acceptedSources.join(", ")}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function Emergency() {
+  const statusQ = useGetSystemStatus({ query: { queryKey: getGetSystemStatusQueryKey(), refetchInterval: 5000 } });
+  // The vault is install-wide (other traders' decisions), so the API serves it
+  // to operators only; a trader's page never asks for it.
+  const { isAdmin, isLoading: roleLoading } = useProductRole();
+  const canReadVault = isAdmin && !roleLoading;
+  const vaultQ = useGetSystemVault({ limit: 50 }, { query: { queryKey: getGetSystemVaultQueryKey({ limit: 50 }), refetchInterval: 5000, enabled: canReadVault } });
+  const transitionsQ = useGetSystemStateTransitions({ limit: 50 }, { query: { queryKey: getGetSystemStateTransitionsQueryKey({ limit: 50 }), refetchInterval: 10000 } });
+
+  if (!statusQ.data && statusQ.isError) {
+    return (
+      <div className="space-y-4 p-2" data-testid="safety-status-error">
+        <Card className="border-destructive/60" data-testid="status-load-error">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle size={20} /> Safety core status could not be loaded
+            </CardTitle>
+            <CardDescription>
+              The safety status could not be loaded, so the kill switch, operating mode and the other stops are
+              unknown here. Nothing on this page is shown until a read succeeds.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button variant="outline" onClick={() => void statusQ.refetch()} data-testid="button-retry-status">
+              <RefreshCw size={16} className="mr-2" /> Retry
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+  if (statusQ.isLoading || !statusQ.data) {
+    return (
+      <div className="space-y-4 p-2">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+    );
+  }
+
+  const status = statusQ.data;
+  // react-query keeps the last good status while a later poll fails.
+  const staleSince = statusQ.isError ? (statusQ.dataUpdatedAt || null) : null;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 p-2">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <ShieldAlert className="text-primary" /> Safety Core — Control Tower
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Phase 1 Foundation · Risk Governor · Global State Machine · Black Box Vault
+          </p>
+        </div>
+        {status.lastModeChangeAt && (
+          <div className="text-xs text-muted-foreground text-right">
+            <div>Last mode change</div>
+            <div className="font-mono">{new Date(status.lastModeChangeAt).toLocaleString()}</div>
+            {status.lastModeChangedBy && <div>by {status.lastModeChangedBy}</div>}
+          </div>
+        )}
+      </div>
+
+      {statusQ.isError && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300"
+          data-testid="status-stale"
+        >
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            The latest status read failed
+            {statusQ.errorUpdatedAt ? ` at ${new Date(statusQ.errorUpdatedAt).toLocaleTimeString()}` : ""}. Showing the
+            last status read
+            {staleSince ? ` at ${new Date(staleSince).toLocaleTimeString()}` : ""}; it may be out of date.
+          </span>
+        </div>
+      )}
+
+      <StatusBanner status={status} stale={statusQ.isError} />
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <ModeSwitcher status={status} />
+        <KillSwitchPanel status={status} />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText size={20} /> Black Box Vault
+          </CardTitle>
+          <CardDescription>
+            Immutable audit trail of every safety-critical decision. Polled every 5s.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="vault">
+            <TabsList>
+              <TabsTrigger value="vault" data-testid="tab-vault">
+                Vault Events
+                {canReadVault && vaultQ.data && (
+                  <Badge variant="secondary" className="ml-2">{vaultQ.data.events.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="transitions" data-testid="tab-transitions">
+                State Transitions
+                {transitionsQ.data && (
+                  <Badge variant="secondary" className="ml-2">{transitionsQ.data.transitions.length}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="vault" className="mt-4">
+              {roleLoading ? (
+                <Skeleton className="h-20 w-full" />
+              ) : !isAdmin ? (
+                <p className="text-sm text-muted-foreground p-4 text-center" data-testid="vault-operator-only">
+                  Vault events are visible to operators only.
+                </p>
+              ) : vaultQ.isLoading ? (
+                <div className="space-y-2">
+                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
+                </div>
+              ) : vaultQ.isError && !vaultQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="vault-load-error">Vault events could not be loaded.</p>
+              ) : (
+                <VaultList events={vaultQ.data?.events ?? []} />
+              )}
+            </TabsContent>
+            <TabsContent value="transitions" className="mt-4">
+              {transitionsQ.isLoading ? (
+                <div className="space-y-2">
+                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
+                </div>
+              ) : transitionsQ.isError && !transitionsQ.data ? (
+                <p className="text-sm text-destructive p-4 text-center" data-testid="transitions-load-error">State transitions could not be loaded.</p>
+              ) : (
+                <TransitionsList transitions={transitionsQ.data?.transitions ?? []} />
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      <div className="text-xs text-muted-foreground p-3 rounded-md border border-dashed flex items-start gap-2">
+        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+        <span>
+          Phase 1 Foundation/Safety. Every order goes through the governed trade pipeline and the pre-trade Risk
+          Governor at the API layer. The legacy <span className="font-mono">/api/execute-trade</span> endpoint is retired:
+          it returns HTTP 410 and places or records nothing.
+        </span>
+      </div>
+    </div>
+  );
+}

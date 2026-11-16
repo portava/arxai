@@ -1,0 +1,48 @@
+async page => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('http://127.0.0.1:4183');
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('button', { name: 'Fresh fixture', exact: true }).click();
+  await page.getByTestId('opportunity-row-direction-EURUSD').waitFor();
+  await page.getByLabel('Scanner refresh interval').selectOption('0');
+  await page.getByLabel('Scanner watchlist scope').selectOption('1');
+  if (await page.getByTestId('scanner-screen-count').textContent() !== '2 of 6 results shown') throw Error('Wrong watchlist count');
+  if (!(await page.getByTestId('scanner-watchlist-coverage').textContent()).includes('AUDUSD')) throw Error('Outside scan warning missing');
+  await page.getByText('Saved views · this browser only', { exact: true }).click();
+  await page.getByLabel('Scanner view name').fill('FX focus');
+  await page.getByRole('button', { name: 'Save / replace view', exact: true }).click();
+  await page.getByText('What do the scores mean?', { exact: true }).click();
+  await page.screenshot({ path: '/private/tmp/arx-scanner-screens-desktop.png', fullPage: true });
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export 2 rows', exact: true }).click();
+  await (await downloaded).saveAs('/private/tmp/arx-scanner-screens-filtered.csv');
+  await page.reload();
+  await page.getByText('Saved views · this browser only', { exact: true }).click();
+  await page.getByLabel('Open saved scanner view').selectOption('FX focus');
+  if (await page.getByTestId('scanner-screen-count').textContent() !== '2 of 6 results shown') throw Error('Saved view failed reload');
+  await page.getByLabel('Scanner readiness filter').selectOption('READY_NOW');
+  if (await page.getByTestId('scanner-screen-count').textContent() !== '1 of 6 results shown') throw Error('Ready filter failed');
+  await page.getByRole('button', { name: 'Expire fixture', exact: true }).click();
+  await page.getByTestId('scanner-screen-empty').waitFor();
+  if (await page.getByTestId('opportunity-map-best-picks').count()) throw Error('Expired filtered picks leaked');
+  await page.getByRole('button', { name: 'Reset filters', exact: true }).click();
+  const expiredDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export 6 rows', exact: true }).click();
+  await (await expiredDownload).saveAs('/private/tmp/arx-scanner-screens-expired.csv');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Fresh fixture', exact: true }).click();
+  await page.getByLabel('Open saved scanner view').selectOption('FX focus');
+  await page.getByLabel('Scanner result sort').selectOption('symbol');
+  await page.getByLabel('Scanner refresh interval').selectOption('60000');
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Mobile overflow');
+  await page.screenshot({ path: '/private/tmp/arx-scanner-screens-mobile.png', fullPage: true });
+  await page.getByLabel('Find in scanner results').fill('EUR');
+  if (await page.getByTestId('scanner-screen-count').textContent() !== '1 of 6 results shown') throw Error('Mobile search failed');
+  await page.getByLabel('Find in scanner results').press('Tab');
+  if (await page.getByLabel('Scanner watchlist scope').evaluate(el => el !== document.activeElement)) throw Error('Keyboard tab order failed');
+  await page.getByRole('button', { name: 'Delete view', exact: true }).click();
+  if (await page.getByLabel('Open saved scanner view').locator('option').count() !== 1) throw Error('Delete failed');
+  if (errors.length) throw Error(errors.join('\n'));
+  console.log(JSON.stringify({ desktop: true, mobile: true, keyboard: true, persistence: true, watchlistScope: true,
+    filters: true, expiry: true, filteredExport: true, expiredExport: true, errors }));
+}

@@ -1,0 +1,422 @@
+// Per-user dynamic safety envelope.
+//
+// SAFETY: fail-closed in every branch. If the global settings row is missing,
+// if the user permission row is missing, or if any read throws, this returns
+// the maximally restrictive envelope: tradingMode=DISABLED, liveLocked=true,
+// allowOrderExecution=false, emergencyKillSwitch=true.
+//
+// This is the canonical source for the assistant envelope and every
+// trade-mode aware response. It does NOT itself authorize anything — the
+// order guard chain (./orderGuard.ts) is the only thing that may APPROVE.
+//
+// Both install-wide stops (owner decision 4, round 5): the stop is read
+// through the one platform-stop authority (platformStopWith over the same
+// switches read, so the emergency stop's missing-row rule is unchanged).
+//   emergencyKillSwitch   the platform emergency stop ONLY (truthful per source)
+//   safetyCoreKillSwitch  the safety-core kill switch ONLY
+//   platformStop*         the combined answer (either stop, fail closed)
+// New-risk permission (allowOrderExecution / liveLocked) is derived from the
+// combined answer. tradingMode and readOnlyMode are NOT changed by the safety
+// core: the guarded close (POST /me/trades/close) refuses on
+// tradingMode=DISABLED, and a close must stay governed exactly as before
+// (no blanket close refusal). The emergency stop keeps its early return.
+
+import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
+import { db } from "@workspace/db";
+import {
+  userTradingPermissionsTable,
+  sharedMasterAccountsTable,
+} from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+import { logger } from "../logger.js";
+import {
+  getGlobalTradingConfig,
+  loadPlatformSettings,
+  platformStopReport,
+  platformStopWith,
+  stopSourceEngaged,
+  type GlobalTradingConfig,
+  type PlatformStopReaders,
+  type PlatformStopSource,
+} from "../safety/platformSwitches.js";
+
+export type PlatformMode = "OFF" | "SIMULATED" | "DEMO" | "LIVE";
+export type UserTradingMode = "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
+export type AccountType = "demo" | "live" | "unknown";
+
+export type AccountRoutingMode = "USER_OWNED_MT5" | "SHARED_MASTER_MT5";
+export type ConnectionType = "user_owned" | "shared_master";
+
+export interface SafetyEnvelope {
+  // Per-user effective trading mode the UI/AI should advertise.
+  tradingMode: UserTradingMode;
+  // Whether the platform globally permits live trading at all.
+  globalLiveEnabled: boolean;
+  // Whether this specific user is approved for live trading.
+  userLiveApproved: boolean;
+  // Whether the global emergency kill switch is engaged (that switch only).
+  emergencyKillSwitch: boolean;
+  // Whether the safety-core kill switch is engaged (that switch only; unreadable = engaged).
+  safetyCoreKillSwitch: boolean;
+  // Either install-wide stop (lib/safety/platformSwitches.platformStop), sources and first reason.
+  platformStopEngaged: boolean;
+  platformStopSources: PlatformStopSource[];
+  platformStopReason: string | null;
+  // Account type of the user's connected broker, if any.
+  accountType: AccountType;
+  // Phase 3.5 — effective routing for this user (after per-user override).
+  // The assistant uses this to explain "where do my trades go?". UI uses
+  // it to show the right banner copy. Never exposes master credentials.
+  accountRoutingMode: AccountRoutingMode;
+  routingOverride: "inherit" | AccountRoutingMode;
+  connectionType: ConnectionType;
+  sharedDemoConfigured: boolean;
+  sharedLiveConfigured: boolean;
+  sharedLiveTradingEnabled: boolean;
+  // True only when ALL gates are satisfied AND the broker placement layer
+  // is enabled. Currently always false because the placement layer is Phase 3.
+  allowOrderExecution: boolean;
+  // Inverse-of-allow shorthand the assistant uses to refuse live orders.
+  liveLocked: boolean;
+  // True when the system is in read-only mode for this user (no orders accepted).
+  readOnlyMode: boolean;
+  // Human-readable mode label for the UI banner.
+  bannerLabel:
+    | "Trading Off"
+    | "Demo Trading Active"
+    | "Live Trading Active"
+    | "Live Trading Pending Approval"
+    | "Emergency Trading Halt";
+  // Reason the envelope landed where it did (top blocker).
+  bannerReason: string;
+  // Legacy compatibility — kept until all callers migrate.
+  safetyMode: "off" | "simulated" | "demo" | "live" | "paper_only";
+}
+
+const FAIL_CLOSED: SafetyEnvelope = {
+  tradingMode: "DISABLED",
+  globalLiveEnabled: false,
+  userLiveApproved: false,
+  emergencyKillSwitch: true,
+  safetyCoreKillSwitch: true,
+  platformStopEngaged: true,
+  platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+  platformStopReason: null,
+  accountType: "unknown",
+  accountRoutingMode: "USER_OWNED_MT5",
+  routingOverride: "inherit",
+  connectionType: "user_owned",
+  sharedDemoConfigured: false,
+  sharedLiveConfigured: false,
+  sharedLiveTradingEnabled: false,
+  allowOrderExecution: false,
+  liveLocked: true,
+  readOnlyMode: true,
+  bannerLabel: "Trading Off",
+  bannerReason: "Default fail-closed state.",
+  safetyMode: "off",
+};
+
+// Phase 3 — broker placement layer is owner-approved as of May 2026. This
+// flag is re-exported from brokerPlacement.ts so the two layers can never
+// drift. Runtime safety is still governed by the per-user envelope (every
+// gate below + the order-guard chain). Setting platform_mode='OFF' or
+// engaging the kill switch instantly reverts to fail-closed.
+import { BROKER_PLACEMENT_LAYER_ENABLED } from "./brokerPlacement.js";
+
+/**
+ * The global settings WITHOUT the safety switches (routing, shared master,
+ * policy flags). Seeds the singleton when missing; null when unreadable.
+ * The switches (platform mode, venue enables, emergency stop, live arm) are
+ * read only through lib/safety/platformSwitches.ts.
+ */
+export async function getGlobalSettings(): Promise<GlobalTradingConfig | null> {
+  return getGlobalTradingConfig();
+}
+
+/**
+ * The user's permission row and whether the read itself succeeded, so "no
+ * row" (a reading) is not confused with "the read failed" (no reading).
+ */
+async function readUserPermissions(userId: number): Promise<{
+  row: typeof userTradingPermissionsTable.$inferSelect | null;
+  readable: boolean;
+}> {
+  try {
+    const rows = await db.select().from(userTradingPermissionsTable)
+      .where(eq(userTradingPermissionsTable.userId, userId)).limit(1);
+    return { row: rows[0] ?? null, readable: true };
+  } catch (err) {
+    logger.warn({ err: String(err), userId }, "user_trading_permissions read failed");
+    return { row: null, readable: false };
+  }
+}
+
+/** The user's permission row; null when there is none or the read failed. */
+export async function getUserPermissions(userId: number) {
+  return (await readUserPermissions(userId)).row;
+}
+
+/** Banner reason when the permission row could not be read (the envelope is fail-closed). */
+const PERMISSIONS_UNREAD_REASON =
+  "Your account's trading permissions could not be read, so trading is treated as off (fail closed) until they can be.";
+
+/**
+ * Fail-closed envelopes built because this user's permissions could not be
+ * read. Kept outside the envelope so its shape (and every lock value) is
+ * unchanged; envelopeUnread() is the only reader.
+ */
+const UNREAD_ENVELOPES = new WeakSet<SafetyEnvelope>();
+
+/**
+ * True when env is not a reading of this user's settings: the fail-closed
+ * default (settings unreadable, no user) or the fail-closed envelope built
+ * because the user's trading permissions could not be read. Display only:
+ * the lock values are the same either way, and every gate stays fail closed.
+ */
+export function envelopeUnread(env: SafetyEnvelope): boolean {
+  return env === FAIL_CLOSED || UNREAD_ENVELOPES.has(env);
+}
+
+async function getUserAccountType(userId: number): Promise<AccountType> {
+  try {
+    const c = await getUserPrimaryConnection(userId);
+    if (!c) return "unknown";
+    const t = String((c as { accountType?: string | null }).accountType ?? "").toLowerCase();
+    if (t === "demo") return "demo";
+    if (t === "live" || t === "real") return "live";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function getEnvelope(
+  userId: number | null | undefined,
+  /** Tests inject a failing safety-core read; production reads the canonical row. */
+  readers: Pick<PlatformStopReaders, "readSafetyCore"> = {},
+): Promise<SafetyEnvelope> {
+  if (!userId || userId <= 0) return FAIL_CLOSED;
+
+  const [settings, permissions, userOwnedAccountType] = await Promise.all([
+    loadPlatformSettings({ ifMissing: "seed" }),
+    readUserPermissions(userId),
+    getUserAccountType(userId),
+  ]);
+  const p = permissions.row;
+
+  const g = settings.config;
+  const sw = settings.switches;
+  if (!g || !sw.readable) return FAIL_CLOSED;
+
+  // Phase 3.5 — when this user is routed through a shared master, the
+  // effective broker is the master, not their personal MT5 connection. The
+  // envelope's accountType must reflect that so the tradingMode ladder can
+  // promote to LIVE for users who themselves only have a demo connection.
+  let accountType: AccountType = userOwnedAccountType;
+  const globalRoutingForAccountType: AccountRoutingMode =
+    g.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
+  const ovForAccountType = String(p?.accountRoutingOverride ?? "inherit").toLowerCase();
+  const effectiveRoutingForAccountType: AccountRoutingMode =
+    ovForAccountType === "user_owned_mt5" ? "USER_OWNED_MT5" :
+    ovForAccountType === "shared_master_mt5" ? "SHARED_MASTER_MT5" :
+    globalRoutingForAccountType;
+  if (effectiveRoutingForAccountType === "SHARED_MASTER_MT5") {
+    // Authoritative: only promote accountType when the selected master row
+    // is real, active, and of the matching account type. This keeps the
+    // envelope from advertising LIVE before the routing resolver would
+    // actually approve it. The order guard remains authoritative for
+    // execution; this is defence-in-depth so the assistant/UI banner does
+    // not overstate eligibility.
+    const pm: PlatformMode = sw.platformMode;
+    const canBeLive = pm === "LIVE" && !!g.sharedLiveTradingEnabled && !!g.sharedLiveConnectionId;
+    const candidateConnId = canBeLive ? g.sharedLiveConnectionId : g.sharedDemoConnectionId;
+    const wantedType: AccountType | null = canBeLive ? "live" : g.sharedDemoConnectionId ? "demo" : null;
+    if (candidateConnId && wantedType) {
+      try {
+        const masterRows = await db.select({
+          smActive: sharedMasterAccountsTable.isActive,
+          smStatus: sharedMasterAccountsTable.status,
+          smType: sharedMasterAccountsTable.accountType,
+        }).from(sharedMasterAccountsTable)
+          .where(eq(sharedMasterAccountsTable.connectionId, candidateConnId))
+          .limit(1);
+        const masterConn = masterRows[0] ? await getConnection(candidateConnId) : null;
+        const m = masterRows[0] && masterConn ? { ...masterRows[0], connType: masterConn.accountType } : undefined;
+        const connT = String(m?.connType ?? "").toLowerCase();
+        const smT = String(m?.smType ?? "").toLowerCase();
+        const validForLive = wantedType === "live"
+          && !!m?.smActive && m.smStatus === "active"
+          && smT === "live" && (connT === "live" || connT === "real");
+        const validForDemo = wantedType === "demo"
+          && !!m?.smActive && m.smStatus === "active"
+          && smT === "demo" && connT === "demo";
+        if (validForLive) accountType = "live";
+        else if (validForDemo) accountType = "demo";
+      } catch (err) {
+        logger.warn({ err: String(err) }, "shared master envelope validation failed");
+        // Leave accountType as user-owned value (fail-closed: no promotion).
+      }
+    }
+  }
+
+  // Both install-wide stops, one read (the emergency stop from the switches
+  // read above; the safety core added; an unreadable source is engaged).
+  const stop = await platformStopWith(sw, readers);
+  const emergencyKillSwitch = stopSourceEngaged(stop, "platform_emergency_stop");
+  const safetyCoreKillSwitch = stopSourceEngaged(stop, "safety_core_kill_switch");
+  const stopFields = { safetyCoreKillSwitch, ...platformStopReport(stop) };
+  const platformMode: PlatformMode = sw.platformMode;
+  const globalLiveEnabled = sw.venueOpen.LIVE;
+  const globalDemoEnabled = sw.venueOpen.DEMO;
+
+  // Phase 3.5 routing shared across early-return paths.
+  const globalRoutingEarly: AccountRoutingMode =
+    g.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
+  const ovEarly = String(p?.accountRoutingOverride ?? "inherit").toLowerCase();
+  const overrideEarly: "inherit" | AccountRoutingMode =
+    ovEarly === "user_owned_mt5" ? "USER_OWNED_MT5" :
+    ovEarly === "shared_master_mt5" ? "SHARED_MASTER_MT5" :
+    "inherit";
+  const effectiveRoutingEarly: AccountRoutingMode =
+    overrideEarly === "inherit" ? globalRoutingEarly : overrideEarly;
+  const routingFieldsEarly = {
+    accountRoutingMode: effectiveRoutingEarly,
+    routingOverride: overrideEarly,
+    connectionType: (effectiveRoutingEarly === "SHARED_MASTER_MT5" ? "shared_master" : "user_owned") as ConnectionType,
+    sharedDemoConfigured: !!g.sharedDemoConnectionId,
+    sharedLiveConfigured: !!g.sharedLiveConnectionId,
+    sharedLiveTradingEnabled: !!g.sharedLiveTradingEnabled,
+  };
+
+  // Emergency kill switch beats everything else.
+  if (emergencyKillSwitch) {
+    return {
+      ...FAIL_CLOSED,
+      ...routingFieldsEarly,
+      ...stopFields,
+      globalLiveEnabled,
+      userLiveApproved: !!p?.liveApproved,
+      emergencyKillSwitch: true,
+      accountType,
+      bannerLabel: "Emergency Trading Halt",
+      bannerReason: "Admin has engaged the global emergency stop. No new orders are accepted.",
+    };
+  }
+
+  // Platform OFF beats per-user settings.
+  if (platformMode === "OFF") {
+    return {
+      ...FAIL_CLOSED,
+      ...routingFieldsEarly,
+      ...stopFields,
+      emergencyKillSwitch: false,
+      accountType,
+      bannerLabel: "Trading Off",
+      bannerReason: "Trading is currently disabled platform-wide.",
+    };
+  }
+
+  // No permission row = suspended. A failed read lands here too (same
+  // fail-closed values); its reason says the read failed, not a setting.
+  if (!p || p.suspended) {
+    const env: SafetyEnvelope = {
+      ...FAIL_CLOSED,
+      ...routingFieldsEarly,
+      ...stopFields,
+      globalLiveEnabled,
+      userLiveApproved: !!p?.liveApproved,
+      emergencyKillSwitch: false,
+      accountType,
+      bannerLabel: globalLiveEnabled && p?.liveApproved ? "Live Trading Pending Approval" : "Trading Off",
+      bannerReason: !permissions.readable
+        ? PERMISSIONS_UNREAD_REASON
+        : p?.suspensionReason ?? "Trading not enabled for this account.",
+    };
+    if (!permissions.readable) UNREAD_ENVELOPES.add(env);
+    return env;
+  }
+
+  // Determine effective per-user mode.
+  let tradingMode: UserTradingMode = "DISABLED";
+  let bannerLabel: SafetyEnvelope["bannerLabel"] = "Trading Off";
+  let bannerReason = "Trading not enabled for this account.";
+
+  if (
+    globalLiveEnabled &&
+    p.liveEnabled && p.liveApproved &&
+    !!p.riskDisclosureAcceptedAt &&
+    accountType === "live"
+  ) {
+    tradingMode = "LIVE";
+    bannerLabel = "Live Trading Active";
+    bannerReason = "Live trading is active. Real money is at risk.";
+  } else if (globalLiveEnabled && p.liveApproved && (!p.riskDisclosureAcceptedAt || accountType !== "live")) {
+    tradingMode = "DEMO"; // Falls back to demo while waiting for live prerequisites.
+    bannerLabel = "Live Trading Pending Approval";
+    bannerReason = !p.riskDisclosureAcceptedAt
+      ? "Live trading pending — accept the risk disclosure to enable."
+      : "Live trading pending — connect a verified live broker account.";
+  } else if (globalDemoEnabled && p.demoEnabled && (accountType === "demo" || accountType === "unknown")) {
+    tradingMode = "DEMO";
+    bannerLabel = "Demo Trading Active";
+    bannerReason = "Demo trading is active. No real money is at risk.";
+  } else if (platformMode === "SIMULATED" && p.tradingMode !== "DISABLED") {
+    tradingMode = "SIMULATED";
+    bannerLabel = "Demo Trading Active";
+    bannerReason = "Simulator trading is active. No broker routing.";
+  }
+
+  // New-risk permission from the combined stop (owner decision 4). Here only
+  // the safety core can be engaged (the emergency stop returned above).
+  // tradingMode / readOnlyMode stay as they were, so closes are not refused.
+  const liveLocked = !BROKER_PLACEMENT_LAYER_ENABLED || tradingMode !== "LIVE" || stop.engaged;
+  const allowOrderExecution = BROKER_PLACEMENT_LAYER_ENABLED && tradingMode === "LIVE" && !stop.engaged;
+  if (stop.engaged) {
+    bannerLabel = "Emergency Trading Halt";
+    bannerReason = `${stop.reason ?? "An install-wide stop is engaged."} No new orders are accepted.`;
+  }
+  const readOnlyMode = tradingMode === "DISABLED";
+  const safetyMode: SafetyEnvelope["safetyMode"] =
+    tradingMode === "DISABLED" ? "off" :
+    tradingMode === "SIMULATED" ? "simulated" :
+    tradingMode === "DEMO" ? "demo" : "live";
+
+  // Phase 3.5 routing fields.
+  const globalRouting: AccountRoutingMode =
+    g.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
+  const ovRaw = String(p.accountRoutingOverride ?? "inherit").toLowerCase();
+  const routingOverride: "inherit" | AccountRoutingMode =
+    ovRaw === "user_owned_mt5" ? "USER_OWNED_MT5" :
+    ovRaw === "shared_master_mt5" ? "SHARED_MASTER_MT5" :
+    "inherit";
+  const effectiveRouting: AccountRoutingMode =
+    routingOverride === "inherit" ? globalRouting : routingOverride;
+  const connectionType: ConnectionType =
+    effectiveRouting === "SHARED_MASTER_MT5" ? "shared_master" : "user_owned";
+
+  return {
+    tradingMode,
+    globalLiveEnabled,
+    userLiveApproved: !!p.liveApproved,
+    emergencyKillSwitch: false,
+    ...stopFields,
+    accountType,
+    accountRoutingMode: effectiveRouting,
+    routingOverride,
+    connectionType,
+    sharedDemoConfigured: !!g.sharedDemoConnectionId,
+    sharedLiveConfigured: !!g.sharedLiveConnectionId,
+    sharedLiveTradingEnabled: !!g.sharedLiveTradingEnabled,
+    allowOrderExecution,
+    liveLocked,
+    readOnlyMode,
+    bannerLabel,
+    bannerReason,
+    safetyMode,
+  };
+}
+
+// Constant export used by routes that need a compile-time fail-closed default
+// (e.g. error paths and unauthenticated responses).
+export const FAIL_CLOSED_ENVELOPE: SafetyEnvelope = FAIL_CLOSED;

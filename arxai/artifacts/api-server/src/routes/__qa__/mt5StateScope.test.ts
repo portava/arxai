@@ -1,0 +1,252 @@
+// GET /api/mt5/state — the platform mt5_state row (account, balances,
+// liveAllowed, positions) is whichever EA terminal heartbeated last. It has
+// no owner column, so it must never be served as the caller's own account,
+// and never to an anonymous caller. Operators see it marked scope
+// "platform"; everyone else sees only their own bridge connection (or the
+// shared-master bridge they route through), with positions marked not read.
+//
+// Only the database handle, the connection lookup and the shared-bridge read
+// are stubbed; the real router runs. No network, no broker.
+//
+// Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
+//        src/routes/__qa__/mt5StateScope.test.ts
+
+import { mock, test } from "node:test";
+import assert from "node:assert/strict";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+
+const PLATFORM_ROW = {
+  id: 1, userId: null, account: "99887766", broker: "Other Tenant Broker", server: "OT-Live",
+  balance: 250_000, equity: 251_000, margin: 1_000, freeMargin: 250_000, marginLevel: 25_100,
+  currency: "USD", liveAllowed: true,
+  positions: [{ ticket: 555, symbol: "XAUUSD", type: "BUY", volume: 5, profit: 900 }],
+  lastHeartbeatAt: new Date(Date.now() - 2_000), lastSyncAt: new Date(Date.now() - 2_000),
+};
+
+const database = await import("@workspace/db");
+function chain(rows: unknown[]): Record<string, unknown> {
+  const q: Record<string, unknown> = {};
+  const self = () => q;
+  q.from = self; q.where = self; q.groupBy = self; q.orderBy = self; q.limit = self;
+  q.then = (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve);
+  return q;
+}
+mock.module("@workspace/db", {
+  namedExports: {
+    ...database,
+    db: {
+      select: () => chain([PLATFORM_ROW]),
+      insert: () => { throw new Error("GET /mt5/state must not write"); },
+    },
+  },
+});
+
+let connection: Record<string, unknown> | null = null;
+const realConnections = await import("../../lib/brokerHub/connections.js");
+mock.module("../../lib/brokerHub/connections.js", {
+  namedExports: { ...realConnections, getUserActiveConnection: async () => connection },
+});
+
+let shared: { route: string; sharedMasterBridge: Record<string, unknown> | null; routeReadFailed?: true } = { route: "NONE", sharedMasterBridge: null };
+const realShared = await import("../mt5SharedBridgeStatus.js");
+mock.module("../mt5SharedBridgeStatus.js", {
+  namedExports: { ...realShared, readSharedMasterBridgeForUser: async () => shared },
+});
+
+const { default: express } = await import("express");
+const { default: router } = await import("../mt5.js");
+
+async function get(authUser: { id: number; role: string } | null): Promise<{ status: number; body: Record<string, unknown> }> {
+  const app = express();
+  app.use((req, _res, next) => {
+    if (authUser) (req as unknown as { authUser: unknown }).authUser = authUser;
+    (req as unknown as { log: unknown }).log = { info() {}, warn() {}, error() {} };
+    next();
+  });
+  app.use(router);
+  const server: Server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/mt5/state`);
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
+function assertNoPlatformLeak(body: Record<string, unknown>): void {
+  const text = JSON.stringify(body);
+  assert.ok(!text.includes("99887766"), "platform account number leaked");
+  assert.ok(!text.includes("Other Tenant Broker"), "platform broker leaked");
+  assert.ok(!text.includes("250000"), "platform balance leaked");
+  assert.deepEqual(body["positions"], []);
+  assert.equal(body["positionsMeasured"], false);
+  assert.equal(body["liveAllowed"], false);
+}
+
+test("an anonymous caller is refused", async () => {
+  const r = await get(null);
+  assert.equal(r.status, 401);
+  assert.ok(!JSON.stringify(r.body).includes("99887766"));
+});
+
+test("a trader with no bridge sees scope none, not another tenant's account", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null };
+  const r = await get({ id: 31, role: "USER" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "none");
+  assert.equal(r.body["connected"], false);
+  assert.equal(r.body["account"], null);
+  assertNoPlatformLeak(r.body);
+});
+
+test("a trader with their own connection sees only that connection", async () => {
+  connection = {
+    id: 5, userId: 31, mode: "DEMO", lastHeartbeat: new Date(Date.now() - 2_000), accountSyncedAt: new Date(Date.now() - 4_000),
+    accountNumber: "1234567", brokerName: "QA Broker", serverName: "QA-Demo", accountBalance: 10_000,
+    accountEquity: 10_050, margin: 40, freeMargin: 9_960, accountCurrency: "USD",
+  };
+  shared = { route: "NONE", sharedMasterBridge: null };
+  const r = await get({ id: 31, role: "USER" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "own_connection");
+  assert.equal(r.body["account"], "1234567");
+  assert.equal(r.body["balance"], 10_000);
+  assert.equal(r.body["connected"], true);
+  assertNoPlatformLeak(r.body);
+});
+
+test("a shared-master trader sees the shared bridge's reachability, not its account", async () => {
+  connection = null;
+  shared = {
+    route: "SHARED_MASTER",
+    sharedMasterBridge: { availability: "HEALTHY", connected: true, message: "Shared bridge healthy.", lastSnapshotAt: new Date(Date.now() - 3_000).toISOString(), snapshotAgeSeconds: 3, source: "shared_master_bridge_pool" },
+  };
+  const r = await get({ id: 32, role: "INVESTOR" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "shared_master_bridge");
+  assert.equal(r.body["connected"], true);
+  assert.equal(r.body["account"], null);
+  assertNoPlatformLeak(r.body);
+});
+
+test("an operator sees the platform row, marked as the install-wide feed", async () => {
+  const r = await get({ id: 1, role: "ADMIN" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "platform");
+  assert.match(String(r.body["scopeNote"]), /not tied to any one user/);
+  assert.equal(r.body["account"], "99887766");
+  assert.equal((r.body["positions"] as unknown[]).length, 1);
+  assert.equal(r.body["liveAllowed"], true);
+});
+
+// A routing read that failed (routeReadFailed) is not a confirmed "no bridge":
+// /mt5/state and /mt5/status say whether the shared bridge applies could not
+// be read, instead of "You have no MT5 bridge connection".
+async function getStatus(authUser: { id: number; role: string }): Promise<Record<string, unknown>> {
+  const app = express();
+  app.use((req, _res, next) => {
+    (req as unknown as { authUser: unknown }).authUser = authUser;
+    (req as unknown as { log: unknown }).log = { info() {}, warn() {}, error() {} };
+    next();
+  });
+  app.use(router);
+  const server: Server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/mt5/status`);
+    assert.equal(res.status, 200);
+    return (await res.json()) as Record<string, unknown>;
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
+test("a trader whose routing could not be read is not told they have no bridge", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
+  const r = await get({ id: 33, role: "USER" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "none");
+  assert.doesNotMatch(String(r.body["scopeNote"]), /You have no MT5 bridge connection/);
+  assert.match(String(r.body["scopeNote"]), /could not be read/);
+  assertNoPlatformLeak(r.body);
+
+  const s = await getStatus({ id: 33, role: "USER" });
+  assert.equal(s["connected"], false);
+  assert.equal(s["routeReadFailed"], true);
+  assert.match(String(s["userSafeMessage"]), /could not be read/);
+});
+
+test("a confirmed no-bridge read carries no routeReadFailed flag", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null };
+  const s = await getStatus({ id: 34, role: "USER" });
+  assert.equal(s["route"], "NONE");
+  assert.equal("routeReadFailed" in s, false);
+  assert.match(String(s["userSafeMessage"]), /not connected/);
+});
+
+// GET /mt5/status answered fields (routeReadFailed, route, sharedMasterBridge,
+// userSafeMessage) and modes (NOT_CONNECTED, STALE) that the Mt5Status schema
+// in lib/api-spec/openapi.yaml did not declare, so the generated client types
+// disagreed with the response and the Topbar read them through casts.
+const { readFileSync } = await import("node:fs");
+const { fileURLToPath } = await import("node:url");
+const { dirname, resolve } = await import("node:path");
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+
+/** Top-level property names and the mode enum of `Mt5Status` in openapi.yaml. */
+function specMt5Status(): { props: Set<string>; modes: string[] } {
+  const lines = readFileSync(resolve(REPO, "lib/api-spec/openapi.yaml"), "utf8").split("\n");
+  const start = lines.findIndex((l) => l === "    Mt5Status:");
+  assert.ok(start > 0, "Mt5Status schema not found in openapi.yaml");
+  const props = new Set<string>();
+  let modes: string[] = [];
+  let current = "";
+  for (let i = start + 1; i < lines.length && !/^ {4}\S/.test(lines[i]!); i++) {
+    const m = /^ {8}(\w+):/.exec(lines[i]!);
+    if (m) { current = m[1]!; props.add(current); }
+    // `mode: { type: string, enum: [...] }` or a nested `enum: [...]` line under `mode:`.
+    const e = current === "mode" ? /enum: \[([^\]]*)\]/.exec(lines[i]!) : null;
+    if (e) modes = e[1]!.split(",").map((s) => s.trim());
+  }
+  return { props, modes };
+}
+
+function assertDeclared(body: Record<string, unknown>, label: string): void {
+  const { props, modes } = specMt5Status();
+  const undeclared = Object.keys(body).filter((k) => !props.has(k));
+  assert.deepEqual(undeclared, [], `${label}: /mt5/status fields missing from the openapi Mt5Status schema`);
+  assert.ok(modes.includes(String(body["mode"])), `${label}: mode ${String(body["mode"])} is not in the Mt5Status mode enum`);
+}
+
+test("every field and mode /mt5/status answers is declared in the openapi Mt5Status schema", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "routing unreadable");
+
+  shared = {
+    route: "SHARED_MASTER",
+    sharedMasterBridge: { availability: "UNKNOWN", connected: false, message: "Shared MT5 bridge status could not be read.", lastSnapshotAt: null, snapshotAgeSeconds: null, source: "shared_master_bridge_pool" },
+  };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "shared master");
+
+  connection = {
+    id: 6, userId: 35, mode: "DEMO", lastHeartbeat: new Date(Date.now() - 10 * 60_000), accountSyncedAt: null,
+    accountNumber: "7654321", brokerName: "QA Broker", serverName: "QA-Demo", accountBalance: 1_000,
+    accountEquity: 1_000, margin: 0, freeMargin: 1_000, accountCurrency: "USD",
+  };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "own connection, stale");
+  connection = null;
+});
+
+test("the generated client type carries routeReadFailed, route and sharedMasterBridge", () => {
+  const generated = readFileSync(resolve(REPO, "lib/api-client-react/src/generated/api.schemas.ts"), "utf8");
+  const body = /export interface Mt5Status \{([\s\S]*?)\n\}/.exec(generated)?.[1] ?? "";
+  assert.match(body, /\brouteReadFailed\?: boolean;/);
+  assert.match(body, /\broute\?: /);
+  assert.match(body, /\bsharedMasterBridge\?: /);
+});

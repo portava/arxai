@@ -1,0 +1,351 @@
+// (N) News risk card — shown in Trade Plan Builder for the active plan's
+// symbol. Displays risk label, time-until-event, warning text, AI summary,
+// and a Run-scan button. Non-blocking by design: if NO_TRADE_WINDOW, the
+// trade-plan checklist will surface a FAIL but this card alone does not
+// stop the user from saving the plan (only the validate flow blocks).
+
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { eventCountdownLabel } from "@/lib/eventCountdown";
+import type { CalendarCoverage } from "./UpcomingEventsList";
+
+type Risk = "CLEAR" | "CAUTION" | "HIGH_RISK" | "NO_TRADE_WINDOW";
+
+interface NewsHeadline {
+  headline: string;
+  source: string | null;
+  publishedAt: string | null;
+  severity: "high" | "medium" | "low";
+}
+
+interface NewsContext {
+  connected: boolean;
+  provider: string;
+  itemCount: number;
+  highImpactCount: number;
+  topHeadlines: NewsHeadline[];
+  updatedAt: string | null;
+}
+
+export interface NewsRiskReport {
+  id: number; symbol: string;
+  relatedCurrency: string | null;
+  eventId: number | null;
+  riskLevel: Risk;
+  timeUntilEventMinutes: number | null;
+  tradeWarning: string | null;
+  aiSummary: string;
+  createdAt: string;
+  news?: NewsContext | null;
+  /** Whether the stored calendar the report scored reaches the next 24h. */
+  calendarCoverage?: CalendarCoverage | null;
+}
+
+// Severity badge tone for a surfaced driving headline.
+const HEADLINE_SEVERITY_STYLE: Record<NewsHeadline["severity"], string> = {
+  high:   "border-red-700 text-red-300",
+  medium: "border-amber-700 text-amber-300",
+  low:    "border-slate-600 text-slate-400",
+};
+
+// Honest relative age — "unknown" age never reads as fresh/fabricated.
+function headlineAge(publishedAt: string | null): string {
+  if (!publishedAt) return "time unknown";
+  const ms = Date.now() - new Date(publishedAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return `${h}h ago`;
+}
+
+function HeadlineRow({ h }: { h: NewsHeadline }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-slate-700 bg-slate-900/40 px-2 py-1.5">
+      <span className={`mt-0.5 shrink-0 rounded border px-1 py-0.5 text-[9px] uppercase ${HEADLINE_SEVERITY_STYLE[h.severity]}`}>
+        {h.severity}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs text-slate-200">{h.headline}</span>
+        <span className="mt-0.5 block text-[10px] text-slate-500">
+          {h.source ?? "unknown source"} · {headlineAge(h.publishedAt)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+const STYLES: Record<Risk, string> = {
+  CLEAR:            "bg-green-700 text-white",
+  CAUTION:          "bg-amber-700 text-white",
+  HIGH_RISK:        "bg-orange-700 text-white",
+  NO_TRADE_WINDOW:  "bg-red-700 text-white animate-pulse",
+};
+
+// ARX's critical-event hold blocks trade-plan validation from 24h before a
+// CRITICAL release until 2h after it, and is stored as NO_TRADE_WINDOW. A live
+// no-trade window (HIGH, or CRITICAL inside its release window) only exists
+// within ±15 minutes of the release, so a NO_TRADE_WINDOW report further out —
+// or one whose warning already says TRADE PLAN HOLD — is the trade-plan hold,
+// not a "do not trade" window. Read from the stored row; no schema change.
+//
+// `live` (pass it only for a report still shown as current): the stored offset
+// is true only at scan time, and a current report can be minutes old. Once the
+// live offset (createdMs + offset − nowMs) is inside the release window, the
+// live no-trade window is in force, so the report is no longer read as the
+// plan hold. Live arithmetic only ever moves a hold INTO the window — it never
+// softens a stored live window into a hold.
+const RELEASE_WINDOW_MIN = 15;
+export function isTradePlanHold(
+  r: Pick<NewsRiskReport, "riskLevel" | "timeUntilEventMinutes" | "tradeWarning">,
+  live?: { createdMs: number; nowMs: number },
+): boolean {
+  if (r.riskLevel !== "NO_TRADE_WINDOW") return false;
+  const storedHold = r.tradeWarning?.startsWith("TRADE PLAN HOLD")
+    || (r.timeUntilEventMinutes != null && Math.abs(r.timeUntilEventMinutes) > RELEASE_WINDOW_MIN);
+  if (!storedHold) return false;
+  if (live && r.timeUntilEventMinutes != null && Number.isFinite(live.createdMs) && Number.isFinite(live.nowMs)) {
+    const liveMin = (live.createdMs + r.timeUntilEventMinutes * 60_000 - live.nowMs) / 60_000;
+    if (Math.abs(liveMin) <= RELEASE_WINDOW_MIN) return false;
+  }
+  return true;
+}
+const TRADE_PLAN_HOLD_STYLE = "bg-red-800 text-white";
+
+// A persisted report is a snapshot taken when the scan ran: its risk label and
+// countdown were computed for THAT moment. The scorer's narrowest window edge
+// is 10-15 minutes, so a report older than this may already have crossed one
+// (a no-trade window closed, or a CLEAR read now inside a window). Past this
+// age the card labels the report as outdated instead of presenting it as the
+// current risk.
+export const NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS = 5 * 60_000;
+
+function fmtAgo(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m ago` : `${h}h ago`;
+}
+
+// Minutes until (positive) or since (negative) the event, recomputed from the
+// report's own createdAt so the countdown never freezes at scan time.
+interface HeatDiagnosticsLite {
+  providers: Array<{ kind: string; connected: boolean; name: string }>;
+}
+
+export function NewsRiskCard({ symbol }: { symbol: string | null }) {
+  const qc = useQueryClient();
+  // Re-render every 30s so the report age / countdown keep moving.
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const enabled = !!symbol;
+  // Provider honesty: a green "CLEAR" must never imply a confident all-clear
+  // when the economic-calendar / news providers are not connected. Reuse the
+  // single market-heat provider-status seam (no second source of truth).
+  const diagnostics = useQuery<HeatDiagnosticsLite>({
+    queryKey: ["market-heat-diagnostics", "news-risk-card"],
+    queryFn: async () => {
+      const r = await fetch("/api/market-heat/diagnostics");
+      if (!r.ok) throw new Error("Failed to load provider status");
+      return r.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+  const calendarConnected =
+    diagnostics.data?.providers.find((p) => p.kind === "calendar")?.connected ?? false;
+  const newsConnected =
+    diagnostics.data?.providers.find((p) => p.kind === "news")?.connected ?? false;
+  const providersUnavailable = !calendarConnected && !newsConnected;
+  const latest = useQuery<NewsRiskReport>({
+    queryKey: ["news-risk-latest", symbol],
+    queryFn: async () => {
+      const r = await fetch(`/api/news-risk/latest?symbol=${encodeURIComponent(symbol!)}`);
+      if (r.status === 404) throw new Error("no-report");
+      if (!r.ok) throw new Error("Failed to load news risk report");
+      return r.json();
+    },
+    enabled, retry: false,
+  });
+  const generate = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/news-risk/generate", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      if (!r.ok) throw new Error("Failed to generate report");
+      return r.json() as Promise<NewsRiskReport>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["news-risk-latest", symbol] }),
+  });
+
+  if (!symbol) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+        Set a symbol on the plan to enable news-risk analysis.
+      </div>
+    );
+  }
+
+  const r = latest.data;
+  const createdMs = r ? new Date(r.createdAt).getTime() : NaN;
+  const reportAgeMs = Number.isFinite(createdMs) ? Math.max(0, nowMs - createdMs) : null;
+  // Unknown age is treated as outdated (fail closed).
+  const reportOutdated = r ? reportAgeMs == null || reportAgeMs > NEWS_RISK_REPORT_CURRENT_MAX_AGE_MS : false;
+  const scanTime = r && Number.isFinite(createdMs) ? new Date(createdMs).toLocaleTimeString() : "an unknown time";
+  // A CLEAR scored from a stored calendar that does not reach the next 24h is
+  // not an all-clear: shown as "not checked" with the server's reason.
+  const clearNotChecked = r?.riskLevel === "CLEAR" && r.calendarCoverage?.windowCovered === false;
+  // A current report is classified by its live offset; an outdated one says
+  // what the scan found then.
+  const planHold = r ? isTradePlanHold(r, reportOutdated ? undefined : { createdMs, nowMs }) : false;
+  // The scan stored a plan hold but the live countdown has since entered the
+  // release window: the stored hold wording is the scan's, not now's.
+  const holdSuperseded = r != null && !reportOutdated && !planHold && isTradePlanHold(r);
+  const scanTimePrefix = reportOutdated || holdSuperseded ? `At scan time (${scanTime}): ` : "";
+  const levelLabel = r ? (planHold ? "TRADE PLAN HOLD" : r.riskLevel.replace(/_/g, " ")) : "";
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-100">News & Economic Risk</h3>
+          <p className="text-xs text-slate-500">
+            {symbol} · {r ? new Date(r.createdAt).toLocaleString() : "no report yet"}
+          </p>
+        </div>
+        <button
+          onClick={() => generate.mutate()}
+          disabled={generate.isPending}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {generate.isPending ? "Scanning…" : (r ? "Refresh scan" : "Run scan")}
+        </button>
+      </header>
+
+      {providersUnavailable ? (
+        <div className="rounded-md border border-slate-600 bg-slate-800/60 p-3 text-xs text-slate-300">
+          <span className="font-semibold text-slate-200">Provider unavailable.</span>{" "}
+          No live news or economic-calendar provider is connected — risk is based
+          on manually-synced events only. The absence of a warning is{" "}
+          <span className="font-semibold">not an all-clear</span>.
+        </div>
+      ) : !calendarConnected ? (
+        <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-xs text-slate-400">
+          Calendar unavailable — economic-calendar provider not connected.
+          Scheduled-event risk is based on manually-synced events only.
+          The absence of a warning is{" "}
+          <span className="font-semibold">not an all-clear</span>.
+        </div>
+      ) : !newsConnected ? (
+        <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 text-xs text-slate-400">
+          News unavailable — headline-news provider not connected.
+          Breaking-news risk is not being monitored. The absence of a warning is{" "}
+          <span className="font-semibold">not an all-clear</span>.
+        </div>
+      ) : null}
+
+      {!r && !latest.isLoading && (
+        <p className="text-sm text-slate-400">No report yet. Click "Run scan" — sync economic events first via the Calendar page if results look empty.</p>
+      )}
+
+      {r && (
+        <>
+          {reportOutdated && (
+            <div
+              className="rounded-md border border-slate-600 bg-slate-800/60 p-3 text-xs text-slate-300"
+              data-testid="news-risk-outdated"
+            >
+              <span className="font-semibold text-slate-200">Outdated scan.</span>{" "}
+              This report was generated {reportAgeMs == null ? "at an unknown time" : `${fmtAgo(reportAgeMs)} (at ${scanTime})`}.
+              The risk level below is what the scan found then, not now. Run a new scan for the current risk.
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {clearNotChecked ? (
+              // A CLEAR from a calendar that does not cover the window is not an all-clear.
+              <span data-testid="news-risk-not-checked" className="rounded bg-slate-700 px-2 py-0.5 text-xs font-semibold text-slate-100">
+                {reportOutdated ? `At ${scanTime}: ` : ""}NOT CHECKED
+              </span>
+            ) : (
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                  reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300"
+                  : planHold ? TRADE_PLAN_HOLD_STYLE
+                  : STYLES[r.riskLevel]
+                }`}
+                data-testid="news-risk-level"
+              >
+                {reportOutdated ? `At ${scanTime}: ` : ""}{levelLabel}
+              </span>
+            )}
+            {r.timeUntilEventMinutes !== null && Number.isFinite(createdMs) && (
+              // The minute offset is true only at report time (createdAt); count
+              // from the event time it implies, against the ticking clock.
+              <span className="text-sm text-slate-300" data-testid="text-news-risk-event-countdown">
+                Event {eventCountdownLabel(createdMs + r.timeUntilEventMinutes * 60_000, nowMs)}
+              </span>
+            )}
+            {r.relatedCurrency && (
+              <span className="text-sm text-slate-300">Currency: <span className="font-semibold text-slate-100">{r.relatedCurrency}</span></span>
+            )}
+          </div>
+          {r.tradeWarning && (
+            <div className={`rounded-md border p-3 text-xs ${
+              reportOutdated ? "border-slate-700 bg-slate-900/40 text-slate-400"
+              : r.riskLevel === "NO_TRADE_WINDOW" ? "border-red-700 bg-red-950/40 text-red-200"
+              : r.riskLevel === "HIGH_RISK"     ? "border-orange-700 bg-orange-950/40 text-orange-200"
+              : "border-amber-700 bg-amber-950/40 text-amber-200"
+            }`} data-testid="news-risk-warning">
+              <div className="mb-1 font-semibold uppercase tracking-wide">
+                {reportOutdated
+                  ? `At scan time (${scanTime}): ${planHold ? "trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "do not trade" : "caution"}`
+                  : `⚠ ${planHold ? "Trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
+              </div>
+              <p>{holdSuperseded ? scanTimePrefix : ""}{r.tradeWarning}</p>
+            </div>
+          )}
+          {r.calendarCoverage?.windowCovered === false && (
+            <div data-testid="news-risk-calendar-not-covered" className="rounded-md border border-amber-800/60 bg-amber-950/30 p-3 text-xs text-amber-200">
+              {r.calendarCoverage.note ?? "The stored economic calendar does not cover the next 24h, so scheduled events cannot be ruled out."}
+            </div>
+          )}
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="news-risk-summary">
+            {scanTimePrefix}{r.aiSummary}
+          </p>
+          {/* Driving headlines — the same severity-ranked headlines surfaced on
+              the Global Market Heat card, shown only when risk is elevated/high
+              and the news provider is positively connected. Honest-empty: a
+              disconnected provider surfaces no headlines (never fabricated). */}
+          {r.news?.connected &&
+            r.riskLevel !== "CLEAR" &&
+            r.news.topHeadlines.length > 0 && (
+            <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-slate-500">
+                <span>Driving headlines</span>
+                <span className="normal-case tracking-normal text-slate-500">
+                  {r.news.itemCount} item{r.news.itemCount === 1 ? "" : "s"} · {r.news.provider}
+                </span>
+                {r.news.highImpactCount > 0 && (
+                  <span className="inline-flex items-center rounded-full border border-red-700 px-1.5 py-0.5 text-[9px] normal-case tracking-normal text-red-300">
+                    {r.news.highImpactCount} high-impact
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {r.news.topHeadlines.map((h, i) => (
+                  <HeadlineRow key={`${h.headline}-${i}`} h={h} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

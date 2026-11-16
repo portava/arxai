@@ -1,0 +1,655 @@
+{
+  "version": "arx-real-markets-fixture-v1",
+  "retrievedOn": "2026-11-11",
+  "windowEnd": "2026-11-10T21:00:00Z",
+  "barCapPerSeries": 0,
+  "datasetHash": "1aaef5d9707bc93b5b80e503407f1386192c220ef992195b84c66d7b87a65d53",
+  "syntheticData": false,
+  "instruments": [
+    {
+      "symbol": "frxEURUSD",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxEURUSD.deriv.M15.csv",
+      "sha256": "6daffdf2fea03371858b7f0f107b060ed36540dcd61631dc0941fe234db41100",
+      "bars": 24182,
+      "first": "2025-11-11T08:00:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURUSD style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "9c8e691f6977bb094015eee1d93044e0c3663a3c49eae7cb4f864d2264a9a85e",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/USD feed"
+      }
+    },
+    {
+      "symbol": "frxEURUSD",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxEURUSD.deriv.H1.csv",
+      "sha256": "851853c40e85686556bdf33894b7effb453dcc514d255433fa67b8f5eafdf003",
+      "bars": 6047,
+      "first": "2025-11-11T08:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURUSD style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "2fa6c6c906ceb191fc93f559491e41a503f451d96c92a4a74381bf0d2aba1971",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/USD feed"
+      }
+    },
+    {
+      "symbol": "frxGBPUSD",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxGBPUSD.deriv.M15.csv",
+      "sha256": "0526a56c2de7f98769889036c2851dba83c444ae138f85970cb4a1afaee9a3e0",
+      "bars": 24181,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxGBPUSD style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "92ae9fa250df152331325b7c7a953988217be2f07d8ad24f27b374d548811abf",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv GBP/USD feed"
+      }
+    },
+    {
+      "symbol": "frxGBPUSD",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxGBPUSD.deriv.H1.csv",
+      "sha256": "4849dfa475c58b40315b67ca9bef2d87574510ec5eb1b83bcf7ca5d9f11570d9",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxGBPUSD style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "6c370c88b120a92cac905b845b9a044da9ffbbc2630144a095d1cb4083eb465f",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv GBP/USD feed"
+      }
+    },
+    {
+      "symbol": "frxUSDJPY",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxUSDJPY.deriv.M15.csv",
+      "sha256": "d44f1398a1f63d02a988b14d638e85934d4e232c23d417d61025d5030d18e66f",
+      "bars": 24181,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDJPY style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "deb4a44878ce86083a4225b1e229a4ec6e23a80c0d59faefac50ed4d66b013a2",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/JPY feed"
+      }
+    },
+    {
+      "symbol": "frxUSDJPY",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxUSDJPY.deriv.H1.csv",
+      "sha256": "ee92ba5fcbaa8e3a1d8ef4be899285a68c1fea75fcf799f0ad838c12d673c4b0",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDJPY style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "3daa9415afcb30df530f56358f44ba8b34c1a1c29aca7e68112e206d189cde4e",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/JPY feed"
+      }
+    },
+    {
+      "symbol": "frxAUDUSD",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxAUDUSD.deriv.M15.csv",
+      "sha256": "2bd2d8e2d7df18f4f08be9b1d88db2d31b4a76915ffeaa79859d804e97bb8f97",
+      "bars": 24180,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxAUDUSD style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "e5b2194a81821b2b8ff53586aac0d6c221c09b9796b05d83f78ce43ceddbe44a",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv AUD/USD feed"
+      }
+    },
+    {
+      "symbol": "frxAUDUSD",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxAUDUSD.deriv.H1.csv",
+      "sha256": "612444ec4fad10e75f3c86aae6ace4862dcdc4737b5b7389e4de07a6c351ea18",
+      "bars": 6045,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxAUDUSD style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "de6c86eb2eba37ccc8ca7f979141e9535687d457196434d1fec82f628272c4ca",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv AUD/USD feed"
+      }
+    },
+    {
+      "symbol": "frxUSDCAD",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxUSDCAD.deriv.M15.csv",
+      "sha256": "5788ef334c9f0c3bf6a3d7ce6a4c3441ea49e2a8d09222488951b61d357aa0a9",
+      "bars": 24181,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDCAD style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "091df5b7232eba8a18b9fd262248b5489af7c2b26b50a035ad11a0388ebd1402",
+        "dropped": {
+          "partial": 33,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/CAD feed"
+      }
+    },
+    {
+      "symbol": "frxUSDCAD",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxUSDCAD.deriv.H1.csv",
+      "sha256": "31c4c02ab75f48c613a1fb01997686ca9bcab2d839c41bfb22a2045bb814027d",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDCAD style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "8996c3e5bd72d66029ee637582aa95d4ef6c297a6bb92063efefaa8786ee067c",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/CAD feed"
+      }
+    },
+    {
+      "symbol": "frxUSDCHF",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxUSDCHF.deriv.M15.csv",
+      "sha256": "ec547e0edc4c5e96d1abcf77deba7daaa484a62648e704a41b7d2791ca8059d0",
+      "bars": 24181,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDCHF style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "ff5995f8bb9ca53c43d926f650f092e2adaec10ce956744f85a0b2ec3e0add3a",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/CHF feed"
+      }
+    },
+    {
+      "symbol": "frxUSDCHF",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxUSDCHF.deriv.H1.csv",
+      "sha256": "5c70529bd236514ca4da12355e8a69ea437c84dc8d5a76b53d483e2da3132988",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxUSDCHF style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "59ff1ccd772e152bc42f41ef76d8febac32fb32b6fc713e503c83af35c730954",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv USD/CHF feed"
+      }
+    },
+    {
+      "symbol": "frxEURGBP",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxEURGBP.deriv.M15.csv",
+      "sha256": "cf3fb4ce7764d2172c4a5a3af62975933e50535e8b8f83199550f324385bd085",
+      "bars": 24181,
+      "first": "2025-11-11T08:15:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURGBP style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "ac64ceccd5e6a045b61d7059de260acfcb494347d6afe17c18fd2f10ceec8948",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/GBP feed"
+      }
+    },
+    {
+      "symbol": "frxEURGBP",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxEURGBP.deriv.H1.csv",
+      "sha256": "9b27d20975ac843f6c7fd8743cb87d8ab49cf4ac8ec18cdffe19fded26bcfd5e",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURGBP style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "aac518e075dfac7102846a1b876f6b08ed86d88a91a6e67bedcf283d942dc2e1",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/GBP feed"
+      }
+    },
+    {
+      "symbol": "frxEURJPY",
+      "assetClass": "fx",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxEURJPY.deriv.M15.csv",
+      "sha256": "91d8b06c1c4bbae07ea8d78e252d6ef7b76542e6344e4b054d91f35438e923d6",
+      "bars": 24180,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURJPY style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "06be60933069e921f5c8b3d33f1aecd4287b34a3c065d94971b7d7923804798b",
+        "dropped": {
+          "partial": 34,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/JPY feed"
+      }
+    },
+    {
+      "symbol": "frxEURJPY",
+      "assetClass": "fx",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxEURJPY.deriv.H1.csv",
+      "sha256": "4a9cd11175eb980cb888ce807359c5178d249e3ab2182130b68e8f6325f6c6c4",
+      "bars": 6046,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxEURJPY style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "6f028345ba939f183aa65dce81094b2597fb861e8893b01589cd5ca0030828f8",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv EUR/JPY feed"
+      }
+    },
+    {
+      "symbol": "frxXAUUSD",
+      "assetClass": "metal",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "frxXAUUSD.deriv.M15.csv",
+      "sha256": "e7c0a573cddfa3f10571de2446d238bdc98d5510fe80d30c888a30f1f54ac016",
+      "bars": 23118,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxXAUUSD style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "38d4f666a6fc8441dca359bd9024cfac9fdf9fc409972de49dc020c535625baf",
+        "dropped": {
+          "partial": 33,
+          "outsideWindow": 0
+        },
+        "note": "Deriv XAU/USD (gold) feed"
+      }
+    },
+    {
+      "symbol": "frxXAUUSD",
+      "assetClass": "metal",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "frxXAUUSD.deriv.H1.csv",
+      "sha256": "e73bfc6d34701add837702e20761b16a1e240a810ca8ade9e9760ee65888289e",
+      "bars": 5782,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history frxXAUUSD style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "154af30629b332d984de752ea42f6ee63ed72c8c5a69a0fc8d0f8610c0d4b0fb",
+        "dropped": {
+          "partial": 10,
+          "outsideWindow": 0
+        },
+        "note": "Deriv XAU/USD (gold) feed"
+      }
+    },
+    {
+      "symbol": "OTC_SPC",
+      "assetClass": "index",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "OTC_SPC.deriv.M15.csv",
+      "sha256": "3977d09c175f9f4cf40a0a75c7c65a9a29995ed31df488dc61deacb5b646e1cc",
+      "bars": 14274,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_SPC style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "40 response pages; 39 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "af703f618e651709a67fed3f305fe03e448fbbbaa58fd2ac999adadd09ee33db",
+        "dropped": {
+          "partial": 4,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC US 500 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_SPC",
+      "assetClass": "index",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "OTC_SPC.deriv.H1.csv",
+      "sha256": "e3b4c29feb641d7bf43b6cb892425604fd3d030aeb789936668ecab9001e1b08",
+      "bars": 3752,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_SPC style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "1d99660d7d8e9f8e82bd94dded5f3f76f397a276fa57dfff7fae9963c9f791c5",
+        "dropped": {
+          "partial": 6,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC US 500 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_NDX",
+      "assetClass": "index",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "OTC_NDX.deriv.M15.csv",
+      "sha256": "7ff81e515c96a5e2d7a85b9b10cb47936bb31da81cf60f463abe84f231ce11d7",
+      "bars": 14276,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_NDX style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "40 response pages; 39 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "28db5b770ec58fe347ff380d397ba63eb25bc7c3468d5703c148c27a25dbe937",
+        "dropped": {
+          "partial": 4,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC US Tech 100 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_NDX",
+      "assetClass": "index",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "OTC_NDX.deriv.H1.csv",
+      "sha256": "8fb7c30ec46b9d7bd44eb16209827f81a9fcffb38af00b2caae6cece1bed583f",
+      "bars": 3754,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_NDX style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "cb6a80d778b0b98e4116f90eb02eaea016f4ce96c0728d24e4e079fc235b2021",
+        "dropped": {
+          "partial": 6,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC US Tech 100 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_GDAXI",
+      "assetClass": "index",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "OTC_GDAXI.deriv.M15.csv",
+      "sha256": "3f17a2be773ded32f7841cfa23a3676cad946ca4c3d035b02665406bca3ffaf4",
+      "bars": 13765,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:30:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_GDAXI style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "40 response pages; 39 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "dae37ac8f83a8a787a761bb9acbb0745e32e7daeaf02da39c1c93a9c40313e1e",
+        "dropped": {
+          "partial": 3,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC Germany 40 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_GDAXI",
+      "assetClass": "index",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "OTC_GDAXI.deriv.H1.csv",
+      "sha256": "87653ba14cd415352377fd9c5a1feec5c19ddb111a30b33cba46129c50e16e12",
+      "bars": 3540,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_GDAXI style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "a01f3be6d38b782551addf96a8dce5d0722529a9da1648abd547b420481a83f1",
+        "dropped": {
+          "partial": 5,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC Germany 40 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_FTSE",
+      "assetClass": "index",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "OTC_FTSE.deriv.M15.csv",
+      "sha256": "38cc4bc215fa2b2697c740a466cb07477230912ad1682b6a6ebf7dcaac3961f6",
+      "bars": 14310,
+      "first": "2025-11-11T08:30:00Z",
+      "last": "2026-11-10T20:45:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_FTSE style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "40 response pages; 39 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "8860549fc75f666d6576317c6ac98a5e096de1ab4e912b02566bf42e4232af26",
+        "dropped": {
+          "partial": 3,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC UK 100 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_FTSE",
+      "assetClass": "index",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "OTC_FTSE.deriv.H1.csv",
+      "sha256": "848d832ac40c8137ced6a8e92703718d0123c9ac78cd414c78eba38829d6eb0b",
+      "bars": 3736,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_FTSE style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "749990ce1b668506fc07bb813ddc350ece6a9847fbf4bf3e5517126f12de712e",
+        "dropped": {
+          "partial": 5,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC UK 100 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_N225",
+      "assetClass": "index",
+      "timeframe": "M15",
+      "ohlc": "ohlc",
+      "file": "OTC_N225.deriv.M15.csv",
+      "sha256": "5eb0201be024000b77e338626e3d30a12b1886f3eeadc50cb5aafd2f57552369",
+      "bars": 19525,
+      "first": "2025-11-11T08:45:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_N225 style=candles granularity=900 paged backwards from end=2026-11-10T21:00:00Z to 2025-11-10T21:00:00Z",
+        "upstreamVerification": "37 response pages; 36 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "1555d4f519875a8ea6f21c6c1364e3ea038adc226aa5294577756adfa973bdb5",
+        "dropped": {
+          "partial": 19,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC Japan 225 index feed"
+      }
+    },
+    {
+      "symbol": "OTC_N225",
+      "assetClass": "index",
+      "timeframe": "H1",
+      "ohlc": "ohlc",
+      "file": "OTC_N225.deriv.H1.csv",
+      "sha256": "ef547ba33d5ee7e07a22bab08e2da911ec8bdec0fcc2112695784e85b606e2bf",
+      "bars": 5032,
+      "first": "2025-11-11T09:00:00Z",
+      "last": "2026-11-10T20:00:00Z",
+      "source": {
+        "name": "deriv-public-ws",
+        "url": "wss://api.derivws.com/trading/v1/options/ws/public",
+        "request": "ticks_history OTC_N225 style=candles granularity=3600 paged backwards from end=2026-11-10T21:00:00Z to 2024-11-10T21:00:00Z",
+        "upstreamVerification": "10 response pages; 9 page-boundary bars re-served complete and matched exactly; prices kept as served",
+        "upstreamDigest": "9c527de231838a460800e1c05ffd3e3207ff693cccdc9cb0cf525e03747120aa",
+        "dropped": {
+          "partial": 3,
+          "outsideWindow": 0
+        },
+        "note": "Deriv OTC Japan 225 index feed"
+      }
+    }
+  ],
+  "excluded": []
+}

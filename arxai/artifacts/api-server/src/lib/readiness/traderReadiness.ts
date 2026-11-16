@@ -1,0 +1,938 @@
+// Trader readiness — a read model, not a risk authority.
+//
+// Scores how ready a trader's paper practice is (discipline, edge maturity,
+// AI decision quality, system reliability, learning) and explains it for the
+// coach, the cockpit and the readiness screens. It decides nothing: no order
+// path reads it, and every order is authorised only by the pre-trade Risk
+// Governor (lib/riskGovernor/enforce.ts). ci guard single-risk-authority keeps
+// order paths from importing it. `authoritative` is always false.
+//
+// Pass `userId` to read only that trader's rows; without it the view is the
+// operator's whole-install picture.
+//
+// READS ONLY. Never places trades or calls MT5. The legacy field names
+// (paperTradingAllowed, allowedActions …) are kept for the screens that show
+// them; they are advisory labels.
+
+import { randomUUID } from "node:crypto";
+import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
+import {
+  db,
+  tradeDecisionLogsTable,
+  postTradeDebriefsTable,
+  learningEventsTable,
+  autopilotCyclesTable,
+  autopilotCycleLogsTable,
+  autopilotSymbolCooldownsTable,
+  riskGovernorEvaluationsTable,
+  riskGovernorEventsTable,
+} from "@workspace/db";
+import { listOwnEdges, listOwnMistakes, listPlatformEdges, listPlatformMistakes } from "../learning/scopedMemory.js";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
+import { logger } from "../logger.js";
+import { checkBrokerSafety } from "../brokerReadOnly/service.js";
+import { loadEffectiveLimits } from "../riskGovernor/limitSettings.js";
+import {
+  resolveEffectiveLimits, dailyLossCapAmount, PAPER_EQUITY_COUNT_BASIS, type EffectiveLimits,
+} from "../riskGovernor/preTrade.js";
+import {
+  readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
+  isSettledPaperStatus, realizedOf, type PaperBookScope,
+} from "../tradeEngine/paperBookReader.js";
+import {
+  isUnsizedPaperClose, paperBookedRealized, paperModelRealized, paperMoveSign,
+} from "../paperExecution/paperPnl.js";
+import { paperRiskEquity, valueOpenPaperPositions } from "../paperExecution/paperOpenRisk.js";
+
+export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
+export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
+export type ReadinessGrade = "A" | "B" | "C" | "D" | "F";
+export type Severity = "INFO" | "WARN" | "BLOCK" | "CRITICAL";
+
+export interface HardBlock { code: string; severity: Severity; message: string; details?: Record<string, unknown>; }
+export interface SoftWarning { code: string; message: string; details?: Record<string, unknown>; }
+export interface RiskFlag { code: string; message: string; }
+export interface Cooldown { symbol: string; reason: string | null; until: string | null; }
+
+export interface GovernorMetrics {
+  /**
+   * dailyPnl and weeklyPnl are the paper book's risk count, the Risk
+   * Governor's own (sumPaperRealizedSince): the lower of the period's booked
+   * total and its total at the paper risk model (price move × lots × 100),
+   * never above either total. maxDrawdown is the larger of the 30-day
+   * drawdowns of those two bases, never smaller than either. winRate30d reads
+   * each close's sign (paperBookReader.realizedOf): a close whose amount
+   * could not be sized counts as a loss if it lost and a win of unknown size
+   * counts as not won. They can differ from the booked P&L shown on the paper
+   * account. unsizedPaperCloses30d says how many closes could not be sized.
+   */
+  dailyPnl: number;
+  /**
+   * Enforced daily loss cap in money (Risk Governor): the amount cap or the
+   * percent cap valued on paperRiskCountEquity, whichever is stricter. 0 when
+   * a percent cap is set and paperRiskCountEquity is at or below 0 (a percent
+   * of it allows no loss: the cap is used up). The amount cap alone when the
+   * paper account could not be read. null = none enforced.
+   */
+  dailyLossLimit: number | null;
+  /** Enforced daily loss cap as a percent of equity (Risk Governor); null = none. */
+  maxDailyLossPercent: number | null;
+  /** Enforced per-trade risk limit as a percent of equity (Risk Governor); null = the limits could not be read. */
+  maxRiskPerTradePercent: number | null;
+  /**
+   * The equity the Risk Governor values every percent cap on for the active
+   * paper account (riskGovernor/enforce.ts): the booked equity lowered by the
+   * paper risk count of the settled closes and of the open positions
+   * (paperExecution/paperOpenRisk.ts). No market quote is read here, so a
+   * market-priced open position is counted at its stop (paperOpenValuedAtStop).
+   * At or below 0 the governor refuses every new trade (a percent of it
+   * allows no risk), and readiness hard-blocks (PAPER_RISK_COUNT_EQUITY_EXHAUSTED).
+   * null = no active paper account, an install-wide read, or the paper
+   * account could not be read (missingDataSources then lists "paper_orders").
+   */
+  paperRiskCountEquity: number | null;
+  /** The booked equity the paper account shows, next to paperRiskCountEquity; null with it. */
+  paperBookedEquity: number | null;
+  /** Symbols of open positions counted at their stop in paperRiskCountEquity (no market quote read for them). */
+  paperOpenValuedAtStop: string[];
+  /**
+   * Which part of the trader's paper risk count could not be read:
+   * "paper_book" (today's paper loss count, open paper positions and the 30d
+   * closes, so dailyPnl, openPaperTrades and the closes figures are
+   * placeholders), "risk_count_equity" (the active paper account's
+   * risk-count equity, so paperRiskCountEquity is null and a percent cap has
+   * no value). Empty when everything was read or no trader is in scope.
+   * Readiness hard-blocks on it (PAPER_RISK_COUNT_UNREADABLE), as the Risk
+   * Governor refuses every order when it cannot load its facts.
+   */
+  paperRiskCountUnreadable: Array<"paper_book" | "risk_count_equity">;
+  /**
+   * The paper book could not be read (in any scope, the operator's
+   * install-wide view too): dailyPnl, weeklyPnl, openPaperTrades,
+   * sameSymbolExposure, sampleSize, winRate30d, maxDrawdown and the unsized
+   * counts are placeholder 0s, not measurements. Readiness then states that
+   * the 30-day closes could not be loaded (PAPER_CLOSES_UNREADABLE), scores
+   * no risk-discipline or edge points from them, and hard-blocks: through
+   * PAPER_RISK_COUNT_UNREADABLE for a trader, PAPER_BOOK_UNREADABLE in the
+   * install-wide view.
+   */
+  paperBookUnreadable: boolean;
+  /**
+   * The trader's risk limits (loadEffectiveLimits) could not be read, so
+   * dailyLossLimit, maxOpenPaperTrades and the percent fields are null
+   * because they are unknown, not because no limit is set. Readiness
+   * hard-blocks on it (RISK_LIMITS_UNREADABLE), as the Risk Governor refuses
+   * every order when it cannot load the limits. false when they were read or
+   * no trader is in scope.
+   */
+  riskLimitsUnreadable: boolean;
+  weeklyPnl: number;
+  maxDrawdown: number;
+  /** Closes in the last 30 days whose P&L could not be sized (counted as above, not measured). */
+  unsizedPaperCloses30d: number;
+  /**
+   * Of those, the closes that won on price (the exit moved in the trade's
+   * favour). winRate30d counts them as not won (a win of unknown size counts
+   * 0), and the WIN_RATE_UNSTABLE flag says so.
+   */
+  unsizedWinningPaperCloses30d: number;
+  openPaperTrades: number;
+  /** Enforced max open trades (Risk Governor); null = none enforced. */
+  maxOpenPaperTrades: number | null;
+  sameSymbolExposure: Record<string, number>;
+  winRate30d: number;
+  sampleSize: number;
+  decisionToWinRate: number;
+  avgRiskScore: number;
+  avgConfidence: number;
+  learningConfidence: number;
+  marketDataQuality: "GOOD" | "DEGRADED" | "FALLBACK_ONLY" | "FAILED" | "UNKNOWN";
+  autopilotErrorRate: number;
+  repeatedMistakeCount: number;
+}
+
+export interface AllowedActions {
+  canRunAADecision: boolean;
+  canOpenPaperTrade: boolean;
+  canRunPaperAutopilot: boolean;
+  canManualClosePaperTrade: boolean;
+  canRebuildPerformance: boolean;
+  canProcessLearning: boolean;
+  canPlaceLiveTrade: false;
+}
+
+export interface GovernorEvaluation {
+  /** Always false: readiness never authorises or refuses an order. */
+  authoritative: false;
+  /** The trader whose rows were read; null = whole install (operator view). */
+  scopeUserId: number | null;
+  governor_id: string;
+  evaluated_at: string;
+  /** Fixed label of this paper-practice read model (also stored on each evaluation row); not the platform's or the account's live state. */
+  mode: "PAPER_ONLY";
+  /** Fixed label of this read model, not whether live trading is on — see liveTradingStatusScope. */
+  liveTradingStatus: "DISABLED";
+  /** Plain statement of what mode / liveTradingStatus / liveTradingAllowed describe and what they do not. */
+  liveTradingStatusScope: string;
+  overallStatus: OverallStatus;
+  paperTradingAllowed: boolean;
+  autopilotAllowed: boolean;
+  manualPaperAllowed: boolean;
+  liveTradingAllowed: false;
+  readinessScore: number;
+  readinessGrade: ReadinessGrade;
+  readinessLevel: ReadinessLevel;
+  hardBlocks: HardBlock[];
+  softWarnings: SoftWarning[];
+  riskFlags: RiskFlag[];
+  cooldowns: Cooldown[];
+  metrics: GovernorMetrics;
+  nextBestActions: string[];
+  allowedActions: AllowedActions;
+  explanation: string;
+  generatedAt: string;
+  dataSourcesRead: string[];
+  missingDataSources: string[];
+  timingAdvisory?: TimingAdvisory;
+}
+
+export interface SimulateOverrides {
+  forceCanPlaceTradesTrue?: boolean;
+  forceLiveTradingFlag?: boolean;
+  forceMarketDataMode?: "read_only" | "live_writable" | "missing";
+  forceDailyPnl?: number;
+  forceOpenPaperTrades?: number;
+  forceRevengeCooldown?: boolean;
+  forceMarketDataQuality?: GovernorMetrics["marketDataQuality"];
+  forceAutopilotErrorRate?: number;
+  forceSampleSize?: number;
+  forceWinRate?: number;
+  forceLearningConfidence?: number;
+  forceRepeatedMistakes?: number;
+}
+
+interface EvalLog {
+  info: (msg: string, meta?: Record<string, unknown>) => void;
+  warn: (msg: string, meta?: Record<string, unknown>) => void;
+  error: (msg: string, meta?: Record<string, unknown>) => void;
+}
+
+function defaultLog(): EvalLog {
+  return {
+    info: (m, x) => logger.info(x ?? {}, `readiness: ${m}`),
+    warn: (m, x) => logger.warn(x ?? {}, `readiness: ${m}`),
+    error: (m, x) => logger.error(x ?? {}, `readiness: ${m}`),
+  };
+}
+
+// ── Metric collection (READ-ONLY against AA/BB/CC/DD/EE/FF/GG) ────────────
+async function collectMetrics(overrides: SimulateOverrides | undefined, userId: number | null): Promise<{
+  metrics: GovernorMetrics;
+  cooldowns: Cooldown[];
+  dataSourcesRead: string[];
+  missingDataSources: string[];
+}> {
+  const dataSourcesRead: string[] = [];
+  const missingDataSources: string[] = [];
+  // Per-trader scope for every table that carries an owner.
+  const own = (col: PgColumn) => (userId == null ? undefined : eq(col, userId));
+
+  const utcMidnight = new Date(); utcMidnight.setUTCHours(0, 0, 0, 0);
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+  const thirtyAgo = new Date(Date.now() - 30 * 86_400_000);
+
+  // --- EE: paper_orders ---
+  let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0, unsizedPaperCloses30d = 0, unsizedWinningPaperCloses30d = 0;
+  const sameSymbolExposure: Record<string, number> = {};
+  let paperBookUnreadable = false;
+  // Owner decision 7: paper_orders through the paper book's read side. A
+  // settled order is CLOSED_SL / CLOSED_TP / CLOSED_MANUAL (the venue never
+  // writes "CLOSED"; filtering on it read every P/L as 0).
+  const book: PaperBookScope = userId == null ? { install: true } : { user: userId };
+  try {
+    dailyPnl = await sumPaperRealizedSince(book, utcMidnight);
+    weeklyPnl = await sumPaperRealizedSince(book, weekAgo);
+
+    const open = await readOpenPaperOrders(book);
+    openCount = open.length;
+    for (const o of open) sameSymbolExposure[o.symbol] = (sameSymbolExposure[o.symbol] ?? 0) + 1;
+
+    const closed30 = await readPaperCloses(book, { since: thirtyAgo });
+    sampleSize = closed30.length;
+    const unsized30 = closed30.filter((t) => isUnsizedPaperClose(t));
+    unsizedPaperCloses30d = unsized30.length;
+    unsizedWinningPaperCloses30d = unsized30.filter((t) => paperMoveSign(t.direction, t.entryPrice, t.exitPrice!) > 0).length;
+    if (sampleSize > 0) {
+      const wins = closed30.filter(t => t.pnl > 0).length;
+      winRate30d = Math.round((wins / sampleSize) * 10000) / 100;
+      // Each basis's own running total (booked, and the paper risk model),
+      // and the larger of their drawdowns: never a curve of per-close
+      // minimums, which drifts below both bases.
+      const sorted = [...closed30].sort((a, b) => a.closedAt.getTime() - b.closedAt.getTime());
+      const drawdownOf = (figure: (t: typeof sorted[number]) => number) => {
+        let cum = 0, peak = 0, dd = 0;
+        for (const t of sorted) { cum += figure(t); if (cum > peak) peak = cum; if (peak - cum > dd) dd = peak - cum; }
+        return dd;
+      };
+      maxDrawdown = Math.round(Math.max(drawdownOf(paperBookedRealized), drawdownOf(paperModelRealized)) * 100) / 100;
+    }
+    dataSourcesRead.push("paper_orders");
+  } catch (e) { missingDataSources.push("paper_orders"); paperBookUnreadable = true; }
+
+  // --- AA: trade_decision_logs ---
+  let avgConfidence = 0, avgRiskScore = 0, decisionToWinRate = 0, decisionsTotal = 0;
+  try {
+    const decisions = await db.select().from(tradeDecisionLogsTable)
+      .where(and(gte(tradeDecisionLogsTable.createdAt, thirtyAgo), own(tradeDecisionLogsTable.userId)));
+    decisionsTotal = decisions.length;
+    if (decisionsTotal > 0) {
+      avgConfidence = Math.round((decisions.reduce((a, d) => a + (d.confidence ?? 0), 0) / decisionsTotal) * 100) / 100;
+      avgRiskScore = Math.round((decisions.reduce((a, d) => a + (d.riskScore ?? 0), 0) / decisionsTotal) * 100) / 100;
+    }
+    const shouldTradeIds = decisions.filter(d => d.shouldTrade).map(d => d.id);
+    if (shouldTradeIds.length > 0) {
+      const placed = await readPaperOrders(book);
+      const winFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && isSettledPaperStatus(p.status) && realizedOf(p) > 0).length;
+      const closedFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && isSettledPaperStatus(p.status) && p.closedAt != null).length;
+      decisionToWinRate = closedFromDecision > 0 ? Math.round((winFromDecision / closedFromDecision) * 10000) / 100 : 0;
+    }
+    dataSourcesRead.push("trade_decision_logs");
+  } catch (e) { missingDataSources.push("trade_decision_logs"); }
+
+  // --- BB: post_trade_debriefs (presence check + count) ---
+  let debriefsCreated = 0;
+  try {
+    const debriefs = await db.select().from(postTradeDebriefsTable).where(and(gte(postTradeDebriefsTable.createdAt, thirtyAgo), own(postTradeDebriefsTable.userId)));
+    debriefsCreated = debriefs.length;
+    dataSourcesRead.push("post_trade_debriefs");
+  } catch { missingDataSources.push("post_trade_debriefs"); }
+
+  // --- CC: learning_events / strategy_edges / mistake_patterns ---
+  let learningConfidence = 0, repeatedMistakeCount = 0, learningEventsCount = 0;
+  try {
+    const events = await db.select().from(learningEventsTable).where(and(gte(learningEventsTable.createdAt, thirtyAgo), own(learningEventsTable.userId)));
+    learningEventsCount = events.length;
+    dataSourcesRead.push("learning_events");
+  } catch { missingDataSources.push("learning_events"); }
+  try {
+    // Learning memory is per trader (item 8): the trader's own edges, or the
+    // anonymized platform cohorts for a platform-level evaluation.
+    const edges = userId == null ? await listPlatformEdges() : await listOwnEdges(userId);
+    if (edges.length > 0) {
+      const confidences = edges.map(e => Number((e as { confidence?: number | null }).confidence ?? 0));
+      learningConfidence = Math.round((confidences.reduce((a, b) => a + b, 0) / edges.length) * 100) / 100;
+    }
+    dataSourcesRead.push("strategy_edges");
+  } catch { missingDataSources.push("strategy_edges"); }
+  try {
+    const patterns = userId == null ? await listPlatformMistakes() : await listOwnMistakes(userId);
+    repeatedMistakeCount = patterns.filter(p => Number((p as { occurrences?: number | null }).occurrences ?? 0) >= 3).length;
+    dataSourcesRead.push("mistake_patterns");
+  } catch { missingDataSources.push("mistake_patterns"); }
+
+  // --- DD: market data mode ---
+  const envMode = (process.env.MARKET_DATA_MODE ?? "read_only").trim();
+  const mdMode = overrides?.forceMarketDataMode ?? envMode;
+  let marketDataQuality: GovernorMetrics["marketDataQuality"] = "GOOD";
+  if (mdMode === "missing") marketDataQuality = "FAILED";
+  else if (mdMode !== "read_only") marketDataQuality = "DEGRADED";
+  else marketDataQuality = "GOOD";
+  if (overrides?.forceMarketDataQuality) marketDataQuality = overrides.forceMarketDataQuality;
+  dataSourcesRead.push("market_data_mode");
+
+  // --- FF: autopilot cycles + cooldowns ---
+  let autopilotErrorRate = 0;
+  const cooldowns: Cooldown[] = [];
+  try {
+    const cycles = await db.select().from(autopilotCyclesTable)
+      .where(and(gte(autopilotCyclesTable.startedAt, weekAgo), own(autopilotCyclesTable.userId)))
+      .orderBy(desc(autopilotCyclesTable.startedAt)).limit(50);
+    if (cycles.length > 0) {
+      const errored = cycles.filter(c => (c.status ?? "").toUpperCase() === "ERROR" || (c.status ?? "").toUpperCase() === "FAILED").length;
+      autopilotErrorRate = Math.round((errored / cycles.length) * 10000) / 100;
+    }
+    dataSourcesRead.push("autopilot_cycles");
+
+    const activeCooldowns = await db.select().from(autopilotSymbolCooldownsTable)
+      .where(sql`${autopilotSymbolCooldownsTable.cooldownUntil} > NOW()`)
+      .orderBy(desc(autopilotSymbolCooldownsTable.cooldownUntil)).limit(20);
+    for (const c of activeCooldowns) cooldowns.push({ symbol: c.symbol, reason: c.reason, until: c.cooldownUntil.toISOString() });
+    dataSourcesRead.push("autopilot_symbol_cooldowns");
+  } catch { missingDataSources.push("autopilot_cycles"); }
+
+  // --- Risk limits (owner decision 8: the limits the Risk Governor enforces) ---
+  // loadEffectiveLimits (strictest of trader, operator and platform). The
+  // daily loss cap in money is the governor's own: the enforced amount or the
+  // enforced percent of the active paper account's equity, whichever is
+  // stricter. null = no limit is enforced (or a percent-only cap with no paper
+  // account). An anonymous read has no trader and shows the governor's
+  // defaults rather than borrowing another trader's row.
+  let dailyLossLimit: number | null = null;
+  let maxOpenPaperTrades: number | null = null;
+  let maxDailyLossPercent: number | null = null;
+  let maxRiskPerTradePercent: number | null = null;
+  let limits: EffectiveLimits | null = null;
+  let riskLimitsUnreadable = false;
+  try {
+    limits = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
+    maxOpenPaperTrades = limits.discipline.maxOpenTrades;
+    maxDailyLossPercent = limits.maxDailyLossPercent;
+    maxRiskPerTradePercent = limits.maxRiskPerTradePercent;
+    // Until the paper account's equity is read, only the amount cap has a value.
+    dailyLossLimit = dailyLossCapAmount(limits, null);
+    dataSourcesRead.push("user_risk_settings");
+  } catch {
+    missingDataSources.push("user_risk_settings");
+    // Unknown limits are never "no limit": the governor refuses every order
+    // when it cannot load them (enforce.ts buildRiskContext).
+    if (userId != null) riskLimitsUnreadable = true;
+  }
+
+  // The equity the governor values every percent cap on (riskGovernor/
+  // enforce.ts loadPaperFacts): the booked equity lowered by the paper risk
+  // count of every settled close and every open position, never the larger
+  // booked one (paperExecution/paperOpenRisk.ts; no market quote is read
+  // here, so a market-priced open position is counted at its stop). Read in
+  // its own try: a failed read is reported as "paper_orders" and keeps the
+  // limits loaded above.
+  let paperRiskCountEquity: number | null = null;
+  let paperBookedEquity: number | null = null;
+  let paperOpenValuedAtStop: string[] = [];
+  // A trader's paper reads that failed: every check against them would run
+  // on a placeholder (a 0 loss, no open trades, no equity), never a pass.
+  const paperRiskCountUnreadable: GovernorMetrics["paperRiskCountUnreadable"] = [];
+  if (userId != null && missingDataSources.includes("paper_orders")) paperRiskCountUnreadable.push("paper_book");
+  if (userId != null) {
+    try {
+      const acct = await readActivePaperAccount(userId);
+      if (acct) {
+        const scope = { account: acct.id };
+        const closes = await readPaperCloses(scope);
+        const openValue = await valueOpenPaperPositions(await readOpenPaperOrders(scope), { now: new Date(), userId, quote: null });
+        const risk = paperRiskEquity(acct, closes, openValue);
+        paperRiskCountEquity = Number(risk.equity.toFixed(2));
+        paperBookedEquity = Number(risk.bookedEquity.toFixed(2));
+        paperOpenValuedAtStop = risk.openValuedAtStop;
+        // A percent of an equity at or below 0 allows no loss: the percent
+        // cap is used up (the governor refuses every new trade), never dropped.
+        if (limits) {
+          dailyLossLimit = risk.equity <= 0 && limits.maxDailyLossPercent != null
+            ? 0 : dailyLossCapAmount(limits, risk.equity);
+        }
+      }
+    } catch {
+      // Part of the paper book could not be read: do not also list it as read.
+      const i = dataSourcesRead.indexOf("paper_orders");
+      if (i >= 0) dataSourcesRead.splice(i, 1);
+      if (!missingDataSources.includes("paper_orders")) missingDataSources.push("paper_orders");
+      paperRiskCountUnreadable.push("risk_count_equity");
+    }
+  }
+
+  // --- Apply simulate overrides ---
+  if (overrides?.forceDailyPnl !== undefined) dailyPnl = overrides.forceDailyPnl;
+  if (overrides?.forceOpenPaperTrades !== undefined) openCount = overrides.forceOpenPaperTrades;
+  if (overrides?.forceAutopilotErrorRate !== undefined) autopilotErrorRate = overrides.forceAutopilotErrorRate;
+  if (overrides?.forceSampleSize !== undefined) sampleSize = overrides.forceSampleSize;
+  if (overrides?.forceWinRate !== undefined) winRate30d = overrides.forceWinRate;
+  if (overrides?.forceLearningConfidence !== undefined) learningConfidence = overrides.forceLearningConfidence;
+  if (overrides?.forceRepeatedMistakes !== undefined) repeatedMistakeCount = overrides.forceRepeatedMistakes;
+  if (overrides?.forceRevengeCooldown) cooldowns.push({ symbol: "SIM_REVENGE", reason: "REVENGE_COOLDOWN_SIMULATED", until: new Date(Date.now() + 30 * 60_000).toISOString() });
+
+  return {
+    metrics: {
+      dailyPnl: Number(dailyPnl.toFixed(2)),
+      dailyLossLimit,
+      maxDailyLossPercent,
+      maxRiskPerTradePercent,
+      paperRiskCountEquity,
+      paperBookedEquity,
+      paperOpenValuedAtStop,
+      paperRiskCountUnreadable,
+      paperBookUnreadable,
+      riskLimitsUnreadable,
+      weeklyPnl: Number(weeklyPnl.toFixed(2)),
+      maxDrawdown,
+      unsizedPaperCloses30d,
+      unsizedWinningPaperCloses30d,
+      openPaperTrades: openCount,
+      maxOpenPaperTrades,
+      sameSymbolExposure,
+      winRate30d,
+      sampleSize,
+      decisionToWinRate,
+      avgRiskScore,
+      avgConfidence,
+      learningConfidence,
+      marketDataQuality,
+      autopilotErrorRate,
+      repeatedMistakeCount,
+    },
+    cooldowns,
+    dataSourcesRead,
+    missingDataSources,
+  };
+}
+
+// ── Hard block & status rules ─────────────────────────────────────────────
+/** The active paper account's risk-count equity is at or below 0 (see GovernorMetrics.paperRiskCountEquity). */
+function paperRiskCountExhausted(m: GovernorMetrics): boolean {
+  return m.paperRiskCountEquity != null && m.paperRiskCountEquity <= 0;
+}
+
+/** The PAPER_RISK_COUNT_EQUITY_EXHAUSTED message: both equity figures, how the count is taken, and what it blocks. */
+function paperRiskCountExhaustedMessage(m: GovernorMetrics): string {
+  const eq = m.paperRiskCountEquity!;
+  const booked = m.paperBookedEquity;
+  const at = m.paperOpenValuedAtStop;
+  const join = (word: string) => at.length > 1 ? `${at.slice(0, -1).join(", ")} ${word} ${at[at.length - 1]}` : at[0] ?? "";
+  const stop = !at.length ? "" : at.length === 1
+    ? `; the open ${join("and")} position is counted at its stop because no market quote for it was read for this check`
+    : `; the open ${join("and")} positions are counted at their stops because no market quote for them was read for this check`;
+  const figures = booked != null && eq < booked - 0.005
+    ? `The paper risk count puts the paper account's equity at ${eq}, at or below zero (the paper account shows ${booked} booked; the risk count takes ${PAPER_EQUITY_COUNT_BASIS}${stop})`
+    : `The paper account's equity is ${eq}, at or below zero (booked; the paper risk count gives the same figure${stop})`;
+  const perTrade = m.maxRiskPerTradePercent != null ? `your ${m.maxRiskPerTradePercent}% per-trade limit` : "your per-trade limit";
+  const daily = m.maxDailyLossPercent != null ? ` and the ${m.maxDailyLossPercent}% daily loss cap is used up` : "";
+  const ownQuote = at.length ? ` (an order on ${join("or")} is checked with its own quote, which can value that position differently)` : "";
+  return `${figures}, so ${perTrade} leaves no risk for a new trade${daily}. New paper trades are blocked${ownQuote}; closing is allowed.`;
+}
+
+/** The PAPER_RISK_COUNT_UNREADABLE message: what could not be read, which limits that leaves unchecked, and what the Risk Governor does. */
+function paperRiskCountUnreadableMessage(m: GovernorMetrics): string {
+  const book = m.paperRiskCountUnreadable.includes("paper_book");
+  const equity = m.paperRiskCountUnreadable.includes("risk_count_equity");
+  const what = book && equity ? "Today's paper loss count, your open paper positions and the paper account's risk-count equity"
+    : book ? "Today's paper loss count and your open paper positions" : "The paper account's risk-count equity";
+  const limits = book && equity ? "your daily loss limit, open-trade limits and percent risk limits (per-trade and daily loss)"
+    : book ? "your daily loss limit and open-trade limits" : "your percent risk limits (per-trade and daily loss)";
+  return `${what} could not be loaded, so ${limits} cannot be checked. The Risk Governor refuses new trades while it cannot load these facts, so new paper trades are blocked here until they can be read.`;
+}
+
+/** The RISK_LIMITS_UNREADABLE message: which limits that leaves unchecked, and what the Risk Governor does. */
+const RISK_LIMITS_UNREADABLE_MESSAGE =
+  "Your risk limits could not be loaded, so none of them (daily loss, open trades, per-trade risk) can be checked. The Risk Governor refuses new trades while it cannot load your limits, so new paper trades are blocked here until they can be read.";
+
+/**
+ * The PAPER_BOOK_UNREADABLE message (install-wide view only; a trader's view
+ * blocks on PAPER_RISK_COUNT_UNREADABLE): what was not read, which checks
+ * that leaves unrun, and what this readiness check then allows.
+ */
+const PAPER_BOOK_UNREADABLE_MESSAGE =
+  "The paper book could not be loaded, so today's paper loss count, the open paper positions and same-symbol exposure across all paper accounts are not known, "
+  + "and the daily loss, open-trade and same-symbol checks cannot be run. This readiness check does not allow paper trading or the paper autopilot until the paper book can be read.";
+
+function evaluateStatus(
+  m: GovernorMetrics,
+  cooldowns: Cooldown[],
+  overrides: SimulateOverrides | undefined,
+  /** No trader in scope: the operator's install-wide view (and the paper-session manager's check). */
+  installWide: boolean,
+): { status: OverallStatus; hardBlocks: HardBlock[]; softWarnings: SoftWarning[]; riskFlags: RiskFlag[] } {
+  const hardBlocks: HardBlock[] = [];
+  const softWarnings: SoftWarning[] = [];
+  const riskFlags: RiskFlag[] = [];
+
+  // ── HARD BLOCKS (CRITICAL: live-trading attempts) ───────────────────────
+  if (overrides?.forceCanPlaceTradesTrue) {
+    hardBlocks.push({ code: "LIVE_CAN_PLACE_TRADES_TRUE", severity: "CRITICAL", message: "canPlaceTrades flag detected as TRUE — Build HH refuses to authorize anything until this is reverted." });
+  }
+  if (overrides?.forceLiveTradingFlag) {
+    hardBlocks.push({ code: "LIVE_TRADING_FLAG_DETECTED", severity: "CRITICAL", message: "Live-trading flag detected — Build HH locks the system as a defence-in-depth measure." });
+  }
+  if (m.marketDataQuality === "FAILED") {
+    hardBlocks.push({ code: "MARKET_DATA_FAILED", severity: "BLOCK", message: "Build DD market data is unavailable — paper trading cannot validate fills.", details: { quality: m.marketDataQuality } });
+  }
+  // MARKET_DATA_MODE not "read_only" is a hard block (defence-in-depth: read_only is the safety contract)
+  const envMode = (process.env.MARKET_DATA_MODE ?? "read_only").trim();
+  const effectiveMode = overrides?.forceMarketDataMode ?? envMode;
+  if (effectiveMode !== "read_only" && effectiveMode !== "missing") {
+    hardBlocks.push({ code: "MARKET_DATA_MODE_NOT_READ_ONLY", severity: "CRITICAL", message: `MARKET_DATA_MODE is "${effectiveMode}" — must be "read_only" for paper-only safety.` });
+  }
+  if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades && m.maxOpenPaperTrades > 0) {
+    hardBlocks.push({ code: "MAX_OPEN_PAPER_TRADES_EXCEEDED", severity: "BLOCK", message: `Open paper trades ${m.openPaperTrades} exceed configured max ${m.maxOpenPaperTrades}.`, details: { open: m.openPaperTrades, max: m.maxOpenPaperTrades } });
+  }
+  // A risk-count equity at or below 0 uses up every percent cap; that block
+  // names the figures, so the daily loss check against a used-up (0) cap is
+  // not repeated next to it.
+  // A failed paper risk-count read is never a pass: the governor refuses
+  // every order when it cannot load its facts.
+  if (m.riskLimitsUnreadable) {
+    hardBlocks.push({ code: "RISK_LIMITS_UNREADABLE", severity: "BLOCK", message: RISK_LIMITS_UNREADABLE_MESSAGE });
+  }
+  if (m.paperRiskCountUnreadable.length > 0) {
+    hardBlocks.push({ code: "PAPER_RISK_COUNT_UNREADABLE", severity: "BLOCK", message: paperRiskCountUnreadableMessage(m), details: { unreadable: m.paperRiskCountUnreadable } });
+  }
+  // With no trader in scope the block above never fires, but an unread paper
+  // book leaves today's loss, the open positions and same-symbol exposure at
+  // placeholder 0s, so the checks below could never fire either: never a pass.
+  if (installWide && m.paperBookUnreadable) {
+    hardBlocks.push({ code: "PAPER_BOOK_UNREADABLE", severity: "BLOCK", message: PAPER_BOOK_UNREADABLE_MESSAGE });
+  }
+  const riskCountExhausted = paperRiskCountExhausted(m);
+  if (riskCountExhausted) {
+    hardBlocks.push({ code: "PAPER_RISK_COUNT_EQUITY_EXHAUSTED", severity: "BLOCK", message: paperRiskCountExhaustedMessage(m), details: { paperRiskCountEquity: m.paperRiskCountEquity, paperBookedEquity: m.paperBookedEquity, openValuedAtStop: m.paperOpenValuedAtStop } });
+  }
+  if (!riskCountExhausted && m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
+    hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily paper loss count ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit} (the paper risk count: the lower of today's booked total and its paper risk model total).`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
+  }
+  for (const [sym, n] of Object.entries(m.sameSymbolExposure)) {
+    if (n >= 3) hardBlocks.push({ code: "SAME_SYMBOL_CONFLICT", severity: "BLOCK", message: `Symbol ${sym} has ${n} concurrent open paper positions.`, details: { symbol: sym, count: n } });
+  }
+  if (m.autopilotErrorRate >= 50) {
+    hardBlocks.push({ code: "AUTOPILOT_ERROR_SPIKE", severity: "BLOCK", message: `Autopilot error rate ${m.autopilotErrorRate}% — pausing for safety.`, details: { rate: m.autopilotErrorRate } });
+  }
+  // Build KK — broker safety: if BROKER_MODE is set to anything non-read_only, lock the system.
+  // No crash if KK isn't configured; checkBrokerSafety() defaults to safe when env is unset.
+  try {
+    const bs = checkBrokerSafety();
+    if (!bs.safe) {
+      hardBlocks.push({
+        code: "BROKER_MODE_NOT_READ_ONLY",
+        severity: "CRITICAL",
+        message: `Build KK broker connector is unsafe: ${bs.reason}`,
+        details: { brokerModeEnv: bs.brokerModeEnv },
+      });
+    }
+  } catch { /* never crash governor on KK failure */ }
+
+  // ── PAUSE conditions ─────────────────────────────────────────────────────
+  let pauseReasons = 0;
+  if (!riskCountExhausted && m.dailyLossLimit != null && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
+    softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily paper loss count ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit} (the paper risk count: the lower of today's booked total and its paper risk model total).` }); pauseReasons += 1;
+  }
+  if (cooldowns.some(c => (c.reason ?? "").toUpperCase().includes("REVENGE"))) {
+    softWarnings.push({ code: "REVENGE_COOLDOWN_ACTIVE", message: "Active revenge-trade cooldown detected." }); pauseReasons += 1;
+  }
+  if (m.repeatedMistakeCount >= 5) {
+    softWarnings.push({ code: "REPEATED_MISTAKES_RISING", message: `${m.repeatedMistakeCount} mistake patterns at ≥3 occurrences — pausing to learn.` }); pauseReasons += 1;
+  }
+  if (m.marketDataQuality === "DEGRADED") {
+    softWarnings.push({ code: "MARKET_DATA_DEGRADED", message: "Build DD market data is degraded." }); pauseReasons += 1;
+  }
+  if (m.autopilotErrorRate > 20 && m.autopilotErrorRate < 50) {
+    softWarnings.push({ code: "AUTOPILOT_ERRORS_ELEVATED", message: `Autopilot error rate ${m.autopilotErrorRate}% — slowing down.` }); pauseReasons += 1;
+  }
+  if (m.avgRiskScore >= 80 && m.sampleSize >= 5) {
+    softWarnings.push({ code: "RISK_SCORE_TRENDING_HIGH", message: `Average risk score ${m.avgRiskScore} is too high.` }); pauseReasons += 1;
+  }
+
+  // ── CAUTION conditions (informational, do not pause) ────────────────────
+  let cautionReasons = 0;
+  // An unread paper book leaves the closes figures at placeholder 0s: say
+  // they could not be loaded, never "Only 0 closed paper trades". The
+  // install-wide view reads every paper account, not one trader's.
+  if (m.paperBookUnreadable) {
+    riskFlags.push({ code: "PAPER_CLOSES_UNREADABLE", message: installWide
+      ? "The last 30 days of closed paper trades across all paper accounts could not be loaded, so the sample size, win rate and drawdown are not known."
+      : "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known." });
+    cautionReasons += 1;
+  }
+  else if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
+  if (!m.paperBookUnreadable && m.winRate30d > 0 && m.winRate30d < 50) {
+    // winRate30d is the stricter risk count: a close of unknown size that won
+    // on price counts as not won. Say so rather than state it as measured.
+    const u = m.unsizedWinningPaperCloses30d;
+    const left = u > 0 ? ` (${u} close${u === 1 ? "" : "s"} of unknown size that won on price ${u === 1 ? "is" : "are"} not counted as ${u === 1 ? "a win" : "wins"})` : "";
+    riskFlags.push({ code: "WIN_RATE_UNSTABLE", message: `30d win rate ${m.winRate30d}% < 50%${left}.` }); cautionReasons += 1;
+  }
+  if (m.learningConfidence < 30) { riskFlags.push({ code: "LEARNING_CONFIDENCE_LOW", message: `Learning confidence ${m.learningConfidence} is low.` }); cautionReasons += 1; }
+  if (m.marketDataQuality === "FALLBACK_ONLY") { riskFlags.push({ code: "MARKET_DATA_FALLBACK_ONLY", message: "Market data is fallback-only." }); cautionReasons += 1; }
+  if (m.repeatedMistakeCount > 0 && m.repeatedMistakeCount < 5) { riskFlags.push({ code: "MISTAKES_PRESENT", message: `${m.repeatedMistakeCount} repeated mistake pattern(s).` }); cautionReasons += 1; }
+
+  // ── Status decision tree ────────────────────────────────────────────────
+  const critical = hardBlocks.some(b => b.severity === "CRITICAL");
+  const block = hardBlocks.length > 0;
+  let status: OverallStatus;
+  if (critical) status = "LOCKED";
+  else if (block) status = "WATCH_ONLY";
+  else if (pauseReasons > 0) status = "PAPER_PAUSED";
+  else if (cautionReasons > 0) status = "PAPER_CAUTION";
+  else status = "PAPER_ALLOWED";
+  return { status, hardBlocks, softWarnings, riskFlags };
+}
+
+// ── Readiness scoring (0–100, mapped to grade + level) ───────────────────
+function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
+  // A. Risk discipline (25): no points from risk facts that were not read,
+  // in any scope (an unread paper book leaves today's loss, the open
+  // positions and same-symbol exposure at placeholder 0s).
+  let a = m.paperRiskCountUnreadable.length > 0 || m.riskLimitsUnreadable || m.paperBookUnreadable ? 0 : 25;
+  if (paperRiskCountExhausted(m) || (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit))) a -= 15;
+  else if (m.dailyLossLimit != null && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
+  if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
+  if (Object.values(m.sameSymbolExposure).some(n => n >= 3)) a -= 5;
+  if (m.avgRiskScore >= 80) a -= 5;
+  a = Math.max(0, a);
+
+  // B. Strategy edge maturity (25): no points from closes that were not read.
+  let b = 0;
+  if (!m.paperBookUnreadable) {
+    if (m.sampleSize >= 100) b += 12;
+    else if (m.sampleSize >= 50) b += 9;
+    else if (m.sampleSize >= 20) b += 6;
+    else if (m.sampleSize >= 5) b += 3;
+    if (m.winRate30d >= 60) b += 8;
+    else if (m.winRate30d >= 50) b += 5;
+    else if (m.winRate30d >= 40) b += 2;
+    if (m.maxDrawdown < 50) b += 5;
+    else if (m.maxDrawdown < 100) b += 2;
+  }
+
+  // C. AI decision quality (20)
+  let c = 0;
+  if (m.avgConfidence >= 70 && m.avgConfidence <= 90) c += 8;
+  else if (m.avgConfidence >= 50) c += 4;
+  if (m.avgRiskScore > 0 && m.avgRiskScore <= 60) c += 6;
+  else if (m.avgRiskScore <= 80) c += 3;
+  if (m.decisionToWinRate >= 60) c += 6;
+  else if (m.decisionToWinRate >= 40) c += 3;
+
+  // D. System reliability (15)
+  let d = 0;
+  if (m.marketDataQuality === "GOOD") d += 8;
+  else if (m.marketDataQuality === "DEGRADED") d += 4;
+  else if (m.marketDataQuality === "FALLBACK_ONLY") d += 2;
+  if (m.autopilotErrorRate <= 5) d += 7;
+  else if (m.autopilotErrorRate <= 20) d += 4;
+  else if (m.autopilotErrorRate <= 50) d += 1;
+
+  // E. Learning/debrief quality (15)
+  let e = 0;
+  if (m.learningConfidence >= 70) e += 8;
+  else if (m.learningConfidence >= 40) e += 5;
+  else if (m.learningConfidence > 0) e += 2;
+  if (m.repeatedMistakeCount === 0) e += 7;
+  else if (m.repeatedMistakeCount <= 2) e += 4;
+  else if (m.repeatedMistakeCount <= 5) e += 2;
+
+  const score = Math.max(0, Math.min(100, Math.round(a + b + c + d + e)));
+  let grade: ReadinessGrade;
+  if (score >= 90) grade = "A"; else if (score >= 80) grade = "B"; else if (score >= 70) grade = "C"; else if (score >= 60) grade = "D"; else grade = "F";
+
+  let level: ReadinessLevel;
+  if (m.sampleSize < 5) level = "NOT_READY";
+  else if (m.sampleSize < 20 || score < 50) level = "EARLY_TESTING";
+  else if (score < 70) level = "DEVELOPING_EDGE";
+  else if (score < 85) level = "PAPER_STABLE";
+  else level = "ADVANCED_PAPER_READY";
+
+  return { score, grade, level, breakdown: { riskDiscipline: a, strategyEdge: b, aiQuality: c, systemReliability: d, learningQuality: e } };
+}
+
+function buildAllowedActions(status: OverallStatus, hardBlocks: HardBlock[]): AllowedActions {
+  const locked = status === "LOCKED";
+  const watchOnly = status === "WATCH_ONLY";
+  const paused = status === "PAPER_PAUSED";
+  const caution = status === "PAPER_CAUTION";
+  const noOpen = locked || watchOnly || paused;
+  const noAuto = locked || watchOnly || paused;
+  const mdFailed = hardBlocks.some(b => b.code === "MARKET_DATA_FAILED");
+  return {
+    canRunAADecision: !locked,
+    canOpenPaperTrade: !noOpen && !mdFailed,
+    canRunPaperAutopilot: !noAuto,
+    canManualClosePaperTrade: true, // ALWAYS allow manual close so users can exit safely
+    canRebuildPerformance: !locked,
+    canProcessLearning: !locked,
+    canPlaceLiveTrade: false,
+  };
+}
+
+function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlocks: HardBlock[], soft: SoftWarning[]): string[] {
+  const out: string[] = [];
+  if (hardBlocks.some(b => b.code.startsWith("LIVE_"))) {
+    out.push("Disable any live-trading flags immediately and re-evaluate the governor.");
+  }
+  if (hardBlocks.some(b => b.code === "MARKET_DATA_MODE_NOT_READ_ONLY")) {
+    out.push('Set MARKET_DATA_MODE="read_only" before resuming any paper activity.');
+  }
+  if (hardBlocks.some(b => b.code === "RISK_LIMITS_UNREADABLE")) {
+    out.push("Re-check once your risk limits can be read: until then no limit can be checked and the Risk Governor refuses new trades.");
+  }
+  if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_UNREADABLE")) {
+    out.push("Re-check once your paper account can be read: until then its risk count is unknown and the Risk Governor refuses new trades.");
+  }
+  if (hardBlocks.some(b => b.code === "PAPER_BOOK_UNREADABLE")) {
+    out.push("Re-check once the paper book can be read: until then today's paper loss, the open positions and same-symbol exposure across all paper accounts are not known.");
+  }
+  if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_EQUITY_EXHAUSTED")) {
+    out.push("Open no new paper trades: the paper risk count leaves no equity for new risk. Review the open positions and the losses behind it.");
+  }
+  if (hardBlocks.some(b => b.code === "DAILY_LOSS_LIMIT_EXCEEDED")) {
+    out.push("Stop new paper trades for the day and review the day's debriefs.");
+  }
+  if (soft.some(s => s.code === "REVENGE_COOLDOWN_ACTIVE")) {
+    out.push("Wait out the revenge-trade cooldown before opening any new paper trade.");
+  }
+  // The sample size is a placeholder 0 when the paper book was not read.
+  if (m.sampleSize < 30 && !m.paperBookUnreadable) {
+    out.push("Continue paper trading to grow the sample size before changing strategies.");
+  }
+  if (m.repeatedMistakeCount >= 3) {
+    out.push("Drill the most repeated mistake before the next session.");
+  }
+  if (status === "PAPER_ALLOWED") {
+    out.push("Keep paper-practicing with discipline — live trading remains DISABLED by design.");
+  }
+  return out.slice(0, 5);
+}
+
+function buildExplanation(status: OverallStatus, score: number, grade: ReadinessGrade, level: ReadinessLevel, hardBlocks: HardBlock[], soft: SoftWarning[]): string {
+  const parts: string[] = [];
+  parts.push(`Status=${status} (readiness=${score}/${grade}, level=${level}).`);
+  if (hardBlocks.length > 0) parts.push(`${hardBlocks.length} hard block(s): ${hardBlocks.map(b => b.code).join(", ")}.`);
+  if (soft.length > 0) parts.push(`${soft.length} soft warning(s): ${soft.map(s => s.code).join(", ")}.`);
+  parts.push("Live trading is DISABLED by design and Build HH never recommends enabling it.");
+  return parts.join(" ");
+}
+
+// ── Main entry ────────────────────────────────────────────────────────────
+export interface TimingAdvisory {
+  symbol: string;
+  heatState: string;
+  entryPermission: string;
+  heatScore: number;
+  tradeabilityScore: number;
+  timingGrade: string;
+  recommendedLotMultiplier: number;
+  advisoryNote: string;
+}
+
+export interface EvaluateOpts {
+  persist?: boolean;
+  governorId?: string;
+  log?: EvalLog;
+  simulate?: SimulateOverrides;
+  symbol?: string;
+  /** Read only this trader's rows. */
+  userId?: number | null;
+}
+
+/**
+ * What the readiness constants mean. The read model scores paper practice and
+ * never reads live-trading state, so mode "PAPER_ONLY", liveTradingStatus
+ * "DISABLED", liveTradingAllowed false and canPlaceLiveTrade false are its own
+ * fixed labels. They are kept (they are stored on every evaluation row) and
+ * this says what they cover.
+ */
+export const GOVERNOR_LIVE_STATUS_SCOPE =
+  "mode, liveTradingStatus, liveTradingAllowed and allowedActions.canPlaceLiveTrade are fixed labels of this readiness score, which rates paper practice and cannot authorise or refuse any order. They are not whether live trading is on: each account's live-trading status is on its Trading Permission card.";
+
+export async function evaluateReadiness(opts: EvaluateOpts = {}): Promise<GovernorEvaluation> {
+  const log = opts.log ?? defaultLog();
+  const governorId = opts.governorId ?? `gov_${randomUUID()}`;
+  const startedAt = new Date();
+  log.info("evaluation started", { governorId });
+
+  const { metrics, cooldowns, dataSourcesRead, missingDataSources } = await collectMetrics(opts.simulate, opts.userId ?? null);
+  log.info("data sources read", { count: dataSourcesRead.length, sources: dataSourcesRead });
+  if (missingDataSources.length > 0) log.warn("missing data sources", { missing: missingDataSources });
+  log.info("metrics calculated", { metrics });
+
+  const { status, hardBlocks, softWarnings, riskFlags } = evaluateStatus(metrics, cooldowns, opts.simulate, opts.userId == null);
+  log.info("hard blocks found", { count: hardBlocks.length });
+  log.info("soft warnings found", { count: softWarnings.length });
+
+  const { score, grade, level } = scoreReadiness(metrics);
+  log.info("readiness score calculated", { score, grade, level });
+
+  const allowedActions = buildAllowedActions(status, hardBlocks);
+  log.info("allowed actions returned", { ...allowedActions });
+
+  const nextBestActions = buildNextBestActions(status, metrics, hardBlocks, softWarnings);
+  const explanation = buildExplanation(status, score, grade, level, hardBlocks, softWarnings);
+
+  const evaluation: GovernorEvaluation = {
+    authoritative: false,
+    scopeUserId: opts.userId ?? null,
+    governor_id: governorId,
+    evaluated_at: startedAt.toISOString(),
+    mode: "PAPER_ONLY",
+    liveTradingStatus: "DISABLED",
+    liveTradingStatusScope: GOVERNOR_LIVE_STATUS_SCOPE,
+    overallStatus: status,
+    paperTradingAllowed: allowedActions.canOpenPaperTrade,
+    autopilotAllowed: allowedActions.canRunPaperAutopilot,
+    manualPaperAllowed: allowedActions.canManualClosePaperTrade,
+    liveTradingAllowed: false,
+    readinessScore: score,
+    readinessGrade: grade,
+    readinessLevel: level,
+    hardBlocks, softWarnings, riskFlags, cooldowns,
+    metrics,
+    nextBestActions,
+    allowedActions,
+    explanation,
+    generatedAt: new Date().toISOString(),
+    dataSourcesRead, missingDataSources,
+  };
+
+  // Phase 3 — attach timing advisory (advisory only, fail-open, never a gate).
+  if (opts.symbol) {
+    try {
+      const read = await computeTimingRead({ symbol: opts.symbol, timeframe: "M15", persistSnapshot: false });
+      const lotMultMap: Record<string, number> = {
+        GO: 1.0, WAIT_FOR_ENTRY: 0.75, WAIT_NEWS: 0.5, NO_TRADE: 0.5, STAND_DOWN: 0.25,
+      };
+      const noteMap: Record<string, string> = {
+        GO: "Heat conditions are clean — standard sizing is appropriate.",
+        WAIT_FOR_ENTRY: "Timing is warming up — consider reducing size slightly while waiting for entry confirmation.",
+        WAIT_NEWS: "News window active — reduce size; wait for the first post-news candle to close.",
+        NO_TRADE: "Timing engine advises sitting out — consider staying flat or reducing to minimum size.",
+        STAND_DOWN: "High-danger conditions — timing strongly advises against new positions; if already in a trade, tighten stops.",
+      };
+      evaluation.timingAdvisory = {
+        symbol: opts.symbol,
+        heatState: read.heatState,
+        entryPermission: read.entryPermission,
+        heatScore: read.heatScore,
+        tradeabilityScore: read.tradeabilityScore,
+        timingGrade: read.timingGrade,
+        recommendedLotMultiplier: lotMultMap[read.entryPermission] ?? 1.0,
+        advisoryNote: noteMap[read.entryPermission] ?? "Timing context is advisory — review heat data before sizing.",
+      };
+    } catch {
+      // Fail-open: timing advisory is non-critical; evaluation proceeds without it.
+    }
+  }
+
+  if (opts.persist !== false) {
+    try {
+      await db.insert(riskGovernorEvaluationsTable).values({
+        governorId, overallStatus: status, mode: "PAPER_ONLY", liveTradingStatus: "DISABLED",
+        readinessScore: score, readinessGrade: grade, readinessLevel: level,
+        paperTradingAllowed: evaluation.paperTradingAllowed, autopilotAllowed: evaluation.autopilotAllowed,
+        manualPaperAllowed: evaluation.manualPaperAllowed, liveTradingAllowed: false,
+        hardBlocks, softWarnings, riskFlags, cooldowns,
+        metrics, nextBestActions, allowedActions: allowedActions as unknown as Record<string, unknown>, explanation,
+      }).onConflictDoUpdate({
+        target: riskGovernorEvaluationsTable.governorId,
+        set: {
+          overallStatus: status, readinessScore: score, readinessGrade: grade, readinessLevel: level,
+          paperTradingAllowed: evaluation.paperTradingAllowed, autopilotAllowed: evaluation.autopilotAllowed,
+          manualPaperAllowed: evaluation.manualPaperAllowed,
+          hardBlocks, softWarnings, riskFlags, cooldowns,
+          metrics, nextBestActions, allowedActions: allowedActions as unknown as Record<string, unknown>, explanation,
+        },
+      });
+      // Emit events for hard blocks
+      for (const hb of hardBlocks) {
+        await db.insert(riskGovernorEventsTable).values({
+          governorId, eventType: "HARD_BLOCK", severity: hb.severity, message: hb.message, details: hb.details ?? {},
+        });
+      }
+      for (const sw of softWarnings) {
+        await db.insert(riskGovernorEventsTable).values({
+          governorId, eventType: "SOFT_WARNING", severity: "WARN", message: sw.message, details: sw.details ?? {},
+        });
+      }
+      log.info("evaluation stored", { governorId });
+    } catch (e) {
+      log.error("evaluation persist failed", { err: String(e).slice(0, 200) });
+    }
+  }
+  log.info("evaluation completed", { governorId, status, score });
+  return evaluation;
+}

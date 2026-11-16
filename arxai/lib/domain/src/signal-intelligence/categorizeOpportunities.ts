@@ -1,0 +1,260 @@
+// categorizeOpportunities — turns a set of normalized scanner rows into a
+// categorized opportunity map (Ready Now / Forming Soon / Watch After News /
+// Too Late / Avoid / No Clean Setup) plus best scalp / retest / momentum /
+// reversal picks, and a best-vs-selected comparison.
+//
+// PURE & deterministic: no IO, no Date.now(). It NEVER fabricates — rows with
+// no live data can never land in READY_NOW; they collapse to NO_CLEAN_SETUP with
+// an honest "awaiting live data" reason. The categorizer only re-shapes inputs
+// the service already derived from REAL scanner reads (never simulator).
+
+import type {
+  BestVsSelected,
+  OpportunityBestPicks,
+  OpportunityCategory,
+  OpportunityInput,
+  OpportunityKind,
+  OpportunityMapResult,
+  OpportunityMapRow,
+} from "./signalIntelligence.types.js";
+
+const CATEGORY_ORDER: OpportunityCategory[] = [
+  "READY_NOW",
+  "FORMING_SOON",
+  "WATCH_AFTER_NEWS",
+  "TOO_LATE",
+  "AVOID",
+  "NO_CLEAN_SETUP",
+];
+
+function classifyKind(setupType: string): OpportunityKind {
+  const s = setupType.toLowerCase();
+  if (/reversal|sweep|liquidity|exhaustion|range|chop|fade/.test(s)) return "REVERSAL";
+  if (/pullback|retest|continuation|break of structure|\bbos\b/.test(s)) return "RETEST";
+  if (/trend|momentum|expansion|breakout|impulse/.test(s)) return "MOMENTUM";
+  return "OTHER";
+}
+
+function categoryOf(r: OpportunityInput): OpportunityCategory {
+  // 1. No live data → can never be called READY; honest awaiting state.
+  if (!r.hasLiveData) return "NO_CLEAN_SETUP";
+  // 2. Already chased → too late regardless of edge.
+  if (r.isLate) return "TOO_LATE";
+  // 3. News dominates safety: a high/critical event window means wait it out.
+  if (r.newsRisk === "high" || r.newsRisk === "critical") return "WATCH_AFTER_NEWS";
+  // 4. Scanner rejected, or edge too thin → avoid.
+  if (r.recommendedAction === "REJECT" || r.edgeScore < 35) return "AVOID";
+  // 4b. The row's own final read said no trade / avoid → avoid. Every downgrade
+  //     computeFinalRead applies (risk rejection, chop, failed pattern,
+  //     trendline trap, news conflict) must reach the map, or a row whose reason
+  //     reads "No trade right now." would be filed under "Ready now".
+  if (r.finalReadLabel === "NO_TRADE" || r.finalReadLabel === "AVOID_FOR_NOW") return "AVOID";
+  // 5. Clean, ready-to-act setup — only when the final read itself is
+  //    TRADE_WATCH (or not supplied by a legacy caller). WAIT_FOR_CONFIRMATION
+  //    or an unknown (null) read can at most be FORMING_SOON.
+  const finalAllowsReady = r.finalReadLabel === undefined || r.finalReadLabel === "TRADE_WATCH";
+  if (
+    finalAllowsReady &&
+    (r.recommendedAction === "BUY" || r.recommendedAction === "SELL") &&
+    r.direction !== "NEUTRAL" &&
+    r.edgeScore >= 55 &&
+    r.entryQuality >= 50
+  ) {
+    return "READY_NOW";
+  }
+  // 6. Directional but not yet entry-ready.
+  if (r.direction !== "NEUTRAL" && r.edgeScore >= 40) return "FORMING_SOON";
+  // 7. Nothing clean.
+  return "NO_CLEAN_SETUP";
+}
+
+function stageLabelOf(category: OpportunityCategory): string {
+  switch (category) {
+    case "READY_NOW": return "Ready now";
+    case "FORMING_SOON": return "Forming soon";
+    case "WATCH_AFTER_NEWS": return "Watch after news";
+    case "TOO_LATE": return "Too late";
+    case "AVOID": return "Avoid";
+    case "NO_CLEAN_SETUP": return "No clean setup";
+  }
+}
+
+function bestActionOf(r: OpportunityInput, category: OpportunityCategory): string {
+  const side = r.direction === "BUY" ? "buy" : r.direction === "SELL" ? "sell" : "trade";
+  switch (category) {
+    case "READY_NOW":
+      return `Entry is open — consider a ${side} and manage risk to the stop.`;
+    case "FORMING_SOON":
+      return "Watch — let the setup mature before acting.";
+    case "WATCH_AFTER_NEWS":
+      return "Wait for the news window to clear before acting.";
+    case "TOO_LATE":
+      return "Do not chase — wait for a pullback or the next setup.";
+    case "AVOID":
+      return "Skip — no clean edge here right now.";
+    case "NO_CLEAN_SETUP":
+      return r.hasLiveData
+        ? "Nothing to do yet — keep watching."
+        : "Awaiting live data before this market can be read.";
+  }
+}
+
+function validScore(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function toRow(input: OpportunityInput): OpportunityMapRow {
+  const invalidScore = ![input.edgeScore, input.entryQuality, input.executionQuality].every(validScore);
+  const contradictoryDirection = (input.recommendedAction === "BUY" || input.recommendedAction === "SELL") &&
+    input.recommendedAction !== input.direction;
+  const r = invalidScore || contradictoryDirection ? {
+    ...input,
+    direction: "NEUTRAL" as const,
+    recommendedAction: "REJECT" as const,
+    edgeScore: 0,
+    entryQuality: 0,
+    executionQuality: validScore(input.executionQuality) ? input.executionQuality : 0,
+    reason: "Scanner inputs are inconsistent — wait for a valid new scan.",
+  } : input;
+  const category = categoryOf(r);
+  return {
+    ...r,
+    category,
+    kind: classifyKind(r.setupType),
+    bestAction: bestActionOf(r, category),
+    stageLabel: stageLabelOf(category),
+  };
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Stable ties never depend on provider completion or input enumeration order.
+ * These remain heuristic ranks; none of these scores is a probability. */
+function compareRank(a: OpportunityMapRow, b: OpportunityMapRow): number {
+  return b.edgeScore - a.edgeScore ||
+    CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) ||
+    b.entryQuality - a.entryQuality || b.executionQuality - a.executionQuality ||
+    compareText(a.symbol, b.symbol) || compareText(a.setupType, b.setupType) ||
+    compareText(a.direction, b.direction);
+}
+
+/** True when a row is a genuine, live, non-avoided candidate for a "best" pick. */
+function isCandidate(row: OpportunityMapRow): boolean {
+  return (
+    row.hasLiveData &&
+    row.direction !== "NEUTRAL" &&
+    (row.category === "READY_NOW" || row.category === "FORMING_SOON")
+  );
+}
+
+function pickByKind(
+  rows: OpportunityMapRow[],
+  kind: OpportunityKind,
+): OpportunityMapRow | null {
+  const pool = rows.filter((r) => isCandidate(r) && r.kind === kind);
+  if (pool.length === 0) return null;
+  return [...pool].sort(compareRank)[0]!;
+}
+
+export function categorizeOpportunities(
+  inputs: OpportunityInput[],
+): OpportunityMapResult {
+  const rows = inputs.map(toRow).sort(compareRank);
+
+  const categories = Object.fromEntries(
+    CATEGORY_ORDER.map((c) => [c, [] as OpportunityMapRow[]]),
+  ) as Record<OpportunityCategory, OpportunityMapRow[]>;
+  for (const row of rows) categories[row.category].push(row);
+  // Within each bucket, strongest edge first.
+  for (const c of CATEGORY_ORDER) {
+    categories[c].sort(compareRank);
+  }
+
+  const candidates = rows.filter(isCandidate);
+  const bestScalp =
+    candidates.length > 0
+      ? [...candidates].sort((a, b) => b.entryQuality - a.entryQuality || compareRank(a, b))[0]!
+      : null;
+
+  const best: OpportunityBestPicks = {
+    bestScalp,
+    bestRetest: pickByKind(rows, "RETEST"),
+    bestMomentum: pickByKind(rows, "MOMENTUM"),
+    bestReversal: pickByKind(rows, "REVERSAL"),
+  };
+
+  return {
+    rows,
+    categories,
+    best,
+    scannedCount: rows.length,
+    liveCount: rows.filter((r) => r.hasLiveData).length,
+  };
+}
+
+/** Edge margin (points) by which an alternative must beat the selected to surface. */
+const CLEANER_MARGIN = 12;
+
+export function compareBestVsSelected(
+  result: OpportunityMapResult,
+  selectedSymbol: string | null,
+): BestVsSelected {
+  const selected = selectedSymbol
+    ? result.rows.find((r) => r.symbol === selectedSymbol) ?? null
+    : null;
+  // Display-honesty cap: only expose the selected symbol's edge when it has live
+  // data. A no-live-data symbol's edge is simulator-derived, so it must NEVER be
+  // surfaced on the Opportunity Map (incl. the "vs <edge>" banner copy or the
+  // selectedEdge DTO). With no comparable baseline the banner falls through to
+  // the standalone "cleaner opportunity" wording instead.
+  const selectedEdge = selected && selected.hasLiveData ? selected.edgeScore : null;
+
+  // The strongest live, ready/forming alternative (READY_NOW preferred via edge).
+  const ranked = result.rows
+    .filter((r) => r.symbol !== selectedSymbol && isCandidate(r))
+    .sort((a, b) => {
+      const ra = a.category === "READY_NOW" ? 1 : 0;
+      const rb = b.category === "READY_NOW" ? 1 : 0;
+      if (ra !== rb) return rb - ra;
+      return compareRank(a, b);
+    });
+  const best = ranked[0] ?? null;
+
+  if (!best) {
+    return {
+      hasCleanerAlternative: false,
+      selectedSymbol,
+      selectedEdge,
+      best: null,
+      message: null,
+    };
+  }
+
+  const beatsSelected =
+    selectedEdge == null ? best.edgeScore >= 55 : best.edgeScore - selectedEdge >= CLEANER_MARGIN;
+
+  if (!beatsSelected) {
+    return {
+      hasCleanerAlternative: false,
+      selectedSymbol,
+      selectedEdge,
+      best,
+      message: null,
+    };
+  }
+
+  const vs =
+    selectedEdge == null
+      ? `${best.displayName} looks like a cleaner opportunity (edge ${Math.round(best.edgeScore)}/100).`
+      : `${best.displayName} looks cleaner than ${selected?.displayName ?? selectedSymbol} right now (edge ${Math.round(best.edgeScore)} vs ${Math.round(selectedEdge)}).`;
+
+  return {
+    hasCleanerAlternative: true,
+    selectedSymbol,
+    selectedEdge,
+    best,
+    message: vs,
+  };
+}

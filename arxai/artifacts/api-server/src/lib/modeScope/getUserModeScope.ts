@@ -1,0 +1,193 @@
+// T006 — Shared mode-scope resolver for user-facing data surfaces.
+//
+// Single source of truth that every read endpoint can use to decide
+// "which rows belong to this user, in this mode, right now?".
+//
+// Reuses the T003 precedence helper so the answer is byte-for-byte
+// consistent with /api/me/account-mode (which the frontend consumes
+// via useTradingMode()). A surface that uses this helper to filter
+// its rows is guaranteed to never show DEMO/PAPER rows to a
+// LIVE_SHARED user, never show LIVE rows to a PAPER user, and never
+// leak another user's data.
+//
+// SAFETY:
+//   * Pure READ — no writes, no broker calls, no queue inserts.
+//   * Strictly per-user (helpers it composes are all userId-scoped).
+//   * Never returns master broker credentials, bridge tokens, raw
+//     account numbers, IPs, or any other user's data.
+//   * Admins get the same shape; the admin-only override is the
+//     `adminOverrideMode` parameter — caller decides if/when to allow
+//     it (e.g. an admin diagnostic endpoint).
+
+import { computeAccountShell } from "../../routes/meAccountShell.js";
+import { getMyArming } from "../live/liveArming.js";
+import { readPlatformSwitches } from "../safety/platformSwitches.js";
+import {
+  computeAccountModePrecedence,
+  type CurrentAccountMode,
+} from "../computeAccountModePrecedence.js";
+import { buildApprovedTraderLiveState } from "../live/approvedTraderLiveState.js";
+
+export type { CurrentAccountMode };
+
+export interface UserModeScope {
+  userId: number;
+  /** The mode the UI is showing the user right now (from T003 precedence). */
+  currentAccountMode: CurrentAccountMode;
+  /** True when the user is armed for live execution. */
+  liveExecutionArmed: boolean;
+  /** True when the user has a SHARED_MASTER allocation attached. */
+  sharedMasterAttached: boolean;
+  /** True when the caller's session is a real admin (NOT preview-as-user). */
+  isAdmin: boolean;
+  /**
+   * What table family the surface should read for "trade-like" data:
+   *   LIVE_SHARED → "live"   (live_positions / shared_trade_attribution / arx_live_*)
+   *   DEMO        → "demo"   (mt5_state / mt5_demo_commands)
+   *   PAPER       → "paper"  (paper_trades)
+   */
+  primaryDataDomain: "live" | "demo" | "paper";
+  /**
+   * False when the account's mode could not be read and the fields above are
+   * the PAPER fallback (the safest row filter). A surface must not present a
+   * fallback as the account being in PAPER mode.
+   */
+  modeResolved: boolean;
+  /** Plain English when modeResolved is false (what failed, when); null otherwise. */
+  modeNote: string | null;
+}
+
+export interface ResolveOptions {
+  /**
+   * Admin diagnostic override — when truthy AND the caller is admin,
+   * forces a specific mode (e.g. inspect another user's mode). Normal
+   * users are silently ignored if they try to override.
+   */
+  adminOverrideMode?: CurrentAccountMode | null;
+}
+
+function modeToDomain(m: CurrentAccountMode): UserModeScope["primaryDataDomain"] {
+  if (m === "LIVE_SHARED") return "live";
+  if (m === "DEMO") return "demo";
+  return "paper";
+}
+
+function hhmmUtc(at: Date): string {
+  return at.toISOString().slice(11, 16) + " UTC";
+}
+
+/** The note carried when the mode could not be read (rows filtered as PAPER). */
+export function unresolvedModeNote(at: Date = new Date()): string {
+  return (
+    `The account's trading mode could not be read (tried ${hhmmUtc(at)}), so rows here are filtered as PAPER, the safest scope. ` +
+    "The account may not be in PAPER mode."
+  );
+}
+
+/**
+ * Resolve the mode-scope for `userId`. Always returns a value — never
+ * throws, so a degraded resolver never silently leaks the wrong rows.
+ * On any internal failure, falls back to the safest mode (PAPER) and says so
+ * (modeResolved false, modeNote).
+ */
+export async function getUserModeScope(
+  userId: number,
+  opts: { isAdmin?: boolean; adminOverrideMode?: CurrentAccountMode | null } = {},
+): Promise<UserModeScope> {
+  const isAdmin = opts.isAdmin === true;
+
+  try {
+    const [accountShell, arming, switches, traderState] =
+      await Promise.all([
+        // skipInvestorSnapshot breaks the otherwise-infinite mutual recursion
+        // (computeAccountShell → buildInvestorLiveBalanceSnapshot → getUserModeScope).
+        // This resolver only reads tradingMode/tradingStatus/notes below.
+        computeAccountShell(userId, { skipInvestorSnapshot: true }),
+        getMyArming(userId),
+        // One read of the Phase B master switch (env AND operator arm).
+        readPlatformSwitches(),
+        // Task #737 — display pin for admin-approved human traders attached to
+        // the shared live bridge. Heartbeat read skipped: the display pin does
+        // not depend on it, keeping this hot path cheap.
+        buildApprovedTraderLiveState(userId, { includeBridgeHeartbeat: false }),
+      ]);
+
+    const serverEnvOn = switches.liveBrokerExecution.envEnabled;
+    const effectiveOn = switches.liveBrokerExecution.enabled;
+    const operatorOn = switches.liveBrokerExecution.operatorArmed;
+    const liveExecutionArmed = arming?.isArmed === true;
+    const sharedMasterAttached = accountShell.notes.sharedMasterAccountAssigned === true;
+
+    const precedence = computeAccountModePrecedence({
+      isAdmin,
+      liveExecutionArmed,
+      sharedMasterAttached,
+      effectiveLiveBrokerOn: effectiveOn,
+      serverEnvOn,
+      operatorOn,
+      accountShellTradingMode: accountShell.tradingMode,
+      accountShellTradingStatus: accountShell.tradingStatus,
+      needsReviewItems:
+        typeof accountShell.notes.needsReviewItems === "number"
+          ? accountShell.notes.needsReviewItems > 0
+          : accountShell.notes.needsReviewItems === true,
+      approvedTraderBridgeAssigned: traderState.approvedTraderBridgeAssigned,
+    });
+
+    let currentAccountMode: CurrentAccountMode = precedence.currentAccountMode;
+    if (isAdmin && opts.adminOverrideMode != null) {
+      currentAccountMode = opts.adminOverrideMode;
+    }
+
+    return {
+      userId,
+      currentAccountMode,
+      liveExecutionArmed,
+      sharedMasterAttached,
+      isAdmin,
+      primaryDataDomain: modeToDomain(currentAccountMode),
+      modeResolved: true,
+      modeNote: null,
+    };
+  } catch {
+    // Safest fallback — PAPER never reads live tables and never claims
+    // to be live. A normal user seeing PAPER on a transient failure is
+    // strictly safer than seeing LIVE_SHARED on a transient failure.
+    return {
+      userId,
+      currentAccountMode: "PAPER",
+      liveExecutionArmed: false,
+      sharedMasterAttached: false,
+      isAdmin,
+      primaryDataDomain: "paper",
+      // The fallback is a row filter, not a reading of the account's mode.
+      modeResolved: false,
+      modeNote: unresolvedModeNote(),
+    };
+  }
+}
+
+/**
+ * Convenience: a tiny envelope every mode-scoped endpoint can spread
+ * into its response so the frontend can verify which mode the backend
+ * actually used to filter the rows.
+ */
+export function modeScopeEnvelope(scope: UserModeScope): {
+  currentAccountMode: CurrentAccountMode;
+  modeScopeApplied: true;
+  primaryDataDomain: UserModeScope["primaryDataDomain"];
+  /** False when currentAccountMode is the PAPER fallback for an unreadable mode. */
+  modeResolved: boolean;
+  /** Plain English when modeResolved is false; null otherwise. */
+  modeScopeNote: string | null;
+} {
+  // Only an explicit successful read counts as resolved.
+  const modeResolved = scope.modeResolved === true;
+  return {
+    currentAccountMode: scope.currentAccountMode,
+    modeScopeApplied: true,
+    primaryDataDomain: scope.primaryDataDomain,
+    modeResolved,
+    modeScopeNote: modeResolved ? null : (scope.modeNote ?? unresolvedModeNote()),
+  };
+}

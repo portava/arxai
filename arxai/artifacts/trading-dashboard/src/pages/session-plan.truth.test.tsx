@@ -1,0 +1,126 @@
+// AI Session Plan truth. A non-admin viewer gets the plan masked
+// (maskSimulatorSessionPlan: zeros, empty lists, withheld:true); those are
+// withheld values, not zero limits or "none". A failed request is "could
+// not be loaded", never a crash. The footer names the scanner sweep the
+// plan came from and how old it is.
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import SessionPlanPage from "./session-plan";
+
+const PLAN = {
+  bestSymbols: ["EURUSD"], symbolsToAvoid: ["GBPJPY"], preferredStrategy: "Trend Continuation",
+  maxTrades: 3, maxRiskPerTradeUsd: 20, maxRiskPerSessionUsd: 60,
+  marketConditions: "Trending across most pairs.",
+  rules: ["Reject any setup with confidence < 60."], warningZones: [], focusAreas: ["Patience"],
+  recommendedFirstTest: "Run a paper trade on EURUSD via Trade Command Room.",
+  summary: "Today's simulator session favors trend continuation on EURUSD.",
+  dataSource: "SIMULATOR", generatedAt: new Date().toISOString(),
+};
+
+// The exact shape maskSimulatorSessionPlan returns for a non-admin viewer.
+const MASK_TEXT = "Not shown: session plans are shown only to platform operators, so this plan's values are withheld for your account.";
+const MASKED = {
+  ...PLAN,
+  bestSymbols: [], symbolsToAvoid: [],
+  preferredStrategy: "Withheld (session plans are shown only to platform operators)",
+  maxTrades: 0, maxRiskPerTradeUsd: 0, maxRiskPerSessionUsd: 0,
+  marketConditions: MASK_TEXT, rules: [], warningZones: [], focusAreas: [],
+  recommendedFirstTest: MASK_TEXT, summary: MASK_TEXT,
+  withheld: true,
+};
+// What an older server sent: masked text that promised a feed-based release.
+const MASKED_OLD_COPY = {
+  ...MASKED,
+  preferredStrategy: "Withheld until a verified feed is available",
+  marketConditions: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
+  recommendedFirstTest: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
+  summary: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
+};
+
+function mockFetch(status: number, body: unknown) {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status })));
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+describe("Session Plan truth", () => {
+  it("withheld values are not shown as $0, 0 trades or 'none'", async () => {
+    mockFetch(200, MASKED);
+    render(<SessionPlanPage />);
+    await screen.findByTestId("session-plan-withheld");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/\$0\b/);
+    expect(text).not.toMatch(/Max trades\s*0/);
+    expect(screen.queryAllByText("none")).toHaveLength(0);
+    expect(screen.getAllByText("Withheld").length).toBeGreaterThanOrEqual(5);
+  });
+
+  // The server masks the plan by the viewer's role alone (admin/owner see it),
+  // and the plan is always simulator-built, so no verified feed ever lifts the
+  // mask. The note promised "until a verified feed is available".
+  it("the withheld note names the role mask and promises no feed-based release", async () => {
+    mockFetch(200, MASKED_OLD_COPY);
+    render(<SessionPlanPage />);
+    const note = (await screen.findByTestId("session-plan-withheld")).textContent ?? "";
+    expect(note).not.toMatch(/until a verified feed/i);
+    // The plan is built from the scanner's latest sweep (rows can be live
+    // feed); the server never checks that its input is simulated, so the
+    // note does not claim it — it states the operator-only rule.
+    expect(note).not.toMatch(/built from simulator|simulator scanner data/i);
+    expect(note).toMatch(/session plans are shown only to platform operators/i);
+    expect(note).toMatch(/not zero/i);
+    // The masked text fields from a server that still sends the feed promise
+    // are not repeated on the page.
+    expect(document.body.textContent ?? "").not.toMatch(/verified feed/i);
+  });
+
+  it("a failed request says the plan could not be loaded instead of crashing", async () => {
+    mockFetch(500, { error: "x" });
+    render(<SessionPlanPage />);
+    const err = await screen.findByTestId("session-plan-error");
+    expect(err.textContent).toMatch(/could not be loaded/i);
+    expect(screen.queryByText("Today's plan")).toBeNull();
+  });
+
+  it("an {error} body with 200 is also not rendered as a plan", async () => {
+    mockFetch(200, { error: "x" });
+    render(<SessionPlanPage />);
+    expect((await screen.findByTestId("session-plan-error")).textContent).toMatch(/could not be loaded/i);
+  });
+
+  it("the footer names the sweep's own time and age, not 'Generated <now>'", async () => {
+    mockFetch(200, { ...PLAN, generatedAt: new Date(Date.now() - (3 * 60 + 5) * 60_000).toISOString() });
+    render(<SessionPlanPage />);
+    const footer = await screen.findByTestId("session-plan-sweep-time");
+    expect(footer.textContent).toMatch(/scanner sweep at .+ \(3 h 5 min ago\)/);
+    expect(footer.textContent).not.toMatch(/^Generated /);
+  });
+
+  // sweepAge read Date.now() during render and nothing re-rendered the page,
+  // so a plan loaded from a fresh sweep said "(under a minute ago)" for as
+  // long as the page stayed open.
+  it("the sweep age keeps counting while the page stays open", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-03T09:00:00.000Z"));
+    mockFetch(200, { ...PLAN, generatedAt: "2026-11-03T09:00:00.000Z" });
+    render(<SessionPlanPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId("session-plan-sweep-time").textContent).toMatch(/\(under a minute ago\)/);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * 3_600_000); });
+    const footer = screen.getByTestId("session-plan-sweep-time").textContent ?? "";
+    expect(footer).not.toMatch(/under a minute ago/);
+    expect(footer).toMatch(/\(2 h 0 min ago\)/);
+  });
+
+  it("the plan's caps and rules are labelled as fixed plan text, not the trader's risk settings", async () => {
+    mockFetch(200, PLAN);
+    render(<SessionPlanPage />);
+    await waitFor(() => expect(screen.getByTestId("session-plan-limits-scope")).toBeTruthy());
+    expect(screen.getByTestId("session-plan-limits-scope").textContent).toMatch(/not read from your risk settings/);
+    expect(screen.getByText(/Fixed plan text, not your risk settings/)).toBeTruthy();
+  });
+});

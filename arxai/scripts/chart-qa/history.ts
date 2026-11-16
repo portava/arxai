@@ -1,0 +1,1 @@
+const empty: never[] = []; export const useChartDeepHistory = () => ({olderCandles:empty,loading:false,hasMore:false,providerCapped:true,limitationReason:"Offline fixture",coverageDays:0,depthTargetDays:0,loadedAny:false,loadOlder:()=>{}});

@@ -1,3 +1,4 @@
+# Read-only smoke check: bash scripts/run-arx-web.sh --preview-smoke (shared router only).
 kind = "web"
 previewPath = "/"
 title = "ARX AI"
@@ -15,11 +16,11 @@ paths = [ "/" ]
 localPort = 24210
 
 [services.development]
-run = "pnpm --filter @workspace/trading-dashboard run dev"
+run = "bash ../../scripts/run-arx-web.sh"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/trading-dashboard", "run", "build" ]
-publicDir = "artifacts/trading-dashboard/dist/public"
+build = ["bash", "scripts/build-arx-production.sh", "web"]
+publicDir = "arxai/artifacts/trading-dashboard/dist/public"
 serve = "static"
 
 [[services.production.rewrites]]

@@ -1,0 +1,217 @@
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Activity, AlertTriangle, HeartPulse } from "lucide-react";
+
+const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+interface RuntimeHealth {
+  ok: boolean;
+  checkedAt: string;
+  apiServer: {
+    listening: boolean;
+    pid: number;
+    version: string;
+    buildTimestamp: string | null;
+    startedAt: string;
+    uptimeSeconds: number;
+  };
+  database: { ok: boolean; latencyMs: number | null };
+  bridge: {
+    total: number;
+    healthy: number;
+    stale: number;
+    down: number;
+    latestHeartbeatAgeSeconds: number | null;
+    /** false when the server's bridge aggregate query failed (counts unknown). Absent on older servers. */
+    readable?: boolean;
+  };
+  notes: string[];
+}
+
+type Headline = { label: string; tone: "ok" | "warn" | "bad" };
+
+/**
+ * Headline from what was actually checked: the database ping AND the MT5/EA
+ * bridge heartbeat aggregate. The server's `ok` can only be downgraded here,
+ * never upgraded to "Healthy". The server already folds an unread bridge
+ * aggregate and all-bridges-down into ok:false, so the specific causes are
+ * checked before the generic "Degraded" — otherwise an unknown bridge state
+ * reads as a measured failure. Any other ok:false is "Degraded" before the
+ * milder not-fresh warning, since stale bridges are not what the server's
+ * ok:false is reporting.
+ */
+function workflowHeadline(d: RuntimeHealth): Headline {
+  const b = d.bridge;
+  if (!d.database.ok) return { label: "Degraded", tone: "bad" };
+  if (b.readable === false) return { label: "Bridge status unknown", tone: "warn" };
+  if (b.total > 0 && b.healthy === 0) return { label: "Degraded — no bridge heartbeating", tone: "bad" };
+  if (!d.ok) return { label: "Degraded", tone: "bad" };
+  const notFresh = b.stale + b.down;
+  if (notFresh > 0) return { label: `Attention — ${notFresh} bridge${notFresh === 1 ? "" : "s"} not fresh`, tone: "warn" };
+  return { label: "Healthy", tone: "ok" };
+}
+
+const HEADLINE_TONE: Record<Headline["tone"], string> = {
+  ok: "bg-emerald-500/20 text-emerald-300",
+  warn: "bg-amber-500/20 text-amber-300",
+  bad: "bg-rose-500/20 text-rose-300",
+};
+
+function fmtUptime(s: number): string {
+  if (!Number.isFinite(s) || s < 0) return "—";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+export function WorkflowHealthCard() {
+  const [data, setData] = useState<RuntimeHealth | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function load() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`${BASE}/api/admin/runtime-health`, {
+        credentials: "include",
+        headers: { "x-security-role": "ADMIN" },
+      });
+      if (r.status === 403) {
+        setErr("Runtime health is available to operators only.");
+        setData(null);
+        return;
+      }
+      if (!r.ok) {
+        setErr(`Runtime health unavailable (status ${r.status}).`);
+        setData(null);
+        return;
+      }
+      setData((await r.json()) as RuntimeHealth);
+    } catch {
+      setErr("Could not reach the api-server runtime-health endpoint.");
+      setData(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Pull once on mount; refresh is manual. No aggressive polling — this is an
+  // operator diagnostic, and the global QueryClient/visibility rules already
+  // discourage background loops.
+  useEffect(() => {
+    void load();
+  }, []);
+
+  return (
+    <Card data-testid="card-workflow-health">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <HeartPulse className="h-4 w-4 text-emerald-400" />
+          Workflow Health
+          <Badge variant="outline">Admin</Badge>
+          {data && (() => {
+            const h = workflowHeadline(data);
+            return (
+              <Badge
+                className={HEADLINE_TONE[h.tone]}
+                data-testid="badge-workflow-health"
+                title="From the database ping and the MT5/EA bridge heartbeat aggregate at the last check."
+              >
+                {h.label}
+              </Badge>
+            );
+          })()}
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => void load()}
+            disabled={busy}
+            data-testid="button-workflow-health-refresh"
+          >
+            {busy ? "Loading…" : "Refresh"}
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {err && (
+          <Alert variant="default" className="border-amber-700/40 bg-amber-500/5">
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+            <AlertTitle>Unavailable</AlertTitle>
+            <AlertDescription>{err}</AlertDescription>
+          </Alert>
+        )}
+
+        {data && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Activity className="h-3.5 w-3.5 text-cyan-400" />
+                <span className="text-muted-foreground">api-server:</span>{" "}
+                <span className="text-emerald-300">listening</span>
+                <span className="text-muted-foreground">· up {fmtUptime(data.apiServer.uptimeSeconds)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">DB:</span>{" "}
+                <span className={data.database.ok ? "text-emerald-300" : "text-rose-300"}>
+                  {data.database.ok ? "reachable" : "DOWN"}
+                </span>
+                {data.database.latencyMs != null && (
+                  <span className="text-muted-foreground"> · {data.database.latencyMs}ms</span>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Version:</span>{" "}
+                <span className="font-mono">{data.apiServer.version}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">PID:</span>{" "}
+                <span className="font-mono">{data.apiServer.pid}</span>
+              </div>
+            </div>
+
+            <div className="text-xs">
+              <div className="text-muted-foreground mb-1">MT5 / EA bridges (aggregate heartbeat)</div>
+              <div className="flex gap-3 font-mono" data-testid="workflow-health-bridge">
+                {data.bridge.readable === false ? (
+                  <span className="text-amber-300">Bridge counts could not be read (aggregate query failed).</span>
+                ) : (
+                <>
+                <span>total {data.bridge.total}</span>
+                <span className="text-emerald-300">healthy {data.bridge.healthy}</span>
+                <span className="text-amber-300">stale {data.bridge.stale}</span>
+                <span className="text-rose-300">down {data.bridge.down}</span>
+                <span className="text-muted-foreground">
+                  latest{" "}
+                  {data.bridge.latestHeartbeatAgeSeconds == null
+                    ? "—"
+                    : `${data.bridge.latestHeartbeatAgeSeconds}s ago`}
+                </span>
+                </>
+                )}
+              </div>
+            </div>
+
+            <div className="text-[11px] text-muted-foreground space-y-1">
+              <p>Last checked: {new Date(data.checkedAt).toLocaleTimeString()}</p>
+              {data.notes.map((n, i) => (
+                <p key={i}>{n}</p>
+              ))}
+              <p className="font-mono">
+                Frontend listening, served build hash, and orphaned-process checks: run{" "}
+                <code>pnpm run health:workflows</code>.
+              </p>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

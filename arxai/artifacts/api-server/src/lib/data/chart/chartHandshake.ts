@@ -1,0 +1,177 @@
+// Phase 4 — Chart Handshake for AACI.
+//
+// Translates Phase 3 gate outputs (ChartGateOutput + ChartTruthScore subMetrics)
+// into a 10-field PASS/WARN/FAIL handshake that AACI consumers read to lower
+// market-truth confidence when chart data is degraded.
+//
+// SAFETY: READ-ONLY, advisory only. Never an execution gate, never modifies the
+// 16-gate live pipeline, never fabricates a PASS when evidence is absent.
+
+import { gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
+import type { ChartTruthScore } from "./chartTruthScore.js";
+
+export type ChartHandshakeVerdict = "PASS" | "WARN" | "FAIL";
+
+export interface AaciChartHandshake {
+  /** Real OHLC source present — candlestickModeAllowed from gate. */
+  ChartSource: ChartHandshakeVerdict;
+  /** OHLC integrity sub-metric (bad bars, duplicates, out-of-order). */
+  OHLCIntegrity: ChartHandshakeVerdict;
+  /** Timeframe accuracy sub-metric (history minimum met). */
+  TimeframeAccuracy: ChartHandshakeVerdict;
+  /** Broker-price mirror — seam clean AND alignment within tolerance. */
+  MirrorSync: ChartHandshakeVerdict;
+  /** Feed freshness — not stale, trailing gap ok. */
+  FeedFreshness: ChartHandshakeVerdict;
+  /** Historical/live merge quality — seam gap intervals. */
+  HistoricalLiveMerge: ChartHandshakeVerdict;
+  /** Broker price alignment — chart close vs MT5 bid/ask. */
+  BrokerPriceAlignment: ChartHandshakeVerdict;
+  /** Actual renderer evidence; source-bar shape alone cannot prove this. */
+  RenderHealth: ChartHandshakeVerdict;
+  /** Eleanor read allowed — confidentReadAllowed from gate. */
+  EleanorReadAllowed: ChartHandshakeVerdict;
+  /** Self-trade chart allowed — selfTradeChartAllowed from gate. */
+  SelfTradeChartAllowed: ChartHandshakeVerdict;
+
+  /**
+   * Overall rollup: PASS only when all 10 are PASS.
+   * WARN when ≥1 WARN and no FAIL. FAIL when ≥1 FAIL.
+   */
+  overall: ChartHandshakeVerdict;
+
+  /**
+   * Rollup of the nine checks about the candle data itself, i.e. every field
+   * except RenderHealth. Additive and descriptive: it names that the candle
+   * checks passed while client renderer telemetry is unmeasured (wording), and
+   * the decision-summary cap reads it as one more reason to lower a read. It
+   * never turns an unmeasured RenderHealth into a PASS (`overall` still
+   * carries it, and the Eleanor read basis keeps `overall`), and a measured
+   * renderer FAIL still fails this rollup.
+   */
+  sourceOverall: ChartHandshakeVerdict;
+
+  /** Compact Chart Truth Score (0–100) for AACI market-truth weighting. */
+  chartTruthScore: number;
+  /** Compact Chart Read Score (0–100). */
+  chartReadScore: number;
+  /** Primary block reason, or null when all pass. */
+  primaryBlockReason: string | null;
+}
+
+function rollup(verdicts: ChartHandshakeVerdict[]): ChartHandshakeVerdict {
+  if (verdicts.includes("FAIL")) return "FAIL";
+  if (verdicts.includes("WARN")) return "WARN";
+  return "PASS";
+}
+
+function boolToVerdict(pass: boolean, failMode: "FAIL" | "WARN" = "FAIL"): ChartHandshakeVerdict {
+  return pass ? "PASS" : failMode;
+}
+
+/** Find a sub-metric raw score by key from the subMetrics array. */
+function subMetricScore(score: ChartTruthScore, key: string): number | null {
+  const m = score.subMetrics.find((s) => s.key === key);
+  return m?.evidenceStatus === "measured" && Number.isFinite(m.rawScore) ? m.rawScore : null;
+}
+
+function scoreToVerdict(
+  rawScore: number | null,
+  passThreshold = 75,
+  warnThreshold = 50,
+): ChartHandshakeVerdict {
+  if (rawScore == null || !Number.isFinite(rawScore)) return "WARN";
+  if (rawScore >= passThreshold) return "PASS";
+  if (rawScore >= warnThreshold) return "WARN";
+  return "FAIL";
+}
+
+/**
+ * Translate Phase 3 gate outputs into an AACI chart handshake.
+ *
+ * Conservative: unknown evidence → WARN; clear gate failure → FAIL.
+ * When `truthScore` is provided, per-sub-metric raw scores are used for
+ * finer WARN/FAIL granularity. Missing measurements remain WARN even when
+ * the aggregate advisory gate has not failed.
+ */
+export function buildChartHandshake(
+  gate: ChartGateOutput,
+  truthScore?: ChartTruthScore,
+): AaciChartHandshake {
+  const ChartSource = boolToVerdict(gate.candlestickModeAllowed);
+
+  const OHLCIntegrity = truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "ohlc_integrity"))
+    : "WARN";
+
+  const TimeframeAccuracy = truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "timeframe_accuracy"))
+    : "WARN";
+
+  const FeedFreshness = !gate.autonomousChartActionAllowed ? "FAIL" : truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "feed_freshness")) : "WARN";
+
+  const HistoricalLiveMerge = truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "historical_live_merge"))
+    : "WARN";
+
+  const BrokerPriceAlignment = truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "symbol_mirror_accuracy"))
+    : "WARN";
+
+  // A mirror that could not be checked at all is unknown (WARN), not FAIL.
+  const MirrorSync = gate.tradeConfirmationAllowed || gateMirrorBlockCause(gate).notChecked
+    ? rollup([HistoricalLiveMerge, BrokerPriceAlignment]) : "FAIL";
+
+  const RenderHealth = truthScore
+    ? scoreToVerdict(subMetricScore(truthScore, "render_accuracy"))
+    : "WARN";
+
+  const EleanorReadAllowed = boolToVerdict(gate.confidentReadAllowed);
+
+  const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
+
+  const all: ChartHandshakeVerdict[] = [
+    ChartSource,
+    OHLCIntegrity,
+    TimeframeAccuracy,
+    MirrorSync,
+    FeedFreshness,
+    HistoricalLiveMerge,
+    BrokerPriceAlignment,
+    RenderHealth,
+    EleanorReadAllowed,
+    SelfTradeChartAllowed,
+  ];
+  // Every check about the candle data itself (all but RenderHealth).
+  const source: ChartHandshakeVerdict[] = [
+    ChartSource,
+    OHLCIntegrity,
+    TimeframeAccuracy,
+    MirrorSync,
+    FeedFreshness,
+    HistoricalLiveMerge,
+    BrokerPriceAlignment,
+    EleanorReadAllowed,
+    SelfTradeChartAllowed,
+  ];
+
+  return {
+    ChartSource,
+    OHLCIntegrity,
+    TimeframeAccuracy,
+    MirrorSync,
+    FeedFreshness,
+    HistoricalLiveMerge,
+    BrokerPriceAlignment,
+    RenderHealth,
+    EleanorReadAllowed,
+    SelfTradeChartAllowed,
+    overall: rollup(all),
+    sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),
+    chartTruthScore: gate.chartTruthScore,
+    chartReadScore: gate.chartReadScore,
+    primaryBlockReason: gate.primaryBlockReason ?? (all.includes("WARN")
+      ? truthScore?.primaryConcern ?? "Some chart checks have no measured evidence." : null),
+  };
+}

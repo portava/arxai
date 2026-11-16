@@ -1,0 +1,391 @@
+import { type ChartFeedStatus, type ChartFeedStatusQuality } from "@workspace/api-client-react";
+
+// ARX Native Chart — Level 3 feed-confidence helper.
+//
+// Converts the Level 1 `ChartFeedStatus` (embedded in every /api/chart/candles
+// response) into a small, UI-friendly verdict. This is the single source of
+// truth for HOW honest the chart should be about its own data:
+//   - severity drives colour + how prominent the badge becomes
+//   - aiUsable is passed straight through (true ONLY when quality is clean) so
+//     Level 5 AI overlays can refuse to draw on an unconfirmed feed
+//   - suggestFallback marks cases where the native feed cannot be trusted and
+//     the user should review alternate verified data sources
+//
+// HONESTY: we never upgrade the backend's own verdict. quality/aiUsable/stale
+// come from the contract; we only translate them into copy + severity.
+
+export type FeedSeverity = "clean" | "caution" | "danger" | "unknown";
+
+export interface FeedConfidence {
+  /** Short human label for the current quality (e.g. "Clean", "Stale"). */
+  statusLabel: string;
+  /** Drives badge colour + prominence. */
+  severity: FeedSeverity;
+  /** Pass-through of the contract's aiUsable (true only when quality is clean). */
+  aiUsable: boolean;
+  /** One-line human message (prefers the contract's own message/warning). */
+  message: string;
+  /** True when the feed can't be trusted and alternate verified data is needed. */
+  suggestFallback: boolean;
+}
+
+const QUALITY_LABEL: Record<ChartFeedStatusQuality, string> = {
+  clean: "Clean",
+  delayed: "Delayed",
+  stale: "Stale",
+  partial: "Partial",
+  invalid: "Invalid",
+  empty: "No data",
+  unavailable: "Unavailable",
+};
+
+export function feedConfidence(
+  fs: ChartFeedStatus | null | undefined,
+): FeedConfidence {
+  if (!fs) {
+    return {
+      statusLabel: "Unknown",
+      severity: "unknown",
+      aiUsable: false,
+      message: "Feed status is unavailable.",
+      suggestFallback: true,
+    };
+  }
+
+  let severity: FeedSeverity;
+  switch (fs.quality) {
+    case "clean":
+      severity = "clean";
+      break;
+    case "delayed":
+    case "partial":
+      severity = "caution";
+      break;
+    case "stale":
+    case "invalid":
+      severity = "danger";
+      break;
+    case "empty":
+    case "unavailable":
+      severity = "unknown";
+      break;
+    default:
+      severity = "unknown";
+  }
+
+  // Clean OHLC integrity alone does not establish current data. Keep the label
+  // and explanation consistent with the freshness flags, not just the colour.
+  const cleanButStale = fs.quality === "clean" && fs.stale;
+  const cleanButNotLive = fs.quality === "clean" && !fs.stale && fs.isLive !== true;
+  if (cleanButStale || cleanButNotLive) severity = "caution";
+
+  // The server names WHY a series is not live (scheduled weekend close, or bars
+  // served from storage). That specific reason and its own message win over the
+  // generic not-live / stale wording. Integrity faults (partial / invalid /
+  // empty / unavailable) keep their own label.
+  const integrityOk = fs.quality === "clean" || fs.quality === "delayed" || fs.quality === "stale";
+  const reason = integrityOk && fs.isLive !== true ? fs.notLiveReason ?? null : null;
+  const reasonLabel =
+    reason === "market_closed" ? "Market closed" : reason === "stored_history" ? "Stored history" : null;
+  const reasonMessage = reasonLabel
+    ? fs.message?.trim() ||
+      (reason === "market_closed"
+        ? "The market is closed — these are the last session's candles, not a live feed."
+        : "Stored history — no live feed is pushing these candles.")
+    : null;
+  if (reasonLabel && severity === "clean") severity = "caution";
+
+  const statusLabel =
+    reasonLabel ?? (cleanButStale ? "Stale" : cleanButNotLive ? "Not live" : QUALITY_LABEL[fs.quality] ?? "Unknown");
+
+  const message =
+    reasonMessage ? reasonMessage :
+    cleanButStale ? "Stored candles are stale; a current feed is not confirmed." :
+    cleanButNotLive ? "These candles are not confirmed as a live feed." :
+    fs.message?.trim() ||
+    fs.warning?.trim() ||
+    (severity === "clean"
+      ? "Live feed looks clean and confirmed."
+      : "Feed quality is reduced — read with caution.");
+
+  const suggestFallback =
+    fs.stale ||
+    fs.quality === "stale" ||
+    fs.quality === "invalid" ||
+    fs.quality === "empty" ||
+    fs.quality === "unavailable";
+
+  return {
+    statusLabel,
+    severity,
+    aiUsable: fs.aiUsable,
+    message,
+    suggestFallback,
+  };
+}
+
+// ── Resolved-verdict cap (Task #506) ─────────────────────────────────────────
+//
+// The raw `feedConfidence` verdict is socket-level ("clean bars are arriving").
+// Some surfaces (e.g. the Scanner Eleanor Chart Read panel) resolve a STRICTER
+// verdict by folding the shared scanner truth + the server read-chart result on
+// top of the same feed. This caps the raw confidence by that resolved verdict so
+// a badge can never claim Clean/AI when the resolved verdict says otherwise:
+//   - resolved === true  → keep the raw verdict (confirmed).
+//   - resolved === false → never Clean/AI: severity capped to at most "caution",
+//     a "clean" label becomes "Unconfirmed", aiUsable forced false.
+//   - resolved === null  → withhold clean/AI claims while checking; keep known feed faults.
+//   - resolved omitted   → no cap (legacy raw-feed behaviour).
+export function capConfidence(
+  conf: FeedConfidence,
+  resolved: boolean | null | undefined,
+): FeedConfidence {
+  if (resolved === undefined || resolved === true) return conf;
+  // A raw "clean" verdict carries the server's live-sounding message (e.g.
+  // "Live feed active for EURUSD …"). Once the cap withholds "clean", that
+  // message would contradict the capped label in the same popover, so it is
+  // replaced with what is actually known. A non-clean raw message (stale /
+  // delayed / partial) is already an honest limitation and is kept.
+  if (resolved === null) {
+    // A pending AI assessment cannot erase a feed fault already observed.
+    if (conf.severity !== "clean" && conf.statusLabel !== "Unknown") {
+      return { ...conf, aiUsable: false };
+    }
+    return {
+      ...conf,
+      // A known limitation (delayed / stale / partial) stays stated while the
+      // confirmation is pending; only a raw "clean" is withheld.
+      severity: conf.severity === "clean" ? "unknown" : conf.severity,
+      statusLabel: conf.severity === "clean" ? "Checking…" : conf.statusLabel,
+      aiUsable: false,
+      message:
+        conf.severity === "clean"
+          ? "Still checking whether this feed is confirmed for this market and timeframe."
+          : conf.message,
+    };
+  }
+  // resolved === false → not confirmed.
+  return {
+    ...conf,
+    severity: conf.severity === "clean" ? "caution" : conf.severity,
+    statusLabel: conf.severity === "clean" ? "Unconfirmed" : conf.statusLabel,
+    aiUsable: false,
+    message:
+      conf.severity === "clean"
+        ? "The feed reports clean bars, but this market and timeframe's read is not confirmed current — treat it as unconfirmed."
+        : conf.message,
+  };
+}
+
+// ── Provider trust tiering ────────────────────────────────────────────────
+//
+// The backend `source` names which data provider actually served the bars:
+//   - "mt5_broker"                  → your MT5 broker bridge (primary, top trust)
+//   - "deriv"                       → Deriv synthetic volatility indices
+//   - "assistant_real:<provider>"   → a third-party fallback (TwelveData, Polygon,
+//                                     AlphaVantage, …) used only when the broker
+//                                     feed is unavailable for the symbol
+// This helper turns that raw id into an honest, human-friendly label + a trust
+// tier (drives icon/colour) + a one-line note about freshness/trust. It NEVER
+// upgrades trust: a fallback always reads as a fallback.
+
+export type FeedProviderTier = "broker" | "synthetic" | "thirdParty" | "none";
+
+export interface FeedProviderInfo {
+  /** Short, human-friendly provider name for the chip (e.g. "MT5 broker"). */
+  label: string;
+  /** Trust/category tier — drives the chip's provider icon + colour. */
+  tier: FeedProviderTier;
+  /** One-line plain-English note: what this source means for freshness/trust. */
+  trustNote: string;
+}
+
+const THIRD_PARTY_NAMES: Record<string, string> = {
+  twelve_data: "TwelveData",
+  polygon: "Polygon",
+  alpha_vantage: "AlphaVantage",
+  finnhub: "Finnhub",
+};
+
+// A third-party source id may be a single provider ("twelve_data") or a
+// composite descriptor ("composite(twelve_data,polygon,alpha_vantage)"). Resolve
+// to a precise name when we can, else a generic "Third-party data".
+function prettyThirdParty(raw: string): string {
+  const composite = raw.match(/^composite\((.*)\)$/i);
+  if (composite) {
+    const names = composite[1]
+      .split(",")
+      .map((s) => THIRD_PARTY_NAMES[s.trim()] ?? s.trim())
+      .filter(Boolean);
+    return names.length === 1 ? names[0]! : "Third-party data";
+  }
+  return THIRD_PARTY_NAMES[raw] ?? raw;
+}
+
+/** Map a backend feed `source` id to an honest provider label + trust tier. */
+export function providerInfo(source: string | null | undefined): FeedProviderInfo {
+  if (!source) {
+    return {
+      label: "No feed",
+      tier: "none",
+      trustNote: "No market-data source is currently serving this chart.",
+    };
+  }
+  if (source === "mt5_broker") {
+    return {
+      label: "MT5 broker",
+      tier: "broker",
+      trustNote:
+        "Candles from the MT5 broker data path, the primary broker-data source: either a bridge's live push or the server's stored copy of earlier pushes. Check feed status for whether they are live; actual execution prices can differ.",
+    };
+  }
+  if (source === "deriv_public") {
+    return {
+      label: "Deriv public data",
+      tier: "thirdParty",
+      trustNote: "Deriv public quotes and candles for the selected instrument. Check this market's feed status for freshness; this source does not verify your broker's prices or order fills.",
+    };
+  }
+  if (source === "deriv") {
+    return {
+      label: "Deriv",
+      tier: "synthetic",
+      trustNote:
+        "Deriv synthetic instruments (algorithmic volatility indices). Check feed status for freshness; this source does not verify your broker's prices or order fills.",
+    };
+  }
+  if (source.startsWith("assistant_real")) {
+    const sub = source.includes(":") ? source.slice(source.indexOf(":") + 1) : "";
+    const label = sub ? prettyThirdParty(sub) : "Third-party data";
+    const named = label !== "Third-party data";
+    return {
+      label,
+      tier: "thirdParty",
+      trustNote: named
+        ? `${label} is a third-party market-data provider, used as a fallback because MT5 broker bars aren't available for this symbol. Prices may be delayed or differ slightly from your broker.`
+        : "Third-party market data used as a fallback because MT5 broker bars aren't available for this symbol. Prices may be delayed or differ slightly from your broker.",
+    };
+  }
+  // Unknown provider id — surface it verbatim, treat as fallback-grade trust.
+  return {
+    label: source,
+    tier: "thirdParty",
+    trustNote:
+      "Fallback market-data source. Prices may be delayed or differ from your broker's live bars.",
+  };
+}
+
+// ── Trailing-interval gap (Task #780) ────────────────────────────────────────
+//
+// Inline, always-visible "missing intervals" fragment for the compact feed
+// chips (Scanner header chip, Eleanor chat feed chip), reusing the SAME
+// `ChartFeedStatus.trailingIntervals` the #778 feed-details popover reads — no
+// second source of truth. Returns the text to append next to the chip's state:
+//   - `undefined` (caller did not opt in / field absent) → null (render nothing)
+//   - `null`      (gap unknown — e.g. no candles)        → "—" (honest)
+//   - `<= 1`      (current/fresh — the clean baseline)   → null (chip stays quiet)
+//   - `>= 2`      (delayed = 2, stale >= 3)              → "N missing"
+// A clean live feed reports a trailing gap of 1, so suppressing <=1 keeps the
+// count off clean chips and surfaces it only when the feed is actually lagging.
+export function formatTrailingGap(
+  trailingIntervals: number | null | undefined,
+): string | null {
+  if (trailingIntervals === undefined) return null;
+  if (trailingIntervals === null) return "—";
+  if (trailingIntervals <= 1) return null;
+  return `${trailingIntervals} missing`;
+}
+
+function compactSpan(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/**
+ * Compact "12s ago" style relative time; honest "—" when missing/invalid.
+ * A timestamp in the future (e.g. a forming bar's scheduled close) reads
+ * "in 45m" — never "just now", which would assert a recent arrival.
+ */
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "—";
+  const diffMs = Date.now() - t;
+  if (diffMs < 0) return `in ${compactSpan(-diffMs)}`;
+  return `${compactSpan(diffMs)} ago`;
+}
+
+/** True when the timestamp is valid and later than now. */
+export function isFutureTime(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
+
+const FEED_READINESS_LABELS: Record<string, string> = {
+  UNCONFIGURED: "Deriv market data not set up",
+  CONNECTING: "Connecting to Deriv",
+  AUTH_FAILED: "Deriv sign-in rejected; no live ticks",
+  CONNECTED_AWAITING_FEED: "Connected to Deriv, waiting for data",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History ready, waiting for first live tick",
+  LIVE_FEED: "Deriv reports live ticks",
+};
+
+/**
+ * Plain-English copy for the server's Deriv warm-up readiness state. An
+ * unrecognised state is reported as such rather than leaking the raw token.
+ */
+export function feedReadinessLabel(state: string | null | undefined): string {
+  if (!state) return "—";
+  return FEED_READINESS_LABELS[state] ?? "Unrecognised readiness state";
+}
+
+// ── Feed provenance chips (Truth audit T2) ───────────────────────────────────
+//
+// The server says whose feed a series rests on (feedScope), whether two bridges
+// were pushing it at once (contention), and whether the "last tick" stamp is the
+// producer's own tick time or only when ARX received it. These helpers turn
+// those optional fields into short labels; every field is optional (older
+// servers omit them) and an absent field yields nothing.
+
+export interface FeedProvenanceInput {
+  feedScope?: string | null;
+  contention?: boolean | null;
+}
+
+export interface FeedProvenanceChip {
+  key: "platform_shared" | "contention";
+  text: string;
+  title: string;
+}
+
+export function feedProvenanceChips(fs: FeedProvenanceInput | null | undefined): FeedProvenanceChip[] {
+  if (!fs) return [];
+  const chips: FeedProvenanceChip[] = [];
+  if (fs.feedScope === "platform_shared") {
+    chips.push({
+      key: "platform_shared",
+      text: "Shared feed — not your bridge",
+      title: "These bars come from another MT5 bridge's feed on the platform, not your own broker connection.",
+    });
+  }
+  if (fs.contention === true) {
+    chips.push({
+      key: "contention",
+      text: "Two bridges pushing",
+      title: "Two connected bridges were pushing this series when it was read; bars may mix both feeds.",
+    });
+  }
+  return chips;
+}
+
+/** True when a last-tick stamp is the server's receive time, not the producer's tick time. */
+export function isServerReceiveBasis(basis: string | null | undefined): boolean {
+  return basis === "server_receive";
+}
+

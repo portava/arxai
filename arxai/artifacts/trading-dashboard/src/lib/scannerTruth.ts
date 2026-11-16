@@ -1,0 +1,1236 @@
+// ── Scanner truth contract (single shared source) ───────────────────────────
+//
+// Task #391. ONE normalized object every scanner surface consumes so the header,
+// chart panel, timeframe buttons, Eleanor Chart Read, Eleanor Market Read, Timing
+// Intelligence, overlay validator, trade buttons, permission banners, tabs and
+// the mobile status strip can never disagree about feed state, freshness,
+// permissions, or whether a read is actionable.
+//
+// HONESTY: this resolver never invents data and never upgrades the backend's own
+// verdict. It is driven by the ONE honest market source — the feedStatus +
+// candles embedded in GET /api/chart/candles — plus the user's account-mode
+// permissions. The simulator quote endpoint (executionEnvironment="SIMULATOR")
+// is deliberately NOT a source here: feeding it caused the header≈1.08 vs
+// chart≈1.15 mismatch (finding #1). The displayed price is the real candle close.
+//
+// Pure + deterministic so it can be unit-tested without the network.
+
+import {
+  type ChartFeedStatus,
+} from "@workspace/api-client-react";
+import {
+  resolveDisplayStatus,
+  applyHeaderCap,
+  type FeedStatus,
+  type ChartDisplayStatus,
+} from "./chart-display-status";
+import { providerInfo, type FeedProviderTier } from "./feed-confidence";
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import {
+  resolveScannerActionability,
+  type ConsolidatedTruth,
+  type PublicQuoteStatus,
+  type PublicCandleStatus,
+  type ChartIntelligenceStatus,
+  type EleanorReadStatus,
+  type TradingStatus,
+  type SkippedSymbol,
+} from "./scannerActionability";
+import {
+  evaluateTradeHealthReadiness,
+  candleIntervalMs,
+  classifyTrailingIntervals,
+  trailingIntervalsFromOpen,
+  type CandleTrailingFreshness,
+  type TradeHealthReadinessVerdict,
+  type TradeReadLayer,
+} from "@workspace/domain/market";
+
+// ── Stable read-ID generator (display-only, no execution semantics) ──────────
+// Derived deterministically from the input's identity fields: same symbol +
+// timeframe + source + candle window + last price → SAME readId on every call. This guarantees that
+// the header strip, chart CTA, and Eleanor panel carry an identical readId for
+// the same market snapshot, enabling reliable cross-surface mismatch tracing.
+// A new candle (different lastTime or candleCount) produces a different readId,
+// naturally advancing the cycle identity without any random component.
+function genReadId(input: ScannerTruthInputs): string {
+  const key = `${input.symbolInternal}|${input.timeframe}|${input.feedStatus?.source ?? ""}|${input.lastTime ?? ""}|${input.lastClose ?? ""}|${String(input.candleCount)}`;
+  let h = 0;
+  for (let i = 0; i < key.length; i++) {
+    h = (Math.imul(31, h) + key.charCodeAt(i)) | 0;
+  }
+  return `${input.symbolInternal}_${input.timeframe}_${Math.abs(h).toString(36)}`;
+}
+
+// ── Per-timeframe freshness + minimum-candle thresholds (spec section C) ──────
+//
+// quoteMaxAgeMs is reserved for when a real (non-simulator) quote feed is wired;
+// minCandles gates the chart + every downstream read. Candle freshness (clean /
+// delayed / stale) is NOT graded from candleMaxAgeMs: it uses the shared domain
+// trailing-interval rule (@workspace/domain/market candleFreshnessRule) so the
+// client and the server's freshness.ts / candleNormalization.ts always agree.
+// candleMaxAgeMs is no longer read by any freshness or read-expiry rule (chart
+// reads expire one interval after their newest closed candle — eleanorReadPanelState).
+export interface TimeframeThresholds {
+  quoteMaxAgeMs: number;
+  candleMaxAgeMs: number;
+  minCandles: number;
+}
+
+const SEC = 1000;
+const MIN = 60 * SEC;
+
+// Keyed by the canonical lowercase timeframe tokens the chart panel uses. Covers
+// the full 21 MT5 set (1m,2m,3m,4m,5m,6m,10m,12m,15m,20m,30m,1h,2h,3h,4h,6h,8h,
+// 12h,1d,1w,1mo). The month token is "1mo" (never "1m", which is one minute).
+// candleMaxAgeMs ≈ 1.2–1.5× the interval (unused by freshness/expiry); minCandles
+// eases as the interval coarsens (1d mirrors the backend D1 floor of 50). Every
+// timeframe the chart can select MUST have an entry — an unknown token falls back
+// to the strict 1m budget and would wrongly downgrade valid coarse-timeframe data.
+export const TIMEFRAME_THRESHOLDS: Record<string, TimeframeThresholds> = {
+  "1m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 90 * SEC, minCandles: 150 },
+  "2m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 3 * MIN, minCandles: 150 },
+  "3m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 5 * MIN, minCandles: 150 },
+  "4m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 6 * MIN, minCandles: 150 },
+  "5m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 6 * MIN, minCandles: 150 },
+  "6m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 8 * MIN, minCandles: 150 },
+  "10m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 13 * MIN, minCandles: 130 },
+  "12m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 16 * MIN, minCandles: 130 },
+  "15m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 18 * MIN, minCandles: 120 },
+  "20m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 25 * MIN, minCandles: 115 },
+  "30m": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 36 * MIN, minCandles: 110 },
+  "1h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 75 * MIN, minCandles: 100 },
+  "2h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 150 * MIN, minCandles: 95 },
+  "3h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 225 * MIN, minCandles: 90 },
+  "4h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 300 * MIN, minCandles: 80 },
+  "6h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 450 * MIN, minCandles: 75 },
+  "8h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 600 * MIN, minCandles: 70 },
+  "12h": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 900 * MIN, minCandles: 65 },
+  "1d": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 1800 * MIN, minCandles: 50 },
+  "1w": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 12960 * MIN, minCandles: 30 },
+  "1mo": { quoteMaxAgeMs: 10 * SEC, candleMaxAgeMs: 53280 * MIN, minCandles: 12 },
+};
+
+// Default to the strictest sensible bucket for an unknown token.
+export function thresholdsFor(timeframe: string): TimeframeThresholds {
+  const key = timeframe.trim().toLowerCase();
+  return TIMEFRAME_THRESHOLDS[key] ?? TIMEFRAME_THRESHOLDS["1m"]!;
+}
+
+// ── Consistency tolerances (mirror backend brokerPriceAlignment "normal") ─────
+// Used only when an independent quote source is supplied; the scanner currently
+// supplies none (simulator excluded), so consistency resolves to "unknown".
+function consistencyTolerancePct(assetClass: string | null | undefined): number {
+  const a = (assetClass ?? "").toLowerCase();
+  if (a === "forex" || a === "metals") return 0.2;
+  return 0.5;
+}
+
+// ── Normalized contract shape (spec section B) ───────────────────────────────
+
+export type QuoteStatus = "live" | "delayed" | "stale" | "unavailable";
+export type CandleStatus =
+  | "live"
+  | "delayed"
+  | "stale"
+  | "historical_only"
+  | "insufficient"
+  | "unavailable";
+export type ConsistencyStatus = "aligned" | "mismatch" | "unknown";
+/**
+ * Why `headerOk` is false, when the caller knows. The header cap still
+ * withholds a live read; this only makes the stated reason true:
+ *   analysis_pending      — the selected-market analysis has not answered yet
+ *   analysis_unavailable  — it answered without an analysis (ok:false)
+ *   analysis_request_failed — the analysis request itself failed
+ *   candles_refresh_failed — the latest candle refresh failed (cached bars)
+ *   candle_evidence_unconfirmed — the original candle source/window is not usable
+ */
+export type ScannerHeaderCapReason =
+  | "analysis_pending"
+  | "analysis_unavailable"
+  | "analysis_request_failed"
+  | "candle_evidence_unconfirmed"
+  | "candles_refresh_failed";
+export type ReadLevel = "full" | "limited" | "historical_only" | "blocked";
+export type OverlayStatus = "verified" | "limited" | "check" | "blocked";
+export type EffectiveMode = "demo" | "live" | "read_only";
+
+// Single plain-English data verdict for the consolidated truth strip.
+export type DataVerdict = "Live" | "Delayed" | "Stale" | "Market closed" | "Historical only" | "Unavailable";
+export type TradingVerdict =
+  | "Enabled"
+  | "Read-only"
+  | "Approval required"
+  | "Blocked"
+  // The account-mode envelope is still loading — nothing is known yet.
+  | "Checking…"
+  // The account-mode envelope failed to load — the trading state is unknown.
+  | "Couldn't check";
+export type EleanorVerdict = "Full read" | "Limited read" | "No read";
+
+export interface ScannerTruth {
+  symbolDisplay: string;
+  symbolInternal: string;
+  timeframe: string;
+
+  quote: {
+    bid: number | null;
+    ask: number | null;
+    mid: number | null;
+    source: string | null;
+    sourceLabel: string;
+    timestamp: string | null;
+    ageMs: number | null;
+    status: QuoteStatus;
+    reason: string;
+  };
+
+  candles: {
+    source: string | null;
+    sourceLabel: string;
+    /** Precise provider name — admin/debug surfaces only. */
+    sourceTechnical: string;
+    tier: FeedProviderTier;
+    timeframe: string;
+    /** Bars loaded, INCLUDING a still-forming tip. */
+    count: number;
+    /**
+     * CLOSED bars (forming tip excluded) — the number every minimum-candle
+     * check and the Trade Health "closed candles" verdict use.
+     */
+    closedCount: number;
+    /** True when the loaded series ends in a still-forming bar. */
+    hasFormingBar: boolean;
+    requestedCount: number;
+    /** Minimum CLOSED candles required on this timeframe. */
+    minRequired: number;
+    firstTime: string | null;
+    lastTime: string | null;
+    lastClose: number | null;
+    /**
+     * Display precision (decimal places) for this instrument — the server's
+     * declared precision widened by the digits the loaded quotes actually
+     * carry (lib/instrumentPriceFormat). Every price surface on the page
+     * formats with it so one quote never shows in two precisions. Null when
+     * unknown (formatter falls back to a magnitude heuristic).
+     */
+    pricePrecision?: number | null;
+    ageMs: number | null;
+    status: CandleStatus;
+    reason: string;
+    /**
+     * Set only when the header cap (not the candles themselves) withheld the
+     * live read, naming why. "analysis_pending" means the downgrade is a
+     * still-confirming state, not a measured data problem.
+     */
+    headerCapReason?: ScannerHeaderCapReason | null;
+  };
+
+  consistency: {
+    quoteCandlePriceDelta: number | null;
+    quoteCandlePriceDeltaPct: number | null;
+    withinTolerance: boolean | null;
+    status: ConsistencyStatus;
+    reason: string;
+  };
+
+  permissions: {
+    demoManualAllowed: boolean;
+    demoAIAllowed: boolean;
+    liveManualAllowed: boolean;
+    liveAIAllowed: boolean;
+    sharedBridgeApproved: boolean;
+    ownBridgeConnected: boolean;
+    manualTradingBlockedReason: string | null;
+    liveTradingBlockedReason: string | null;
+    effectiveMode: EffectiveMode;
+  };
+
+  analysis: {
+    allowed: boolean;
+    level: ReadLevel;
+    reason: string;
+  };
+
+  execution: {
+    allowed: boolean;
+    reason: string;
+  };
+
+  eleanor: {
+    chartReadAllowed: boolean;
+    marketReadAllowed: boolean;
+    readLevel: ReadLevel;
+    reason: string;
+  };
+
+  overlays: {
+    allowed: boolean;
+    status: OverlayStatus;
+    reason: string;
+  };
+
+  // Consolidated truth-strip verdicts + plain-English one-liners (finding #24/#25).
+  strip: {
+    data: { verdict: DataVerdict; detail: string };
+    trading: { verdict: TradingVerdict; detail: string };
+    eleanor: { verdict: EleanorVerdict; detail: string };
+  };
+
+  /** The shared chart display status (so chart + strip never disagree). */
+  displayStatus: ChartDisplayStatus;
+  /** True only when the latest-price affordance may render as a live tick. */
+  isLivePrice: boolean;
+  /** True only when the read is valid for live entry (full analysis). */
+  actionable: boolean;
+
+  /**
+   * The scheduled weekend closure this read falls in, when no bar has opened
+   * since the close (ISO times). Null/absent otherwise. Display-only: it explains
+   * a non-live read as a closed market rather than a feed fault.
+   */
+  marketClosure?: { closedAt: string; windowEndsAt: string } | null;
+
+  /**
+   * True only when the active candle source is the user's own broker feed
+   * (tier === "broker"). A connected MT5 execution bridge does NOT make this
+   * true — market data and the execution bridge are independent. When this is
+   * false but the data is still live, the source is ARX market data / synthetic,
+   * never the broker's chart bars.
+   */
+  brokerFeedActive: boolean;
+
+  /**
+   * Plain-English, user-safe data-health summary for the header detail and the
+   * readable feed-health panel. Derived ONLY from the resolved truth above —
+   * never leaks provider IDs or internal tokens (those stay in
+   * candles.sourceTechnical, which is admin-gated).
+   */
+  dataHealth: {
+    /** One-line status headline (e.g. "Live market data"). */
+    headline: string;
+    /** Honest note about WHERE the data comes from (broker vs ARX vs synthetic). */
+    sourceNote: string;
+    /** A few plain-English facts: source, freshness/exact reason, actionability. */
+    lines: string[];
+  };
+
+  /**
+   * Consolidated PUBLIC truth block (Task #600). Derived from the resolved
+   * internal truth above (never raw inputs) so every scanner surface — header
+   * strip, chart badge, Eleanor Chart Read, opportunity/scalp cards, trade ticket,
+   * Broad Scan summary — agrees on ONE action verdict and ONE message. Existing
+   * internal fields are unchanged; this is purely additive.
+   */
+  consolidated: ConsolidatedTruth;
+
+  /**
+   * The ONE shared trade-health / readiness DISPLAY verdict (Trade Health
+   * contract). Composed from the SAME marketDataSufficiency truth Eleanor's chart
+   * read consumes, so the Scanner and Eleanor can never show a different read /
+   * eligibility label for the same symbol + timeframe. DISPLAY-ONLY: every caller
+   * still ANDs `canTrade` + the live gate — `readiness` can only downgrade or
+   * explain, never grant a trade affordance the execution stack forbids.
+   */
+  readiness: TradeHealthReadinessVerdict;
+}
+
+// ── Inputs ───────────────────────────────────────────────────────────────────
+
+export interface ScannerTruthMode {
+  isLoading: boolean;
+  /**
+   * The account-mode request failed and no envelope is available. While this
+   * or `isLoading` is true every flag below is an unmeasured default (false),
+   * so the trading verdict says the state is unknown instead of asserting one.
+   */
+  isError?: boolean;
+  isDemo: boolean;
+  isLiveShared: boolean;
+  isPaper: boolean;
+  isLiveArmed: boolean;
+  isFrozen: boolean;
+  canManualTrade: boolean;
+  canAutoTrade: boolean;
+  isSharedMasterAssigned: boolean;
+  ownBridgeConnected: boolean;
+  approvalStatus: string | null;
+  frozenReason: string | null;
+  cleanBlockedReason: string | null;
+}
+
+export interface ScannerTruthInputs {
+  symbolDisplay: string;
+  symbolInternal: string;
+  timeframe: string;
+  feedStatus: ChartFeedStatus | null;
+  candleCount: number;
+  /**
+   * CLOSED candles (forming tip excluded) when the bars state completeness;
+   * omitted → `candleCount` (legacy shapes that never said).
+   */
+  closedCandleCount?: number;
+  requestedCount: number;
+  firstTime: string | null;
+  lastTime: string | null;
+  /**
+   * Open time of the newest CLOSED bar (forming tip excluded) when the bars
+   * state completeness; omitted → `lastTime`. Used only to tell a closed
+   * market from one that has traded since its scheduled close.
+   */
+  lastClosedTime?: string | null;
+  /**
+   * true only when the candles carry original-UTC clock evidence
+   * (chartUtcClockQualified). Otherwise (MT5 bars stay on the broker's
+   * trade-server clock, audit H7) the bar times are named on the source clock,
+   * never as UTC.
+   */
+  barClockUtc?: boolean;
+  lastClose: number | null;
+  /** Resolved display precision for the instrument (see ScannerTruth.candles). */
+  pricePrecision?: number | null;
+  /** Optional independent quote — scanner passes null (simulator excluded). */
+  quote?: { bid: number | null; ask: number | null; mid: number | null; source: string | null; timestamp: string | null } | null;
+  /** Header ok flag (selected-market) — caps the display state. */
+  headerOk: boolean | null;
+  /** Why headerOk is false, when known (changes the stated reason only). */
+  headerCapReason?: ScannerHeaderCapReason | null;
+  mode: ScannerTruthMode;
+  nowMs?: number;
+  /**
+   * Optional scan-level skip list passed through to `consolidated.skippedSymbols`.
+   * A per-symbol resolve has no scan knowledge, so this defaults to `[]`; the
+   * Broad Scan surface feeds the scanner's real skip list here.
+   */
+  skippedSymbols?: SkippedSymbol[];
+}
+
+// Generic, user-safe source label (never leaks "Polygon"/"TwelveData" etc).
+function genericSourceLabel(tier: FeedProviderTier): string {
+  switch (tier) {
+    case "broker":
+      // Not "your": a broker-tier source names the MT5 market-data path, not
+      // the viewer's own account (the series may come from another bridge).
+      return "MT5 broker feed";
+    case "synthetic":
+      return "Synthetic feed";
+    case "thirdParty":
+      return "Market data feed";
+    default:
+      return "No feed";
+  }
+}
+
+function ageMsOf(iso: string | null, nowMs: number): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t) || !Number.isFinite(nowMs) || t > nowMs) return null;
+  return nowMs - t;
+}
+
+/** Compact elapsed span for plain-English lag copy ("2m", "9h", "9h 30m", "3d 4h"). */
+function formatLag(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / MIN));
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 48) return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh === 0 ? `${d}d` : `${d}d ${rh}h`;
+}
+
+/**
+ * A delayed feed reads as "syncing" (catching up) only while its newest bar is
+ * at most this old. Beyond it — hours on H4, days on D1 — no bar has arrived for
+ * one to two full intervals and nothing is visibly catching up, so the public
+ * candle status is STALE (the action cap is FEED_LIMITED either way).
+ */
+export const DELAYED_SYNCING_MAX_AGE_MS = 10 * MIN;
+
+function positivePrice(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// ── Scheduled weekend closure (display truth only) ────────────────────────────
+//
+// Forex, metals, index and stock markets close for the weekend. Without this
+// the scanner described a closed market as a feed fault ("Stale", "frozen",
+// "older than expected") or, inside the freshness budget right after the
+// close, as "Live … fresh enough for a live entry".
+//
+// The window is the span in which EVERY weekend-closing class is closed in
+// both DST seasons: Friday 22:00 UTC (after the latest Friday close) to Sunday
+// 21:00 UTC (before the earliest Sunday reopen). Outside it nothing is claimed,
+// so a session close that falls outside the window keeps the existing wording
+// rather than an invented "closed". Within it, closure is reported ONLY when no
+// bar opened at/after the close — a bar after the close is observed trading and
+// always beats the schedule. This can only downgrade (MARKET_CLOSED is the most
+// severe action cap); it never promotes data, and it is not an execution gate.
+const WEEKEND_CLOSING_ASSET_CLASSES: ReadonlySet<string> = new Set([
+  "forex",
+  "metals",
+  "indices",
+  "stocks",
+]);
+const DAY_MS = 24 * 60 * MIN;
+const HOUR_MS = 60 * MIN;
+const WEEKEND_CLOSE_FRIDAY_UTC_HOUR = 22;
+const WEEKEND_REOPEN_SUNDAY_UTC_HOUR = 21;
+
+export interface ScheduledMarketClosure {
+  /** Friday close (UTC, epoch ms) the window started at. */
+  closedAtMs: number;
+  /** Sunday time (UTC, epoch ms) by which the window ends; the market may reopen later. */
+  windowEndsMs: number;
+}
+
+/** The weekend closure window containing `nowMs` for this asset class, or null. */
+export function scheduledWeekendClosureFor(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): ScheduledMarketClosure | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysSinceFriday = (new Date(dayStart).getUTCDay() - 5 + 7) % 7;
+  let fridayStart = dayStart - daysSinceFriday * DAY_MS;
+  if (fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS > nowMs) fridayStart -= 7 * DAY_MS;
+  const closedAtMs = fridayStart + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  const windowEndsMs = fridayStart + 2 * DAY_MS + WEEKEND_REOPEN_SUNDAY_UTC_HOUR * HOUR_MS;
+  return nowMs < windowEndsMs ? { closedAtMs, windowEndsMs } : null;
+}
+
+/**
+ * The next instant at which `scheduledWeekendClosureFor` changes its answer for
+ * this asset class (window start or end), or null for a market that never
+ * closes. Lets a caller re-resolve the truth exactly when the closure begins or
+ * ends instead of waiting for the next candle deadline.
+ */
+export function nextWeekendClosureBoundaryMs(
+  assetClass: string | null | undefined,
+  nowMs: number,
+): number | null {
+  if (!assetClass || !WEEKEND_CLOSING_ASSET_CLASSES.has(assetClass) || !Number.isFinite(nowMs)) return null;
+  const open = scheduledWeekendClosureFor(assetClass, nowMs);
+  if (open) return open.windowEndsMs;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysUntilFriday = (5 - new Date(dayStart).getUTCDay() + 7) % 7;
+  let next = dayStart + daysUntilFriday * DAY_MS + WEEKEND_CLOSE_FRIDAY_UTC_HOUR * HOUR_MS;
+  if (next <= nowMs) next += 7 * DAY_MS;
+  return next;
+}
+
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+function utcDayClock(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
+}
+/** A bar time whose UTC mapping is unverified: same digits, never called UTC. */
+function barDayClock(ms: number, utcQualified: boolean): string {
+  const utc = utcDayClock(ms);
+  return utcQualified ? utc : utc.replace(/ UTC$/, " source clock (UTC unverified)");
+}
+
+/**
+ * One wording for stored-history bars (scanner strip, candle reason): no feed
+ * is pushing them, and the newest bar's open age. Matches the meaning of the
+ * ARX chart's "Stored history … not live" chip.
+ */
+export function storedHistoryNotice(newestOpenIso: string | null | undefined, nowMs: number): string {
+  const opened = newestOpenIso ? Date.parse(newestOpenIso) : Number.NaN;
+  if (!Number.isFinite(opened)) return "Stored history — no live feed";
+  return `Stored history — no live feed; newest bar opened ${formatLag(Math.max(0, nowMs - opened))} ago`;
+}
+
+/** Which feed-status notice strip the scanner chart shows under its canvas. */
+export type ChartFeedStripKind = "market_closed" | "stored_history" | "delayed" | "stale" | "analysis_only" | null;
+
+/**
+ * The chart's feed notice strip. A closed market — from the truth's scheduled
+ * closure or the server's closed-market stream signal — is labelled as closed,
+ * never as "Stale" or "Delayed", so the strip cannot contradict the chart's
+ * "Market closed" chip. Bars the server served from storage (feedStatus
+ * notLiveReason "stored_history") are labelled as stored history, never as
+ * "Delayed market data". A LIVE display shows no strip.
+ */
+export function resolveChartFeedStrip(
+  displayStatus: ChartDisplayStatus,
+  opts: { marketClosed: boolean; hasCandles: boolean; storedHistory?: boolean },
+): ChartFeedStripKind {
+  if (displayStatus === "LIVE" || displayStatus === "UNAVAILABLE") return null;
+  if (opts.marketClosed && opts.hasCandles) return "market_closed";
+  if (opts.storedHistory && opts.hasCandles) return "stored_history";
+  if (displayStatus === "FALLBACK_COMPOSITE") return "delayed";
+  if (displayStatus === "STALE") return "stale";
+  return opts.hasCandles ? "analysis_only" : null;
+}
+
+export function resolveScannerTruth(
+  input: ScannerTruthInputs,
+  assistantName: string = DEFAULT_ASSISTANT_NAME,
+): ScannerTruth {
+  const nowMs = input.nowMs ?? Date.now();
+  const tf = input.timeframe.trim().toLowerCase();
+  const thr = thresholdsFor(tf);
+  const fs = input.feedStatus;
+  const count = input.candleCount;
+  const closedCount =
+    typeof input.closedCandleCount === "number" && Number.isFinite(input.closedCandleCount)
+      ? Math.max(0, Math.min(count, Math.floor(input.closedCandleCount)))
+      : count;
+  const hasFormingBar = closedCount < count;
+
+  // Display status from the shared chart contract (single source of truth).
+  const feedForDisplay: FeedStatus | null = fs
+    ? {
+        isLive: fs.isLive,
+        stale: fs.stale,
+        quality: fs.quality,
+        source: fs.source,
+        aiUsable: fs.aiUsable,
+        warning: fs.warning,
+        message: fs.message,
+        lastCandleTime: fs.lastCandleTime,
+        notLiveReason: fs.notLiveReason ?? null,
+      }
+    : null;
+  const storedHistory = fs?.notLiveReason === "stored_history";
+  const rawDisplay = resolveDisplayStatus(feedForDisplay, count > 0);
+  const displayStatus = applyHeaderCap(rawDisplay, input.headerOk);
+  // The cap, not the candles, demoted the display: say so instead of blaming
+  // the candle data.
+  const headerCapReason: ScannerHeaderCapReason | null =
+    displayStatus !== rawDisplay && input.headerOk === false ? input.headerCapReason ?? null : null;
+
+  const provider = providerInfo(fs?.source ?? null);
+  const sourceLabel = genericSourceLabel(provider.tier);
+  const candleAgeMs = ageMsOf(input.lastTime, nowMs);
+  const lastClose = positivePrice(input.lastClose);
+  // The ONE trailing-interval freshness rule the server's feed status uses
+  // (@workspace/domain/market candleFreshnessRule): how many intervals the
+  // newest bar's open trails the current bar. A wall-clock budget of ~1.2-1.5x
+  // the interval used to call a healthy closed-bar series stale here while the
+  // chart (server rule) still called it live. null = cannot be measured.
+  const candleIntervalMsForTf = candleIntervalMs(tf);
+  const candleTrailing: CandleTrailingFreshness | null =
+    candleAgeMs != null && input.lastTime && candleIntervalMsForTf != null
+      ? classifyTrailingIntervals(trailingIntervalsFromOpen(Date.parse(input.lastTime), candleIntervalMsForTf, nowMs))
+      : null;
+
+  // Scheduled weekend closure with no bar since the close (see
+  // scheduledWeekendClosureFor). The newest CLOSED bar is used when known, so a
+  // display tip built from a replayed weekend quote is not taken as trading.
+  // Only for an integrity-clean series (clean / delayed / stale) whose header
+  // read did not fail — a failed refresh or broken OHLC keeps its own reason.
+  const closure = fs ? scheduledWeekendClosureFor(fs.assetClass, nowMs) : null;
+  const newestBarIso = input.lastClosedTime !== undefined ? input.lastClosedTime : input.lastTime;
+  const newestBarMs = newestBarIso ? Date.parse(newestBarIso) : Number.NaN;
+  const marketClosure: ScheduledMarketClosure | null =
+    closure &&
+    input.headerOk !== false &&
+    (fs?.quality === "clean" || fs?.quality === "delayed" || fs?.quality === "stale") &&
+    Number.isFinite(newestBarMs) &&
+    newestBarMs < closure.closedAtMs
+      ? closure
+      : null;
+
+  // ── Candle status (freshness + minimum-candle gating) ──────────────────────
+  let candleStatus: CandleStatus;
+  let candleReason: string;
+  let shownHeaderCapReason: ScannerHeaderCapReason | null = null;
+  const minMet = closedCount >= thr.minCandles;
+  if (count === 0 || displayStatus === "UNAVAILABLE") {
+    candleStatus = "unavailable";
+    candleReason = "No candles are available for this market right now.";
+  } else if (input.headerOk === false && input.headerCapReason === "candle_evidence_unconfirmed") {
+    candleStatus = "historical_only";
+    candleReason = "The original candle source and closed-bar window are not confirmed for this read — historical context only, not valid for a live entry.";
+  } else if (!minMet) {
+    candleStatus = "insufficient";
+    candleReason = hasFormingBar
+      ? `Only ${closedCount} closed ${closedCount === 1 ? "candle" : "candles"} (${count} loaded incl. the forming bar) — need at least ${thr.minCandles} closed on ${input.timeframe} for a reliable read.`
+      : `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
+  } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
+    candleStatus = "historical_only";
+    candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
+  } else if (marketClosure) {
+    // Closed market: the data is not live, but it is not a feed fault either.
+    candleStatus = "stale";
+    candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${barDayClock(newestBarMs, input.barClockUtc === true)}. This is the last session's data, not a live read.`;
+  } else if (displayStatus === "STALE" && storedHistory) {
+    // Served from storage — no feed is pushing these bars. Not "delayed" and
+    // not "syncing": they will not catch up on their own.
+    candleStatus = "stale";
+    candleReason = `${storedHistoryNotice(input.lastTime, nowMs)}. Historical context only, not a live read.`;
+  } else if (displayStatus === "STALE") {
+    candleStatus = "stale";
+    candleReason = "The latest candle is frozen — this is historical context, not a live read.";
+  } else if (displayStatus === "ANALYSIS_ONLY" && headerCapReason) {
+    candleStatus = "historical_only";
+    shownHeaderCapReason = headerCapReason;
+    const feedPart =
+      rawDisplay === "STALE"
+        ? "The latest candle is frozen"
+        : rawDisplay === "FALLBACK_COMPOSITE"
+          ? "Candles are delayed"
+          : candleTrailing !== "clean"
+            ? "The latest candle is older than expected for this timeframe"
+            : "Candles are live";
+    candleReason =
+      headerCapReason === "analysis_pending"
+        ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is still loading — not yet confirmed for a live entry.`
+        : headerCapReason === "analysis_request_failed"
+          ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} could not be loaded — not confirmed for a live entry.`
+          : headerCapReason === "analysis_unavailable"
+            ? `${feedPart}, but the scanner's market analysis for ${input.symbolDisplay} ${input.timeframe} is unavailable — not confirmed for a live entry.`
+            : "The latest candle refresh failed — showing the last-loaded bars as historical context only, not valid for a live entry.";
+  } else if (displayStatus === "ANALYSIS_ONLY") {
+    candleStatus = "historical_only";
+    candleReason = "Data is incomplete — historical context only, not valid for a live entry.";
+  } else if (displayStatus === "FALLBACK_COMPOSITE") {
+    candleStatus = "delayed";
+    // State the measured lag, never "slightly behind": on coarse timeframes a
+    // two-interval gap is hours (H4) or days (D1) with no new bar.
+    const behind =
+      typeof fs?.trailingIntervals === "number" && Number.isFinite(fs.trailingIntervals) && fs.trailingIntervals >= 2
+        ? `, ${fs.trailingIntervals} bars behind the current bar`
+        : "";
+    candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago${behind}. Not a live read.`;
+  } else if (displayStatus === "LIVE" && candleTrailing === "clean") {
+    candleStatus = "live";
+    // On coarse timeframes a clean series' newest closed bar can be hours old
+    // (the trailing-interval rule is right to call it current); say how old the
+    // shown close is instead of letting "Live" imply a fresh tick (Truth audit T7).
+    const coarse = candleIntervalMsForTf != null && candleIntervalMsForTf >= 4 * HOUR_MS && candleAgeMs != null;
+    candleReason = coarse
+      ? `Live, confirmed candles. The newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago; the shown price is its close, not a fresh tick.`
+      : "Live, confirmed candles.";
+  } else if (displayStatus === "LIVE" && candleTrailing === "delayed") {
+    // One closed bar is overdue: the same "delayed" the server rule assigns.
+    candleStatus = "delayed";
+    candleReason = `Delayed market data — the newest ${input.timeframe} bar opened ${formatLag(candleAgeMs)} ago, one closed bar overdue. Not a live read.`;
+  } else {
+    // Display says live but the shared rule grades the newest bar stale (≥3
+    // intervals behind), or the timeframe's interval is unknown (fail closed).
+    candleStatus = "stale";
+    candleReason = "The latest candle is older than expected for this timeframe.";
+  }
+
+  // ── Quote status (no real quote source today → unavailable, honestly) ───────
+  const q = input.quote ?? null;
+  // The quote's provenance is the QUOTE's own provider — never the candle
+  // provider's label. With no quote observed there is no quote source at all.
+  const quoteSourceLabel = genericSourceLabel(providerInfo(q?.source ?? null).tier);
+  const quoteAgeMs = ageMsOf(q?.timestamp ?? null, nowMs);
+  const quoteMid = positivePrice(q?.mid);
+  let quoteStatus: QuoteStatus;
+  let quoteReason: string;
+  if (!q || quoteMid == null || !q.source) {
+    quoteStatus = "unavailable";
+    quoteReason = "No separate live quote feed — price shown is the latest candle close.";
+  } else if (quoteAgeMs == null) {
+    quoteStatus = "unavailable";
+    quoteReason = "The quote's observation time is unconfirmed.";
+  } else if (quoteAgeMs <= thr.quoteMaxAgeMs) {
+    quoteStatus = "live";
+    quoteReason = "Live quote.";
+  } else if (quoteAgeMs != null && quoteAgeMs <= thr.quoteMaxAgeMs * 6) {
+    quoteStatus = "delayed";
+    quoteReason = "Quote is slightly delayed.";
+  } else {
+    quoteStatus = "stale";
+    quoteReason = "Quote is stale.";
+  }
+
+  // Displayed price: real candle close (NOT a simulator quote). When a real
+  // quote is supplied we surface it; otherwise the candle close is the price.
+  const priceMid = quoteStatus === "live" ? quoteMid : lastClose;
+
+  // ── Quote↔candle consistency ───────────────────────────────────────────────
+  let delta: number | null = null;
+  let deltaPct: number | null = null;
+  let withinTol: boolean | null = null;
+  let consistencyStatus: ConsistencyStatus = "unknown";
+  let consistencyReason =
+    q && quoteStatus !== "live"
+      ? "No confirmed current quote to compare — price comes straight from the candle feed."
+      : "No independent quote to compare — price comes straight from the candle feed.";
+  if (q && quoteStatus === "live" && quoteMid != null && lastClose != null) {
+    delta = quoteMid - lastClose;
+    deltaPct = Math.abs(delta / lastClose) * 100;
+    const tolPct = consistencyTolerancePct(fs?.assetClass);
+    withinTol = deltaPct <= tolPct;
+    consistencyStatus = withinTol ? "aligned" : "mismatch";
+    consistencyReason = withinTol
+      ? "Quote and chart price agree."
+      : "Quote and chart price disagree — the read is historical only until they re-align.";
+  }
+
+  // ── Permissions ────────────────────────────────────────────────────────────
+  const m = input.mode;
+  const effectiveMode: EffectiveMode = m.isLiveShared
+    ? "live"
+    : m.isDemo
+      ? "demo"
+      : "read_only";
+  const manualBlocked =
+    m.isFrozen
+      ? m.frozenReason ?? "Trading is frozen on your account."
+      : !m.canManualTrade
+        ? m.cleanBlockedReason ?? "Manual trading isn't enabled on your account yet."
+        : null;
+  const liveBlocked =
+    m.isLiveShared
+      ? manualBlocked
+      : "Live trading requires approval.";
+  const permissions = {
+    demoManualAllowed: m.isDemo && m.canManualTrade && !m.isFrozen,
+    demoAIAllowed: m.isDemo && m.canAutoTrade && !m.isFrozen,
+    liveManualAllowed: m.isLiveShared && m.canManualTrade && !m.isFrozen,
+    liveAIAllowed: m.isLiveShared && m.canAutoTrade && !m.isFrozen,
+    sharedBridgeApproved: m.isSharedMasterAssigned,
+    ownBridgeConnected: m.ownBridgeConnected,
+    manualTradingBlockedReason: manualBlocked,
+    liveTradingBlockedReason: m.isLiveShared && !manualBlocked ? null : liveBlocked,
+    effectiveMode,
+  };
+
+  // ── Analysis level (gated by candle truth + consistency) ───────────────────
+  let analysisLevel: ReadLevel;
+  let analysisReason: string;
+  if (candleStatus === "unavailable") {
+    analysisLevel = "blocked";
+    analysisReason = "No market data — analysis is unavailable.";
+  } else if (consistencyStatus === "mismatch") {
+    analysisLevel = "historical_only";
+    analysisReason = consistencyReason;
+  } else if (
+    candleStatus === "insufficient" ||
+    candleStatus === "stale" ||
+    candleStatus === "historical_only"
+  ) {
+    analysisLevel = "historical_only";
+    analysisReason = candleReason;
+  } else if (candleStatus === "delayed") {
+    analysisLevel = "limited";
+    analysisReason = candleReason;
+  } else {
+    analysisLevel = "full";
+    analysisReason = "Live data — valid for a live read.";
+  }
+  const analysisAllowed = analysisLevel !== "blocked";
+  const actionable = analysisLevel === "full";
+
+  // ── Eleanor read level (also requires aiUsable for a full read) ───────────────
+  const aiUsable = fs?.aiUsable === true;
+  let eleanorLevel: ReadLevel;
+  let eleanorReason: string;
+  if (analysisLevel === "blocked") {
+    eleanorLevel = "blocked";
+    eleanorReason = `${assistantName} has no data to read for this market right now.`;
+  } else if (analysisLevel === "historical_only") {
+    eleanorLevel = "historical_only";
+    eleanorReason = `${assistantName} can only give a historical read — not valid for a live entry.`;
+  } else if (analysisLevel === "limited" || !aiUsable) {
+    eleanorLevel = "limited";
+    eleanorReason = `${assistantName} can read with caution — the feed isn't fully confirmed.`;
+  } else {
+    eleanorLevel = "full";
+    eleanorReason = `${assistantName} can give a full, live read.`;
+  }
+
+  // ── Overlay validation (fails/downgrades on unstable truth) ────────────────
+  let overlayStatus: OverlayStatus;
+  let overlayReason: string;
+  if (analysisLevel === "blocked") {
+    overlayStatus = "blocked";
+    overlayReason = "Overlays can't be drawn without market data.";
+  } else if (analysisLevel === "historical_only") {
+    overlayStatus = "check";
+    overlayReason = "Overlays are based on historical data — re-check before acting.";
+  } else if (analysisLevel === "limited") {
+    overlayStatus = "limited";
+    overlayReason = "Overlays drawn on delayed data — treat as approximate.";
+  } else {
+    overlayStatus = "verified";
+    overlayReason = "Overlays verified against live data.";
+  }
+
+  // ── Execution (permission-driven; server still re-runs all 16 gates) ───────
+  const executionAllowed =
+    (permissions.demoManualAllowed || permissions.liveManualAllowed);
+  // Account mode not resolved (loading, or failed with no envelope): every
+  // permission flag is an unmeasured default, so no approval / read-only /
+  // blocked claim may be made from it. Execution stays not allowed.
+  const modeUnresolved = !executionAllowed && !m.isFrozen && (m.isLoading || m.isError === true);
+  const executionReason = modeUnresolved
+    ? m.isLoading
+      ? "Checking your account's trading access…"
+      : "Couldn't load your account's trading access — whether you can trade from here is unknown right now."
+    : executionAllowed
+    ? effectiveMode === "live"
+      ? "You can place live trades — every order still passes the full safety checks."
+      : "You can place demo trades."
+    : effectiveMode === "read_only"
+      ? "Read-only — trading isn't available from the scanner in this mode."
+      : manualBlocked ?? "Trading is blocked on your account.";
+
+  // ── Consolidated truth strip ───────────────────────────────────────────────
+  const dataVerdict: DataVerdict = marketClosure && candleStatus === "stale"
+    ? "Market closed"
+    : candleStatus === "live"
+      ? "Live"
+      : candleStatus === "delayed"
+        ? "Delayed"
+        : candleStatus === "stale"
+          ? "Stale"
+          : candleStatus === "unavailable"
+            ? "Unavailable"
+            : "Historical only";
+
+  const tradingVerdict: TradingVerdict = m.isFrozen
+    ? "Blocked"
+    : modeUnresolved
+      ? m.isLoading
+        ? "Checking…"
+        : "Couldn't check"
+    : executionAllowed
+      ? "Enabled"
+      : effectiveMode === "read_only" && !m.isLiveShared && !m.isDemo
+        ? "Approval required"
+        : "Read-only";
+
+  const eleanorVerdict: EleanorVerdict =
+    eleanorLevel === "blocked"
+      ? "No read"
+      : eleanorLevel === "full"
+        ? "Full read"
+        : "Limited read";
+
+  // ── Final chart display status (single-truth cap) ──────────────────────────
+  // The chart's "live" affordance MUST reflect the SAME gating the strip/read-gate
+  // use, not the raw feed display alone. resolveDisplayStatus is feed-status based,
+  // so it can read LIVE even when min-candle / age / consistency gating downgraded
+  // the candle truth to insufficient/stale/historical. We re-derive the status the
+  // chart renders from the resolved candleStatus + analysisLevel so no surface can
+  // ever look more live than scanner truth (Task #391, finding #3).
+  let resolvedDisplayStatus: ChartDisplayStatus;
+  if (candleStatus === "unavailable" || analysisLevel === "blocked") {
+    resolvedDisplayStatus = "UNAVAILABLE";
+  } else if (candleStatus === "live" && analysisLevel === "full") {
+    resolvedDisplayStatus = "LIVE";
+  } else if (candleStatus === "stale") {
+    resolvedDisplayStatus = "STALE";
+  } else if (analysisLevel === "limited" || candleStatus === "delayed") {
+    resolvedDisplayStatus = "FALLBACK_COMPOSITE";
+  } else {
+    // insufficient, historical_only, or consistency mismatch
+    resolvedDisplayStatus = "ANALYSIS_ONLY";
+  }
+
+  // ── Plain-English data-health summary (user-safe; no provider IDs) ──────────
+  // brokerFeedActive is driven ONLY by the candle source tier — a connected MT5
+  // execution bridge never sets it, so we can never imply broker-live chart bars
+  // when the data is actually ARX market data or a synthetic feed.
+  const brokerFeedActive = provider.tier === "broker";
+
+  const marketClosedRead = marketClosure != null && candleStatus === "stale";
+  const storedHistoryRead = !marketClosedRead && storedHistory && candleStatus === "stale";
+  const healthHeadline = marketClosedRead
+    ? "Market closed — last session's data"
+    : storedHistoryRead
+      ? "Stored history — no live feed"
+    : resolvedDisplayStatus === "LIVE"
+      ? "Live market data"
+      : resolvedDisplayStatus === "FALLBACK_COMPOSITE"
+        ? "Delayed market data"
+        : resolvedDisplayStatus === "STALE"
+          ? "Stale — last-known prices"
+          : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "analysis_pending"
+            ? "Confirming market analysis"
+            : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason === "candles_refresh_failed"
+              ? "Refresh failed — last-loaded data only"
+              : resolvedDisplayStatus === "ANALYSIS_ONLY" && shownHeaderCapReason
+                ? "Market analysis unavailable — analysis only"
+                : resolvedDisplayStatus === "ANALYSIS_ONLY"
+                  ? "Historical data — analysis only"
+            : "Market data unavailable";
+
+  // Honest source note. The thirdParty case is the GBPUSD situation: the data is
+  // genuinely live, but it is ARX market data, NOT the broker's chart feed — so
+  // we say so plainly and data-driven (never hardcoded to "broker dormant").
+  const sourceNote =
+    provider.tier === "broker"
+      ? resolvedDisplayStatus === "LIVE"
+        // An MT5 broker source tier says where the bars came from, not whose
+        // account they belong to, so it is never called "your" feed.
+        ? "Live bars are coming from an MT5 broker feed — not verified as your own account."
+        : resolvedDisplayStatus === "STALE"
+          ? "These are last-known bars from an MT5 broker feed; the feed is stale."
+          : resolvedDisplayStatus === "FALLBACK_COMPOSITE"
+            ? "MT5 broker market data is delayed or limited; a live read is not confirmed."
+            : resolvedDisplayStatus === "ANALYSIS_ONLY"
+              ? "Bars from an MT5 broker feed are available as context only; they aren't confirmed current (they may be a stored copy or behind)."
+              : "MT5 broker chart data is unavailable or unconfirmed right now."
+      : provider.tier === "synthetic"
+        ? "These are synthetic-market bars (algorithmic volatility index), not your broker's bars."
+        : provider.tier === "thirdParty"
+          ? resolvedDisplayStatus === "LIVE"
+            ? "Live via ARX market data — your broker chart feed isn't active yet."
+            : "ARX market data is filling in here — your broker chart feed isn't active yet."
+          : "No market-data source is serving this chart right now.";
+
+  const actionabilityLine = actionable
+    ? "This read is fresh enough for a live entry."
+    : marketClosedRead
+      ? "The market is closed — no live entry until it reopens."
+      : resolvedDisplayStatus === "UNAVAILABLE"
+      ? "There's nothing to analyse until a feed comes back."
+      : "Not fresh enough for a live entry — treat it as context only.";
+
+  // candleReason is the exact, plain-English reason (e.g. GBPUSD D1 "Only N
+  // candles loaded — need at least M…" or "Live, confirmed candles.").
+  const dataHealth = {
+    headline: healthHeadline,
+    sourceNote,
+    lines: [sourceNote, candleReason, actionabilityLine],
+  };
+
+  // ── Consolidated public truth (Task #600) ──────────────────────────────────
+  // Translate the resolved INTERNAL truth into the task's public vocabulary.
+  // Derived from already-resolved state (candleStatus/analysisLevel/eleanorLevel/…),
+  // never raw inputs, so there is exactly one authority. Mappings per the
+  // architect-confirmed contract design.
+  const publicCandleStatus: PublicCandleStatus =
+    candleStatus === "unavailable"
+      ? "UNAVAILABLE"
+      : candleStatus === "stale"
+        ? "STALE"
+        : candleStatus === "insufficient" || candleStatus === "historical_only"
+          ? "LIMITED_HISTORY"
+          : candleStatus === "delayed"
+            ? candleAgeMs != null && candleAgeMs <= DELAYED_SYNCING_MAX_AGE_MS
+              ? "SYNCING"
+              : "STALE"
+            : candleStatus === "live" && analysisLevel === "full" && aiUsable
+              ? "CONFIRMED"
+              : "UNCONFIRMED";
+
+  // No separate quote feed today → UNAVAILABLE honestly. MARKET_CLOSED comes
+  // only from the scheduled weekend closure with no bar since the close (see
+  // marketClosure) — never inferred from an account freeze. FROZEN stays
+  // reserved for an explicit feed-freeze signal (none exists yet).
+  const publicQuoteStatus: PublicQuoteStatus = marketClosedRead
+    ? "MARKET_CLOSED"
+    : quoteStatus === "live"
+      ? "LIVE"
+      : quoteStatus === "stale" || quoteStatus === "delayed"
+        ? "STALE"
+        : "UNAVAILABLE";
+
+  const chartIntelligenceStatus: ChartIntelligenceStatus =
+    analysisLevel === "full"
+      ? "FULL"
+      : analysisLevel === "blocked"
+        ? "UNAVAILABLE"
+        : "LIMITED"; // limited | historical_only
+
+  const publicEleanorReadStatus: EleanorReadStatus =
+    eleanorLevel === "full"
+      ? "FULL_READ"
+      : eleanorLevel === "blocked"
+        ? "NO_READ"
+        : "LIMITED_READ";
+
+  // Mirror the existing tradingVerdict so the strip and the public block never
+  // drift: frozen → BLOCKED, executable → ENABLED, pending approval →
+  // REVIEW_REQUIRED, otherwise (read-only) → DISABLED.
+  // Unresolved account mode → DISABLED (nothing executable is known), never
+  // REVIEW_REQUIRED: no approval state has been read.
+  const tradingStatus: TradingStatus = m.isFrozen
+    ? "BLOCKED"
+    : modeUnresolved
+      ? "DISABLED"
+    : executionAllowed
+      ? "ENABLED"
+      : tradingVerdict === "Approval required"
+        ? "REVIEW_REQUIRED"
+        : "DISABLED";
+
+  const actionabilityDataInput = {
+    quoteStatus: publicQuoteStatus,
+    candleStatus: publicCandleStatus,
+    chartIntelligenceStatus,
+  };
+  // Stored verdict is the pure DATA-only verdict (setup UNKNOWN); cards/header
+  // refine it with their own setup readiness via resolveScannerActionability.
+  const scannerActionability = resolveScannerActionability(
+    actionabilityDataInput,
+  );
+
+  // ONE governing message + a stable machine code for the most severe downgrade.
+  let internalReasonCode: string;
+  let userMessage: string;
+  if (publicCandleStatus === "UNAVAILABLE") {
+    internalReasonCode = "CANDLES_UNAVAILABLE";
+    userMessage = candleReason;
+  } else if (consistencyStatus === "mismatch") {
+    internalReasonCode = "QUOTE_CANDLE_MISMATCH";
+    userMessage = consistencyReason;
+  } else if (publicCandleStatus === "LIMITED_HISTORY") {
+    internalReasonCode =
+      candleStatus === "insufficient" ? "CANDLES_INSUFFICIENT" : "CANDLES_HISTORICAL";
+    userMessage = candleReason;
+  } else if (marketClosedRead) {
+    internalReasonCode = "MARKET_CLOSED";
+    userMessage = candleReason;
+  } else if (publicCandleStatus === "STALE") {
+    internalReasonCode = "CANDLES_STALE";
+    userMessage = candleReason;
+  } else if (publicCandleStatus === "SYNCING") {
+    internalReasonCode = "CANDLES_DELAYED";
+    userMessage = candleReason;
+  } else if (publicCandleStatus === "UNCONFIRMED") {
+    internalReasonCode = "FEED_UNCONFIRMED";
+    userMessage = "Live feed isn't fully confirmed yet — read as context, not a live entry.";
+  } else {
+    internalReasonCode = "FEED_OK";
+    userMessage = actionabilityLine;
+  }
+
+  const consolidated: ConsolidatedTruth = {
+    selectedSymbol: input.symbolDisplay,
+    selectedTimeframe: input.timeframe,
+    quoteStatus: publicQuoteStatus,
+    candleStatus: publicCandleStatus,
+    chartIntelligenceStatus,
+    eleanorReadStatus: publicEleanorReadStatus,
+    tradingStatus,
+    scannerActionability,
+    feedSource: q?.source ?? fs?.source ?? null,
+    candleSource: fs?.source ?? null,
+    oldestCandleTime: input.firstTime,
+    newestCandleTime: input.lastTime,
+    candleCount: count,
+    skippedSymbols: input.skippedSymbols ?? [],
+    userMessage,
+    internalReasonCode,
+    readId: genReadId(input),
+    readTimestamp: nowMs,
+  };
+
+  // ── Shared trade-health / readiness DISPLAY verdict (Trade Health contract) ──
+  // Map the already-resolved scanner truth into the canonical contract inputs and
+  // compose the ONE verdict Eleanor's chart read also composes. DISPLAY-ONLY — never
+  // an execution gate; the scanner's stricter per-timeframe minimum (thr.minCandles)
+  // is preserved as the floor, so scanner readiness can only be MORE conservative
+  // than Eleanor's shared floor (downgrade-only, per the HARD RULE).
+  const readinessReadLayer: TradeReadLayer =
+    analysisLevel === "blocked" || candleStatus === "insufficient" || closedCount < thr.minCandles
+      ? "INSUFFICIENT"
+      : eleanorLevel === "full" && analysisLevel === "full"
+        ? "FULL"
+        : "STRUCTURAL_ONLY";
+  const readiness = evaluateTradeHealthReadiness({
+    symbol: input.symbolInternal,
+    timeframe: input.timeframe,
+    freshnessVerdict:
+      candleStatus === "live"
+        ? "LIVE"
+        : candleStatus === "delayed"
+          ? "LIVE_DELAYED"
+          : "AWAITING",
+    availableClosedCandles: closedCount,
+    minimumRequiredCandles: thr.minCandles,
+    readLayer: readinessReadLayer,
+    // The account's ALREADY-RESOLVED execution refusal (frozen / manual trading
+    // not enabled / read-only mode), so the chip reads "Live read · execution
+    // gated" instead of an unconditional "Live-confirmed … read" next to the
+    // TRADING "Blocked" tile, and the trade-button ceilings close. Never while
+    // the account mode is still loading (every flag is false then — that is not
+    // a refusal). DISPLAY-ONLY: execution gates are untouched. Eleanor's server
+    // read composes the same contract without this per-user fold, so the two
+    // agree on every read-quality field (status, dataFreshness, readLayer,
+    // structureConfidence) and differ only by this gate label.
+    executionGateBlocked: !m.isLoading && !executionAllowed,
+  });
+
+  return {
+    symbolDisplay: input.symbolDisplay,
+    symbolInternal: input.symbolInternal,
+    timeframe: input.timeframe,
+    quote: {
+      bid: positivePrice(q?.bid),
+      ask: positivePrice(q?.ask),
+      mid: priceMid,
+      source: q?.source ?? null,
+      sourceLabel: quoteSourceLabel,
+      timestamp: q?.timestamp ?? null,
+      ageMs: quoteAgeMs,
+      status: quoteStatus,
+      reason: quoteReason,
+    },
+    candles: {
+      source: fs?.source ?? null,
+      sourceLabel,
+      sourceTechnical: provider.label,
+      tier: provider.tier,
+      timeframe: input.timeframe,
+      count,
+      closedCount,
+      hasFormingBar,
+      requestedCount: input.requestedCount,
+      minRequired: thr.minCandles,
+      firstTime: input.firstTime,
+      lastTime: input.lastTime,
+      lastClose,
+      pricePrecision: input.pricePrecision ?? null,
+      ageMs: candleAgeMs,
+      status: candleStatus,
+      reason: candleReason,
+      headerCapReason: shownHeaderCapReason,
+    },
+    consistency: {
+      quoteCandlePriceDelta: delta,
+      quoteCandlePriceDeltaPct: deltaPct,
+      withinTolerance: withinTol,
+      status: consistencyStatus,
+      reason: consistencyReason,
+    },
+    permissions,
+    analysis: { allowed: analysisAllowed, level: analysisLevel, reason: analysisReason },
+    execution: { allowed: executionAllowed, reason: executionReason },
+    eleanor: {
+      chartReadAllowed: eleanorLevel !== "blocked",
+      marketReadAllowed: eleanorLevel !== "blocked",
+      readLevel: eleanorLevel,
+      reason: eleanorReason,
+    },
+    overlays: {
+      allowed: overlayStatus !== "blocked",
+      status: overlayStatus,
+      reason: overlayReason,
+    },
+    strip: {
+      data: { verdict: dataVerdict, detail: candleReason },
+      trading: { verdict: tradingVerdict, detail: executionReason },
+      eleanor: { verdict: eleanorVerdict, detail: eleanorReason },
+    },
+    displayStatus: resolvedDisplayStatus,
+    isLivePrice: resolvedDisplayStatus === "LIVE",
+    actionable,
+    marketClosure: marketClosedRead && marketClosure
+      ? {
+          closedAt: new Date(marketClosure.closedAtMs).toISOString(),
+          windowEndsAt: new Date(marketClosure.windowEndsMs).toISOString(),
+        }
+      : null,
+    brokerFeedActive,
+    dataHealth,
+    consolidated,
+    readiness,
+  };
+}

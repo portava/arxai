@@ -1,0 +1,343 @@
+// Truth regression: what the Risk Settings stop controls say they do.
+//
+// Before: after EMERGENCY STOP engaged the trader's (or, for an operator, the
+// platform) kill switch, nothing on this page said new trades were halted or
+// where to release the switch; System Status showed Bot Mode OFF / Is
+// Running NO / Is Paused NO in green and the audit banner read a pass.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+type MutateOpts = { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void };
+const h = vi.hoisted(() => ({
+  audit: undefined as unknown,
+  auditError: false,
+  bot: undefined as unknown,
+  toasts: [] as Array<{ title?: string; description?: string }>,
+  stopResponse: { success: true, message: "", closedTrades: 0 } as unknown,
+  botPatch: null as unknown,
+}));
+
+const idle = { isPending: false, mutate: () => undefined };
+// One stable object: the page resets its limits form whenever settings changes identity.
+const SETTINGS = { data: { riskMode: "Balanced", liveLocked: false }, isLoading: false };
+
+vi.mock("@workspace/api-client-react", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useGetRiskSettings: () => SETTINGS,
+  useGetBotStatus: () => ({ data: h.bot }),
+  useGetRiskAudit: () => ({ data: h.audit, isLoading: false, isError: h.auditError, refetch: () => undefined }),
+  useGetPositionSize: () => ({ data: undefined }),
+  useUpdateRiskSettings: () => idle,
+  useApplyRiskMode: () => idle,
+  useSetLiveLock: () => idle,
+  useEmergencyStop: () => ({ isPending: false, mutate: (_v: unknown, o: MutateOpts) => o.onSuccess?.(h.stopResponse) }),
+  useUpdateBotStatus: () => ({
+    isPending: false,
+    mutate: (v: { data: unknown }, o: MutateOpts) => { h.botPatch = v.data; o.onSuccess?.(v.data); },
+  }),
+}));
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useQueryClient: () => ({ invalidateQueries: () => Promise.resolve(), setQueryData: () => undefined }),
+}));
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: (t: { title?: string; description?: string }) => { h.toasts.push(t); } }),
+}));
+vi.mock("@/hooks/useLiveAccountSnapshot", () => ({ useLiveAccountSnapshot: () => ({ live: null }) }));
+vi.mock("@/components/account/CanonicalBalancePanel", () => ({ CanonicalBalancePanel: () => null }));
+vi.mock("@/components/risk/RiskLimitLayersPanel", () => ({ RiskLimitLayersPanel: () => null, RISK_LIMIT_LAYERS_QUERY_KEY: ["risk-limit-layers"] }));
+vi.mock("@/components/compliance/DisclaimerBanner", () => ({ DisclaimerBanner: () => null }));
+
+const { default: RiskSettings } = await import("./risk-settings");
+
+const AUDIT = {
+  passed: true, reasonsBlocked: [], warnings: [], riskPercent: 0.5, projectedLoss: 5, riskReward: 2,
+  dailyLossUsed: 0, weeklyLossUsed: 0, tradesRemaining: 5, openTradesCount: 0, losingStreak: 0, cooldownActive: false,
+  closedTradesMeasured: true, measuredFrom: "LEGACY_TRADES_TABLE", balanceSource: "PLACEHOLDER_1000", scope: "USER",
+};
+const TRADER_KS = {
+  engaged: true, sources: ["trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+  reason: "Your kill switch is engaged. Release it to trade again. (Emergency stop from the bot panel)",
+};
+
+beforeEach(() => {
+  window.history.replaceState({}, "", "/risk-settings?tab=emergency");
+  h.bot = { mode: "OFF", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: false, isPaused: false, lastScanAt: null };
+  h.audit = { ...AUDIT, tradingHalt: { engaged: false, sources: [], reason: null, venues: [] } };
+  h.auditError = false;
+  h.toasts = [];
+  h.botPatch = null;
+});
+afterEach(cleanup);
+
+function statusRow(label: string): string {
+  return screen.getByTestId(`risk-status-row-${label}`).textContent ?? "";
+}
+
+describe("Risk Settings: an engaged kill switch is visible", () => {
+  it("after an emergency stop the page says new trades are halted and where to release the switch", () => {
+    h.audit = {
+      ...AUDIT, passed: false,
+      reasonsBlocked: [`New trades are halted on PAPER, DEMO, LIVE: ${TRADER_KS.reason}`],
+      tradingHalt: TRADER_KS,
+    };
+    render(<RiskSettings />);
+    const banner = screen.getByTestId("risk-audit-banner").textContent ?? "";
+    expect(banner).toMatch(/New trades are halted: a stop switch is engaged/);
+    expect(banner).not.toMatch(/no rule tripped|GREEN|all risk checks passed/i);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/Resume on Risk Command Center/);
+    expect(screen.getByTestId("risk-halt-badge").textContent).toMatch(/New trades halted/);
+    expect(statusRow("Stop switch")).toMatch(/ENGAGED \(PAPER, DEMO, LIVE\)/);
+  });
+
+  it("a platform-wide stop says it halts every trader and that an operator releases it", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["New trades are halted on PAPER, DEMO, LIVE: The safety-core kill switch is engaged."],
+      tradingHalt: { engaged: true, sources: ["safety_core_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"], reason: "The safety-core kill switch is engaged." },
+    };
+    render(<RiskSettings />);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/halts every trader.*operator/);
+  });
+
+  it("released switches read 'none engaged'; an audit that could not be loaded never reads released", () => {
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/none engaged/);
+    cleanup();
+    h.audit = undefined;
+    h.auditError = true;
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/could not be loaded/);
+    expect(screen.queryByTestId("risk-halt-badge")).toBeNull();
+  });
+
+  it("a server that did not read the switches is not shown as released", () => {
+    h.audit = { ...AUDIT };
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/not read/);
+    expect(statusRow("Stop switch")).not.toMatch(/none engaged/);
+  });
+
+  // /risk/audit reads the kill switches only. The pre-trade Risk Governor also
+  // halts DEMO / LIVE on the broker's operator controls (execution disabled is
+  // the default with no broker_health_state row) and on a frozen shared-account
+  // allocation; neither is read here. The row read "Stop switch: none engaged"
+  // in green and the note said "The Stop switch row is what halts new trades".
+  it("released kill switches are named as kill switches only, never as nothing halting new trades", () => {
+    render(<RiskSettings />);
+    const row = screen.getByTestId("system-status-Stop switch");
+    expect(row.textContent).toMatch(/^Kill switches/);
+    expect(row.textContent).not.toMatch(/Stop switch/);
+    const value = screen.getByTestId("risk-status-row-Stop switch");
+    expect(value.textContent).toBe("none engaged");
+    expect(value.className).not.toMatch(/text-success/);
+    const note = screen.getByTestId("bot-flags-note").textContent ?? "";
+    expect(note).not.toMatch(/is what halts new trades/);
+    expect(note).toMatch(/broker's operator controls/);
+    expect(note).toMatch(/shared-account allocation/);
+    expect(note).toMatch(/not read here/);
+  });
+});
+
+// loadTradingHalt fails closed: a switch it cannot read is listed as halting
+// and the reason (which names the first listed switch) ends "(state
+// unreadable)". Before: the page said ENGAGED, "a stop switch is engaged",
+// and told the trader to press Resume, for a switch nobody was seen engaging.
+describe("Risk Settings: a stop switch that could not be read", () => {
+  it("is shown as could not be read (new trades blocked), never ENGAGED, with no release instructions", () => {
+    const unread = {
+      engaged: true, sources: ["trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+      reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)",
+    };
+    h.audit = { ...AUDIT, passed: false, reasonsBlocked: [`New trades are halted on PAPER, DEMO, LIVE: ${unread.reason}`], tradingHalt: unread };
+    render(<RiskSettings />);
+    const headline = screen.getByTestId("risk-audit-headline").textContent ?? "";
+    expect(headline).not.toMatch(/a stop switch is engaged/);
+    expect(headline).toMatch(/New trades are halted: a stop switch could not be read/);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).not.toMatch(/release it with Resume/);
+    expect(release).toMatch(/could not be read; new trades are blocked until it can be read/);
+    expect(statusRow("Stop switch")).not.toMatch(/ENGAGED/);
+    expect(statusRow("Stop switch")).toMatch(/could not be read.*\(PAPER, DEMO, LIVE\)/i);
+    // Fail closed is still true: new trades are halted.
+    expect(screen.getByTestId("risk-halt-badge").textContent).toMatch(/New trades halted/);
+  });
+
+  it("an unreadable platform stop listed before your own switch is not called engaged; the others are hedged", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["safety_core_kill_switch", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The safety-core kill switch is engaged. (state unreadable)",
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).toMatch(/safety-core kill switch could not be read/);
+    expect(release).not.toMatch(/Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/engaged, or could not be read.*Resume on Risk Command Center/);
+    expect(statusRow("Stop switch")).not.toMatch(/ENGAGED/);
+  });
+
+  // The audit's reasonsBlocked repeats the gate's halt reason, which for an
+  // unread switch still read "is engaged ... Release it to trade again. (state
+  // unreadable)". The banner rendered it right under "a stop switch could not
+  // be read", and the Emergency tab's Blocked list rendered it again.
+  it("the banner line and the Blocked list never say an unread switch is engaged or tell the trader to release it", () => {
+    for (const [source, reason] of [
+      ["trader_kill_switch", "Your kill switch is engaged. Release it to trade again. (state unreadable)"],
+      ["platform_emergency_stop", "The platform emergency stop is engaged by an operator. (state unreadable)"],
+    ] as const) {
+      const unread = { engaged: true, sources: [source], venues: ["PAPER", "DEMO", "LIVE"], reason };
+      h.audit = {
+        ...AUDIT, passed: false,
+        reasonsBlocked: [`New trades are halted on PAPER, DEMO, LIVE: ${reason}`, "Max open trades reached (3/3)"],
+        tradingHalt: unread,
+      };
+      render(<RiskSettings />);
+      const banner = screen.getByTestId("risk-audit-banner").textContent ?? "";
+      expect(banner).not.toMatch(/is engaged|Release it/);
+      expect(banner).toMatch(/could not be read, so it is treated as engaged/);
+      const detail = screen.getByTestId("risk-audit-blocked").textContent ?? "";
+      expect(detail).not.toMatch(/is engaged|Release it/);
+      expect(detail).toMatch(/New trades are halted on PAPER, DEMO, LIVE: .*could not be read, so it is treated as engaged/);
+      // The other reasons are kept.
+      expect(detail).toMatch(/Max open trades reached \(3\/3\)/);
+      cleanup();
+    }
+  });
+
+  // Operator-engaged emergency stop (read, stored reason "maintenance") plus
+  // a failed read of the trader's own switch: the reason names only the
+  // first source, so the page gave "release it with Resume" for a switch
+  // nobody read. Without per-source data every later source is hedged; with
+  // the server's unreadableSources, release steps go only to switches read
+  // as engaged.
+  it("a switch listed after a read-engaged one gets no unhedged release steps when the server does not say it was read", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)",
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).toMatch(/^Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/Also listed as halting \(engaged, or could not be read\): Your own kill switch/);
+    expect(release.indexOf("Your own kill switch")).toBeGreaterThan(release.indexOf("engaged, or could not be read"));
+  });
+
+  it("with the server's unreadableSources an unread switch gets no release steps, wherever it is listed", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)",
+        unreadableSources: ["trader_kill_switch"],
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).not.toMatch(/Resume on Risk Command Center/);
+    expect(release).toMatch(/Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/Your kill switch could not be read; new trades are blocked until it can be read/);
+    expect(release).not.toMatch(/engaged, or could not be read/);
+    expect(screen.getByTestId("risk-audit-headline").textContent).toMatch(/a stop switch is engaged/);
+    expect(statusRow("Stop switch")).toMatch(/ENGAGED; another switch could not be read \(PAPER, DEMO, LIVE\)/);
+    cleanup();
+
+    // Both read as engaged: release steps for both, nothing hedged.
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)", unreadableSources: [],
+      },
+    };
+    render(<RiskSettings />);
+    const both = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(both).toMatch(/Resume on Risk Command Center/);
+    expect(both).toMatch(/Platform-wide stop/);
+    expect(both).not.toMatch(/could not be read/);
+    cleanup();
+
+    // A trader's stored reason that reads "state unreadable" is their reason:
+    // the server read the switch, so it is ENGAGED with release steps.
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: { ...TRADER_KS, reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)", unreadableSources: [] },
+    };
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/^ENGAGED \(PAPER, DEMO, LIVE\)/);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/Resume on Risk Command Center/);
+  });
+
+  it("a switch whose stored reason was read is still ENGAGED with release instructions", () => {
+    h.audit = { ...AUDIT, passed: false, reasonsBlocked: ["x"], tradingHalt: TRADER_KS };
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/ENGAGED \(PAPER, DEMO, LIVE\)/);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/Resume on Risk Command Center/);
+  });
+});
+
+// Before: "Pause All Trading" PATCHed bot_settings.isPaused, which no order
+// path reads, yet the toast said "Bot will not open new positions", the header
+// showed "Paused" and the card said "Bot is currently paused".
+describe("Risk Settings: the bot paused flag says what it does", () => {
+  it("setting the flag never claims new positions are stopped, and names the real pause", () => {
+    render(<RiskSettings />);
+    fireEvent.click(screen.getByRole("button", { name: /Set Paused Flag/ }));
+    expect(h.botPatch).toEqual({ isPaused: true });
+    const t = h.toasts.at(-1)!;
+    expect(`${t.title} ${t.description}`).not.toMatch(/will not open new positions|Trading paused/i);
+    expect(t.description).toMatch(/does not stop new trades/);
+    expect(t.description).toMatch(/Pause my trading.*Risk Command Center/);
+    expect(screen.getByTestId("bot-paused-flag-note").textContent).toMatch(/No order path reads this flag/);
+    expect(screen.queryByText(/Suspends new trade entries/)).toBeNull();
+  });
+
+  it("a set flag is labelled as a flag, not as paused trading", () => {
+    h.bot = { ...(h.bot as object), isPaused: true };
+    render(<RiskSettings />);
+    expect(screen.getByTestId("bot-paused-flag-badge").textContent).toMatch(/Bot paused flag set/);
+    expect(screen.queryByText("Bot is currently paused")).toBeNull();
+    expect(screen.getByText(/New trades are not stopped by it/)).toBeTruthy();
+    expect(statusRow("Paused flag")).toMatch(/SET/);
+    expect(screen.getByTestId("bot-flags-note").textContent).toMatch(/no order path reads them/);
+  });
+});
+
+// Before: the card said the stop "cancels all open mock trades… This cannot be
+// undone", the dialog said "Cancel every open mock trade", and an operator was
+// never told that their press halts every trader on the platform.
+describe("Risk Settings: the emergency stop says who it halts and what it closes", () => {
+  it("an operator is told, before the press, that the stop is platform-wide", async () => {
+    h.bot = { ...(h.bot as object), emergencyStopScope: "PLATFORM" };
+    render(<RiskSettings />);
+    const card = screen.getByTestId("emergency-stop-description").textContent ?? "";
+    expect(card).toMatch(/platform-wide safety-core kill switch/);
+    expect(card).toMatch(/every trader/);
+    expect(card).not.toMatch(/cannot be undone|all open mock trades/i);
+    const button = screen.getByRole("button", { name: /EMERGENCY STOP: EVERY TRADER/ });
+    await act(async () => { fireEvent.click(button); });
+    const dialog = screen.getByTestId("emergency-stop-dialog").textContent ?? "";
+    expect(dialog).toMatch(/platform-wide.*every trader/);
+    expect(dialog).toMatch(/paper-book and broker positions stay open/);
+    expect(dialog).not.toMatch(/Cancel every open mock trade|Require manual restart/);
+  });
+
+  it("a trader is told the stop is their own kill switch and where to release it", () => {
+    h.bot = { ...(h.bot as object), emergencyStopScope: "YOUR_ACCOUNT" };
+    render(<RiskSettings />);
+    const card = screen.getByTestId("emergency-stop-description").textContent ?? "";
+    expect(card).toMatch(/your own kill switch/);
+    expect(card).toMatch(/Resume on Risk Command Center/);
+    expect(card).toMatch(/legacy simulated trades table only/);
+    expect(screen.getByRole("button", { name: /EMERGENCY STOP: MY TRADING/ })).toBeTruthy();
+  });
+
+  it("an unknown scope discloses both cases instead of guessing", () => {
+    render(<RiskSettings />);
+    expect(screen.getByTestId("emergency-stop-description").textContent).toMatch(/could not be loaded: for an operator .* every trader/);
+  });
+});

@@ -1,0 +1,65 @@
+{
+  "baseCommit": "b3029eb82f2223a521a66eb33ec1011cf58a483c",
+  "applicationCommit": "c9c74fcebfce2dd33039fe6f5804575e99d98232",
+  "branch": "codex/chart-compact-evidence-integration-20261101",
+  "purpose": "sourceonlyAI-followup plus selected-pane/sourcewindowfixes; unfinishedsupport/resistanceexcluded",
+  "files": [
+    {
+      "path": "artifacts/trading-dashboard/package.json",
+      "sha256": "213acdfd696b0ac1d08c9afb1c289afb55345139d5dc88c188e75ec75734bbe0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.deferred-init.test.tsx",
+      "sha256": "e2c1bcbdd0fa6f68b33610a5c5f8e4e32a63095cd63d5543d83d61a643c12e0a"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "sha256": "d0fe5fcc7524b8ceff7f3ee0e9017d96165ce0811dd7f7e8b8bd33c1d7f42066"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci-language.test.tsx",
+      "sha256": "aeb61d60549ab7fa88367e73f07ba65532d70c6559a3fa0f9edd1268f1460523"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/AssistantDock.panes.test.tsx",
+      "sha256": "4f6616af47e2bfdf0acf936bfd6e862ced8274f01df2fa6e3c857b16a0d3d1e0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/testing-lab/ChartResearchWorkbench.test.tsx",
+      "sha256": "644544dc2b2e49670fa6fa8ed95e837fc4b09e2a846d58eaf5928ae8a0bf483f"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/testing-lab/ChartResearchWorkbench.tsx",
+      "sha256": "285a8b7b45480b0ca21ded9b89d027d3f49e29b400282017228493cd323ac581"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAppliedWindow.ts",
+      "sha256": "ba42e9ab226c1bb4f2a49c93f562edbcaec47cb09875cf5753c1265e472c7e8e"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAutoFibonacci.test.ts",
+      "sha256": "c5a6606b8faeefde7e01d20da5a0c625a1350d2845a5bccb51ce6df2450dd3f0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAutoFibonacci.ts",
+      "sha256": "9b00ab4210a48b6622a0f38ce55faaad57454aa11bd3a5d47a54529a7277b555"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartFibonacciExplanation.ts",
+      "sha256": "2bf16743bb11df9060807c19a25ddd7fa937c355d73e7eb35b75609be654bc31"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-research/chartResearchAssistant.test.ts",
+      "sha256": "027c6c5d2d3d4c68e0f0ca77825daac2b98384bb11e70dd4be43acc843eed241"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-research/chartResearchAssistant.ts",
+      "sha256": "241162c93b80a356bba58e9dc23f5c5b5d8dd406034dd89ee88aa2d3fed4b5ee"
+    }
+  ],
+  "reports": [
+    "docs/SMART_CHART_FROZEN_TRADE_FOLLOWUPS_2026_11_01.md",
+    "docs/SMART_CHART_APPLIED_WINDOW_2026_11_01.md"
+  ],
+  "validationReceipt": "docs/development-sync/CHART_APPLIED_WINDOW_VALIDATION_2026_11_01.json"
+}

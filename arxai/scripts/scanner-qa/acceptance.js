@@ -1,0 +1,31 @@
+async page => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('http://127.0.0.1:4181');
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('button', { name: 'Fresh fixture', exact: true }).click();
+  await page.getByTestId('opportunity-row-direction-EURUSD').waitFor();
+  if (!await page.getByTestId('opportunity-map-best-picks').isVisible()) throw Error('Missing fresh best picks');
+  await page.getByLabel('Scanner refresh interval').selectOption('0');
+  await page.screenshot({ path: '/private/tmp/arx-scanner-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Expire fixture', exact: true }).click();
+  await page.getByTestId('opportunity-map-expired').waitFor();
+  if (await page.locator('[data-testid^="opportunity-row-direction-"]').count()) throw Error('Expired direction leaked');
+  if (await page.getByTestId('opportunity-map-best-picks').count()) throw Error('Expired picks leaked');
+  await page.getByRole('button', { name: 'Rescan', exact: true }).click();
+  await page.getByTestId('opportunity-row-direction-EURUSD').waitFor();
+  await page.getByRole('button', { name: 'Failed refresh', exact: true }).click();
+  await page.getByTestId('opportunity-map-err').waitFor();
+  if (await page.getByTestId('opportunity-map-best-picks').count()) throw Error('Failed-refresh picks leaked');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Fresh fixture', exact: true }).click();
+  await page.getByTestId('opportunity-row-direction-EURUSD').waitFor();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  if (overflow) throw Error('Mobile horizontal overflow');
+  await page.getByLabel('Scanner refresh interval').selectOption('60000');
+  await page.screenshot({ path: '/private/tmp/arx-scanner-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Expire fixture', exact: true }).click();
+  await page.getByTestId('opportunity-map-expired').waitFor();
+  await page.screenshot({ path: '/private/tmp/arx-scanner-expired.png', fullPage: true });
+  if (errors.length) throw Error(errors.join('\n'));
+  console.log(JSON.stringify({ desktop: true, mobile: true, fresh: true, expiry: true, refreshRecovery: true, failedRefresh: true, errors }));
+}

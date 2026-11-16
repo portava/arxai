@@ -1,0 +1,279 @@
+// Trade Command Room — redesigned, mobile-first trade control room.
+//
+// UI/UX refactor only. ALL existing wiring preserved:
+//   • State: symbol/timeframe/opps/picked/decisions/quote/intentCount/alertCount
+//   • Endpoints (unchanged): /api/market-scanner/opportunities, /api/decision-stream,
+//     /api/market/quote/:symbol, /api/live-intent/queue, /api/alerts/scanner,
+//     /api/live-intent/submit (sendIntent)
+//   • Routes (unchanged): /live-manual, /live-ai-assist, /demo-trading, /live-chart,
+//     /live-trades, /positions, /trade-logs, /post-trade-debriefs, /market-scanner,
+//     /live-intent-queue, /risk-settings, /risk-command-center, /live-trading,
+//     /live-trading-control, /live-shared, /mt5-setup, /broker-readonly
+//   • useTradingMode() for mode/permission. PageTabs for tab state.
+//   • Symbol is now driven by the global useChartSymbol() so Buy/Sell can open the
+//     existing /live-manual ticket prefilled — no new execution path created.
+
+import { useEffect, useState, useMemo } from "react";
+import { PageTabs } from "@/components/ui/PageTabs";
+import { Zap, Layers, ListChecks, Wrench } from "lucide-react";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { riskCapsStatus } from "@/lib/riskCapsStatus";
+import { useChartSymbol } from "@/lib/use-chart-symbol";
+import { useAssistantName } from "@/lib/assistant-name";
+import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions, getGetMeSharedAccountPositionsQueryKey } from "@workspace/api-client-react";
+
+import { QuickTradePanel, readQuickTradeQuote, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
+import { quickTradeRiskApprox } from "@/components/dashboard/trade/quickTradeRisk";
+import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
+import {
+  TradeStatusBar, TradeHero, PositionsPanel, OrdersPanel,
+  AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
+} from "@/components/dashboard/trade/TradePanels";
+import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
+import { readIntentQueueCount } from "@/lib/intentQueueCount";
+import { describeBridgeObservation, sharedMasterRouteObserved } from "@/components/dashboard/cockpit/bridgeObservation";
+
+type Opp = {
+  symbol: string; timeframe: string; bias: string; recommendedAction: string;
+  setupType: string; confidenceScore: number; riskScore: number; entrySniperScore: number;
+  riskRewardRatio: number; reasonForTrade: string; reasonToAvoid: string;
+  rulesPassed: string[]; rulesFailed: string[]; statusBadge: string;
+  opportunity: { score: number; label: string };
+  entry: number; stopLoss: number; takeProfit: number;
+};
+type Decision = { id: string; type: string; summary: string; createdAt: string };
+
+// One read of the page's 5-second poll. null = the read failed (network error,
+// non-2xx, or a body that is not JSON) — "could not be loaded", never an
+// empty answer. Each read settles on its own, so one failure never blanks the
+// others.
+async function readJson(path: string): Promise<any | null> {
+  try {
+    const r = await fetch(path);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+// The operator positions read answers rows:[] with one of these notes when it
+// could not see the master account at all — that is not "no open positions".
+const POSITIONS_UNAVAILABLE_NOTES: Record<string, string> = {
+  MASTER_BRIDGE_NOT_PINNED: "The master bridge is not pinned, so ARX could not read the master account's positions. Check MT5 directly.",
+  MASTER_CONNECTION_MISSING: "The pinned master connection could not be found, so ARX could not read the master account's positions. Check MT5 directly.",
+};
+
+async function api(path: string, init?: RequestInit) {
+  const r = await fetch(path, {
+    headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init,
+  });
+  return r.json();
+}
+
+export default function TradeCommandRoom() {
+  const tradingMode = useTradingMode();
+  const isAdmin = Boolean(tradingMode.isAdmin);
+  const { name } = useAssistantName();
+
+  // Symbol now synced globally (drives chart + ticket prefill). Preserves the
+  // original local-symbol behaviour but keeps Buy/Sell wired to /live-manual.
+  const [symbol, setSymbol] = useChartSymbol();
+  const [timeframe, setTimeframe] = useState("M15");
+  const [orderType, setOrderType] = useState("Market");
+  const [lot, setLot] = useState("0.01");
+  const [slTpOn, setSlTpOn] = useState(true);
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [riskCheckOn, setRiskCheckOn] = useState(true);
+  const [safetyGatesOn, setSafetyGatesOn] = useState(true);
+
+  const [opps, setOpps] = useState<Opp[]>([]);
+  const [oppsError, setOppsError] = useState(false);
+  const [picked, setPicked] = useState<Opp | null>(null);
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [decisionsError, setDecisionsError] = useState(false);
+  const [quote, setQuote] = useState<Quote>(null);
+  // True when the latest quote read failed, so the panel says "could not be
+  // loaded" rather than "no quote for this symbol".
+  const [quoteLoadFailed, setQuoteLoadFailed] = useState(false);
+  // True until a quote read for the current symbol has answered: the panel
+  // then says the quote is loading, never "no quote for this symbol".
+  const [quoteLoading, setQuoteLoading] = useState(true);
+  // null until the queue answers; intentError when it could not be loaded.
+  // The queue counts only its newest window (intentAtLeast: older intents
+  // exist), and answers non-admins with an admin-only note instead of counts.
+  const [intentCount, setIntentCount] = useState<number | null>(null);
+  const [intentError, setIntentError] = useState(false);
+  const [intentAtLeast, setIntentAtLeast] = useState(false);
+  const [intentScopeNote, setIntentScopeNote] = useState<string | null>(null);
+  const [, setAlertCount] = useState(0);
+
+  // Connection card data — existing shared master summary (no fake data).
+  const summaryQ = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } });
+  const master = summaryQ.data?.masterMt5 ?? null;
+  // The shared master summary only describes the user's route when they trade
+  // through the shared master; otherwise its broker/account are not theirs.
+  const route = resolveTradeRoomRoute(tradingMode);
+  const broker = !route.onSharedRoute ? "Not shown here" : master?.brokerName ?? summaryQ.data?.accounts?.[0]?.masterBrokerName ?? "—";
+  const account = !route.onSharedRoute ? "Not shown here" : master?.accountNumberMasked ?? summaryQ.data?.accounts?.[0]?.masterAccountNumberMasked ?? "—";
+  // Bridge connectivity from the shared master pool's heartbeat-derived
+  // availability — never inferred from the account-mode blocker.
+  const bridgeObs = describeBridgeObservation({
+    // No envelope: the route was not read, so the bridge says "not checked".
+    ...sharedMasterRouteObserved(tradingMode),
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
+
+  async function load(isCurrent: () => boolean = () => true) {
+    const bare = symbol.includes(":") ? symbol.split(":")[1] : symbol;
+    const [o, d, q, ic, ac] = await Promise.all([
+      readJson("/api/market-scanner/opportunities?limit=12"),
+      readJson("/api/decision-stream?limit=20"),
+      // 404 {error:"Unknown symbol"} is no quote; any other failure is a failed read.
+      readQuickTradeQuote(bare),
+      readJson("/api/live-intent/queue"),
+      fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
+    ]);
+    // A load for a symbol the page has since left is dropped: its quote is
+    // not the current symbol's, and the next load answers for everything.
+    if (!isCurrent()) return;
+    const oppsOk = Array.isArray(o?.opportunities);
+    setOpps(oppsOk ? o.opportunities : []);
+    setOppsError(!oppsOk);
+    const decisionsOk = Array.isArray(d?.decisions);
+    setDecisions(decisionsOk ? d.decisions : []);
+    setDecisionsError(!decisionsOk);
+    setQuote(q.quote);
+    setQuoteLoadFailed(q.failed);
+    setQuoteLoading(false);
+    const iq = readIntentQueueCount(ic);
+    const counted = iq.kind === "exact" || iq.kind === "at_least";
+    setIntentCount(counted ? iq.total : null);
+    setIntentError(iq.kind === "error");
+    setIntentAtLeast(iq.kind === "at_least");
+    setIntentScopeNote(iq.kind === "not_shown" ? iq.note : null);
+    setAlertCount(ac.count ?? 0);
+  }
+
+  useEffect(() => {
+    let current = true;
+    // A new symbol has no quote read yet: the previous symbol's quote and
+    // read failure are not shown for it.
+    setQuote(null); setQuoteLoadFailed(false); setQuoteLoading(true);
+    const run = () => { void load(() => current); };
+    run();
+    const id = setInterval(run, 5000);
+    return () => { current = false; clearInterval(id); };
+  }, [symbol]);
+
+  function pickAndAnalyze(o: Opp) {
+    setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
+  }
+
+  // Risk-at-stop readout (display only; the server risk governor decides on
+  // submit). See quickTradeRiskApprox for when a figure is withheld.
+  const riskApprox = useMemo(
+    () => quickTradeRiskApprox({ symbol, lot, stopLoss, quote }),
+    [lot, stopLoss, quote, symbol],
+  );
+
+  // ── Mode / permission → plain English ───────────────────────────────
+  const isLive = tradingMode.isLiveShared;
+  const {
+    canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge, approval,
+  } = resolveTradeRoomStatus(tradingMode, bridgeObs);
+
+  const heroDescription = `Place manual, ${name}-assisted, or advanced trades through your approved account route.`;
+
+  // ── Tabs ─────────────────────────────────────────────────────────────
+  const quickTradeTab = (
+    <div className="space-y-4">
+      <QuickTradePanel
+        symbol={symbol} setSymbol={setSymbol}
+        timeframe={timeframe} setTimeframe={setTimeframe}
+        orderType={orderType} setOrderType={setOrderType}
+        lot={lot} setLot={setLot}
+        quote={quote}
+        quoteLoadFailed={quoteLoadFailed}
+        quoteLoading={quoteLoading}
+        slTpOn={slTpOn} setSlTpOn={setSlTpOn}
+        stopLoss={stopLoss} setStopLoss={setStopLoss}
+        takeProfit={takeProfit} setTakeProfit={setTakeProfit}
+        riskCheckOn={riskCheckOn} setRiskCheckOn={setRiskCheckOn}
+        safetyGatesOn={safetyGatesOn} setSafetyGatesOn={setSafetyGatesOn}
+        riskApprox={riskApprox}
+        canTrade={canTrade}
+        blockedLabel={blockedLabel}
+      />
+      {/* Phase 3 — advisory timing checklist. Display only; never blocks trade submission. */}
+      <PreTradeHeatChecklist symbol={symbol} />
+    </div>
+  );
+
+  const positionsQ = useGetMeSharedAccountPositions({
+    query: { queryKey: getGetMeSharedAccountPositionsQueryKey(), refetchInterval: 5000 },
+  });
+  const positionRows = (positionsQ.data?.rows ?? []).map((r) => ({
+    id: r.id,
+    symbol: r.symbol,
+    side: r.side,
+    lotSize: r.lotSize,
+    entry: r.entryPrice ?? undefined,
+    pnl: r.stale ? null : r.pnl,
+    stopLoss: r.stopLoss ?? null,
+    takeProfit: r.takeProfit ?? null,
+    status: r.stale ? "stale" : undefined,
+  }));
+  // P0-3 — pass the read state through. `data?.rows ?? []` alone collapses a
+  // failed or in-flight fetch into an empty array, which the panel would have
+  // rendered as "No open positions" — telling a trader they are flat when ARX
+  // could not answer.
+  const positionsNote = (positionsQ.data as { note?: unknown } | undefined)?.note;
+  const positionsUnavailable = typeof positionsNote === "string" ? POSITIONS_UNAVAILABLE_NOTES[positionsNote] ?? null : null;
+  const positionsTab = (
+    <PositionsPanel
+      positions={positionRows}
+      isLoading={positionsQ.isLoading}
+      isError={positionsQ.isError}
+      onRetry={() => void positionsQ.refetch()}
+      unavailableReason={positionsUnavailable}
+    />
+  );
+
+  const ordersTab = (
+    <OrdersPanel opps={opps} oppsError={oppsError} intentCount={intentCount} intentError={intentError} intentAtLeast={intentAtLeast} intentScopeNote={intentScopeNote} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />
+  );
+
+  const advancedTab = (
+    <div className="space-y-4">
+      <RiskGovernorCard
+        statusLabel={rgStatus.label} statusTone={rgStatus.tone}
+        riskCaps={riskCapsStatus(tradingMode.envelope, { failed: tradingMode.isModeUnknown })} bridge={bridge}
+        approval={approval}
+        isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
+      />
+      <DecisionStreamCard decisions={decisions} error={decisionsError} />
+      <AdvancedPanel isAdmin={isAdmin} />
+    </div>
+  );
+
+  return (
+    <div className="mx-auto w-full max-w-[1100px] space-y-4 pb-32 md:pb-6">
+      <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} intentError={intentError} intentAtLeast={intentAtLeast} intentScopeNote={intentScopeNote} />
+      <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} routeHeading={route.heading} broker={broker} account={account} />
+
+      <PageTabs
+        storageKey="trade-command-room"
+        defaultTab="quick"
+        tabs={[
+          { id: "quick",     label: "Quick Trade", icon: <Zap className="h-3.5 w-3.5" />,        content: quickTradeTab },
+          { id: "positions", label: "Positions",   icon: <Layers className="h-3.5 w-3.5" />,     content: positionsTab },
+          { id: "orders",    label: "Orders",      icon: <ListChecks className="h-3.5 w-3.5" />, content: ordersTab },
+          { id: "advanced",  label: "Advanced",    icon: <Wrench className="h-3.5 w-3.5" />,     content: advancedTab },
+        ]}
+      />
+    </div>
+  );
+}

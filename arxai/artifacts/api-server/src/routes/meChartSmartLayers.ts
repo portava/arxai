@@ -1,0 +1,320 @@
+// Smart Chart Layers & Market Impact Radar (Task #197).
+//
+// SAFETY: requireUser (per-user gated → 401 when unauthenticated). The signal is
+// built per-user via buildEleanorMarketEdgeForUser; structure levels come from the
+// public candle-truth layer (no per-user data). ADVISORY / VISUAL ONLY — this
+// endpoint never places, modifies, or closes a trade and never gates execution.
+// HONEST: news is real or honestly absent (no connected economic-calendar
+// provider → no scheduled events shown, technicals-only behavior, never
+// fabricated), structure/signal geometry is real-or-null, and reserved overlay
+// slots are anchored to the user's real open positions and labeled not-yet-active.
+import { Router } from "express";
+import { and, eq } from "drizzle-orm";
+import { db, paperTradesTable } from "@workspace/db";
+import { GetMeChartSmartLayersQueryParams } from "@workspace/api-zod";
+import {
+  buildExecutionCostLayers,
+  buildOverlayHandshake,
+  buildSignalLayers,
+  buildTradeHealthSlots,
+  gateSignalTradeLevels,
+  type ReservedSlotPosition,
+  type SignalLayerInput,
+  type SmartChartLayer,
+  type StructureLevelInput,
+} from "@workspace/domain/smart-chart";
+import { requireUser } from "../lib/auth/middleware.js";
+import { buildEleanorMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
+import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
+import { chartLevelPersonalityWords } from "../lib/data/chart/marketSentenceEngine.js";
+import { buildMarketImpactRadar } from "../lib/news/marketImpactRadar.js";
+import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
+import { getSymbolTruthSnapshot, type SymbolTruthSnapshot } from "../lib/truth/symbolTruthSnapshot.js";
+
+/**
+ * Whether the per-symbol truth shows a trade setup right now: a current,
+ * directional verdict whose levels were not withheld. When it does not, the
+ * chart may not draw entry / stop / target either (audit 2026-11-15).
+ */
+export function truthShowsTradeLevels(truth: SymbolTruthSnapshot | null, symbol: string, timeframe: string, now = Date.now()): { shown: boolean; reason: string | null } {
+  if (!truth) return { shown: false, reason: "The market truth check could not be read, so trade levels are not drawn." };
+  if (truth.symbol !== symbol.trim().toUpperCase() || truth.timeframe !== timeframe)
+    return { shown: false, reason: "The market truth check is for a different chart, so trade levels are not drawn." };
+  const action = truth.verdict.bestAction;
+  if ((action === "BUY" || action === "SELL") && truth.levels.withheld === false
+    && truth.validUntil != null && Date.parse(truth.validUntil) > now) return { shown: true, reason: null };
+  return { shown: false, reason: truth.levels.withheldReason ?? truth.verdict.bestActionText };
+}
+
+const router = Router();
+const SAFETY_ENVELOPE = {
+  safetyMode: "paper_only" as const,
+  liveLocked: true as const,
+  readOnlyMode: true as const,
+  allowOrderExecution: false as const,
+};
+
+/**
+ * Plain-English rendering of a chart-level personality (no internal tokens).
+ * Uses the same words as Eleanor's nearest-level line so the scanner chart's
+ * structure lines never contradict it: retest_pending means the level broke
+ * AND price came back to retest it (observed), not a retest still awaited.
+ */
+function humanizeLevelPersonality(p: string): string {
+  return chartLevelPersonalityWords(p);
+}
+
+/** Plain-English rendering of a signal lifecycle stage (no internal tokens). */
+function humanizeLifecycleStage(stage: string): string {
+  return stage
+    .toLowerCase()
+    .split("_")
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+router.get(
+  "/me/chart/smart-layers",
+  requireUser,
+  async (req, res): Promise<void> => {
+    let q;
+    try {
+      q = GetMeChartSmartLayersQueryParams.parse({
+        symbol: req.query["symbol"],
+        timeframe: req.query["timeframe"] ?? "M5",
+      });
+    } catch (err) {
+      req.log.warn({ err }, "invalid smart-layers request");
+      res.status(400).json({ error: "Invalid smart chart layers request" });
+      return;
+    }
+
+    const userId = req.authUser!.id;
+    const symbol = q.symbol;
+    const timeframe = q.timeframe ?? "M5";
+
+    const nowMs = Date.now();
+    const [signal, chartState, radarResult, openPositions, truth] = await Promise.all([
+      buildEleanorMarketEdgeForUser(userId, { symbol, timeframe }).catch((err) => {
+        req.log.warn({ err }, "smart-layers signal build failed");
+        return null;
+      }),
+      buildChartIntelligenceState(symbol, timeframe, 300).catch((err) => {
+        req.log.warn({ err }, "smart-layers chart state build failed");
+        return null;
+      }),
+      buildMarketImpactRadar(symbol, nowMs).catch((err) => {
+        req.log.warn({ err }, "smart-layers radar build failed");
+        return null;
+      }),
+      // Per-user open positions for this symbol (paper lifecycle is the per-user
+      // position source for this advisory PAPER-mode endpoint). Scoped by
+      // userId — never another user's rows. Drives the reserved overlay slots.
+      db
+        .select({
+          id: paperTradesTable.id,
+          symbol: paperTradesTable.symbol,
+          entryPrice: paperTradesTable.entryPrice,
+        })
+        .from(paperTradesTable)
+        .where(
+          and(
+            eq(paperTradesTable.userId, userId),
+            eq(paperTradesTable.symbol, symbol),
+            eq(paperTradesTable.status, "open"),
+          ),
+        )
+        .catch((err) => {
+          req.log.warn({ err }, "smart-layers open-position read failed");
+          return [] as { id: number; symbol: string; entryPrice: number | null }[];
+        }),
+      getSymbolTruthSnapshot(symbol, timeframe, userId).catch((err) => {
+        req.log.warn({ err }, "smart-layers truth read failed");
+        return null;
+      }),
+    ]);
+    const tradeLevels = truthShowsTradeLevels(truth, symbol, timeframe);
+
+    const structureLevels: StructureLevelInput[] = (
+      chartState?.marketUnderstanding?.levels?.levels ?? []
+    ).map((lvl) => ({
+      kind: lvl.kind,
+      price: lvl.price,
+      personality: humanizeLevelPersonality(lvl.personality),
+    }));
+
+    const signalInput: SignalLayerInput | null = gateSignalTradeLevels(signal
+      ? {
+          symbol: signal.symbol,
+          hasSufficientData: signal.hasSufficientData,
+          entryZone: signal.entryZone,
+          watchZone: signal.watchZone,
+          retestZone: signal.retestZone,
+          doNotChaseZone: signal.doNotChaseZone,
+          invalidationPrice: signal.invalidationPrice,
+          stopLoss: signal.stopLoss,
+          takeProfitZones: signal.takeProfitZones,
+        }
+      : null, tradeLevels.shown);
+
+    const signalLayers = buildSignalLayers(signalInput, structureLevels, symbol);
+
+    // Execution-cost overlay (DRAWN). When the signal has a directional, usable
+    // read, run the SAME per-user execution preview the live-shared ticket uses
+    // and draw its expected-fill band + break-even line. Every number is real
+    // broker-derived or null — buildExecutionCostLayers emits a layer ONLY when
+    // its inputs are finite, so a missing quote/degraded estimate yields fewer
+    // layers, never a fabricated cost. Advisory/visual only — no execution.
+    let execCostLayers: SmartChartLayer[] = [];
+    const dir = signal?.direction;
+    if (
+      tradeLevels.shown &&
+      signalInput &&
+      signalInput.hasSufficientData &&
+      (dir === "BUY" || dir === "SELL") &&
+      signalInput.entryZone
+    ) {
+      const entryMid = (signalInput.entryZone.from + signalInput.entryZone.to) / 2;
+      const firstTp = signalInput.takeProfitZones[0];
+      const tpMid = firstTp ? (firstTp.from + firstTp.to) / 2 : null;
+      try {
+        const preview = await buildExecutionPreviewForUser(userId, {
+          symbol,
+          side: dir,
+          orderType: "MARKET",
+          entry: Number.isFinite(entryMid) && entryMid > 0 ? entryMid : null,
+          stopLoss: signalInput.stopLoss,
+          takeProfit: tpMid,
+          lots: 0.01,
+          maxSpreadPoints: 300,
+        });
+        execCostLayers = buildExecutionCostLayers({
+          side: dir,
+          expectedFill: preview.expectedFillRange?.expected ?? null,
+          fillLow: preview.expectedFillRange?.low ?? null,
+          fillHigh: preview.expectedFillRange?.high ?? null,
+          breakEvenPoints: preview.breakEven.points,
+          pointSize: preview.pointSize,
+        });
+      } catch (err) {
+        // Honest skip: no execution-cost overlay rather than a fabricated one.
+        req.log.warn({ err }, "smart-layers execution-cost preview failed");
+      }
+    }
+
+    // Reserved trade-health slot, anchored to the user's REAL open positions on
+    // this symbol. The slot is surfaced at each position's entry and labeled
+    // honestly as not-yet-active — trade-health scoring (Phase 5) lands later.
+    // We never draw a fabricated health value, and no slot is drawn when there
+    // is no open position. (Execution-cost is now drawn live above.)
+    const reservedPositions: ReservedSlotPosition[] = openPositions.map((p) => ({
+      ticket: String(p.id),
+      symbol: p.symbol,
+      entryPrice: p.entryPrice,
+    }));
+    const tradeHealthSlots = buildTradeHealthSlots(reservedPositions, symbol);
+    const layers: SmartChartLayer[] = [
+      ...signalLayers,
+      ...execCostLayers,
+      ...tradeHealthSlots,
+    ];
+
+    const levelCount = structureLevels.length;
+    const signalExists = !!signal;
+    const hasSufficientData = signal?.hasSufficientData ?? false;
+    // Honest news-mapping fact: events are only "mapped" when a real
+    // economic-calendar provider is connected; otherwise NOT_AVAILABLE.
+    const newsMapped = radarResult?.radar.provider.connected ?? false;
+    // Honest overlay age: how old the driving signal read is (null when there is
+    // no signal yet → the freshness check reports NOT_AVAILABLE rather than a
+    // fabricated "fresh").
+    const signalGeneratedMs = signal?.generatedAt
+      ? Date.parse(signal.generatedAt)
+      : NaN;
+    const overlayAgeMs = Number.isFinite(signalGeneratedMs)
+      ? Math.max(0, nowMs - signalGeneratedMs)
+      : null;
+    // overlayAgeMs is how long ago the server rebuilt the read — it is rebuilt
+    // on every request, so on its own it always looks fresh. Whether the
+    // candles UNDER the overlays are live is a separate fact: the signal's
+    // dataSource (only LIVE_FEED is live) and the structure levels' chart
+    // state (stale = not live). null = no signal, nothing to judge.
+    const signalCandlesLive = signal ? signal.dataSource === "LIVE_FEED" : null;
+    const levelCandlesStale = chartState ? chartState.stale === true : false;
+    const sourceDataLive: boolean | null =
+      signalCandlesLive == null ? null : signalCandlesLive && !levelCandlesStale;
+    const sourceDataNote: string | null =
+      sourceDataLive !== false
+        ? null
+        : !signalCandlesLive
+          ? signal?.dataSource === "LIVE_DELAYED"
+            ? "the signal's candles are delayed"
+            : "the signal's candles are not from a live feed right now"
+          : "the chart's structure-level candles are stale";
+
+    // Server-side (data) handshake: chart is assumed rendered for the data view
+    // and the chart symbol is the requested symbol vs the symbol the signal was
+    // actually built for. The frontend re-runs this with the live chart-bus
+    // symbol + real chartLoaded fact to catch a mismatch.
+    const handshake = buildOverlayHandshake({
+      chartLoaded: true,
+      chartSymbol: symbol,
+      signalSymbol: signal?.symbol ?? null,
+      signalExists,
+      hasSufficientData,
+      levelCount,
+      newsMapped,
+      overlayAgeMs,
+      sourceDataLive,
+      sourceDataNote,
+    });
+
+    res.json({
+      symbol,
+      timeframe,
+      signal: signal
+        ? {
+            symbol: signal.symbol,
+            direction: signal.direction,
+            lifecycleStage: humanizeLifecycleStage(signal.lifecycleStage),
+            hasSufficientData: signal.hasSufficientData,
+            freshness: signal.freshness,
+            generatedAt: signal.generatedAt,
+          }
+        : null,
+      layers,
+      // Trade levels follow the per-symbol truth: withheld here when the
+      // scanner panel and Eleanor withhold them, with the same reason.
+      tradeLevels,
+      newsRadar: radarResult?.radar ?? {
+        symbol,
+        provider: {
+          connected: false,
+          name: "unavailable",
+          note: "The economic-calendar read is temporarily unavailable — no scheduled events are shown (none are fabricated).",
+        },
+        events: [],
+        topSeverity: null,
+        highImpactWindowActive: false,
+        summary: "The economic-calendar read is temporarily unavailable for this symbol.",
+      },
+      newsBehavior: radarResult?.behavior ?? {
+        mode: "NO_PROVIDER",
+        note: "The economic-calendar read is temporarily unavailable, so the read below is technicals-only and does not include event timing or confirmed headlines.",
+      },
+      handshake,
+      handshakeInputs: {
+        signalSymbol: signal?.symbol ?? null,
+        signalExists,
+        hasSufficientData,
+        levelCount,
+        newsMapped,
+        sourceDataLive,
+        sourceDataNote,
+      },
+      ...SAFETY_ENVELOPE,
+    });
+  },
+);
+
+export default router;

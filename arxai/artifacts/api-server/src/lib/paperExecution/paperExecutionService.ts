@@ -1,0 +1,573 @@
+// Build EE — Paper Execution Service.
+//
+// SAFETY (strict freeze): this service NEVER calls executeTrade,
+// /execute-trade, mt5_*, livePositions, setCanPlaceTrades, or any live broker.
+// It ONLY:
+//   1. Reads a Build AA TradeDecision (in-memory or via decision_id from logs)
+//   2. Reads Build DD market data for the simulated fill (READ-ONLY)
+//   3. Validates eligibility (15+ rules)
+//   4. Books the order in the one paper book (`paper_orders`) through
+//      the Trade Engine (lib/tradeEngine/pipeline.ts fillPaperTrade OPEN →
+//      lib/tradeEngine/paperVenue.ts openPaperFill: Risk Governor, then the
+//      write) — this file never writes paper_orders itself
+//   5. Records a paper_executions row keyed by decision_id (idempotent)
+//   6. Logs every step to paper_execution_logs
+//
+// The existing markToMarket() in lib/tradeEngine/paperVenue.ts will pick up the new
+// open paper order and trigger Build BB auto-debrief on close. EE's monitor
+// also closes orders independently using DD market data and triggers BB.
+
+import {
+  db,
+  paperAccountsTable,
+  paperExecutionsTable,
+  paperExecutionLogsTable,
+  tradeDecisionLogsTable,
+} from "@workspace/db";
+import { readOpenPaperOrders, readPaperCloses } from "../tradeEngine/paperBookReader.js";
+import { paperRiskShortfall, resolvePaperContract } from "./paperPnl.js";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { logger } from "../logger.js";
+import { getMarketData } from "../marketData/marketDataService.js";
+import { currentQuote } from "../tradeEngine/marketQuote.js";
+import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
+import { checkEligibility } from "./eligibility.js";
+import { loadEffectiveLimits, paperInstrumentModel, type InstrumentModel } from "../riskGovernor/enforce.js";
+import { fillPaperTrade, voidPaperTrade } from "../tradeEngine/pipeline.js";
+import type {
+  ExecuteFromDecisionOpts,
+  PaperExecutionResult,
+  FillType,
+  PositionSizingResult,
+} from "./types.js";
+import type { TradeDecision } from "../../routes/tradeDecision.js";
+
+const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
+const SIM_SLIPPAGE_BPS = 0.0001; // 1 basis-point of mid as slippage on top of spread
+
+async function logExec(args: {
+  executionId: string | null;
+  decisionId: number | null;
+  orderId: number | null;
+  symbol: string;
+  action: string;
+  status: string;
+  message: string;
+  details?: Record<string, unknown>;
+}) {
+  try {
+    await db.insert(paperExecutionLogsTable).values({
+      executionId: args.executionId,
+      decisionId:  args.decisionId,
+      orderId:     args.orderId,
+      symbol:      args.symbol,
+      action:      args.action,
+      status:      args.status,
+      message:     args.message,
+      details:     args.details ?? {},
+    });
+  } catch (err) {
+    // Logging must never break execution.
+    logger.warn({ err: String(err) }, "Build EE: paper_execution_logs insert failed (non-fatal)");
+  }
+}
+
+// The paper account always belongs to the trade's owner: an explicit id must be
+// theirs, otherwise their active account, otherwise a fresh sandbox for them.
+async function getActivePaperAccount(ownerUserId: number | null, explicitId?: number) {
+  const owner = ownerUserId == null ? isNull(paperAccountsTable.userId) : eq(paperAccountsTable.userId, ownerUserId);
+  const rows = await db.select().from(paperAccountsTable)
+    .where(and(owner, explicitId != null ? eq(paperAccountsTable.id, explicitId) : eq(paperAccountsTable.isActive, 1)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Size a paper execution the way the pre-trade Risk Governor will price it
+ * (riskGovernor/enforce.ts loadPaperFacts), so the proposed lot does not
+ * carry more risk than the governor allows:
+ *   - money per 1.0 price move per lot: paperInstrumentModel, the contract
+ *     size the paper venue books the symbol at, converted to USD at the quote
+ *     mid, never below the paper risk model of 100. A symbol with no known
+ *     contract or USD rate, or a contract under 100 units, stays at 100;
+ *   - equity: the stored equity lowered by the paper risk count of the
+ *     account's settled orders (paperRiskShortfall: to the lower of their
+ *     booked total and their paper risk model total), as the governor's caps
+ *     read it for closed trades. The governor also counts open positions no
+ *     higher than their ×100 value (paperOpenRisk), so its equity can be lower
+ *     still; it decides, and its refusal names the figure;
+ *   - risk budget: the lower of the percent limit and the money limit.
+ * When the contract prices above 100 the lot is floored to the step, so the
+ * loss at stop stays inside the budget. The lot is never larger than the
+ * previous sizing (100 per point per lot, stored equity, percent limit only,
+ * nearest step) proposes for the same order: when it would be, that sizing
+ * is used. The governor still decides; this changes only the proposed lot.
+ */
+export async function sizePaperExecution(a: {
+  userId: number;
+  accountId: number;
+  accountEquity: number;
+  symbol: string;
+  fillPrice: number;
+  stopLoss: number;
+  quote: { bid: number | null; ask: number | null };
+  limits: { maxLotSize: number; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null };
+}): Promise<{ sizing: PositionSizingResult; instrument: InstrumentModel; riskEquity: number; valuePerUnitPerLot: number }> {
+  const maxLotSizeOverride = Math.min(PAPER_DEFAULTS.maxLotSize, a.limits.maxLotSize);
+  const riskPercentOverride = Math.min(PAPER_DEFAULTS.riskPercent, a.limits.maxRiskPerTradePercent / 100);
+  const previous = calculatePaperPositionSize({
+    accountEquity: a.accountEquity, entryPrice: a.fillPrice, stopLoss: a.stopLoss, maxLotSizeOverride, riskPercentOverride,
+  });
+  // The price the governor converts the contract to USD at: the quote mid.
+  const mid = a.quote.bid != null && a.quote.ask != null
+    ? (a.quote.bid + a.quote.ask) / 2
+    : a.quote.bid ?? a.quote.ask ?? a.fillPrice;
+  const instrument = paperInstrumentModel(a.symbol, await resolvePaperContract(a.userId, a.symbol), mid);
+  const valuePerUnitPerLot = (instrument.contractSize ?? PAPER_DEFAULTS.pointValuePerLot) * (instrument.quoteToAccountFx ?? 1);
+  let riskEquity = a.accountEquity;
+  try {
+    riskEquity = a.accountEquity + paperRiskShortfall(await readPaperCloses({ account: a.accountId }));
+  } catch {
+    // The stored equity; the governor reads the closes again and decides.
+  }
+  const priced = calculatePaperPositionSize({
+    accountEquity: riskEquity, entryPrice: a.fillPrice, stopLoss: a.stopLoss, maxLotSizeOverride, riskPercentOverride,
+    maxRiskAmount: a.limits.maxRiskPerTradeAmount, valuePerUnitPerLot,
+    rounding: valuePerUnitPerLot > PAPER_DEFAULTS.pointValuePerLot ? "floor" : "nearest",
+  });
+  const sizing = priced.capped_position_size <= previous.capped_position_size ? priced : previous;
+  return { sizing, instrument, riskEquity, valuePerUnitPerLot };
+}
+
+async function ensurePaperAccount(ownerUserId: number | null, explicitId?: number): Promise<{ id: number; equity: number; userId: number | null }> {
+  const existing = await getActivePaperAccount(ownerUserId, explicitId);
+  if (existing) return { id: existing.id, equity: existing.equity, userId: existing.userId };
+  if (explicitId != null) throw new Error(`PAPER_ACCOUNT_NOT_FOUND: account ${explicitId} is not yours`);
+  // Create a default sandbox account so EE can always run.
+  const ins = await db.insert(paperAccountsTable).values({
+    userId: ownerUserId,
+    accountName: "Build EE Sandbox",
+    startingBalance: PAPER_DEFAULTS.defaultEquity,
+    currentBalance: PAPER_DEFAULTS.defaultEquity,
+    equity: PAPER_DEFAULTS.defaultEquity,
+    isActive: 1,
+  }).returning();
+  return { id: ins[0]!.id, equity: ins[0]!.equity, userId: ins[0]!.userId };
+}
+
+function applySimulatedFill(action: "BUY" | "SELL", md: {
+  bid: number; ask: number; mid: number; spread: number;
+}): { fillPrice: number; slippage: number; spread: number } {
+  // BUY → fill at ask + (slippage); SELL → fill at bid - (slippage)
+  const slippage = Math.max(0.00001, md.mid * SIM_SLIPPAGE_BPS);
+  const fill = action === "BUY"
+    ? md.ask + slippage
+    : md.bid - slippage;
+  return { fillPrice: Number(fill.toFixed(5)), slippage: Number(slippage.toFixed(5)), spread: md.spread };
+}
+
+export async function executePaperFromDecision(
+  decision: TradeDecision,
+  decisionId: number | null,
+  opts: ExecuteFromDecisionOpts = {},
+): Promise<PaperExecutionResult> {
+  const executionId = `exec_${randomUUID()}`;
+  const symbol = decision.symbol;
+  const action = decision.action;
+  const log = logger.child({ system: "paperExecution", executionId, decisionId, symbol, action });
+
+  log.info({ shouldTrade: decision.shouldTrade, confidence: decision.confidence, riskScore: decision.riskScore },
+    "Build EE: decision received");
+
+  // ── Idempotency: short-circuit if a paper execution already exists for this decision ──
+  if (decisionId != null) {
+    const dup = await db.select().from(paperExecutionsTable)
+      .where(eq(paperExecutionsTable.decisionId, decisionId)).limit(1);
+    if (dup[0]) {
+      const e = dup[0];
+      log.info({ existingExecutionId: e.executionId, existingOrderId: e.orderId },
+        "Build EE: idempotent replay — returning existing paper execution");
+      await logExec({
+        executionId: e.executionId, decisionId, orderId: e.orderId,
+        symbol, action, status: "IDEMPOTENT_REPLAY",
+        message: `Returning existing paper execution for decision_id=${decisionId}`,
+      });
+      return materializeResult(e, true);
+    }
+  }
+
+  // Account + caps
+  const acct = await ensurePaperAccount(opts.ownerUserId ?? null, opts.paperAccountId);
+  // Paper facts through the paper book's read side (owner decision 7).
+  const allOpen = await readOpenPaperOrders({ account: acct.id });
+  const openSameSymbolDir = allOpen.filter((o) => o.symbol === symbol && o.direction === action).length;
+
+  // ── Eligibility ──
+  const eligibility = checkEligibility(decision, decisionId, {
+    openPaperOrdersForSymbolAndDir: openSameSymbolDir,
+    totalOpenPaperOrders: allOpen.length,
+    duplicateExecutionExists: false, // checked above
+    allowConflicts: opts.allowConflicts === true,
+    maxOpenPaperTrades: PAPER_DEFAULTS.maxOpenPaperTrades,
+    maxSameSymbolPaperTrades: PAPER_DEFAULTS.maxSameSymbolPaperTrades,
+  });
+
+  log.info({ ok: eligibility.ok, reason: eligibility.reason, warnings: eligibility.warnings },
+    "Build EE: eligibility evaluated");
+
+  if (!eligibility.ok) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action,
+      decision,
+      reason: eligibility.reason ?? "rejected",
+      warnings: eligibility.warnings,
+    });
+  }
+
+  // ── DD market data for simulated fill ──
+  const { snapshot, blockers, usedFallback, providerError } = await getMarketData({
+    symbol, timeframe: "M5", limit: 100,
+  });
+  log.info({ source: snapshot.source, provider: snapshot.provider, dataQuality: snapshot.dataQuality.status,
+    usedFallback, providerError, ddBlockers: blockers.length },
+    "Build EE: DD market data fetched");
+
+  // Defense-in-depth: re-verify DD blockers right at fill time.
+  const ddCritical = blockers.find((b) => b.severity === "CRITICAL" || b.severity === "HIGH");
+  if (ddCritical) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `DD market-data blocker at fill time: ${ddCritical.reason}`,
+      warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
+      mdSnapshot: snapshot,
+    });
+  }
+
+  // ── Execution price: the market data router only (audit H4, owner decision
+  //    2026-11-04). The DD snapshot above still gates data quality and is kept
+  //    as provenance, but the fill is priced on the same quote the Risk
+  //    Governor sizes on; no current real quote → no simulated fill.
+  const exec = await currentQuote(symbol);
+  if (!exec.ok) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `No current execution price: ${exec.reasons.join("; ")}`,
+      warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
+      mdSnapshot: snapshot,
+    });
+  }
+  const execMd = { bid: exec.bid, ask: exec.ask, mid: (exec.bid + exec.ask) / 2, spread: exec.ask - exec.bid };
+
+  // ── Simulated fill ──
+  const fillType: FillType = "SIMULATED_MARKET";
+  // Eligibility ensured action ∈ {BUY, SELL}.
+  const dir = action as "BUY" | "SELL";
+  const { fillPrice, slippage, spread } = applySimulatedFill(dir, execMd);
+  const stopLoss = decision.stopLoss as number;
+  const takeProfit = decision.takeProfit as number;
+
+  // Validate SL/TP geometry against the *filled* price (existing rule).
+  const slOk = action === "BUY" ? stopLoss < fillPrice : stopLoss > fillPrice;
+  const tpOk = action === "BUY" ? takeProfit > fillPrice : takeProfit < fillPrice;
+  if (!slOk || !tpOk) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `SL/TP geometry invalid for filled price ${fillPrice}: SL=${stopLoss} TP=${takeProfit}`,
+      warnings: eligibility.warnings, mdSnapshot: snapshot,
+    });
+  }
+
+  // ── Position sizing ──
+  // The Risk Governor's limits bound the size before it is checked: the lot
+  // cap and per-trade risk come from the owner's effective (strictest) limits.
+  if (acct.userId == null) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: "RISK_GOVERNOR_BLOCK[no_owner]: paper account has no owner, so risk limits cannot be resolved",
+      warnings: eligibility.warnings, mdSnapshot: snapshot,
+    });
+  }
+  // The lot is priced the way the governor prices it (sizePaperExecution):
+  // the symbol's contract size, the paper risk count's equity and both
+  // per-trade limits, never larger than the 100-per-point sizing.
+  const limits = await loadEffectiveLimits(acct.userId);
+  const { sizing, instrument, riskEquity, valuePerUnitPerLot } = await sizePaperExecution({
+    userId: acct.userId, accountId: acct.id, accountEquity: acct.equity, symbol,
+    fillPrice, stopLoss, quote: { bid: snapshot.bid, ask: snapshot.ask }, limits,
+  });
+  const positionSize = sizing.capped_position_size;
+  log.info({ sizing, valuePerUnitPerLot, pricing: instrument.source, riskEquity }, "Build EE: position sizing computed");
+
+  if (!(positionSize > 0)) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `Position sizing returned zero: ${sizing.reason}`,
+      warnings: eligibility.warnings, mdSnapshot: snapshot,
+    });
+  }
+
+  // ── Pre-trade Risk Governor (the 12 mandatory rules, against the quote
+  //    this order fills at; it writes its own user_risk_events row), then the
+  //    paper_orders row — both inside the PAPER venue. Orders inherit the
+  //    account owner so the owner-scoped paper sandbox, analytics and
+  //    debriefs see them.
+  const booked = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, {
+    userId: acct.userId, paperAccountId: acct.id,
+    symbol, side: dir, lots: positionSize, fillPrice,
+    stopLoss, takeProfit,
+    decisionId: decisionId ?? null,
+    strategyId: "build_ee_paper_execution",
+    origin: opts.origin ?? "manual",
+    governedEntryPrice: null,
+    quote: { bid: exec.bid, ask: exec.ask, at: exec.at, source: exec.source },
+    auditContext: { caller: "paper_execution", executionId, decisionId },
+    placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
+  });
+  if (!booked.ok) {
+    const risk = booked.risk;
+    log.warn({ blockedBy: risk.blockedBy, auditEventId: risk.auditEventId }, "Build EE: paper trade BLOCKED by pre-trade Risk Governor");
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `RISK_GOVERNOR_BLOCK[${risk.blockedBy.join(",") || "audit_unavailable"}]: ${risk.primaryReason ?? "blocked"}`,
+      warnings: [...eligibility.warnings, ...risk.rules.filter((r) => r.outcome === "BLOCK").map((r) => `${r.rule}: ${r.reason}`)],
+      mdSnapshot: snapshot,
+    });
+  }
+  const order = booked.order;
+
+  // ── Insert paper_executions (idempotency mapping + audit) ──
+  const decisionSnapshot = sanitizeDecisionForJson(decision);
+  const marketDataSnapshot = {
+    source: snapshot.source, provider: snapshot.provider,
+    bid: snapshot.bid, ask: snapshot.ask, mid: snapshot.mid, spread: snapshot.spread,
+    timestamp: snapshot.timestamp, timeframe: snapshot.timeframe,
+    // The price the fill was actually struck on (router quote), distinct from
+    // the DD snapshot's own numbers above.
+    executionQuote: { bid: exec.bid, ask: exec.ask, at: exec.at.toISOString(), source: exec.source },
+    candlesAvailable: snapshot.dataQuality.candlesAvailable,
+    sessionContext: snapshot.sessionContext,
+    dataQuality: snapshot.dataQuality,
+  };
+  const executionSnapshot = {
+    fillType, fillPrice, requestedPrice: snapshot.mid,
+    slippageApplied: slippage, spreadApplied: spread,
+    sizing,
+  };
+  let execRow;
+  try {
+    const ins = await db.insert(paperExecutionsTable).values({
+      userId: acct.userId,
+      executionId, decisionId: decisionId!, orderId: order.id,
+      symbol, action, status: "PAPER_OPENED",
+      fillType, executionMode: "PAPER",
+      entryPriceRequested: snapshot.mid,
+      entryPriceFilled: fillPrice,
+      stopLoss, takeProfit,
+      positionSize,
+      riskAmount: sizing.risk_amount,
+      spreadApplied: spread,
+      slippageApplied: slippage,
+      confidence: decision.confidence,
+      riskScore: decision.riskScore,
+      rejectionReason: null,
+      warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
+      marketDataSnapshot,
+      decisionSnapshot,
+      executionSnapshot,
+    }).returning();
+    execRow = ins[0]!;
+  } catch (err) {
+    // Race-condition idempotency — another caller inserted concurrently.
+    log.warn({ err: String(err) }, "Build EE: paper_executions insert collision, returning existing row");
+    const racy = (await db.select().from(paperExecutionsTable)
+      .where(eq(paperExecutionsTable.decisionId, decisionId!)).limit(1))[0];
+    if (racy) {
+      // Roll back our just-created paper_orders row to keep the system clean.
+      await voidPaperTrade(order.id);
+      return materializeResult(racy, true);
+    }
+    throw err;
+  }
+
+  await logExec({
+    executionId, decisionId, orderId: order.id, symbol, action,
+    status: "PAPER_OPENED",
+    message: `Simulated ${action} fill at ${fillPrice} (lot ${positionSize})`,
+    details: { fillType, slippage, spread, sizing, mdSource: snapshot.source },
+  });
+
+  log.info({ orderId: order.id, fillPrice, positionSize }, "Build EE: paper trade opened");
+
+  return materializeResult(execRow, false);
+}
+
+/* ── Helpers ──────────────────────────────────────────────────────────── */
+
+function sanitizeDecisionForJson(d: TradeDecision): Record<string, unknown> {
+  return {
+    symbol: d.symbol, action: d.action, shouldTrade: d.shouldTrade,
+    confidence: d.confidence, riskScore: d.riskScore,
+    stopLoss: d.stopLoss, takeProfit: d.takeProfit, positionSize: d.positionSize,
+    tradeWindow: d.tradeWindow,
+    blockers: d.blockers, warnings: d.warnings,
+    invalidationReason: d.invalidationReason,
+    marketDataSummary: d.marketDataSummary,
+    syntheticData: d.syntheticData,
+  };
+}
+
+async function persistRejection(args: {
+  executionId: string;
+  decisionId: number | null;
+  symbol: string;
+  action: "BUY" | "SELL" | "HOLD";
+  decision: TradeDecision;
+  reason: string;
+  warnings: string[];
+  mdSnapshot?: import("../marketData/types.js").MarketDataSnapshot;
+  ownerUserId: number | null;
+}): Promise<PaperExecutionResult> {
+  const log = logger.child({ system: "paperExecution", executionId: args.executionId, decisionId: args.decisionId });
+  // Try to persist the rejection — but only if decisionId is present (idempotency
+  // key) and not already taken; otherwise just log + return.
+  let row: typeof paperExecutionsTable.$inferSelect | null = null;
+  if (args.decisionId != null) {
+    try {
+      const ins = await db.insert(paperExecutionsTable).values({
+        userId: args.ownerUserId,
+        executionId: args.executionId,
+        decisionId: args.decisionId,
+        orderId: null,
+        symbol: args.symbol,
+        action: args.action,
+        status: "PAPER_REJECTED",
+        fillType: "SIMULATED_MARKET",
+        executionMode: "PAPER",
+        entryPriceRequested: null,
+        entryPriceFilled: null,
+        stopLoss: args.decision.stopLoss ?? null,
+        takeProfit: args.decision.takeProfit ?? null,
+        positionSize: null,
+        riskAmount: null,
+        spreadApplied: null,
+        slippageApplied: null,
+        confidence: args.decision.confidence ?? null,
+        riskScore:  args.decision.riskScore ?? null,
+        rejectionReason: args.reason,
+        warnings: args.warnings,
+        marketDataSnapshot: args.mdSnapshot
+          ? { source: args.mdSnapshot.source, provider: args.mdSnapshot.provider,
+              dataQuality: args.mdSnapshot.dataQuality, sessionContext: args.mdSnapshot.sessionContext }
+          : {},
+        decisionSnapshot: sanitizeDecisionForJson(args.decision),
+        executionSnapshot: {},
+      }).returning();
+      row = ins[0]!;
+    } catch (err) {
+      // If unique violation on decisionId, fetch existing.
+      const existing = (await db.select().from(paperExecutionsTable)
+        .where(eq(paperExecutionsTable.decisionId, args.decisionId)).limit(1))[0];
+      if (existing) row = existing;
+      else log.warn({ err: String(err) }, "Build EE: rejection persist failed (non-fatal)");
+    }
+  }
+
+  await logExec({
+    executionId: args.executionId, decisionId: args.decisionId, orderId: null,
+    symbol: args.symbol, action: args.action,
+    status: "PAPER_REJECTED",
+    message: args.reason,
+    details: { warnings: args.warnings },
+  });
+
+  log.info({ reason: args.reason }, "Build EE: paper trade rejected");
+
+  if (row) return materializeResult(row, false);
+
+  // Fallback (decisionId missing): return synthetic result without persistence.
+  return {
+    execution_id: args.executionId,
+    decision_id: args.decisionId,
+    trade_id: null,
+    symbol: args.symbol,
+    action: args.action,
+    status: "PAPER_REJECTED",
+    entry_price_requested: null, entry_price_filled: null,
+    stop_loss: args.decision.stopLoss ?? null,
+    take_profit: args.decision.takeProfit ?? null,
+    position_size: null, risk_amount: null,
+    confidence: args.decision.confidence ?? null,
+    risk_score:  args.decision.riskScore ?? null,
+    execution_mode: "PAPER",
+    fill_type: "SIMULATED_MARKET",
+    slippage_applied: null, spread_applied: null,
+    rejection_reason: args.reason,
+    warnings: args.warnings,
+    created_at: new Date().toISOString(),
+    idempotent_replay: false,
+  };
+}
+
+function materializeResult(
+  row: typeof paperExecutionsTable.$inferSelect,
+  idempotentReplay: boolean,
+): PaperExecutionResult {
+  return {
+    execution_id: row.executionId,
+    decision_id:  row.decisionId,
+    trade_id:     row.orderId,
+    symbol:       row.symbol,
+    action:       row.action as "BUY" | "SELL" | "HOLD",
+    status:       row.status as PaperExecutionResult["status"],
+    entry_price_requested: row.entryPriceRequested,
+    entry_price_filled:    row.entryPriceFilled,
+    stop_loss:    row.stopLoss,
+    take_profit:  row.takeProfit,
+    position_size: row.positionSize,
+    risk_amount:   row.riskAmount,
+    confidence:    row.confidence,
+    risk_score:    row.riskScore,
+    execution_mode: "PAPER",
+    fill_type: (row.fillType as FillType) ?? "SIMULATED_MARKET",
+    slippage_applied: row.slippageApplied,
+    spread_applied:   row.spreadApplied,
+    rejection_reason: row.rejectionReason,
+    warnings: Array.isArray(row.warnings) ? (row.warnings as string[]) : [],
+    created_at: row.createdAt.toISOString(),
+    idempotent_replay: idempotentReplay,
+  };
+}
+
+/* ── Helpers callable by routes ────────────────────────────────────────── */
+
+export async function getPaperExecutionByDecisionId(decisionId: number) {
+  const rows = await db.select().from(paperExecutionsTable)
+    .where(eq(paperExecutionsTable.decisionId, decisionId)).limit(1);
+  return rows[0] ?? null;
+}
+
+// A decision can only be executed by the user it was made for.
+export async function loadDecisionFromLog(decisionId: number, userId: number): Promise<TradeDecision | null> {
+  const rows = await db.select().from(tradeDecisionLogsTable)
+    .where(and(eq(tradeDecisionLogsTable.id, decisionId), eq(tradeDecisionLogsTable.userId, userId))).limit(1);
+  if (!rows[0]) return null;
+  // The full decision object was logged in tradeDecisionLogsTable.decisionJson
+  // by the AA orchestrator (see persistDecision in routes/tradeDecision.ts).
+  const json = (rows[0] as { decisionJson?: unknown }).decisionJson;
+  return (json && typeof json === "object" ? json as TradeDecision : null);
+}
+
+export async function listOpenPaperExecutions(userId: number, limit = 50) {
+  return db.select().from(paperExecutionsTable)
+    .where(and(eq(paperExecutionsTable.userId, userId), eq(paperExecutionsTable.status, "PAPER_OPENED")))
+    .orderBy(desc(paperExecutionsTable.createdAt))
+    .limit(limit);
+}
+
+export async function listPaperExecutions(userId: number, limit = 50) {
+  return db.select().from(paperExecutionsTable)
+    .where(eq(paperExecutionsTable.userId, userId))
+    .orderBy(desc(paperExecutionsTable.createdAt))
+    .limit(limit);
+}

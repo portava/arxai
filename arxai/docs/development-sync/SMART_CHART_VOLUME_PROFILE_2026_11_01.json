@@ -1,0 +1,321 @@
+{
+  "applicationSource": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+  "sourceCheckpoint": "a02e76bbf9314e1f69d964c93f9801c5ca1e6c1b",
+  "branch": "codex/chart-volume-profile-integration-20261101",
+  "comparisonBase": "41934a4c24fa54a6fa0e34cdd62adfbc7e792bf7",
+  "priorReplitApplication": "1b352c2e24d8282cc910cf8705326fc6cc220b33",
+  "priorReplitCheckpoint": "fb307edb33aedcb35b8ed1dd97ab750116251f12",
+  "scope": "Development source only; preserve local setup/sign-out and concurrent changes with three-way integration. No API restart, activation, running-bundle replacement, publishing, existing database changes, workers, emails, provider/model/broker traffic or trading.",
+  "applicationTreeEquality": {
+    "artifacts": {
+      "tested": "2394c335ad866e8312e121a02748c40a91d3a163",
+      "qa": "2394c335ad866e8312e121a02748c40a91d3a163"
+    },
+    "lib": {
+      "tested": "537307948cb6430fbdf3791f63f5996dde9a8ea5",
+      "qa": "537307948cb6430fbdf3791f63f5996dde9a8ea5"
+    }
+  },
+  "validationReport": "docs/SMART_CHART_VOLUME_PROFILE_2026_11_01.md",
+  "receipt": "docs/development-sync/SMART_CHART_VOLUME_PROFILE_VALIDATION_2026_11_01.json",
+  "files": [
+    {
+      "path": "artifacts/trading-dashboard/package.json",
+      "action": "M",
+      "sha256": "42b014b126d25c0415c2dcbd876c2b398db81c43fa3429adb49bb537aff1c8b5"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.deferred-init.test.tsx",
+      "action": "M",
+      "sha256": "abcfb27459ba3c21bb0e3c07ae4f1ad2ba59a5944ce36734dd2c384eee0c26fa"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx",
+      "action": "M",
+      "sha256": "2783dbd551467d35b7c7224deafb2751ee8d27e0e4c654914a0a061132ed2c3d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartStudySettings.test.tsx",
+      "action": "M",
+      "sha256": "05ba4b257fb3135c1ad0015949033e1e8360c480d6825e5b1bf17b7bc3a165b5"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartStudySettings.tsx",
+      "action": "M",
+      "sha256": "16f0b7e649759b1e7fd884dbcc6a70244034efee8f8f9d5bb66d6c7713a8c6f4"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartStudySettings.volumeProfile.test.tsx",
+      "action": "A",
+      "sha256": "b7bd33717f893961bca793ce17b053335a0a897fb6eb524b4559a8b6d9e2962e"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci-actions.test.tsx",
+      "action": "M",
+      "sha256": "b0b6464ef88a35166eaf778226008fc6c38fb12c3dc6373f41af691d818d499c"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.fibonacci-language.test.tsx",
+      "action": "M",
+      "sha256": "ea4775800cfddcd219e314c4dd55f1efcd5b1d6d881a4a2bce2f9d7a1afbe750"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.test.tsx",
+      "action": "M",
+      "sha256": "b4701b333afad65c30863328f31656659640f811ab076788c1f37feb046b14de"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/ChartWorkbenchTools.tsx",
+      "action": "M",
+      "sha256": "9e898282b2c4851dadad2879aa80b7daaf7cd700360799a96fc879a22d72bfaa"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartAnalysisSelection.test.tsx",
+      "action": "A",
+      "sha256": "00d89c30aa0f4c9ca481d92803103760f6346d69b8d10be17c60dfea133f8198"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/charts/SmartChartLayout.tsx",
+      "action": "M",
+      "sha256": "46415bdf84717e89023b6c2b85cb1b6951d1b156c8d6c3b064d8c0722fbe1a16"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/ArxAssistantLivePanel.manualVoice.test.tsx",
+      "action": "M",
+      "sha256": "a73f7f72b73cc38d85da2ea946127e70f38a570ad675e5356d29d5e766176458"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/ArxAssistantLivePanel.tsx",
+      "action": "M",
+      "sha256": "bf9105d8cfdf833d79db3103bb54a26bd96cfb30fd5d3c23257acfbdfe95e910"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/AssistantDock.panes.test.tsx",
+      "action": "A",
+      "sha256": "fc5d56dda0ded9b98c2df7b96859a5f32f147a1cb0ad71811173c511c87e37d4"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/AssistantDock.tsx",
+      "action": "M",
+      "sha256": "e93a7224b8bc58107ae9f14815cfec3df644dc16a161fbf7941027a41daeec22"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/assistantVoiceScope.test.tsx",
+      "action": "A",
+      "sha256": "53665552a20ae29949d371373f6790bd9839fca4634a0a897c5ca78fa3bec687"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/help/useRealtimeVoice.ts",
+      "action": "M",
+      "sha256": "feffca69bd42823d4661520676a70e45b31d3df841e6ff5e62e290232bd892eb"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/components/scanner/SymbolExplorer.tsx",
+      "action": "M",
+      "sha256": "fa52c56195891aa1a13e3d04d47eae2993481f857a34f8f38fc00045d3856210"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/candleReconciliation.ts",
+      "action": "M",
+      "sha256": "1a47a3afc3df1966be3a9e4a3c9137ec3af9c7a9db5ef83e375817ce2b494668"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisCatalogue.test.ts",
+      "action": "A",
+      "sha256": "461dc364f96804eae23189f6513a637337bf9152427e291f48eeb168b354ef2d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisCatalogue.ts",
+      "action": "A",
+      "sha256": "403cc96f3dbbec64d9d3cdcfceb13f6c17bae48837e72aef66169ab6117874af"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisRenderer.test.ts",
+      "action": "M",
+      "sha256": "ea2c8bdaf52f1116a4d392f58942d513838fcb332e539273ef79cd478307de66"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAnalysisRenderer.ts",
+      "action": "M",
+      "sha256": "5ce0237ca90dc9fcfb1eeb0373fe833f842041eb99debc0e52344b9c3c843929"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAssistantPaneContext.test.ts",
+      "action": "A",
+      "sha256": "11bc50f4efd430308617dc332954d3d3c465e17ce9529b57137515c7642286da"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartAssistantPaneContext.ts",
+      "action": "A",
+      "sha256": "c1fb04f42d0b7b7e03e2cc986b8754a79219e03ab94412c9604885e60a5ad5a6"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartFibonacciAssistant.test.ts",
+      "action": "M",
+      "sha256": "e86245f45cfdd56815172652192c73aab25ea06f69f0f912fd64116a941240e8"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartFibonacciAssistant.ts",
+      "action": "M",
+      "sha256": "1517723d5acbd1942a1e489e22228776d76729ba51ed924444ed2f504df6bddd"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartLayout.ts",
+      "action": "M",
+      "sha256": "d8fd2a1c78fc1042e37857b66d02570831f7026bc14a52e613570fc6feb5f2fa"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudies.test.ts",
+      "action": "M",
+      "sha256": "5469caedd124783fa19ee761f8dbe5dc0b0a8fb9c469cf794113923770e6bbdb"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudies.ts",
+      "action": "M",
+      "sha256": "9b27a8fb954792792391f54395bf3d71b7add16cc3abbe483a80be7343f86837"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.test.ts",
+      "action": "M",
+      "sha256": "581848a3a0f9c3d06ae9358c02b6adacc4c46c97f370545808bd0612a13ba9bc"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.ts",
+      "action": "M",
+      "sha256": "e38bebeb0a5488b242bdd330ec1358c458d6d033b3fe9d672c5e91ad8ecfbc08"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyAssistant.volumeProfile.test.ts",
+      "action": "A",
+      "sha256": "fa38fab67110c2cc3cb0bf4ceb0d19fc7e761aa9d5445fdb0d1b0dc97b6fdac0"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyDisplay.test.ts",
+      "action": "A",
+      "sha256": "2439f162b45e9638d54808b2b6d2d5ed4f881cb64bc47e252708081f6eaa8102"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartStudyDisplay.ts",
+      "action": "A",
+      "sha256": "62b5e6424193dc4d8287baa61d249d6a1b049d8b39ef2f6df7c6600ec36c9828"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolume.test.ts",
+      "action": "M",
+      "sha256": "d15377008b398fce87ca87602ad903c1818a08e0288fc63351fd9cc01f5d9dc5"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolumeProfile.test.ts",
+      "action": "A",
+      "sha256": "4b95c3aff4b3cbd10814cbc9b2a30b44c944ee856c7fc1b875bedd51eb44cff1"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolumeProfile.ts",
+      "action": "A",
+      "sha256": "2c885174d9e27b3eb3395c52f6c60cf023adb6ff60c04300a7beb303d729ce31"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolumeProfileDescription.ts",
+      "action": "A",
+      "sha256": "ca3e52b5e77f8e0554a0a5ed0124e653fe3b03b8d62994e4eaf098fa413df94a"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolumeProfilePrimitive.test.ts",
+      "action": "A",
+      "sha256": "267cce9adddb187a5e75ada521c1b28542d97a766d72690771385cd1920944be"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVolumeProfilePrimitive.ts",
+      "action": "A",
+      "sha256": "1006af92d69353334c5d1f0ac95fecfcdb0a84808c0af470434b8f937903822b"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVwapAnchor.test.ts",
+      "action": "M",
+      "sha256": "ba1db16d97aa445ba480add88000a6c3fd43b95cae555d6b07ea59cd6ebeb384"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartVwapAnchor.ts",
+      "action": "M",
+      "sha256": "9f5d6f10d9f1f82c3e1680ef406fae22bb1f6ba43e4e285a386d7681c34e901a"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/chartWorkspace.ts",
+      "action": "M",
+      "sha256": "05b44693b0052d124b986e39d12abb4c5df6c4c958cd9b89830fe709b01819b2"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts",
+      "action": "M",
+      "sha256": "417918797e4cb8829f7ff24768bc0c6809639ec2083900033b06d4f97db991cc"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts",
+      "action": "M",
+      "sha256": "c8f5c57d05ef3d6d624592fd214fdeb2f943f521f4feda5598824389cc8c50fd"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-engine/types.ts",
+      "action": "M",
+      "sha256": "93824a041edbe79d47b7fbe1dfd6caa52f087f0f42a3566a5a74fa58c65bec3d"
+    },
+    {
+      "path": "artifacts/trading-dashboard/src/lib/chart-research/chartResearchAssistant.ts",
+      "action": "M",
+      "sha256": "37d6ae0db0deb456b8f4f7456c06f7938f4f45e29e55208a71f9b31088c43cd7"
+    },
+    {
+      "path": "lib/integrations-openai-ai-react/src/audio/useVoiceRecorder.ts",
+      "action": "M",
+      "sha256": "847498295accae76bcb7eb22a600bd475a1b906916d22e4aff0ae34d71e705ce"
+    },
+    {
+      "path": "lib/integrations-openai-ai-react/src/audio/useVoiceStream.ts",
+      "action": "M",
+      "sha256": "835aa089697fb57003a9e1c1cbec0684d4a25cd6f8e01c6a19da53c7331d3ab2"
+    },
+    {
+      "path": "scripts/chart-qa/volume-profile-benchmark.mjs",
+      "action": "A",
+      "sha256": "4cc812cf79d2ac942d04791c74202c67e11ac4c7021ed886d6c522d8e50764bc"
+    },
+    {
+      "path": "scripts/chart-qa/witness.ts",
+      "action": "M",
+      "sha256": "c43e5f82669f4fb00d1de7b3c1892458dbc62cfa385fe4531d83f2268bbed641"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-fixture/build.mjs",
+      "action": "M",
+      "sha256": "b0b70459108c8514feb1a3b4d48d3d89793617f4abceae21c17fbb89155d7e4d"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-fixture/main.ts",
+      "action": "M",
+      "sha256": "b8c9a24709260a74f1a373617bf8d9522d256dc62b8332fd1275ac2709bde852"
+    },
+    {
+      "path": "scripts/scanner-qa/shared-chart-fixture/volumeProfileProbe.ts",
+      "action": "A",
+      "sha256": "c8ff7bde91560d9637e9717fd25beff2abebca1c7f537f001c4bd143680e339f"
+    }
+  ],
+  "documentationFiles": [
+    {
+      "path": "docs/SMART_CHART_VOLUME_PROFILE_2026_11_01.md",
+      "sha256": "a296d92eaac56957681bcd944c3ac646cba88329f03c17b126e6b84e107e6e04"
+    },
+    {
+      "path": "docs/SMART_CHART_REQUIREMENTS_CENSUS_2026_11_01.md",
+      "sha256": "1f4515851de9598ba1037380c56fdfd8ad327feee5a2d4ff7bd8f75a777d4cdc"
+    },
+    {
+      "path": "docs/SMART_CHART_PLATFORM_COMPARISON.md",
+      "sha256": "eeb8772c239d580d52dcecb8ef1af0fa401d12197edbc02bc7ceca06220f2b35"
+    },
+    {
+      "path": "docs/development-sync/SMART_CHART_VOLUME_PROFILE_VALIDATION_2026_11_01.json",
+      "sha256": "3922d9051331cb5248abaaa6f0f1d5ad964f8a1b0ba612d7785b35c3c9ee9b71"
+    }
+  ]
+}

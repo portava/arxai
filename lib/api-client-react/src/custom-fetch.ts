@@ -18,31 +18,6 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 
-// Optional request observer — wired up by the host app to feed every
-// Orval-generated API call into a perf instrumentation pipeline. Kept
-// optional and side-effect-free so this mutator stays usable in mobile
-// builds (Expo) without dragging in any browser/perf machinery.
-export interface RequestObservation {
-  method: string;
-  url: string;
-  status: number;
-  totalMs: number;
-  backendMs: number | null;
-  ok: boolean;
-}
-export type RequestObserver = (obs: RequestObservation) => void;
-let _requestObserver: RequestObserver | null = null;
-export function setRequestObserver(observer: RequestObserver | null): void {
-  _requestObserver = observer;
-}
-function parseServerTiming(value: string | null): number | null {
-  if (!value) return null;
-  // Format: `name;dur=12.3, other;dur=5`. We only care about the first
-  // numeric `dur=` we find — that's what perfTimer emits as `app;dur=…`.
-  const m = /dur=(\d+(?:\.\d+)?)/.exec(value);
-  return m ? Number(m[1]) : null;
-}
-
 /**
  * Set a base URL that is prepended to every relative request URL
  * (i.e. paths that start with `/`).
@@ -385,52 +360,7 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  // Wall-clock timing for the observer. Uses performance.now() when
-  // available (browser, modern Node) so the value matches what the
-  // dashboard's perf module already produces; falls back to Date.now()
-  // in older runtimes. We intentionally measure ONLY the network round
-  // trip + body parse — NOT the time spent inside Orval/React Query
-  // wrappers — so a duplicate-request detector can dedupe by url+totalMs.
-  const startedAt =
-    typeof performance !== "undefined" && typeof performance.now === "function"
-      ? performance.now()
-      : Date.now();
-  let response: Response;
-  try {
-    response = await fetch(input, { ...init, method, headers });
-  } catch (e) {
-    // Even on network failure, give the observer a row so duplicate /
-    // hung-network detection still sees something.
-    if (_requestObserver) {
-      const endedAt =
-        typeof performance !== "undefined" && typeof performance.now === "function"
-          ? performance.now()
-          : Date.now();
-      try {
-        _requestObserver({
-          method, url: requestInfo.url,
-          status: 0, ok: false,
-          totalMs: endedAt - startedAt, backendMs: null,
-        });
-      } catch { /* never break the request */ }
-    }
-    throw e;
-  }
-
-  if (_requestObserver) {
-    const endedAt =
-      typeof performance !== "undefined" && typeof performance.now === "function"
-        ? performance.now()
-        : Date.now();
-    try {
-      _requestObserver({
-        method, url: requestInfo.url,
-        status: response.status, ok: response.ok,
-        totalMs: endedAt - startedAt,
-        backendMs: parseServerTiming(response.headers.get("server-timing")),
-      });
-    } catch { /* never break the request */ }
-  }
+  const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

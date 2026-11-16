@@ -1,0 +1,78 @@
+{
+  "at": "2026-10-25T12:56:40.919357+00:00",
+  "pull_request": "https://github.com/portava/arxai/pull/71",
+  "github_status": "OPEN; not merged",
+  "github_implementation_commit": "841f5d6525908c653b0602c872029d1f2d2d9c7c",
+  "checks": {
+    "regressions": {
+      "exit_code": 0,
+      "sha256": "0afcc720b770a07727212f33808e41a077bb9e312feed9f3433a43f075a494e7"
+    },
+    "api_typecheck": {
+      "exit_code": 0,
+      "sha256": "d6743742a7c68327395f5864f92db1c7ebbd9db85bf56e2e04d1d4dd78da06eb"
+    },
+    "web_typecheck": {
+      "exit_code": 0,
+      "sha256": "059db5be152aa305ef6b8dd2c19dacd1533b37c2d80640b47836a9daacb2626a"
+    },
+    "guards": {
+      "exit_code": 0,
+      "sha256": "4dd0fb7e92d3eb62f2df857a6638cdc9e3e9a1ddfc5e6a128cd7bc840b7386db"
+    },
+    "api_build": {
+      "exit_code": 0,
+      "sha256": "8a6f59f320ec47269f9287218849a0f4ede0c337073652bccaad60d468eea03f"
+    },
+    "web_build": {
+      "exit_code": 0,
+      "sha256": "edd09bc9c7a994337b0fc958c12b56c7d40bf2111f3a90e78a13b85cc6a1374b"
+    }
+  },
+  "regression_tests_passed": 46,
+  "guards_passed": 87,
+  "development_smoke": {
+    "health": {
+      "status": 200,
+      "expected": 200
+    },
+    "anonymous_identity": {
+      "status": 401,
+      "expected": 401
+    },
+    "login": {
+      "status": 200,
+      "expected": 200
+    },
+    "manifest": {
+      "status": 401,
+      "note": "authorization retained; no bypass attempted"
+    },
+    "zip": {
+      "status": 401,
+      "note": "authorization retained; no bypass attempted"
+    }
+  },
+  "mac_compiler": {
+    "terminal_location": "this Mac",
+    "ea_version": "1.29",
+    "source_sha256": "2fbb0235206583916de8f1306403a0a51479ccbe49134ab13b662990d78bf3e0",
+    "compiled_sha256": "b135d2f26e5d5d0b01441083f482c51ec626ba175db12d7d687e3242a0300e03",
+    "compiler_log_sha256": "7286ad185b7e295f3129aec9be2933c278d6a5e37dc789b3907ab97261d328f3",
+    "compile_errors": 0,
+    "compile_warnings": 2,
+    "warnings": [
+      "description length",
+      "implicit bool-to-string conversion in self-update checksum path; self-update remains disabled"
+    ],
+    "attached_to_terminal": false,
+    "broker_orders_authorized": false,
+    "broker_orders_placed": 0,
+    "status": "COMPILED WITH WARNINGS; READ-ONLY SETUP ONLY; partial-close execution incompatible"
+  },
+  "production_published": false,
+  "broker_orders_issued": 0,
+  "token_created": false,
+  "terminal_location": "this Mac",
+  "connection_observed": false
+}

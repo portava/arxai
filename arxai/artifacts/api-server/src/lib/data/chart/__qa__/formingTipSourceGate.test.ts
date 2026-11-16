@@ -1,0 +1,101 @@
+// MT5 display requires an exact writer-bound native snapshot; Deriv retains its tick composer.
+
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import ts from "typescript";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SERVICE = resolve(HERE, "../chartDataService.ts");
+
+function serviceSource(): string {
+  return readFileSync(SERVICE, "utf8");
+}
+
+/** The forming-tip block, from its opening guard to the quality precedence. */
+function formingTipBlock(src: string): string {
+  const start = src.indexOf("if (includeFormingTip");
+  assert.ok(start > -1, "the forming-tip guard must still exist");
+  const end = src.indexOf("Quality precedence", start);
+  assert.ok(end > start, "the forming-tip block must precede the quality verdict");
+  return src.slice(start, end);
+}
+
+describe("C3.2 — the append gate supports both live providers", () => {
+  it("separates native MT5 snapshots from the non-MT5 composer", () => {
+    const block = formingTipBlock(serviceSource());
+    const ast = ts.createSourceFile("forming-tip.ts", block, ts.ScriptTarget.Latest, true);
+    const conditions: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isIfStatement(node)) conditions.push(node.expression.getText(ast));
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    assert.ok(conditions.some(c => c.includes('source === "mt5_broker"') && c.includes('!historicalOnly') && c.includes('!providerDelayed')));
+    assert.ok(conditions.some(c => c.includes('source !== "mt5_broker"') && c.includes('isFormingTickSource(source)')));
+    assert.ok(block.includes('readNativeSeamForSeries('));
+    assert.ok(block.includes('formingOrigin: "native_mt5_snapshot"'));
+  });
+
+  it("still gates on an opt-in request and a real newest bar", () => {
+    const block = formingTipBlock(serviceSource());
+    assert.ok(/includeFormingTip/.test(block), "the tip must remain OPT-IN for display routes");
+    assert.ok(/lastCandle/.test(block), "a tip needs a newest closed bar to sit against");
+  });
+
+  it("retains genuine folded ticks for the Deriv path", () => {
+    const block = formingTipBlock(serviceSource());
+    assert.ok(
+      /getFormingBar\(/.test(block),
+      "the Deriv tip must come from real folded ticks",
+    );
+    assert.ok(
+      /getFormingTickAgeMs\(/.test(block),
+      "the honest tick age must still drive the downstream freshness verdict",
+    );
+  });
+
+  it("keeps the stale-tip guard that ignores a tip behind the closed feed", () => {
+    const block = formingTipBlock(serviceSource());
+    assert.ok(
+      /tipOpenMs\s*>\s*lastClosedOpenMs/.test(block),
+      "a tip for an interval ahead of the newest closed bar is appended",
+    );
+    assert.ok(
+      /tipOpenMs\s*===\s*lastClosedOpenMs/.test(block),
+      "a tip for the SAME interval merges onto the closed bar",
+    );
+  });
+
+  it("marks the appended tip as forming, never as a complete provider bar", () => {
+    const block = formingTipBlock(serviceSource());
+    assert.ok(/isComplete:\s*false/.test(block));
+    assert.ok(/isFinal:\s*false/.test(block));
+    assert.ok(/isForming:\s*true/.test(block));
+    assert.ok(/FORMING_BAR/.test(block), "the tip must carry the FORMING_BAR quality flag");
+  });
+});
+
+describe("C3.2 — the composer's own contract is unchanged", () => {
+  it("a symbol with no folded ticks yields no tip", async () => {
+    const { getFormingBar, __resetFormingBarStore } = await import("../formingBarComposer.js");
+    __resetFormingBarStore();
+    assert.equal(
+      getFormingBar("EURUSD", "M1", Date.now()),
+      null,
+      "relaxing the source gate must not conjure a tip where no tick exists",
+    );
+  });
+
+  it("a tick from any provider produces a tip for that symbol", async () => {
+    const { foldFormingTick, getFormingBar, __resetFormingBarStore } = await import(
+      "../formingBarComposer.js"
+    );
+    __resetFormingBarStore();
+    const now = Date.now();
+    foldFormingTick("R_75", 1500, now, now);
+    assert.ok(getFormingBar("V75", "M1", now), "a Deriv-sourced tick yields a real tip");
+  });
+});

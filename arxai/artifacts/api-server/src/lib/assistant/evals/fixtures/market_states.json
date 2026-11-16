@@ -1,0 +1,140 @@
+[
+  {
+    "id": "market-state-direction",
+    "category": "chart_reads",
+    "description": "Current direction assertion contradicts structured chart evidence",
+    "user": "Read EURUSD H1",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "EURUSD is a confirmed BUY setup."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "bias": "BEARISH",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedStatus": {
+          "stale": true,
+          "isLive": false
+        },
+        "chartVerified": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNSUPPORTED_MARKET_STATE"
+      ],
+      "visibleExcludes": [
+        "EURUSD is a confirmed BUY setup."
+      ],
+      "visibleIncludes": [
+        "Removed by the ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "market-state-freshness",
+    "category": "chart_reads",
+    "description": "Current freshness assertion contradicts structured chart evidence",
+    "user": "Read EURUSD H1",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The EURUSD feed is live."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "bias": "BEARISH",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedStatus": {
+          "stale": true,
+          "isLive": false
+        },
+        "chartVerified": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNSUPPORTED_MARKET_STATE"
+      ],
+      "visibleExcludes": [
+        "The EURUSD feed is live."
+      ],
+      "visibleIncludes": [
+        "Removed by the ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "market-state-verification",
+    "category": "chart_reads",
+    "description": "Current verification assertion contradicts structured chart evidence",
+    "user": "Read EURUSD H1",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "readChartStructure",
+            "args": {
+              "symbol": "EURUSD",
+              "timeframe": "H1"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The EURUSD chart is verified."
+      }
+    ],
+    "toolResults": {
+      "readChartStructure": {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "bias": "BEARISH",
+        "readLayer": "STRUCTURAL_ONLY",
+        "feedStatus": {
+          "stale": true,
+          "isLive": false
+        },
+        "chartVerified": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "UNSUPPORTED_MARKET_STATE"
+      ],
+      "visibleExcludes": [
+        "The EURUSD chart is verified."
+      ],
+      "visibleIncludes": [
+        "Removed by the ARX verifier"
+      ]
+    }
+  }
+]

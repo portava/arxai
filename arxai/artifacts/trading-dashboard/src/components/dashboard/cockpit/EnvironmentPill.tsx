@@ -1,0 +1,60 @@
+// Single environment/status pill — the ONE status line under the header.
+// Picks exactly one state (never conflicting LIVE + Demo + Paused at once),
+// resolved from the unified trading-mode envelope. Read-only.
+
+import { CheckCircle2, AlertTriangle, Lock, Pause } from "lucide-react";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { cn } from "@/lib/utils";
+
+export function EnvironmentPill({ compact = false }: { compact?: boolean }) {
+  const mode = useTradingMode();
+
+  if (mode.isLoading) {
+    return <div className="h-7 w-40 animate-pulse rounded-full bg-secondary/40" />;
+  }
+
+  // Priority: blocked → frozen/paused → live → demo → sim.
+  // cleanBlockedReason is an account / permission / arming blocker from the
+  // server's mode precedence (operator pause, tradingMode, live confirmation,
+  // master switch …). It never reads a bridge heartbeat, so the label names the
+  // block and the sub-line carries the server's own reason — never "Bridge
+  // Disconnected".
+  const state = mode.isModeUnknown
+    // The check failed: say so, never a demo/simulator label or "Loading…".
+    ? { label: "Mode unknown", dot: "bg-warning", text: "text-warning", icon: AlertTriangle, sub: "Your account mode could not be checked just now." }
+    : mode.cleanBlockedReason
+    ? { label: "Trading blocked", dot: "bg-danger", text: "text-danger", icon: Lock, sub: mode.cleanBlockedReason }
+    : mode.isFrozen
+      ? { label: "Trading Paused", dot: "bg-warning", text: "text-warning", icon: Pause, sub: mode.cleanUserMessage }
+      : mode.isLiveShared
+        // The envelope measures permission, not systems: say what it knows.
+        ? { label: "LIVE · Shared MT5", dot: "bg-success", text: "text-success", icon: CheckCircle2, sub: mode.canManualTrade ? "Approved for live trading" : mode.cleanUserMessage }
+        : mode.isDemo
+          ? { label: "Demo · Simulator", dot: "bg-primary", text: "text-primary", icon: CheckCircle2, sub: "Demo environment" }
+          : { label: mode.cleanModeLabel || "Simulator", dot: "bg-muted", text: "text-txt-secondary", icon: AlertTriangle, sub: mode.cleanUserMessage };
+
+  const Icon = state.icon;
+
+  if (compact) {
+    return <div className={cn("arx-env-compact", state.text)} data-testid="cockpit-env-pill" title={state.sub}>
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", state.dot)} />
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="truncate">{state.label}</span>
+    </div>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2.5" data-testid="cockpit-env-pill">
+      <span className={cn("inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm font-semibold", state.text)}>
+        <span className={cn("h-2 w-2 rounded-full", state.dot)} />
+        {state.label}
+      </span>
+      {state.sub && (
+        <span className="inline-flex items-center gap-1.5 text-xs text-txt-secondary">
+          <Icon className="h-3.5 w-3.5" />
+          <span className="truncate max-w-[200px] sm:max-w-none">{state.sub}</span>
+        </span>
+      )}
+    </div>
+  );
+}

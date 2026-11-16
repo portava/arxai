@@ -1,0 +1,110 @@
+async page => {
+ const base=typeof CHART_QA_BASE_URL==='string'?CHART_QA_BASE_URL:'http://127.0.0.1:4178';
+ const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base);
+ await page.evaluate(()=>localStorage.clear()); await page.reload();
+ await page.setViewportSize({width:1600,height:1100});
+ const chart=page.getByTestId('arx-native-canvas');
+ await chart.waitFor();
+ // Hover once and record the canonical legend. Every style switch must show the
+ // same canonical OHLC text first (no pointer move: the adapter queues a legend
+ // update on a style change) and the labelled HA suffix only in Heikin Ashi.
+ const styleSelect=page.getByLabel('Chart style',{exact:true});
+ const styleValues=await styleSelect.locator('option').evaluateAll(options=>options.map(option=>option.value));
+ if(JSON.stringify(styleValues)!==JSON.stringify(['candles','bars','line','area','baseline','heikinAshi','hollow'])) throw Error(`Unexpected chart styles: ${styleValues}`);
+ await chart.hover({position:{x:300,y:120}});
+ await page.waitForFunction(()=>document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent.includes('UTC'));
+ const canonicalLegend=await page.getByTestId('chart-candle-inspector').textContent();
+ if(canonicalLegend.includes(' HA O ')) throw Error('HA legend shown in candles style');
+ for(const style of ['bars','line','area','baseline','heikinAshi','hollow','candles']) {
+   await styleSelect.selectOption(style);
+   await page.waitForFunction(([canonical,ha])=>{
+     const text=document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent ?? '';
+     return ha ? text.startsWith(`${canonical}  ·  HA O `) : text===canonical;
+   },[canonicalLegend,style==='heikinAshi'],{timeout:5000}).catch(async()=>{throw Error(`Legend after ${style}: ${await page.getByTestId('chart-candle-inspector').textContent()}`);});
+ }
+ await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
+ for(const name of ['Simple moving average','Exponential moving average','Bollinger Bands','Relative strength index','MACD']) await page.getByRole('button',{name:`Add ${name}`,exact:true}).click();
+ await page.getByLabel('SMA 1 Period',{exact:true}).fill('10');
+ await page.getByLabel('SMA 1 Period',{exact:true}).blur();
+ await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
+ if(await chart.locator('tr').count()!==6) throw Error('Expected price, RSI, MACD panes and time-axis row');
+ for(const tool of ['horizontal','trend','fibonacci']) {
+   await page.getByLabel('Drawing tool',{exact:true}).selectOption(tool);
+   await chart.click({position:{x:300,y:80}});
+   if(tool!=='horizontal') await chart.click({position:{x:600,y:160}});
+ }
+ await page.getByRole('button',{name:'Objects (3)',exact:true}).click();
+ if(await page.getByTestId('chart-drawing-object').count()!==3) throw Error('Drawings did not render in object manager');
+ await page.getByLabel('Drawing 1 start price',{exact:true}).fill('1.08123');
+ await page.getByLabel('Drawing 1 start price',{exact:true}).blur();
+ await page.getByRole('button',{name:'Undo',exact:true}).click();
+ await page.getByRole('button',{name:'Redo',exact:true}).click();
+ if(Number(await page.getByLabel('Drawing 1 start price',{exact:true}).inputValue())!==1.08123) throw Error('Object edit undo/redo failed');
+ await page.getByRole('button',{name:'Hide drawings',exact:true}).click();
+ await page.getByRole('button',{name:'Show drawings',exact:true}).click();
+ await page.getByRole('button',{name:'Objects (3)',exact:true}).click();
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByLabel('Template name',{exact:true}).fill('Acceptance template');
+ await page.getByRole('button',{name:'Save new',exact:true}).click();
+ await page.getByText('Template saved in this browser.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
+ await page.getByLabel('Chart style',{exact:true}).selectOption('line');
+ await page.getByRole('button',{name:'Templates',exact:true}).click();
+ await page.getByRole('listbox').selectOption({label:'Acceptance template'});
+ await page.getByRole('button',{name:'Apply selected',exact:true}).click();
+ await page.getByRole('button',{name:'Close',exact:true}).click();
+ if(await page.getByLabel('Chart style',{exact:true}).inputValue()!=='candles') throw Error('Template did not restore style');
+ const downloadPromise=page.waitForEvent('download');
+ await page.getByRole('button',{name:'Export PNG',exact:true}).click();
+ const download=await downloadPromise;
+ if(!download.suggestedFilename().endsWith('.png')) throw Error('No chart PNG');
+ await download.saveAs('/private/tmp/arx-smart-chart-export.png');
+ await page.reload();
+ await page.getByRole('button',{name:'Objects (3)',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Studies (5)',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
+ if(await page.getByLabel('SMA 1 Period',{exact:true}).inputValue()!=='10') throw Error('Study period was not persisted');
+ await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
+ await page.getByRole('button',{name:'Switch instrument',exact:true}).click();
+ await page.getByRole('button',{name:'Objects (0)',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Switch instrument',exact:true}).click();
+ await page.getByRole('button',{name:'Objects (3)',exact:true}).waitFor();
+ await page.getByRole('button',{name:'H4 timeframe',exact:true}).click();
+ await page.getByRole('button',{name:'Objects (0)',exact:true}).waitFor();
+ await page.getByRole('button',{name:'M15 timeframe',exact:true}).click();
+ await page.getByRole('button',{name:'Objects (3)',exact:true}).waitFor();
+ await page.screenshot({path:'/private/tmp/arx-smart-chart-workbench-desktop.png',fullPage:true});
+ await page.getByRole('button',{name:'Two charts',exact:true}).click();
+ await page.getByTestId('comparison-chart').waitFor();
+ if(await page.getByTestId('arx-native-chart').count()!==2) throw Error('Two-chart layout failed');
+ await page.getByTestId('comparison-chart').getByRole('button',{name:'H4 timeframe',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('[data-testid="comparison-chart"] [data-testid="arx-native-tf-H4"]')?.getAttribute('aria-pressed')==='true');
+ if(await page.getByTestId('arx-native-tf-M15').first().getAttribute('aria-pressed')!=='true') throw Error('Secondary interval changed primary');
+ await page.reload();
+ await page.getByTestId('comparison-chart').waitFor();
+ if(await page.getByTestId('comparison-chart').getByTestId('arx-native-tf-H4').getAttribute('aria-pressed')!=='true') throw Error('Comparison interval not saved');
+ await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw Error('Mobile page overflow');
+ await page.screenshot({path:'/private/tmp/arx-smart-chart-workbench-mobile.png',fullPage:true});
+ await page.getByRole('button',{name:'One chart',exact:true}).click();
+ await page.getByRole('button',{name:'Chart tools',exact:true}).click();
+ await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
+ for(let i=0;i<5;i++) await page.getByRole('button',{name:'Remove study 1',exact:true}).click();
+ await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
+ if(await page.getByTestId('arx-native-canvas').locator('tr').count()!==2) throw Error('Empty indicator panes leaked');
+ const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+ const touch=await touchContext.newPage();
+ await touch.goto(base);
+ await touch.getByRole('button',{name:'Chart tools',exact:true}).click();
+ await touch.getByLabel('Drawing tool',{exact:true}).selectOption('trend');
+ await touch.getByTestId('arx-native-canvas').tap({position:{x:70,y:70}});
+ await touch.getByTestId('arx-native-canvas').tap({position:{x:200,y:140}});
+ await touch.getByRole('button',{name:'Objects (1)',exact:true}).waitFor();
+ await touchContext.close();
+ const basic=await page.evaluate(()=>window.runChartBenchmark());
+ const allStudies=await page.evaluate(()=>window.runChartBenchmark(undefined,true));
+ if(errors.length) throw Error(JSON.stringify(errors));
+ for(const run of [basic,allStudies]) if(!run.historyAnchorPreserved || run.fullReplacements!==2) throw Error('Performance or history regression');
+ return {browser:'Chromium',fixture:'synthetic offline',styles:styleValues.length,haLegend:true,studies:5,drawings:3,persistence:true,undoRedo:true,touchDrawing:true,exportPng:true,layouts:2,mobileNoOverflow:true,errors,basic,allStudies};
+}

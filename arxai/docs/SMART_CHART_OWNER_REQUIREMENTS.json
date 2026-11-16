@@ -1,0 +1,723 @@
+{
+  "ownerRequested": "2026-10-26",
+  "intent": "Automatic plain-English analysis embedded in Smart Chart, with zoom/pan and uncluttered candle-anchored annotations. Head and shoulders/inverse and breakout trend also explicitly requested.",
+  "policy": "No exclusions approved. Presence in this inventory is not implementation or validation. Underlying source-bound observations required; a chart alone cannot establish causation.",
+  "defaultPresentation": "At most three relevant summary findings; one focused geometry. Expanded analysis and exact criteria inside chart frame. Developing, observed, confirmed and invalidated states remain distinct.",
+  "analysisFamilies": [
+    {
+      "name": "Trend",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Comparison",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Ranking",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Change and growth",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Distribution",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Central tendency",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Variability",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Outliers and anomalies",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Seasonality and cycles",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Relationships",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Lead\u2013lag relationships",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Composition",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Contribution to change",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Concentration",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Segmentation",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Cumulative patterns",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Benchmarks and targets",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Breakpoints",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Forecasting",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Uncertainty",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Statistical significance",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Sensitivity and scenarios",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Data quality",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Chart integrity",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    }
+  ],
+  "financialFamilies": [
+    {
+      "name": "Price action, candlestick patterns, and chart patterns",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Support, resistance, trendlines, and channels",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Volume, liquidity, and order flow",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Momentum indicators such as RSI, MACD, and stochastic oscillators",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Moving averages and crossover signals",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Volatility, ATR, and Bollinger Bands",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Breakouts, breakdowns, gaps, and retests",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Indicator divergences",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Relative strength and multiple-timeframe analysis",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    },
+    {
+      "name": "Returns, drawdowns, and historical strategy testing",
+      "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+    }
+  ],
+  "candlestickFamilies": [
+    {
+      "family": "Basic candle shapes",
+      "patterns": [
+        {
+          "name": "White/bullish candle",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Black/bearish candle",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Long-body candle",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Short-body candle",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Spinning top",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "High-wave candle",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Marubozu",
+      "patterns": [
+        {
+          "name": "Bullish Marubozu",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Marubozu",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Opening Marubozu",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Closing Marubozu",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Doji shapes",
+      "patterns": [
+        {
+          "name": "Standard Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Long-Legged Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Dragonfly Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Gravestone Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Four-Price Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Rickshaw Man",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Takuri Line",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Other Doji formations",
+      "patterns": [
+        {
+          "name": "Northern Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Southern Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Gapping Up Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Gapping Down Doji",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Hammer and star shapes",
+      "patterns": [
+        {
+          "name": "Hammer",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Inverted Hammer",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Hanging Man",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Shooting Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Belt Hold",
+      "patterns": [
+        {
+          "name": "Bullish Belt Hold",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Belt Hold",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Engulfing",
+      "patterns": [
+        {
+          "name": "Bullish Engulfing",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Engulfing",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Last Engulfing Bottom",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Last Engulfing Top",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Harami",
+      "patterns": [
+        {
+          "name": "Bullish Harami",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Harami",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bullish Harami Cross",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Harami Cross",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Piercing and cloud",
+      "patterns": [
+        {
+          "name": "Piercing Line",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Dark Cloud Cover",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Tweezers and matching levels",
+      "patterns": [
+        {
+          "name": "Tweezer Bottom",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Tweezer Top",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Matching Low",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Matching High",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Meeting and counterattack",
+      "patterns": [
+        {
+          "name": "Bullish Meeting Lines/Counterattack",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Meeting Lines/Counterattack",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Kicking",
+      "patterns": [
+        {
+          "name": "Bullish Kicking/Kicker",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Kicking/Kicker",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Kicking by Length",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Other paired formations",
+      "patterns": [
+        {
+          "name": "Homing Pigeon",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Descending Hawk",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Turn Up",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Turn Down",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Neck and thrusting",
+      "patterns": [
+        {
+          "name": "On-Neck",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "In-Neck",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Thrusting",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Separating and Tasuki lines",
+      "patterns": [
+        {
+          "name": "Bullish Separating Lines",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Separating Lines",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bullish Tasuki Line",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Tasuki Line",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Doji stars",
+      "patterns": [
+        {
+          "name": "Bullish Doji Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Doji Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Collapsing Doji Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Morning and evening stars",
+      "patterns": [
+        {
+          "name": "Morning Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Evening Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Morning Doji Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Evening Doji Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Abandoned Baby",
+      "patterns": [
+        {
+          "name": "Bullish Abandoned Baby",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Abandoned Baby",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Tri-Star",
+      "patterns": [
+        {
+          "name": "Bullish Tri-Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Tri-Star",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Soldiers and crows",
+      "patterns": [
+        {
+          "name": "Three White Soldiers",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Three Black Crows",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Identical Three Crows",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Two Crows",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Upside Gap Two Crows",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Three Inside/Outside",
+      "patterns": [
+        {
+          "name": "Three Inside Up",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Three Inside Down",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Three Outside Up",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Three Outside Down",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Other three-candle formations",
+      "patterns": [
+        {
+          "name": "Advance Block",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Stalled Pattern/Deliberation",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Three Stars in the South",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Unique Three-River Bottom",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Stick Sandwich",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Windows",
+      "patterns": [
+        {
+          "name": "Rising Window",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Falling Window",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Gap formations",
+      "patterns": [
+        {
+          "name": "Upside Tasuki Gap",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Downside Tasuki Gap",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Upside Gap Three Methods",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Downside Gap Three Methods",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Two Black Gapping Candles",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Side-by-side lines",
+      "patterns": [
+        {
+          "name": "Upside-Gap Side-by-Side White Lines",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Downside-Gap Side-by-Side White Lines",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Three-Line Strike",
+      "patterns": [
+        {
+          "name": "Bullish Three-Line Strike",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Three-Line Strike",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Three Methods",
+      "patterns": [
+        {
+          "name": "Rising Three Methods",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Falling Three Methods",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Other extended formations",
+      "patterns": [
+        {
+          "name": "Mat Hold",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Concealing Baby Swallow",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bullish Breakaway",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Breakaway",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Ladder Bottom",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Ladder Top",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    },
+    {
+      "family": "Hikkake",
+      "patterns": [
+        {
+          "name": "Bullish Hikkake",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Bearish Hikkake",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        },
+        {
+          "name": "Modified Hikkake",
+          "status": "REQUIRES_IMPLEMENTATION_AND_VALIDATION"
+        }
+      ]
+    }
+  ],
+  "additionalPatternFamilies": [
+    "Head and shoulders",
+    "Inverse head and shoulders",
+    "Trend breakout"
+  ],
+  "acceptance": [
+    "No future-bar leakage; confirmation timestamp reflects actual observation",
+    "Owner/source/symbol/timeframe binding; explicit historical/replay state",
+    "No simulated volume, order flow, forecasts, confidence or significance",
+    "Precise calculations use underlying data; quality and coverage disclosed",
+    "Keyboard, mouse and touch zoom/pan; drawings remain editable in inspect mode",
+    "Median/p95/p99 measured for actual applied chart and visible explanation separately",
+    "Local visible-feedback p95<=100ms;60fps and matched competitor parity remain independent targets"
+  ]
+}

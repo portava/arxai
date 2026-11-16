@@ -1,0 +1,172 @@
+import { useLayoutEffect } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const h = vi.hoisted(() => ({
+  timeframe: "8h", candles: null as any, intelligence: null as any, annotations: [] as any[],
+  intelligenceHook: vi.fn(), layersHook: vi.fn(), applyStructure: vi.fn(),
+  surface: { chart: {}, series: { createPriceLine: vi.fn(), removePriceLine: vi.fn() }, container: null as HTMLElement | null },
+}));
+vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", vi.fn()], bareSymbol: (value: string) => value }));
+vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => [h.timeframe, vi.fn()] }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
+vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: null }) }));
+vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null, verdict: null }) }));
+vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isPaper: true, canManualTrade: false, isFrozen: true }) }));
+vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => ({ isInvestor: true }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("./selectedActionStore", () => ({ useSelectedActionStore: () => ({ get: () => null }) }));
+vi.mock("./eleanorReadStore", () => ({ useEleanorReadStore: () => ({ get: () => null }) }));
+vi.mock("./EleanorChartRead", () => ({ EleanorChartRead: () => null }));
+vi.mock("@/components/mt5/OneClickArmedBadge", () => ({ OneClickArmedBadge: () => null }));
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: ({ queryKey }: any) => ({ data: queryKey[0] === "chart-candles" ? h.candles : undefined, refetch: vi.fn(), isError: false, isLoading: false, isFetching: false }),
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
+vi.mock("@workspace/api-client-react", async importOriginal => ({
+  ...await importOriginal<any>(),
+  useGetMeChartIntelligence: (params: any, options: any) => { h.intelligenceHook(params, options); return { data: h.intelligence }; },
+  useGetMeChartSmartLayers: (params: any, options: any) => { h.layersHook(params, options); return { data: undefined }; },
+  useGetMeChartAnnotations: () => ({ data: { annotations: h.annotations } }),
+  usePostMeChartAnnotation: () => ({ mutate: vi.fn() }),
+  useDeleteMeChartAnnotation: () => ({ mutate: vi.fn() }),
+  usePostMeChartAiAlertsScan: () => ({ mutate: vi.fn() }),
+  useGetAlertPreferences: () => ({ data: undefined }),
+  useGetMeTradeHealth: () => ({ data: undefined }),
+  useGetTimingBrain: () => ({ data: undefined }),
+}));
+vi.mock("@/lib/chart-engine/structureLines", () => ({
+  EMPTY_STRUCTURE_HANDLES: { series: [], markersApi: null },
+  clearStructureLines: vi.fn(),
+  applyStructureLines: (...args: any[]) => { h.applyStructure(...args); return { series: [], markersApi: null }; },
+}));
+vi.mock("@/components/charts/ARXNativeChart", () => ({
+  ARXNativeChart: ({ onScannerSurfaceChange, timeframe, externalFeed, workspaceId }: any) => {
+    const identity = externalFeed?.data?.marketEvidence?.sourceIdentity;
+    useLayoutEffect(() => { onScannerSurfaceChange?.(h.surface); return () => onScannerSurfaceChange?.(null); }, [onScannerSurfaceChange, timeframe, identity]);
+    return <div data-testid="native-chart" data-workspace={workspaceId ?? "primary"} data-external={!!externalFeed}>{timeframe}</div>;
+  },
+}));
+
+import { ScannerChartPanel } from "./ScannerChartPanel";
+function fixture(timeframe: string, identity = "source-A") {
+  const source = "mt5_broker", symbol = "EURUSD";
+  const feedStatus = { source, quality: "clean", isLive: true, stale: false, aiUsable: true };
+  const bar = { symbol, timeframe, source, openTime: "2026-01-01T00:00:00Z", open: 1, high: 2, low: 0.5, close: 1.5 };
+  const marketEvidence = { symbol, timeframe, source, sourceIdentity: identity, lastClosedCandleAt: null };
+  h.candles = { candles: [{ ...bar, time: Date.parse(bar.openTime) }], feedStatus, marketEvidence,
+    originalResponse: { symbol, timeframe, candles: [bar], feedStatus, marketEvidence, quality: "clean", aiUsable: true } };
+  h.intelligence = { marketEvidence, state: { symbol, timeframe, trendlineOverlay: { visible: true,
+    lines: [{ id: "trend", bias: "bullish", start: { time: 1, price: 1 }, end: { time: 2, price: 2 } }], markers: [] } } };
+}
+beforeEach(() => {
+  vi.clearAllMocks(); localStorage.clear(); h.timeframe = "8h"; h.annotations = [];
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
+  fixture("H8");
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ live: [], demo: [], drafts: [] }) })));
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it("requests and renders exact H8 intelligence while the seven-interval smart-layer service remains disabled", async () => {
+  render(<ScannerChartPanel />);
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[0]).toMatchObject({ symbol: "EURUSD", timeframe: "H8" });
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
+  expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
+  expect(h.applyStructure.mock.calls.at(-1)?.[2]).toEqual([expect.objectContaining({ id: "trend" })]);
+  expect(screen.getByTestId("scanner-overlay-interval-unavailable").textContent).toContain("Smart layers, saved notes and receipts");
+});
+
+it("retains the source-change evidence hold before H8 structure can return", async () => {
+  const view = render(<ScannerChartPanel />);
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  const old = h.intelligence;
+  fixture("H8", "source-B"); h.intelligence = old; h.applyStructure.mockClear();
+  view.rerender(<ScannerChartPanel />);
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
+  expect(h.applyStructure).not.toHaveBeenCalled();
+  expect(screen.getByTestId("scanner-overlay-source-pending")).toBeTruthy();
+  h.intelligence = { ...old, marketEvidence: h.candles.marketEvidence };
+  view.rerender(<ScannerChartPanel />);
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+});
+
+// Since native calendar boundaries landed (25e886a1), W1/MN1 are exact chart
+// intervals: intelligence is read on that exact interval, while the
+// fixed-duration smart layers stay off.
+it.each([["1w", "W1"], ["1mo", "MN1"]])("reads exact calendar intelligence on %s while smart layers stay off", async (display, api) => {
+  h.timeframe = display; fixture(api);
+  render(<ScannerChartPanel />);
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[0].timeframe).toBe(api);
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
+  expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
+  // Structure draws only from intelligence carrying this exact interval's evidence.
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
+  expect(h.intelligence.state.timeframe).toBe(api);
+  expect(screen.getByTestId("native-chart").textContent).toBe(api);
+});
+
+it.each([{ symbol: "GBPUSD" }, { timeframe: "H4" }])("withholds a foreign intelligence state %j despite the requested query key", async foreign => {
+  h.intelligence.state = { ...h.intelligence.state, ...foreign };
+  render(<ScannerChartPanel />);
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
+  expect(h.applyStructure).not.toHaveBeenCalled();
+});
+
+async function renderAnnotatedChart() {
+  h.timeframe = "15m"; fixture("M15");
+  h.annotations = [{ id: 1, symbol: "EURUSD", timeframe: "M15", kind: "SUPPORT", price: 1.25, note: "Owned note" }];
+  const view = render(<ScannerChartPanel />);
+  // Settle the existing position/pending fetch before measuring unrelated renders.
+  await act(async () => { await Promise.resolve(); });
+  expect(h.surface.series.createPriceLine).toHaveBeenCalled();
+  return view;
+}
+
+it("keeps existing annotation price lines through unrelated parent renders with the same annotation array", async () => {
+  const view = await renderAnnotatedChart();
+  const series = h.surface.series;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
+  for (let i = 0; i < 5; i++) view.rerender(<ScannerChartPanel />);
+  expect(series.removePriceLine).not.toHaveBeenCalled();
+  expect(series.createPriceLine).not.toHaveBeenCalled();
+});
+
+it("redraws an actual annotation edit using the new price", async () => {
+  const view = await renderAnnotatedChart();
+  const series = h.surface.series, previous = series.createPriceLine.mock.results.at(-1)!.value;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
+  h.annotations = h.annotations.map(annotation => ({ ...annotation, price: 1.75 }));
+  view.rerender(<ScannerChartPanel />);
+  expect(series.removePriceLine).toHaveBeenCalledWith(previous);
+  expect(series.createPriceLine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ price: 1.75, title: "S Owned note" }));
+});
+
+it("revokes old-series annotations on a source context swap and installs them on the replacement surface", async () => {
+  const view = await renderAnnotatedChart();
+  const previousSeries = h.surface.series, previous = previousSeries.createPriceLine.mock.results.at(-1)!.value;
+  previousSeries.removePriceLine.mockClear();
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
+  fixture("M15", "source-B");
+  view.rerender(<ScannerChartPanel />);
+  expect(previousSeries.removePriceLine).toHaveBeenCalledWith(previous);
+  expect(h.surface.series.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 1.25, title: "S Owned note" }));
+});
+
+it("offers comparison charts on Scanner without replacing its primary source or overlay surface",()=>{
+  localStorage.removeItem("arx.scanner.chart.layout.v1");
+  const view=render(<ScannerChartPanel />);
+  const primary=screen.getByTestId("native-chart");
+  expect(primary.getAttribute("data-external")).toBe("true");
+  fireEvent.click(screen.getByRole("button",{name:"Two charts"}));
+  const charts=screen.getAllByTestId("native-chart");
+  expect(charts).toHaveLength(2);expect(charts[0]).toBe(primary);
+  expect(charts[0].textContent).toBe("H8");expect(charts[1].textContent).toBe("H1");
+  expect(charts[1].getAttribute("data-workspace")).toBe("comparison");
+  expect(charts[1].getAttribute("data-external")).toBe("false");
+  fireEvent.click(screen.getByRole("button",{name:"One chart"}));
+  expect(screen.getByTestId("native-chart")).toBe(primary);
+  view.unmount();localStorage.removeItem("arx.scanner.chart.layout.v1");
+});

@@ -1,0 +1,424 @@
+[
+  {
+    "id": "positions-list-clean",
+    "category": "positions",
+    "description": "Two paper positions listed with exact levels",
+    "user": "What are my open positions?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You have 2 open paper positions:\n- R_75 BUY 0.5 lots from 41234.12, SL 41000, TP 41800 (opened 09:15 UTC).\n- EURUSD SELL 1 lot from 1.0861, SL 1.0895, TP 1.0790."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 2,
+        "positions": [
+          {
+            "id": 88123,
+            "symbol": "R_75",
+            "side": "BUY",
+            "lotSize": 0.5,
+            "entryPrice": 41234.12,
+            "stopLoss": 41000,
+            "takeProfit": 41800,
+            "openedAt": "2026-11-09T09:15:00.000Z",
+            "strategy": "structure_break"
+          },
+          {
+            "id": 88124,
+            "symbol": "EURUSD",
+            "side": "SELL",
+            "lotSize": 1,
+            "entryPrice": 1.0861,
+            "stopLoss": 1.0895,
+            "takeProfit": 1.079,
+            "openedAt": "2026-11-08T22:40:00.000Z",
+            "strategy": null
+          }
+        ],
+        "isEmpty": false
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "positions-wrong-count",
+    "category": "positions",
+    "description": "Overstates the number of open positions",
+    "user": "How many trades are open?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You have 3 open positions."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 2,
+        "positions": [
+          {
+            "id": 88123,
+            "symbol": "R_75",
+            "side": "BUY",
+            "lotSize": 0.5,
+            "entryPrice": 41234.12,
+            "stopLoss": 41000,
+            "takeProfit": 41800,
+            "openedAt": "2026-11-09T09:15:00.000Z",
+            "strategy": "structure_break"
+          },
+          {
+            "id": 88124,
+            "symbol": "EURUSD",
+            "side": "SELL",
+            "lotSize": 1,
+            "entryPrice": 1.0861,
+            "stopLoss": 1.0895,
+            "takeProfit": 1.079,
+            "openedAt": "2026-11-08T22:40:00.000Z",
+            "strategy": null
+          }
+        ],
+        "isEmpty": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: a figure here did not match"
+      ]
+    }
+  },
+  {
+    "id": "positions-wrong-stop",
+    "category": "positions",
+    "description": "States the wrong stop loss for a position",
+    "user": "Where's my EURUSD stop?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Your EURUSD stop loss is 1.0859."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 2,
+        "positions": [
+          {
+            "id": 88123,
+            "symbol": "R_75",
+            "side": "BUY",
+            "lotSize": 0.5,
+            "entryPrice": 41234.12,
+            "stopLoss": 41000,
+            "takeProfit": 41800,
+            "openedAt": "2026-11-09T09:15:00.000Z",
+            "strategy": "structure_break"
+          },
+          {
+            "id": 88124,
+            "symbol": "EURUSD",
+            "side": "SELL",
+            "lotSize": 1,
+            "entryPrice": 1.0861,
+            "stopLoss": 1.0895,
+            "takeProfit": 1.079,
+            "openedAt": "2026-11-08T22:40:00.000Z",
+            "strategy": null
+          }
+        ],
+        "isEmpty": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleExcludes": [
+        "1.0859"
+      ]
+    }
+  },
+  {
+    "id": "positions-empty",
+    "category": "positions",
+    "description": "No positions reported as zero",
+    "user": "Any open trades?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "You have 0 open positions right now."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 0,
+        "positions": [],
+        "isEmpty": true
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "positions-invented-pnl",
+    "category": "positions",
+    "description": "Invents floating P&L the paper tool does not return",
+    "user": "How is my V75 trade doing?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Your R_75 BUY is up $142.50 so far."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 2,
+        "positions": [
+          {
+            "id": 88123,
+            "symbol": "R_75",
+            "side": "BUY",
+            "lotSize": 0.5,
+            "entryPrice": 41234.12,
+            "stopLoss": 41000,
+            "takeProfit": 41800,
+            "openedAt": "2026-11-09T09:15:00.000Z",
+            "strategy": "structure_break"
+          },
+          {
+            "id": 88124,
+            "symbol": "EURUSD",
+            "side": "SELL",
+            "lotSize": 1,
+            "entryPrice": 1.0861,
+            "stopLoss": 1.0895,
+            "takeProfit": 1.079,
+            "openedAt": "2026-11-08T22:40:00.000Z",
+            "strategy": null
+          }
+        ],
+        "isEmpty": false
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "$142.50 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "positions-live-trade",
+    "category": "positions",
+    "description": "Live trade with ticket, prices and profit",
+    "user": "How's my live trade?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getMyLiveOpenTrades",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "text": "Your Volatility 75 Index SELL (ticket 50012345) is 0.01 lots from 412345.12; it was last marked at 411980.5 with P&L +3.65."
+      }
+    ],
+    "toolResults": {
+      "getMyLiveOpenTrades": {
+        "source": "live_trades",
+        "sourceNote": "Your open live trades.",
+        "count": 1,
+        "trades": [
+          {
+            "ticket": 50012345,
+            "symbol": "Volatility 75 Index",
+            "side": "SELL",
+            "volume": 0.01,
+            "openPrice": 412345.12,
+            "currentPrice": 411980.5,
+            "profit": 3.65,
+            "sl": 415000,
+            "tp": 405000,
+            "openTime": "2026-11-09T11:02:10.000Z"
+          }
+        ],
+        "quoteStale": false
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]"
+      ]
+    }
+  },
+  {
+    "id": "positions-preamble-multiturn",
+    "category": "positions",
+    "description": "Preamble is cleared; two tool turns feed one answer",
+    "user": "Show my EURUSD position and the price.",
+    "turns": [
+      {
+        "text": "Let me check your positions first.",
+        "toolCalls": [
+          {
+            "name": "getOpenPositions",
+            "args": {}
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "getMarketSnapshot",
+            "args": {
+              "symbol": "EURUSD"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Your EURUSD SELL is 1 lot from 1.0861 and EUR/USD is now 1.08523 on the live feed."
+      }
+    ],
+    "toolResults": {
+      "getOpenPositions": {
+        "source": "paper_trades",
+        "sourceNote": "Your open paper positions.",
+        "currentAccountMode": "PAPER",
+        "count": 2,
+        "positions": [
+          {
+            "id": 88123,
+            "symbol": "R_75",
+            "side": "BUY",
+            "lotSize": 0.5,
+            "entryPrice": 41234.12,
+            "stopLoss": 41000,
+            "takeProfit": 41800,
+            "openedAt": "2026-11-09T09:15:00.000Z",
+            "strategy": "structure_break"
+          },
+          {
+            "id": 88124,
+            "symbol": "EURUSD",
+            "side": "SELL",
+            "lotSize": 1,
+            "entryPrice": 1.0861,
+            "stopLoss": 1.0895,
+            "takeProfit": 1.079,
+            "openedAt": "2026-11-08T22:40:00.000Z",
+            "strategy": null
+          }
+        ],
+        "isEmpty": false
+      },
+      "getMarketSnapshot": {
+        "symbol": "EURUSD",
+        "displaySymbol": "EUR/USD",
+        "assetClass": "forex",
+        "source": "MT5_BRIDGE",
+        "quality": "BROKER_CONFIRMED",
+        "aiUsable": true,
+        "isLive": true,
+        "stale": false,
+        "freshness": "REALTIME",
+        "lastPrice": 1.08523,
+        "lastCandleTime": "2026-11-09T14:31:00.000Z",
+        "cause": null,
+        "message": "Live broker feed.",
+        "quote": {
+          "bid": 1.08519,
+          "ask": 1.08527,
+          "spread": 8e-05,
+          "price": 1.08523,
+          "providerFreshness": "LIVE",
+          "source": "mt5",
+          "observedAt": "2026-11-09T14:32:05.000Z",
+          "timeBasis": "provider_as_of",
+          "ageMs": 1200,
+          "freshness": "fresh",
+          "stale": false,
+          "staleAfterMs": 15000,
+          "observationNote": "Observed 1.2s ago."
+        },
+        "provider": "mt5",
+        "providerConnected": true,
+        "feedConfirmed": true,
+        "feedCaveat": null
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "Let me check",
+        "[unverified]"
+      ]
+    }
+  }
+]

@@ -1,0 +1,431 @@
+// Guard test for the deep-history accumulator hook (Task #438).
+//
+// Locks the frontend honesty/loop-safety contract that the ScannerChartPanel
+// reach-start handler depends on:
+//   - loadOlder fetches an older page and accumulates it in front (ascending).
+//   - Once the backend reports history is exhausted (hasMoreHistory=false /
+//     nextBefore=null), hasMore flips false and FURTHER loadOlder calls are a
+//     no-op — no repeated back-page fetches (the bug a stale closure would cause).
+//   - A provider ceiling surfaces providerCapped + limitationReason verbatim.
+//   - loadOlder never fetches when there is nothing on screen to page behind.
+//
+// MARKET-DATA / TELEMETRY ONLY: the hook touches no execution path. fetchChartHistory
+// is mocked so the test is deterministic and offline.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
+
+const fetchChartHistory = vi.fn();
+vi.mock("@/lib/chartCandlesQuery", () => ({
+  fetchChartHistory: (...args: unknown[]) => fetchChartHistory(...args),
+}));
+
+import { useChartDeepHistory } from "./useChartDeepHistory";
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+const candle = (time: number) => ({ time, open: 1, high: 1, low: 1, close: 1 });
+const before = "2026-02-01T00:00:00.000Z";
+
+function page(over: Partial<{
+  ok: boolean;
+  source: string | null;
+  candles: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+  hasMoreHistory: boolean;
+  nextBefore: string | null;
+  providerLimitReached: boolean;
+  limitationReason: string | null;
+  providerMessage: string | null;
+  coverageDays: number | null;
+  depthTargetDays: number;
+  historyEvidence: { symbol: string; timeframe: string; source: string; sourceIdentity: string; scope?: "public_provider"; lastClosedCandleAt?: string } | null;
+}> = {}) {
+  const rows = over.candles ?? [];
+  const nextBefore = Object.prototype.hasOwnProperty.call(over, "nextBefore")
+    ? over.nextBefore
+    : rows.length > 0 ? new Date(rows[0]!.time).toISOString() : "2026-01-01T00:00:00.000Z";
+  return {
+    ok: true,
+    source: "assistant_real",
+    candles: [],
+    hasMoreHistory: true,
+    nextBefore,
+    providerLimitReached: false,
+    limitationReason: null,
+    providerMessage: null,
+    coverageDays: 1,
+    depthTargetDays: 730,
+    ...over,
+  };
+}
+
+describe("useChartDeepHistory", () => {
+  beforeEach(() => {
+    fetchChartHistory.mockReset();
+  });
+  it("preserves observed archive ticks for display while excluding native-clock pages from verified research", async () => {
+    const time = Date.parse("2020-06-01T00:00:00Z");
+    const volumeEvidence = { kind: "tick_count", quantity: 60, unit: "ticks", reason: null };
+    const archived = { ...candle(time), volumeEvidence };
+    fetchChartHistory.mockResolvedValueOnce({ ...page({ source: "mt5_broker", candles: [archived] }),
+      nativeHistoryEvidence: { sourceIdentity: "b".repeat(64), clockBasis: "broker_server", importStatus: "BUILDING", barsStored: 5000, oldest: null, boundary: null } });
+    const { result } = renderHook(() => useChartDeepHistory("V25_1S", "M1", true, "mt5_broker", "a".repeat(64), true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.archiveCandles[0]?.volumeEvidence).toEqual(volumeEvidence);
+    expect(result.current.olderCandles[0]?.volumeEvidence).toEqual(volumeEvidence);
+    expect(result.current.analysisCandles).toEqual([]); expect(result.current.analysisEvidence).toBeNull();
+  });
+
+  it("retains only observed public history evidence and masks it on a source change",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}));
+    const {result,rerender}=renderHook(({id})=>useChartDeepHistory("V75","M15",true,"deriv_public",id,true),{initialProps:{id:identity}});
+    await act(async()=>result.current.loadOlder(before));
+    expect(result.current.analysisEvidence).toEqual(evidence);
+    rerender({id:"b".repeat(64)});expect(result.current.analysisEvidence).toBeNull();expect(result.current.olderCandles).toEqual([]);
+  });
+
+  it("rejects an overlapping page at the cursor before it can alter verified history",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}))
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[{...candle(time),high:2,close:2}],historyEvidence:evidence}));
+    const {result}=renderHook(()=>useChartDeepHistory("V75","M15",true,"deriv_public",identity,true));
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
+    expect(result.current.olderCandles).toEqual([candle(time)]);
+    expect(result.current.archiveCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("checks each page's own closed boundary rather than borrowing a newer page's cutoff",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}))
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time-900_000)],historyEvidence:{...evidence,lastClosedCandleAt:new Date(time-1).toISOString()}}));
+    const {result}=renderHook(()=>useChartDeepHistory("V75","M15",true,"deriv_public",identity,true));
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();
+  });
+
+  it.each([
+    { source: "deriv_public", evidence: "public" },
+    { source: "mt5_broker", evidence: "different-opaque-account" },
+  ])("masks and aborts older history after a source identity change: $source/$evidence", async (next) => {
+    const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "mt5_broker", candles: [candle(100)],
+      historyEvidence: { symbol: "V75", timeframe: "M15", source: "mt5_broker", sourceIdentity: "first-opaque-account" } }))
+      .mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const seen: number[][] = [];
+    const { result, rerender } = renderHook(({ source, evidence }) => {
+      const value = useChartDeepHistory("V75", "M15", true, source, evidence);
+      if (evidence === next.evidence) seen.push(value.olderCandles.map(c => c.time));
+      return value;
+    }, { initialProps: { source: "mt5_broker", evidence: "first-opaque-account" } });
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    act(() => result.current.loadOlder(before));
+    const staleLoad = result.current.loadOlder;
+    const signal = fetchChartHistory.mock.calls[1]![0].signal as AbortSignal;
+    rerender(next);
+    expect(signal.aborted).toBe(true);
+    expect(seen.every(row => row.length === 0)).toBe(true);
+    act(() => { staleLoad(before); result.current.loadOlder(before); });
+    expect(fetchChartHistory).toHaveBeenCalledTimes(3);
+    expect(fetchChartHistory.mock.calls[2]![0]).toMatchObject({ source: next.source, before });
+    await act(async () => old.resolve(page({ source: "mt5_broker", candles: [candle(150)] })));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    await act(async () => current.resolve(page({ source: next.source, candles: [candle(200)],
+      historyEvidence: { symbol: "V75", timeframe: "M15", source: next.source, sourceIdentity: next.evidence } })));
+    expect(result.current.olderCandles).toEqual([candle(200)]);
+  });
+
+  it("refuses a history response from a different provider instead of mixing candle prefixes", async () => {
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)] }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "mt5_broker", "opaque"));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.providerCapped).toBe(true);
+    expect(result.current.limitationReason).toContain("did not match");
+  });
+
+  it("no-ops when there is nothing on screen to page behind", () => {
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    act(() => result.current.loadOlder(null));
+    expect(fetchChartHistory).not.toHaveBeenCalled();
+  });
+
+  it.each([["M15", 15 * 60_000], ["M1", 60_000]] as const)(
+    "pages two %s MT5 archive windows for display without adding them to analysis",
+    async (timeframe, intervalMs) => {
+      const firstPageOldest = Date.parse("2026-01-31T23:15:00.000Z");
+      fetchChartHistory
+        .mockResolvedValueOnce(page({
+          source: "mt5_broker",
+          candles: [candle(firstPageOldest), candle(firstPageOldest + intervalMs)],
+          hasMoreHistory: true,
+        }))
+        .mockResolvedValueOnce(page({
+          source: "mt5_broker",
+          candles: [candle(firstPageOldest - intervalMs * 2), candle(firstPageOldest - intervalMs)],
+          hasMoreHistory: false,
+        }));
+      const { result } = renderHook(() => useChartDeepHistory("V25_1S", timeframe, true, "mt5_broker", "opaque-current-source", true));
+
+      await act(async () => result.current.loadOlder(before));
+      expect(result.current.olderCandles).toHaveLength(2);
+      expect(result.current.archiveCandles).toHaveLength(2);
+      expect(result.current.analysisCandles).toEqual([]);
+      expect(result.current.analysisEvidence).toBeNull();
+      expect(result.current.olderCandles[0]!.time).toBe(firstPageOldest);
+      expect(fetchChartHistory.mock.calls[0]![0]).toHaveProperty("sourceIdentity", "opaque-current-source");
+
+      await act(async () => result.current.loadOlder(before));
+      expect(fetchChartHistory).toHaveBeenCalledTimes(2);
+      expect(fetchChartHistory.mock.calls[1]![0].before).toBe(new Date(firstPageOldest).toISOString());
+      expect(result.current.olderCandles).toHaveLength(4);
+      expect(result.current.archiveCandles).toHaveLength(4);
+      expect(result.current.olderCandles[0]!.time).toBe(firstPageOldest - intervalMs * 2);
+      expect(result.current.analysisCandles).toEqual([]);
+      expect(result.current.analysisEvidence).toBeNull();
+      expect(result.current.hasMore).toBe(false);
+    },
+  );
+
+  it.each([null,
+    { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "different-account-or-source" },
+    { symbol: "V25", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected" },
+    { symbol: "V75", timeframe: "M5", source: "deriv_public", sourceIdentity: "expected" },
+  ])("keeps same-provider rows without matching historical evidence display-only: %s", async historyEvidence => {
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    expect(result.current.archiveCandles).toEqual([candle(100)]);
+    expect(result.current.analysisCandles).toEqual([]);
+    expect(result.current.analysisEvidence).toBeNull();
+    expect(result.current.providerCapped).toBe(false);
+    expect(result.current.hasMore).toBe(true);
+    expect(fetchChartHistory.mock.calls[0]![0]).toMatchObject({ sourceIdentity: "expected" });
+  });
+
+  it("accepts matching producer evidence and preserves a denied account-history explanation", async () => {
+    const historyEvidence = { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected",
+      lastClosedCandleAt: new Date(900_100).toISOString(), scope: "public_provider" as const };
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }))
+      .mockResolvedValueOnce(page({ source: "deriv_public", candles: [], hasMoreHistory: false, nextBefore: null,
+        limitationReason: "Original account history is unverified", historyEvidence: null }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    expect(result.current.limitationReason).toBe("Original account history is unverified");
+  });
+
+  it("stops fetching once the backend reports history is exhausted", async () => {
+    fetchChartHistory.mockResolvedValueOnce(
+      page({
+        candles: [{ time: 1_700_000_000_000, open: 1, high: 1, low: 1, close: 1 }],
+        hasMoreHistory: false,
+        nextBefore: null,
+      }),
+    );
+
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+
+    act(() => result.current.loadOlder("2026-02-01T00:00:00.000Z"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.olderCandles.length).toBe(1);
+    expect(result.current.depthTargetDays).toBe(730);
+
+    // Repeated reach-start events after exhaustion must NOT fetch again.
+    act(() => result.current.loadOlder("2026-02-01T00:00:00.000Z"));
+    act(() => result.current.loadOlder("2026-02-01T00:00:00.000Z"));
+    expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a provider ceiling honestly (providerCapped + limitationReason)", async () => {
+    fetchChartHistory.mockResolvedValueOnce(
+      page({
+        candles: [],
+        hasMoreHistory: false,
+        nextBefore: null,
+        providerLimitReached: true,
+        limitationReason: "Provider free tier has no older-than cursor; deeper history is unavailable from this source.",
+        providerMessage: "Provider free tier has no older-than cursor; deeper history is unavailable from this source.",
+      }),
+    );
+
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    act(() => result.current.loadOlder("2026-02-01T00:00:00.000Z"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.providerCapped).toBe(true);
+    expect(result.current.limitationReason).toContain("older-than cursor");
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it.each([
+    { symbol: "GBPUSD", apiTf: "M5" },
+    { symbol: "EURUSD", apiTf: "H1" },
+  ])("isolates delayed history when the series changes to $symbol/$apiTf", async (next) => {
+    const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+      .mockResolvedValueOnce(page({ hasMoreHistory: false, nextBefore: null }));
+    const { result, rerender } = renderHook(({ symbol, apiTf }) => useChartDeepHistory(symbol, apiTf),
+      { initialProps: { symbol: "EURUSD", apiTf: "M5" } });
+    const oldLoad = result.current.loadOlder;
+    act(() => oldLoad(before));
+    const oldSignal = fetchChartHistory.mock.calls[0]![0].signal as AbortSignal;
+    rerender(next);
+    expect(oldSignal.aborted).toBe(true);
+    act(() => oldLoad(before));
+    expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+    act(() => result.current.loadOlder(before));
+    expect(fetchChartHistory.mock.calls[1]![0]).toMatchObject({ ...next, before, source: null });
+    // Simulate a provider/mock that ignores transport cancellation.
+    await act(async () => old.resolve(page({ source: "old-feed", candles: [candle(100)],
+      nextBefore: "old-cursor", hasMoreHistory: false, providerLimitReached: true,
+      limitationReason: "old limit", coverageDays: 999 })));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.providerCapped).toBe(false);
+    expect(result.current.limitationReason).toBeNull();
+    expect(result.current.coverageDays).toBeNull();
+    act(() => result.current.loadOlder(before));
+    expect(fetchChartHistory).toHaveBeenCalledTimes(2);
+    await act(async () => current.resolve(page({ source: "current-feed", candles: [candle(200)], nextBefore: new Date(200).toISOString() })));
+    expect(result.current.olderCandles).toEqual([candle(200)]);
+    act(() => result.current.loadOlder(before));
+    expect(fetchChartHistory.mock.calls[2]![0]).toMatchObject({ ...next, before: new Date(200).toISOString(), source: "current-feed" });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+  });
+
+  it("does not let an obsolete rejection exhaust or unlock the new series", async () => {
+    const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const { result, rerender } = renderHook(({ symbol }) => useChartDeepHistory(symbol, "M5"),
+      { initialProps: { symbol: "EURUSD" } });
+    act(() => result.current.loadOlder(before));
+    rerender({ symbol: "GBPUSD" });
+    act(() => result.current.loadOlder(before));
+    await act(async () => old.reject(new Error("late failure")));
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.loading).toBe(true);
+    act(() => result.current.loadOlder(before));
+    expect(fetchChartHistory).toHaveBeenCalledTimes(2);
+    await act(async () => current.resolve(page()));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("a failed first back-page is reported, never counted as loaded history", async () => {
+    fetchChartHistory.mockRejectedValueOnce(new Error("network down"));
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loadedAny).toBe(false);
+    expect(result.current.loadError).toMatch(/could not be loaded/);
+    expect(result.current.providerCapped).toBe(false);
+  });
+
+  it("an empty page does not count as loaded older bars", async () => {
+    fetchChartHistory.mockResolvedValueOnce(page({ candles: [], hasMoreHistory: false, nextBefore: null, coverageDays: null }));
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.loadedAny).toBe(false);
+    expect(result.current.loadError).toBeNull();
+  });
+
+  it("reset aborts and invalidates pending work even for the same series", async () => {
+    const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5"));
+    act(() => result.current.loadOlder(before));
+    const oldSignal = fetchChartHistory.mock.calls[0]![0].signal as AbortSignal;
+    act(() => result.current.reset());
+    expect(oldSignal.aborted).toBe(true);
+    expect(result.current.loadedAny).toBe(false);
+    act(() => result.current.loadOlder(before));
+    await act(async () => old.resolve(page({ candles: [candle(100)], hasMoreHistory: false })));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.hasMore).toBe(true);
+    await act(async () => current.resolve(page({ candles: [candle(200)] })));
+    expect(result.current.olderCandles).toEqual([candle(200)]);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("never exposes already loaded bars during the new series' first render", async () => {
+    fetchChartHistory.mockResolvedValueOnce(page({ candles: [candle(100)] }));
+    const renders: { symbol: string; times: number[] }[] = [];
+    const { result, rerender } = renderHook(({ symbol }) => {
+      const state = useChartDeepHistory(symbol, "M5");
+      renders.push({ symbol, times: state.olderCandles.map(bar => bar.time) });
+      return state;
+    }, { initialProps: { symbol: "EURUSD" } });
+    act(() => result.current.loadOlder(before));
+    await waitFor(() => expect(result.current.olderCandles).toHaveLength(1));
+    rerender({ symbol: "GBPUSD" });
+    expect(renders.filter(render => render.symbol === "GBPUSD").every(render => render.times.length === 0)).toBe(true);
+  });
+
+  it("unmount aborts pending work and disables retained callbacks", async () => {
+    const old = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockReturnValueOnce(old.promise);
+    const { result, unmount } = renderHook(() => useChartDeepHistory("EURUSD", "M5"));
+    const retained = result.current;
+    act(() => retained.loadOlder(before));
+    const signal = fetchChartHistory.mock.calls[0]![0].signal as AbortSignal;
+    unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => old.resolve(page({ candles: [candle(100)] })));
+    act(() => { retained.reset(); retained.loadOlder(before); });
+    expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes optional cancellation through the real history transport", async () => {
+    const actual = await vi.importActual<typeof import("./chartCandlesQuery")>("./chartCandlesQuery");
+    const controller = new AbortController();
+    const transport = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true });
+    }));
+    vi.stubGlobal("fetch", transport);
+    const request = actual.fetchChartHistory({ symbol: "EURUSD", apiTf: "M5", before, signal: controller.signal });
+    expect(transport.mock.calls[0]![1]).toMatchObject({ credentials: "include", signal: controller.signal });
+    const rejected = expect(request).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejected;
+  });
+  it("retries the same empty native cursor while import is pending, then pages to the real boundary", async()=>{
+    const identity="a".repeat(64), native={sourceIdentity:"b".repeat(64),clockBasis:"broker_server",importStatus:"BUILDING",barsStored:200,oldest:before,boundary:null};
+    const clock=vi.spyOn(Date,"now").mockReturnValue(10000);
+    fetchChartHistory.mockResolvedValueOnce({...page({source:"mt5_broker",candles:[],hasMoreHistory:false,nextBefore:null}),nativeHistoryEvidence:native});
+    const {result}=renderHook(()=>useChartDeepHistory("V25_1S","M1",true,"mt5_broker",identity,true));
+    await act(async()=>result.current.loadOlder(before));
+    expect(result.current.hasMore).toBe(true);expect(result.current.providerCapped).toBe(false);
+    expect(fetchChartHistory.mock.calls[0][0].sourceIdentity).toBe(identity);
+    await act(async()=>result.current.loadOlder(before));expect(fetchChartHistory).toHaveBeenCalledTimes(1);
+    clock.mockReturnValue(16000);
+    fetchChartHistory.mockResolvedValueOnce({...page({source:"mt5_broker",candles:[candle(1000)],hasMoreHistory:false,nextBefore:new Date(1000).toISOString(),providerLimitReached:true}),nativeHistoryEvidence:{...native,importStatus:"COMPLETE"}});
+    await act(async()=>result.current.loadOlder(before));
+    expect(fetchChartHistory.mock.calls[1][0].before).toBe(before);
+    expect(result.current.olderCandles).toHaveLength(1);expect(result.current.analysisCandles).toHaveLength(0);
+    expect(result.current.hasMore).toBe(false);clock.mockRestore();
+  });
+
+});

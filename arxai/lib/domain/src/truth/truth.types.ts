@@ -1,0 +1,171 @@
+// Task #512 — One Truth, One Brain (pure domain contract).
+//
+// These are the PURE, deterministic types consumed and produced by
+// `composeVerdict` / `evaluateLevelStaleness`. They contain NO I/O, NO clock
+// reads, and NO provider/enum strings that leak into user-facing copy — every
+// display string is built here as clean English so each surface renders the
+// SAME words. The api-server brain (`symbolTruthSnapshot.ts`) normalizes the
+// real resolver outputs into these shapes and calls the pure composer.
+//
+// SAFETY: read-side only. Nothing here gates, slows, or places a trade. Unknown
+// stays unknown — a missing/blind component is `present:false`, never guessed.
+
+/** Confirmed live, warming up, gone stale, or no usable data at all. */
+export type TruthDataState =
+  | "LIVE_CONFIRMED"
+  | "SYNCING"
+  | "STALE"
+  | "UNAVAILABLE";
+
+/** Observed input identity, separate from the time a calculation was built.
+ * sourceIdentity is an opaque digest of the provider/bridge provenance; no
+ * account identifiers are exposed. A scheduled candle end is not finality. */
+export interface TruthReadEvidence {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+  /** User whose account-dependent inputs were evaluated; absent for market-only reads. */
+  userId?: number;
+}
+
+/** A single component's directional read. UNKNOWN when blind/absent. */
+export type TruthAlignment = "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
+
+/** The composed market bias across present components. */
+export type TruthBias =
+  | "BULLISH"
+  | "BEARISH"
+  | "NEUTRAL"
+  | "CONFLICT"
+  | "UNKNOWN";
+
+/** Structural state of the composed read. */
+export type TruthStage =
+  | "ALIGNED"
+  | "DEVELOPING"
+  | "CONFLICT"
+  | "UNKNOWN";
+
+/** The single recommended posture. Read-only advice — never an execution gate. */
+export type TruthBestAction =
+  | "BUY"
+  | "SELL"
+  | "WAIT_FOR_DATA"
+  | "WAIT_FOR_NEWS"
+  | "STAND_ASIDE"
+  | "WATCH_ONLY";
+
+/** The four composed components, in display order. */
+export type TruthComponentKey = "scanner" | "flame" | "timing" | "scalp";
+
+/**
+ * One normalized component verdict. `present` is false whenever the underlying
+ * resolver was blind, errored, or had insufficient data — such a component
+ * contributes NOTHING to the vote and is never cited as evidence.
+ */
+export interface TruthComponentInput {
+  key: TruthComponentKey;
+  present: boolean;
+  alignment: TruthAlignment;
+  /** Clean-English one-liner shown verbatim by every surface. */
+  label: string;
+  /** ISO timestamp of the confirmed bar behind this read, distinct from build time. */
+  asOf: string | null;
+  /**
+   * True when this component's own minimum-evidence rule failed, so its
+   * direction is a structural lean, not an edge. Components without such a
+   * rule leave it unset (they never qualify the verdict as a lean).
+   */
+  belowEvidenceFloor?: boolean;
+}
+
+/**
+ * LEAN: every present component voting for the verdict's bias is below its own
+ * minimum-evidence rule — the direction is a lean with no qualifying edge.
+ */
+export type TruthBiasQualifier = "LEAN";
+
+/** Actionable price geometry, BEFORE the stale-level guard runs. */
+export interface TruthLevelInput {
+  entryFrom: number | null;
+  entryTo: number | null;
+  stopLoss: number | null;
+  invalidation: number | null;
+  takeProfit: number[];
+}
+
+export interface ComposeVerdictInput {
+  dataState: TruthDataState;
+  /**
+   * The feed is not live because the market is in its scheduled close. Only
+   * changes the wording of a WAIT_FOR_DATA verdict ("market is closed", not
+   * "feed not confirmed"); the action itself is unchanged.
+   */
+  marketClosed?: boolean;
+  /** Last confirmed price (close of newest closed bar), or null. */
+  price: number | null;
+  /** True only when a connected calendar reports a high-impact window now. */
+  highImpactWindowActive: boolean;
+  /**
+   * True when scheduled event risk applies to this market but could not be
+   * checked (a configured calendar failed, or the news read itself failed).
+   * Unknown event risk is not an all-clear: a directional entry degrades to
+   * watch-only. Omitted/false keeps the existing behaviour.
+   */
+  eventRiskUnchecked?: boolean;
+  components: TruthComponentInput[];
+  levels: TruthLevelInput;
+  /** Average true range in price units, when known — tightens the stale guard. */
+  atr?: number | null;
+}
+
+export interface LevelStalenessInput {
+  price: number | null;
+  levels: TruthLevelInput;
+  atr?: number | null;
+}
+
+export interface LevelStalenessResult {
+  stale: boolean;
+  /** Clean-English reason when stale, else null. */
+  reason: string | null;
+}
+
+export type TruthInvalidationSide = "ABOVE" | "BELOW";
+
+export interface TruthInvalidation {
+  price: number;
+  side: TruthInvalidationSide;
+}
+
+/** Levels as exposed to surfaces — withheld (all null) when the guard trips. */
+export interface ComposedLevels {
+  entryFrom: number | null;
+  entryTo: number | null;
+  stopLoss: number | null;
+  invalidation: number | null;
+  takeProfit: number[];
+  withheld: boolean;
+  /** Clean-English reason when withheld, else null. */
+  withheldReason: string | null;
+}
+
+export interface ComposedVerdict {
+  stage: TruthStage;
+  bias: TruthBias;
+  /** LEAN when the directional bias rests only on below-floor voters, else null. */
+  biasQualifier: TruthBiasQualifier | null;
+  /** Clean-English headline summarizing the read. */
+  headline: string;
+  /** Clean-English sentences — ONLY for present components aligned with the read. */
+  evidenceFor: string[];
+  /** Clean-English sentences — present components opposing the read. */
+  evidenceAgainst: string[];
+  bestAction: TruthBestAction;
+  /** Clean-English rendering of `bestAction`. */
+  bestActionText: string;
+  invalidation: TruthInvalidation | null;
+  levels: ComposedLevels;
+}

@@ -1,0 +1,58 @@
+import { pgTable, serial, integer, text, real, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+
+// (CC) Build CC — Per-signal edge memory.
+// One row per (symbol, signal_name, action) tracking the rolling outcome
+// of trades whose decision relied on this signal. Updated incrementally
+// by the learning engine; read by Build AA when composing a future
+// decision so prior outcomes can nudge confidence/risk within strict
+// boundaries.
+//
+// SAFETY: bounded adjustments only. Edge memory CANNOT bypass safetyCore
+// blockers, kill switch, or live-trade gates. It informs scoring, not
+// permission.
+
+export const strategyEdgesTable = pgTable("strategy_edges", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id"),
+  symbol: text("symbol").notNull(),
+  // Strategy/source name (e.g., "strategyEngine", "session", "edge", or a
+  // specific strategy ID). Mirrors signalsUsed[].source from AA's payload.
+  strategyName: text("strategy_name").notNull().default(""),
+  signalName:   text("signal_name").notNull(),
+  // BUY | SELL | HOLD — direction of the trade this signal supported.
+  action: text("action").notNull(),
+  sampleCount:     integer("sample_count").notNull().default(0),
+  winCount:        integer("win_count").notNull().default(0),
+  lossCount:       integer("loss_count").notNull().default(0),
+  breakEvenCount:  integer("break_even_count").notNull().default(0),
+  netPnl:  real("net_pnl").notNull().default(0),
+  avgPnl:  real("avg_pnl").notNull().default(0),
+  // Signed delta to apply to AA's composite confidence when this signal
+  // appears in the next decision. Bounded to [-15, 15].
+  confidenceAdjustment: real("confidence_adjustment").notNull().default(0),
+  // Signed delta to apply to AA's risk score. Bounded to [-15, 15].
+  riskAdjustment:       real("risk_adjustment").notNull().default(0),
+  // Composite edge score in [-100, 100]. Negative = signal historically
+  // costs money on this symbol/direction; positive = historically helps.
+  edgeScore:    real("edge_score").notNull().default(0),
+  lastResult:   text("last_result").notNull().default(""),  // WIN|LOSS|BREAKEVEN|CANCELLED
+  lastTradeId:  integer("last_trade_id"),
+  // Scope (Tier 1 finalization, item 8): user | strategy | account | broker |
+  // instrument | portfolio (private to scope_owner) or platform (anonymized,
+  // scope_owner 0, no trade id). Read and written only via lib/learning/scopedMemory.ts.
+  scopeType: text("scope_type").notNull().default("platform"),
+  scopeKey: text("scope_key").notNull().default(""),
+  scopeOwner: integer("scope_owner").notNull().default(0),
+  // Platform: distinct verified traders (null = legacy unknown origin).
+  // User: 1 marks a verified contribution; null is unverified/legacy membership.
+  contributors: integer("contributors"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  // One edge row per (symbol, signal, action). Upsert key.
+  byCohort: uniqueIndex("strategy_edges_scope_cohort_uq").on(t.scopeType, t.scopeOwner, t.scopeKey, t.symbol, t.signalName, t.action),
+  byOwner: index("strategy_edges_owner_idx").on(t.scopeOwner, t.scopeType),
+  bySymbol:   index("strategy_edges_symbol_idx").on(t.symbol),
+  byUpdated:  index("strategy_edges_updated_idx").on(t.updatedAt),
+}));
+export type StrategyEdge = typeof strategyEdgesTable.$inferSelect;

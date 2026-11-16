@@ -1,0 +1,321 @@
+// Broker integration routes — READ-ONLY.
+//
+// SAFETY:
+//  - Never modifies canPlaceTrades, kill switch, mode, or any live-trading state.
+//  - /api/orders/manual-live exists but routes through placeLiveOrderGuarded()
+//    which currently always returns REJECTED with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
+//  - /api/orders/demo writes to a paper-execution lane (NOT live tables).
+//  - All endpoints scrub secrets and never echo broker tokens.
+
+import { Router, type IRouter, type Request } from "express";
+import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { z } from "zod/v4";
+import { getBrokerProvider } from "../lib/broker/registry.js";
+import { classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "../lib/brokerHub/freshness.js";
+import type { BrokerOwner } from "../lib/broker/types.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
+import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets, anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
+import { placeLiveOrderGuarded } from "../lib/liveTrading/guard.js";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve, basename } from "node:path";
+import { bridgeDir, bridgeFile, bridgePackageManifest, bridgePackageZip } from "../lib/mt5/bridgePackage.js";
+
+const router: IRouter = Router();
+
+const DISCLAIMER = "Broker integration v1. READ-ONLY routes for status/account/symbols/positions/orders. /orders/manual-live is wired through placeLiveOrderGuarded() which rejects until a real placement layer is shipped.";
+
+function envelope(body: Record<string, unknown>) {
+  return {
+    system: "broker",
+    appMode: "PAPER_ONLY" as const,
+    liveTradingStatus: "DISABLED" as const,
+    canPlaceLiveTrade: false,
+    disclaimer: DISCLAIMER,
+    ...body,
+  };
+}
+
+// ── READ-ONLY broker endpoints ───────────────────────────────────────────────
+
+// ── MT5 EA bridge package downloads ──────────────────────────────────────────
+// Resolves files from the repo's mt5-bridge/ directory. Uses an allowlist —
+// no user-controlled path traversal.
+
+router.get("/mt5/bridge-package/manifest", async (_req, res) => {
+  try {
+    res.json(envelope(await bridgePackageManifest()));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+// Streams a freshly-built ZIP of the entire bridge package on every request.
+// The ZIP is rebuilt in memory — no on-disk artifact
+// to drift out of sync with the source files.
+router.get("/mt5/bridge-package/zip", async (_req, res) => {
+  try {
+    const zip = await bridgePackageZip();
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="arx-mt5-demo-read-only-v131.zip"');
+    res.setHeader("Content-Length", String(zip.length));
+    res.send(zip);
+  } catch (e) {
+    res.status(500).json(envelope({ error: `Failed to build bridge ZIP: ${String((e as Error).message)}` }));
+  }
+});
+
+router.get("/mt5/bridge-package/:key", async (req, res) => {
+  const meta = bridgeFile(String(req.params.key));
+  if (!meta) {
+    res.status(404).json(envelope({ error: "Unknown bridge file. See /api/mt5/bridge-package/manifest for allowed keys." }));
+    return;
+  }
+  try {
+    const fp = resolve(bridgeDir(), meta.name);
+    const buf = await readFile(fp);
+    res.setHeader("Content-Type", meta.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${basename(meta.name)}"`);
+    res.send(buf);
+  } catch (e) {
+    res.status(404).json(envelope({ error: `Bridge file not found on server: ${meta.name}`, detail: String((e as Error).message) }));
+  }
+});
+
+// GET /broker/secrets-status — presence-only metadata. Never exposes values.
+router.get("/broker/secrets-status", async (_req, res) => {
+  try {
+    const kind = selectBrokerKind();
+    const required = describeRequiredSecrets(kind);
+    const missing = missingRequiredSecrets(required);
+    const liveAllowedFlagSet = !!process.env.LIVE_TRADING_ALLOWED;
+    const liveAllowedFlagValue = (process.env.LIVE_TRADING_ALLOWED ?? "").trim().toLowerCase() === "true";
+    res.json(envelope({
+      provider: kind,
+      requiredSecrets: required.map(r => ({ key: r.key, required: r.required, set: r.set, description: r.description })),
+      missingSecrets: missing.map(m => m.key),
+      readOnlyReady: missing.length === 0,
+      liveTradingAllowedFlag: { set: liveAllowedFlagSet, value: liveAllowedFlagValue, note: "This flag alone NEVER enables live trading. Live placement remains rejected by placeLiveOrderGuarded() until a real broker layer ships." },
+      lastCheckedAt: new Date().toISOString(),
+      note: "Secret values are never returned. Only presence (set:true/false) and key names.",
+    }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+// GET /broker/connection-check — pings the provider and returns a flat
+// summary suitable for the frontend Broker Connection Center.
+router.get("/broker/connection-check", async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const provider = getBrokerProvider();
+    const status = await provider.status();
+    let accountReadable = false;
+    let equityReadable = false;
+    let balanceReadable = false;
+    let marginReadable = false;
+    let symbolsReadable = false;
+    let positionsReadable = false;
+    let ordersReadable = false;
+    let symbolCount = 0;
+    let positionCount = 0;
+    let orderCount = 0;
+    const errors: string[] = [];
+
+    // Per-user bridge tokens are the ONLY valid EA auth (the legacy
+    // MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint), so
+    // "apiKeyPresent" = an active per-user bridge token exists. Lookup
+    // failure degrades to false with an entry in `errors` — never fabricated.
+    let apiKeyPresent = false;
+    try { apiKeyPresent = await anyActiveUserBridgeTokenExists(); }
+    catch (e) { errors.push(`bridgeToken: ${String((e as Error).message)}`); }
+
+    if (status.connected) {
+      try {
+        const acct = await provider.account(brokerOwnerOf(req));
+        accountReadable = !!acct;
+        equityReadable = typeof acct?.equity === "number";
+        balanceReadable = typeof acct?.balance === "number";
+        marginReadable = typeof acct?.margin === "number";
+      } catch (e) { errors.push(`account: ${String((e as Error).message)}`); }
+    }
+    try { const s = await provider.symbols(); symbolsReadable = true; symbolCount = s.length; }
+    catch (e) { errors.push(`symbols: ${String((e as Error).message)}`); }
+    try { const p = await provider.positions(brokerOwnerOf(req)); positionsReadable = true; positionCount = p.length; }
+    catch (e) { errors.push(`positions: ${String((e as Error).message)}`); }
+    try { const o = await provider.orders(brokerOwnerOf(req), 10); ordersReadable = true; orderCount = o.length; }
+    catch (e) { errors.push(`orders: ${String((e as Error).message)}`); }
+
+    // The EA's own heartbeat time, as the provider read it, and its band under
+    // the shared heartbeat policy (fresh < 15 s, degraded < 60 s, offline).
+    // `connected` is the provider's online flag (fresh OR degraded); the band
+    // lets a surface say "delayed" instead of "Connected" for a degraded EA.
+    // `lastCheckedAt` below is the time of this request, not a heartbeat.
+    const lastHeartbeatAt: string | null = status.health?.lastHeartbeatAt ?? null;
+    const heartbeatAgeSeconds: number | null = lastHeartbeatAt ? (status.health?.staleSeconds ?? null) : null;
+    const heartbeatFreshness: HeartbeatFreshness = lastHeartbeatAt
+      ? classifyHeartbeatAgeSeconds(heartbeatAgeSeconds)
+      : "unknown";
+
+    res.json(envelope({
+      provider: status.kind,
+      connected: status.connected,
+      lastHeartbeatAt,
+      heartbeatAgeSeconds,
+      heartbeatFreshness,
+      environment: status.environment,
+      accountIdPresent: !!process.env.MT5_ACCOUNT_ID,
+      bridgeUrlPresent: !!process.env.MT5_BRIDGE_URL,
+      apiKeyPresent,
+      readOnlyReady: status.connected && accountReadable && symbolsReadable,
+      liveOrderReady: false,
+      missingSecrets: status.missingSecrets.filter(m => m.required && !m.set).map(m => m.key),
+      checks: {
+        accountReadable, equityReadable, balanceReadable, marginReadable,
+        symbolsReadable, positionsReadable, ordersReadable,
+        symbolCount, positionCount, orderCount,
+      },
+      errors,
+      tookMs: Date.now() - startedAt,
+      lastCheckedAt: new Date().toISOString(),
+      note: "Live order placement remains LOCKED regardless of these read-only check results. placeLiveOrderGuarded() rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.",
+    }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message), tookMs: Date.now() - startedAt }));
+  }
+});
+
+// Account, positions and orders are per-user. The global auth gate guarantees a
+// session on these paths; an operator also sees the shared MT5 connection.
+function brokerOwnerOf(req: Request): BrokerOwner {
+  return { userId: req.authUser!.id, includeLegacy: canSeeLegacyRows(req.authUser) };
+}
+
+router.get("/broker/status", async (_req, res) => {
+  try {
+    const status = await getBrokerProvider().status();
+    res.json(envelope({ status }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+router.get("/broker/account", async (req, res) => {
+  try {
+    const provider = getBrokerProvider();
+    const status = await provider.status();
+    if (!status.connected) {
+      res.status(200).json(envelope({ account: null, status, note: "Broker not connected. Account snapshot unavailable." }));
+      return;
+    }
+    const account = await provider.account(brokerOwnerOf(req));
+    res.json(envelope({ account }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+router.get("/broker/symbols", async (_req, res) => {
+  try {
+    const symbols = await getBrokerProvider().symbols();
+    res.json(envelope({ symbols, count: symbols.length }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+router.get("/positions/live", async (req, res) => {
+  try {
+    const positions = await getBrokerProvider().positions(brokerOwnerOf(req));
+    res.json(envelope({ positions, count: positions.length }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+const OrdersQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(50) }).partial();
+router.get("/orders/live", async (req, res) => {
+  const q = OrdersQuery.safeParse(req.query);
+  const limit = q.success && q.data.limit ? q.data.limit : 50;
+  try {
+    const orders = await getBrokerProvider().orders(brokerOwnerOf(req), limit);
+    res.json(envelope({ orders, count: orders.length }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+// ── ORDER PLACEMENT (always rejects in current build) ────────────────────────
+
+const ManualLiveBody = z.object({
+  approvalId: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  symbol: z.string().min(1),
+  side: z.enum(["BUY", "SELL"]),
+  lotSize: z.number().positive(),
+  stopLoss: z.number().positive(),
+  takeProfit: z.number().positive(),
+  spreadPips: z.number().min(0),
+});
+
+router.post("/orders/manual-live", async (req, res) => {
+  const p = ManualLiveBody.safeParse(req.body ?? {});
+  if (!p.success) {
+    res.status(400).json(envelope({ error: "INVALID_BODY", issues: p.error.issues.slice(0, 5) }));
+    return;
+  }
+  // Per user policy: every live order goes through placeLiveOrderGuarded().
+  // The guard will reject (currently always BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED).
+  try {
+    const broker = await getBrokerProvider().status();
+    const result = await placeLiveOrderGuarded({
+      approvalId: p.data.approvalId,
+      idempotencyKey: p.data.idempotencyKey,
+      brokerHealthy: broker.connected,
+      symbolAllowlisted: ["Volatility 75 Index", "Volatility 100 Index", "Volatility 25 Index"].includes(p.data.symbol),
+      spreadPips: p.data.spreadPips,
+      openLivePositions: 0,
+      actorRole: readRoleFromRequest(req), // Phase 28-SEC: trusted server-derived role; header no longer used
+      actorSession: req.header("x-session-id") ?? null,
+    } as Parameters<typeof placeLiveOrderGuarded>[0]);
+    res.status(409).json(envelope({ result, note: "Order rejected as expected — broker placement layer is not implemented in this build." }));
+  } catch (e) {
+    res.status(500).json(envelope({ error: String((e as Error).message) }));
+  }
+});
+
+const DemoBody = z.object({
+  symbol: z.string().min(1),
+  side: z.enum(["BUY", "SELL"]),
+  lotSize: z.number().positive(),
+  stopLoss: z.number().positive().optional(),
+  takeProfit: z.number().positive().optional(),
+  note: z.string().max(500).optional(),
+});
+
+router.post("/orders/demo", async (req, res) => {
+  const p = DemoBody.safeParse(req.body ?? {});
+  if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY", issues: p.error.issues.slice(0, 5) })); return; }
+  // The app's existing simulation lane is the paper-execution engine.
+  // To keep clear isolation, this endpoint records the demo order intent
+  // without writing to live tables. A future session should route this to
+  // the paper-execution engine for full P&L simulation.
+  const orderId = `demo_${randomUUID()}`;
+  res.json(envelope({
+    result: {
+      ok: true,
+      executionEnvironment: "DEMO",
+      orderId,
+      submittedAt: new Date().toISOString(),
+      symbol: p.data.symbol,
+      side: p.data.side,
+      lotSize: p.data.lotSize,
+      stopLoss: p.data.stopLoss ?? null,
+      takeProfit: p.data.takeProfit ?? null,
+      note: "Demo order accepted. This intent is NOT routed to any live broker. For full P&L simulation use POST /api/paper-execution/* endpoints.",
+    },
+  }));
+});
+
+export default router;

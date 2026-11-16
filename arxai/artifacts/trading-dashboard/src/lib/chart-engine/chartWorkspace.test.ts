@@ -1,0 +1,120 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CHART_STYLE_NAMES, CHART_STYLES, closeOnlyStyle, describeChartStyle, drawingSegments, drawingStorageKey, PREFERENCES_KEY, readChartStorage, validateDrawings, validatePreferences, writeChartStorage } from "./chartWorkspace";
+import { STUDY_DEFAULTS } from "./chartStudies";
+afterEach(()=>vi.restoreAllMocks());
+it("validates optional channel controls without changing old drawings or retaining foreign flags",()=>{
+ const channel={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:150,price:30},color:"#ffffff"};
+ expect(validateDrawings([channel])).toEqual([channel]);
+ const configured={...channel,extendLeft:true,extendRight:true,middleLine:true};
+ expect(validateDrawings([configured])).toEqual([configured]);
+ for(const key of ['extendLeft','extendRight','middleLine']) for(const invalid of [1,'true',{},[]])expect(validateDrawings([{...channel,[key]:invalid}])).toEqual([]);
+ expect(validateDrawings([{...channel,extendLeft:false,extendRight:false,middleLine:false}])).toEqual([channel]);
+ const line={id:'line',kind:'trend',start:channel.start,end:channel.end,color:channel.color};
+ expect(validateDrawings([{...line,extendLeft:true,middleLine:true}])).toEqual([line]);
+});
+describe("bounded chart workspace persistence",()=>{
+  it("rejects bad settings without allowing unbounded study work",()=>{
+    expect(validatePreferences({style:"random",scale:"bad",studies:[{...STUDY_DEFAULTS[0],period:1e9},STUDY_DEFAULTS[1],STUDY_DEFAULTS[1],{...STUDY_DEFAULTS[4],slow:2}]})).toEqual({style:"candles",scale:"linear",studies:[STUDY_DEFAULTS[1]]});
+    expect(validatePreferences({studies:STUDY_DEFAULTS}).studies).toHaveLength(5);
+  });
+  it("migrates legacy studies and keeps distinct repeated instances while rejecting duplicate IDs", () => {
+    const first = {...STUDY_DEFAULTS[1], id:"ema-20", period:20, source:"hl2"};
+    const second = {...STUDY_DEFAULTS[1], id:"ema-200", period:200};
+    expect(validatePreferences({studies:[first, second, first]}).studies).toEqual([first, second]);
+    expect(validatePreferences({studies:[{...first,id:"<script>"},{...first,source:"volume"},{...first,period:0}]}).studies).toEqual([]);
+    const many = Array.from({length:100}, (_, i) => ({...first,id:`ema-${i}`}));
+    expect(validatePreferences({studies:many}).studies).toHaveLength(12);
+    expect(validatePreferences({studies:[{...STUDY_DEFAULTS[4],signalMethod:"sma"}]}).studies[0]?.signalMethod).toBe("sma");
+    expect(validatePreferences({studies:[{...STUDY_DEFAULTS[4],signalMethod:"invalid"}]}).studies).toEqual([]);
+  });
+  it("rejects malformed/duplicate geometry and keeps exact per-instrument/timeframe anchors",()=>{
+    const drawing={id:"one",kind:"trend",start:{time:100,price:1},end:{time:200,price:2},color:"#ffffff"};
+    expect(validateDrawings([drawing,drawing,{...drawing,id:"bad",end:{time:100,price:2}},{...drawing,id:"bad2",start:{time:100,price:NaN}}])).toEqual([drawing]);
+    expect(drawingStorageKey("EURUSD","M15")).not.toBe(drawingStorageKey("XAUUSD","M15"));
+    expect(drawingStorageKey("EURUSD","M15")).not.toBe(drawingStorageKey("EURUSD","H1"));
+  });
+  it("constructs direction-aware Fibonacci levels with no fabricated time anchors",()=>{
+    const segments=drawingSegments({id:"fib",kind:"fibonacci",start:{time:200,price:20},end:{time:100,price:10},color:"#ffffff"});
+    expect(segments).toHaveLength(7);expect(segments[4]!.start.price).toBeCloseTo(13.82);
+    expect(segments.every(s=>s.start.time===200&&s.end.time===100&&s.start.price===s.end.price)).toBe(true);
+  });
+  it("keeps an allowlisted display zone and drops UTC, invalid and missing zones to the legacy shape",()=>{
+    expect(validatePreferences({style:"bars",scale:"log",studies:[],timeZone:"Asia/Tokyo"}).timeZone).toBe("Asia/Tokyo");
+    expect(validatePreferences({studies:[],timeZone:"local"}).timeZone).toBe("local");
+    for (const timeZone of ["UTC","utc","Mars/Olympus","Etc/GMT+5","../x",5,null,undefined]) {
+      const result=validatePreferences({style:"bars",scale:"log",studies:[],timeZone});
+      expect(result).toEqual({style:"bars",scale:"log",studies:[]});
+      expect(Object.hasOwn(result,"timeZone")).toBe(false);
+    }
+    writeChartStorage("zone-roundtrip",validatePreferences({studies:[],timeZone:"America/New_York"}));
+    expect(validatePreferences(readChartStorage("zone-roundtrip")).timeZone).toBe("America/New_York");
+  });
+  it("seeds a new comparison view from the primary's zone and lets it diverge",()=>{
+    const compKey=`${PREFERENCES_KEY}:comparison`;
+    writeChartStorage(PREFERENCES_KEY,{style:"candles",scale:"linear",studies:[],timeZone:"Asia/Tokyo"});
+    // ARXNativeChart: validatePreferences(readChartStorage(key) ?? readChartStorage(PREFERENCES_KEY)).
+    const seeded=validatePreferences(readChartStorage(compKey) ?? readChartStorage(PREFERENCES_KEY));
+    expect(seeded.timeZone).toBe("Asia/Tokyo");
+    writeChartStorage(compKey,{...seeded,timeZone:"Europe/London"});
+    expect(validatePreferences(readChartStorage(compKey) ?? readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Europe/London");
+    expect(validatePreferences(readChartStorage(PREFERENCES_KEY)).timeZone).toBe("Asia/Tokyo");
+  });
+  it("round-trips all seven chart styles in picker order and falls back to candles",()=>{
+    expect(CHART_STYLES).toEqual(["candles","bars","line","area","baseline","heikinAshi","hollow"]);
+    for (const style of CHART_STYLES) {
+      writeChartStorage("style-roundtrip",validatePreferences({style,scale:"linear",studies:[]}));
+      expect(validatePreferences(readChartStorage("style-roundtrip"))).toEqual({style,scale:"linear",studies:[]});
+      expect(CHART_STYLE_NAMES[style]).toBeTruthy();
+    }
+    for (const style of ["renko","HeikinAshi","heikinashi","Area","",1,null,undefined,{},["line"]]) expect(validatePreferences({style,studies:[]}).style).toBe("candles");
+    expect(CHART_STYLES.filter(closeOnlyStyle)).toEqual(["line","area","baseline"]);
+    expect(describeChartStyle("heikinAshi").note).toContain("not traded prices");
+    expect(describeChartStyle("candles")).toEqual({name:"Candlesticks",note:""});
+    expect(describeChartStyle("renko" as never)).toEqual(describeChartStyle("candles"));
+  });
+  it("handles corrupt data, oversized data and denied storage",()=>{
+    localStorage.setItem("bad","{");expect(readChartStorage("bad")).toBeNull();
+    localStorage.setItem("big",JSON.stringify("x".repeat(100_001)));expect(readChartStorage("big")).toBeNull();
+    vi.spyOn(Storage.prototype,"getItem").mockImplementation(()=>{throw Error("denied");});
+    vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw Error("quota");});
+    expect(readChartStorage("any")).toBeNull();expect(writeChartStorage("any",[])).toBe(false);
+  });
+});
+
+
+it("retains only an explicit price-only scale preference",()=>{
+ expect(validatePreferences({priceOnlyScale:true}).priceOnlyScale).toBe(true);
+ for(const value of [false,undefined,null,1,"true",{},[]])expect(validatePreferences({priceOnlyScale:value}).priceOnlyScale).toBeUndefined();
+});
+
+
+it("requires and preserves a channel's three finite positive anchors without accepting invalid baselines",()=>{
+ const channel={id:"channel",kind:"channel",start:{time:100,price:10},end:{time:200,price:20},offset:{time:100,price:15},color:"#ffffff"};
+ expect(validateDrawings([channel])).toEqual([channel]);
+ for(const offset of [undefined,{time:100,price:NaN},{time:0,price:10},{time:100,price:-1}])expect(validateDrawings([{...channel,offset}])).toEqual([]);
+ expect(validateDrawings([{...channel,end:{time:100,price:20}}])).toEqual([]);
+ expect(validateDrawings([{...channel,kind:"trend"}])[0]).not.toHaveProperty("offset");
+});
+
+
+describe("persisted study presentation validation",()=>{
+ const c={id:"dmi",kind:"dmi",period:14,signal:14,color:"#38bdf8"};
+ it("round trips styles independently, strips foreign fields and preserves old defaults",()=>{
+  const lineStyles=[{color:"#abcdef",width:3,style:"dashed",visible:false},{},{style:"dotted"}];
+  const result=validatePreferences({studies:[{...c,lineStyles}]});
+  expect(result.studies[0]).toEqual({...c,lineStyles});
+  expect(result.studies[0]!.lineStyles).not.toBe(lineStyles);
+  expect(result.studies[0]!.lineStyles![0]).not.toBe(lineStyles[0]);
+  expect(validatePreferences(JSON.parse(JSON.stringify(result)))).toEqual(result);
+  expect(validatePreferences({studies:[{...c,lineStyles:[{foreign:true}]}]}).studies[0]!.lineStyles).toEqual([{}]);
+  for(const lineStyles of [undefined,null,[]])expect(validatePreferences({studies:[{...c,lineStyles}]}).studies).toEqual([c]);
+ });
+ it.each([{},'red',[null],[[]],Array(1),[{width:0}],[{width:4}],[{width:'2'}],[{visible:'false'}],[{color:'red'}],[{style:'dash'}],[{},{},{},{}]])("rejects malformed line styles %#",lineStyles=>{
+  expect(validatePreferences({studies:[{...c,lineStyles}]}).studies).toEqual([]);
+ });
+ it("keeps MACD histogram sign colors and permits visibility only",()=>{
+  const macd={kind:"macd",period:12,slow:26,signal:9,color:"#ffffff"};
+  expect(validatePreferences({studies:[{...macd,lineStyles:[{},{},{visible:false}]}]}).studies).toHaveLength(1);
+  for(const override of [{color:'#ffffff'},{width:2},{style:'solid'}])expect(validatePreferences({studies:[{...macd,lineStyles:[{},{},override]}]}).studies).toEqual([]);
+ });
+});

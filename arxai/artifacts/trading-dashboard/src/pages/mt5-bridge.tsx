@@ -1,0 +1,572 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useGetMt5Status,
+  useGetMeSharedAccountSummary,
+  getGetMt5StatusQueryKey,
+  getGetMeSharedAccountSummaryQueryKey,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
+import {
+  RadioTower, Sparkles, ShieldCheck, UserCheck, Route as RouteIcon,
+  Activity, Wifi, RefreshCw, ArrowRight, User, Landmark, CheckCircle2,
+  Bell, HelpCircle, ChevronRight,
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { useAssistantName } from "@/lib/assistant-name";
+import { useToast } from "@/hooks/use-toast";
+
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
+  try {
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
+  } catch { /* sessionStorage unavailable — silent */ }
+}
+
+const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
+
+function fmtMoney(v?: number | null, ccy?: string | null) {
+  if (v === null || v === undefined) return "—";
+  return `${ccy === "USD" || !ccy ? "$" : ""}${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ccy && ccy !== "USD" ? ` ${ccy}` : ""}`;
+}
+function fmtAge(seconds?: number | null) {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 60) return `${seconds} seconds ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+function maskAccount(acct?: string | number | null) {
+  if (acct === null || acct === undefined || acct === "") return "—";
+  const s = String(acct);
+  return s.length <= 4 ? `••••${s}` : `••••${s.slice(-4)}`;
+}
+
+type Tone = "success" | "warning" | "danger" | "primary" | "muted";
+const TONE_TEXT: Record<Tone, string> = {
+  success: "text-success", warning: "text-warning", danger: "text-danger",
+  primary: "text-primary", muted: "text-txt-muted",
+};
+const TONE_DOT: Record<Tone, string> = {
+  success: "bg-success", warning: "bg-warning", danger: "bg-danger",
+  primary: "bg-primary", muted: "bg-txt-muted",
+};
+
+function Chip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+      tone === "success" ? "border-success/40 bg-success/10 text-success"
+      : tone === "warning" ? "border-warning/40 bg-warning/10 text-warning"
+      : tone === "danger" ? "border-danger/40 bg-danger/10 text-danger"
+      : tone === "primary" ? "border-primary/40 bg-primary/10 text-primary"
+      : "border-border bg-secondary/40 text-txt-muted")}>
+      {children}
+    </span>
+  );
+}
+
+function StatusTile({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: Tone }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-3">
+      <div className="flex items-center gap-1.5 text-[11px] text-txt-muted">
+        <Icon className={cn("h-3.5 w-3.5", TONE_TEXT[tone])} /> {label}
+      </div>
+      <div className={cn("mt-0.5 text-sm font-semibold", TONE_TEXT[tone])}>{value}</div>
+    </div>
+  );
+}
+
+function MetricTile({ label, value, tone = "muted" }: { label: string; value: string; tone?: Tone }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className={cn("mt-0.5 text-base font-semibold", tone === "muted" ? "text-foreground" : TONE_TEXT[tone])}>{value}</div>
+    </div>
+  );
+}
+
+function Row({ label, value, tone = "muted" }: { label: string; value: string; tone?: Tone }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5 text-sm">
+      <span className="text-txt-secondary">{label}</span>
+      <span className={cn("flex items-center gap-1.5 font-medium", tone === "muted" ? "text-foreground" : TONE_TEXT[tone])}>
+        {tone !== "muted" && <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[tone])} />}
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SectionCard({ title, icon: Icon, action, children, className }: { title: string; icon?: any; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("rounded-2xl border border-border bg-card p-4", className)}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-txt-secondary">
+          {Icon && <Icon className="h-4 w-4 text-primary" />} {title}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// What each userApprovalStatus the server sends (meAccountShell) means here.
+// NOT_REQUIRED is the demo route: no live approval applies, so it is neither
+// "awaiting approval" nor a reason in itself. Suspended / risk-locked /
+// disabled accounts are named as such, not as merely "not approved".
+// Live execution is only ever shown as available for APPROVED.
+function approvalStatusInfo(status: string | null): { label: string; tone: Tone; execution: string; reason: string } {
+  switch (status) {
+    case "NOT_REQUIRED":
+      return { label: "Not required", tone: "muted", execution: "Demo route",
+        reason: "your account is on the demo route (your own MT5 account is not a live account, or the platform is not in live mode), so live approval does not apply" };
+    case "NOT_APPROVED":
+      return { label: "Not approved", tone: "warning", execution: "Awaiting approval", reason: "your account is not approved for live execution yet" };
+    case "PENDING":
+      return { label: "Pending", tone: "warning", execution: "Awaiting approval", reason: "approval is pending" };
+    case "SUSPENDED":
+      return { label: "Suspended", tone: "danger", execution: "Suspended", reason: "your live access is suspended" };
+    case "RISK_LOCKED":
+      return { label: "Risk locked", tone: "danger", execution: "Risk locked", reason: "your account is risk-locked" };
+    case "DISABLED":
+      return { label: "Disabled", tone: "danger", execution: "Disabled", reason: "your live access is disabled" };
+    default:
+      return { label: "Unknown", tone: "warning", execution: "Not confirmed", reason: "your approval status could not be confirmed" };
+  }
+}
+
+export default function MT5BridgePage() {
+  const qc = useQueryClient();
+  const mode = useTradingMode();
+  const { name } = useAssistantName();
+
+  const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), refetchInterval: 5000 } });
+  const acctSummary = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } } as any);
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: getGetMt5StatusQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetMeSharedAccountSummaryQueryKey() });
+    if (typeof (mode as any).resync === "function") (mode as any).resync();
+  };
+
+  const s = status.data as any;
+  const acct = (acctSummary?.data ?? null) as { balance?: number; equity?: number; pnl?: number } | null;
+  const snapshot = s?.accountSnapshot;
+
+  // `connected` is the user's OWN mt5_connection. A shared-master user with no
+  // connection of their own is routed through the master bridge, which the
+  // server reports separately (route / sharedMasterBridge, re-aged now).
+  const connected = !!s?.connected;
+  // A shared-master user with no connection of their own is routed through the
+  // master bridge, which the server may report separately.
+  const route: string | undefined = s?.route;
+  const shared = (s?.sharedMasterBridge ?? null) as {
+    availability: string; connected: boolean; message: string; snapshotAgeSeconds: number | null;
+  } | null;
+  const onShared = route === "SHARED_MASTER";
+  // A failing status poll keeps React Query's last data on screen. That data is
+  // no longer current, so nothing below is derived from it as if it were.
+  const statusUnreadable = status.isError === true || !s;
+  const bridgeUp = !statusUnreadable && (connected || (onShared && shared?.connected === true));
+  const checking = status.isLoading || (mode as any).isLoading;
+  // "Notify me when restored": a watch held by this open tab. When the bridge
+  // status read flips from not-connected to connected while armed, show a
+  // toast and (if the browser allows) a desktop notification. Nothing is
+  // stored server-side, so the watch ends when the tab closes.
+  const { toast } = useToast();
+  const [notifyArmed, setNotifyArmed] = useState(false);
+  const prevBridgeUp = useRef(bridgeUp);
+  useEffect(() => {
+    const wasUp = prevBridgeUp.current;
+    prevBridgeUp.current = bridgeUp;
+    if (!notifyArmed || wasUp || !bridgeUp) return;
+    setNotifyArmed(false);
+    toast({ title: "MT5 bridge restored", description: "Your trading route reports connected again." });
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("ARX: MT5 bridge restored", { body: "Your trading route reports connected again." });
+      }
+    } catch { /* desktop notification unavailable */ }
+  }, [bridgeUp, notifyArmed, toast]);
+  async function armNotify() {
+    setNotifyArmed(true);
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    } catch { /* permission prompt unavailable */ }
+  }
+
+  const frozen = !!(mode as any).isFrozen;
+
+  const bridgeState: { label: string; tone: Tone } = useMemo(() => {
+    // "Checking" only while the status request is actually in flight.
+    if (checking) return { label: "Checking", tone: "warning" };
+    if (frozen) return { label: "Risk Lock Active", tone: "danger" };
+    if (statusUnreadable) return { label: "Status unknown", tone: "warning" };
+    if (bridgeUp) return { label: "Connected", tone: "success" };
+    if (onShared) {
+      const a = shared?.availability;
+      return { label: a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : a === "UNKNOWN" || !a ? "Status unknown" : "Unavailable", tone: "warning" };
+    }
+    if (s?.mode === "STALE") return { label: "Stale", tone: "warning" };
+    return { label: "Not connected", tone: "warning" };
+  }, [checking, frozen, bridgeUp, onShared, shared?.availability, s, statusUnreadable]);
+
+  // Approval / arming come from the account-mode envelope. Being in
+  // LIVE_SHARED mode is not approval, and a fresh heartbeat is not permission
+  // to execute: the envelope's blocked reason and liveExecutionArmed decide.
+  const env = (mode.envelope ?? null) as { userApprovalStatus?: string | null; liveExecutionArmed?: boolean } | null;
+  const approvalStatus = env?.userApprovalStatus ?? null;
+  const blockedReason = mode.cleanBlockedReason ?? null;
+  const liveArmed = mode.isLiveArmed === true;
+  const approved = approvalStatus === "APPROVED";
+  const approvalInfo = approvalStatusInfo(approvalStatus);
+  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : approvalInfo.tone;
+  const approvalLabel = frozen ? "Frozen"
+    : !env ? "Unknown"
+    : blockedReason ? "Blocked"
+    : approved ? "Approved"
+    : approvalInfo.label;
+  const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
+
+  const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
+  const bridgeHealthy = bridgeUp && !frozen;
+  // A reporting bridge alone does not make execution available: the account
+  // must be approved too. Approval is a separate field from the heartbeat.
+  // Execution also needs live execution armed with no block reported.
+  const executionAvailable = bridgeHealthy && approved && liveArmed && !blockedReason;
+  const executionLabel = !bridgeHealthy ? (statusUnreadable && !frozen ? "Not confirmed" : "Paused")
+    : blockedReason ? "Blocked"
+    : !approved ? approvalInfo.execution
+    : !liveArmed ? "Not armed"
+    : "Available";
+  // This page reads only the bridge heartbeat. It does not measure the price
+  // feed, result reporting or position/account refresh, so it does not claim them.
+  const NOT_CHECKED = "Not checked here";
+  // The freeze message and the risk caps live on the account-mode envelope,
+  // not on the hook's top-level result (reading them there always gave
+  // undefined, so "Stop Loss Required: No" and "All approved symbols" showed
+  // whatever the server said).
+  const modeEnvelope = mode.envelope ?? null;
+  const bridgeCopy = frozen
+    ? (modeEnvelope?.userFrozenStatus?.freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
+    : statusUnreadable
+      ? "MT5 bridge status could not be loaded, so whether your route is connected is not known right now. The last value read is not shown as current."
+    : bridgeHealthy
+      ? (onShared ? "Your account routes through the ARX shared MT5 bridge, which is reporting." : "Your own MT5 EA connection is reporting.")
+      : (s?.userSafeMessage ?? (onShared ? shared?.message : null) ?? "MT5 bridge status could not be read.");
+  // Allocation: the canonical per-user allocation view on the shared-account
+  // summary — the same source the live dispatch gate reads. (The hook's result
+  // has no userAllocation field, so this always read as missing; and the
+  // envelope's assignedStartingBalance falls back to the running balance, so
+  // it is not an assignment.) A failed or missing read is said so.
+  const allocView = (acctSummary?.data as { allocationView?: { assignedAllocation?: number; hasAllocation?: boolean } | null } | null | undefined)?.allocationView;
+  const allocationAmount = allocView?.hasAllocation === true && typeof allocView.assignedAllocation === "number" && Number.isFinite(allocView.assignedAllocation)
+    ? allocView.assignedAllocation : null;
+  const allocationText = allocationAmount != null ? fmtMoney(allocationAmount)
+    : acctSummary?.isError ? "Could not be loaded"
+    : acctSummary?.isLoading ? "Checking…"
+    : acctSummary?.data == null ? "Not available"
+    : allocView == null ? "Could not be loaded"
+    : allocView.hasAllocation === false ? "Not assigned"
+    : "Could not be loaded";
+  const caps = modeEnvelope?.userRiskCaps ?? null;
+  const CAPS_UNKNOWN = "Could not be checked";
+  const openPnl = acct?.pnl ?? null;
+  // The status endpoint says whether it read the broker's positions at all
+  // (openPositionsMeasured). An unread list is not "0 open trades".
+  const openTrades = !statusUnreadable && s?.openPositionsMeasured === true && Array.isArray(s?.openPositions) ? s.openPositions.length : null;
+  // /mt5/status carries no account/position sync time. The only age it gives
+  // is the EA heartbeat (own connection) or the shared bridge's last report,
+  // so that is what this label says — never "Last Sync".
+  const lastSync = statusUnreadable
+    ? "Could not be loaded"
+    : fmtAge(onShared ? (shared?.snapshotAgeSeconds ?? null) : (s?.secondsSinceHeartbeat ?? null));
+  const lastSyncLabel = onShared ? "Last bridge report" : "Last heartbeat";
+
+  // Only the risk lock is known here; no risk level is measured.
+  const riskTone: Tone = frozen ? "danger" : "muted";
+  const riskLabel = frozen ? "Locked" : "Not locked";
+
+  if (checking) {
+    return (
+      <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
+        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-16 w-full" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  const eleanorRead = frozen
+    ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
+    : statusUnreadable
+      ? `${bridgeCopy} You can still analyze the market and prepare ideas.`
+    : bridgeUp
+      ? (executionAvailable
+          ? `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected and your account mode has live execution armed with no block reported. Server safety gates still check every order. If it disconnects, ARX pauses live execution until the connection returns.`
+          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? approvalInfo.reason : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
+      : `${bridgeCopy} Live execution is paused until the bridge reports in. You can still analyze the market and prepare ideas.`;
+
+  const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];
+  if (!statusUnreadable && (onShared ? shared?.snapshotAgeSeconds != null : s?.secondsSinceHeartbeat != null)) {
+    activity.push({ time: lastSync, event: bridgeUp ? "Bridge heartbeat" : "Last heartbeat received", tone: bridgeUp ? "success" : "warning", chip: bridgeUp ? "Connected" : "Stale" });
+  }
+  // Sync rows are shown only from the sync's own timestamp, never from the
+  // heartbeat age: a heartbeat is not an account or position sync.
+  const snapshotSyncedMs = typeof snapshot?.syncedAt === "string" ? Date.parse(snapshot.syncedAt) : NaN;
+  if (snapshot?.account && Number.isFinite(snapshotSyncedMs)) {
+    activity.push({ time: fmtAge(Math.max(0, Math.floor((Date.now() - snapshotSyncedMs) / 1000))), event: "Account snapshot synced", tone: "success", chip: "Synced" });
+  }
+  if (snapshot?.account && !Number.isFinite(snapshotSyncedMs)) {
+    activity.push({ time: "time not reported", event: "Account snapshot on file", tone: "muted", chip: "On file" });
+  }
+  if (openTrades != null) activity.push({ time: "time not reported", event: `Positions reported: ${openTrades}`, tone: "muted", chip: "On file" });
+
+  // A failing status poll leaves the last accountSnapshot in React Query's
+  // cache. The card names the rows that come from it as the last read, with
+  // the snapshot's own sync age, never as current values.
+  const staleSnapshotRows = statusUnreadable && snapshot
+    ? ["Broker", "Account", ...(acct?.balance == null ? ["Balance"] : []), ...(acct?.equity == null ? ["Equity"] : []), "Free Margin", "Margin Level"]
+    : [];
+  const staleSnapshotNote = staleSnapshotRows.length === 0 ? null
+    : `MT5 status could not be loaded, so these values are not current: ${staleSnapshotRows.slice(0, -1).join(", ")} and ${staleSnapshotRows[staleSnapshotRows.length - 1]} are from the last status read (${
+      Number.isFinite(snapshotSyncedMs)
+        ? `account synced ${fmtAge(Math.max(0, Math.floor((Date.now() - snapshotSyncedMs) / 1000)))}`
+        : "its sync time was not reported"}).`;
+
+  return (
+    <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/25">
+            <ShieldCheck className="h-6 w-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold leading-tight">MT5 Bridge</h1>
+            <p className="text-sm text-txt-secondary">View your live trading connection, shared bridge access, and account route status.</p>
+          </div>
+        </div>
+        <button onClick={openEleanorLiveChat} data-testid="bridge-ask-eleanor"
+          className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
+          <Sparkles className="h-4 w-4" /> Ask {name}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm">
+        <span className="flex items-center gap-2 font-medium"><RadioTower className={cn("h-4 w-4", TONE_TEXT[bridgeState.tone])} /> {routeLabel}</span>
+        <span className="flex items-center gap-2 font-medium"><UserCheck className={cn("h-4 w-4", TONE_TEXT[approvalTone])} /> {approvalLabel}</span>
+        <span className="flex items-center gap-2 font-medium"><Activity className={cn("h-4 w-4", TONE_TEXT[bridgeHealthy ? "success" : "warning"])} /> {bridgeHealthy ? "Bridge Healthy" : `Bridge ${bridgeState.label}`}</span>
+        {allocationAmount != null && (
+          <span className="flex items-center gap-2 font-medium"><Landmark className="h-4 w-4 text-primary" /> Allocation <span className="text-primary">{fmtMoney(allocationAmount)}</span></span>
+        )}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCard title={onShared ? "Shared MT5 Bridge" : "Your MT5 Connection"} icon={RadioTower}>
+          <div className="flex items-start gap-4">
+            <span className={cn("grid h-16 w-16 shrink-0 place-items-center rounded-full ring-2",
+              bridgeState.tone === "success" ? "bg-success/10 ring-success/40 text-success"
+              : bridgeState.tone === "danger" ? "bg-danger/10 ring-danger/40 text-danger"
+              : "bg-warning/10 ring-warning/40 text-warning")}>
+              <Wifi className="h-7 w-7" />
+            </span>
+            <div className="min-w-0">
+              <div className={cn("text-xl font-bold", TONE_TEXT[bridgeState.tone])}>{bridgeState.label}</div>
+              <p className="mt-1 text-sm text-txt-secondary" data-testid="bridge-state-copy">{bridgeCopy}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <StatusTile icon={ShieldCheck} label="Bridge" value={bridgeHealthy ? "Healthy" : bridgeState.label} tone={bridgeHealthy ? "success" : "warning"} />
+            <StatusTile icon={UserCheck} label="Access" value={approvalLabel} tone={approvalTone} />
+            <StatusTile icon={RouteIcon} label="Route" value={routeLabel} tone="primary" />
+          </div>
+
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <MetricTile label="Allocation" value={allocationText} />
+            <MetricTile label="Open P/L" value={openPnl == null ? "—" : fmtMoney(openPnl)} tone={openPnl == null ? "muted" : openPnl >= 0 ? "success" : "danger"} />
+            <MetricTile label="Open Trades" value={openTrades == null ? "—" : String(openTrades)} />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2">
+            <span className="flex items-center gap-2 text-sm text-txt-secondary">
+              <RefreshCw className="h-4 w-4 text-txt-muted" /> {lastSyncLabel} <span className="text-foreground">{lastSync}</span>
+            </span>
+            <button onClick={refresh} data-testid="bridge-refresh"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh Status
+            </button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title={`${name}'s Bridge Read`} icon={Sparkles}>
+          <p className="text-sm leading-relaxed text-txt-secondary">{eleanorRead}</p>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <StatusTile icon={ShieldCheck} label="Bridge" value={bridgeHealthy ? "Healthy" : bridgeState.label} tone={bridgeHealthy ? "success" : "warning"} />
+            <StatusTile icon={UserCheck} label="Access" value={approvalLabel} tone={approvalTone} />
+            <StatusTile icon={Activity} label="Risk Lock" value={riskLabel} tone={riskTone} />
+            <StatusTile icon={RouteIcon} label="Execution" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <StatusTile icon={Wifi} label="Market Data" value={NOT_CHECKED} tone="muted" />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
+              <Sparkles className="h-4 w-4" /> Ask {name}
+            </button>
+            <Link href="/risk-settings" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
+              Review Risk
+            </Link>
+            <Link href="/trade-command-room" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
+              Open Trade
+            </Link>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Your Trading Route" icon={RouteIcon}>
+        <div className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch">
+          {[
+            { n: "1. You", icon: User, tone: "primary" as Tone, desc: "You prepare or confirm a trade." },
+            { n: "2. ARX Risk Checks", icon: ShieldCheck, tone: "warning" as Tone, desc: "ARX checks your approval, allocation, risk limits, and account safety controls." },
+            { n: "3. Shared MT5 Bridge", icon: RadioTower, tone: "primary" as Tone, desc: "Approved orders route through the connected MT5 bridge." },
+            { n: "4. Broker Execution", icon: Landmark, tone: "success" as Tone, desc: "The broker confirms filled, rejected, or pending status." },
+            { n: "5. Result Back to App", icon: CheckCircle2, tone: "primary" as Tone, desc: "Your dashboard updates with live status, P/L, and position data." },
+          ].map((step, i, arr) => (
+            <div key={step.n} className="contents">
+              <div className="rounded-xl border border-border bg-background/40 p-3">
+                <step.icon className={cn("h-5 w-5", TONE_TEXT[step.tone])} />
+                <div className="mt-2 text-sm font-semibold">{step.n}</div>
+                <p className="mt-1 text-xs text-txt-muted">{step.desc}</p>
+              </div>
+              {i < arr.length - 1 && (
+                <div className="hidden items-center justify-center text-txt-muted md:flex"><ArrowRight className="h-4 w-4" /></div>
+              )}
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SectionCard title="My Bridge Access" icon={UserCheck}>
+          <div className="divide-y divide-border/60">
+            <Row label="Approval" value={approvalLabel} tone={approvalTone} />
+            <Row label="Live Access" value={liveAccessLabel} tone={liveArmed ? "success" : mode.isLiveShared ? "warning" : "muted"} />
+            <Row label="Allocation" value={allocationText} />
+            {/* allowedSymbols null = no restriction list; a null cap = none set. */}
+            <Row label="Allowed Markets" value={!caps ? CAPS_UNKNOWN : Array.isArray(caps.allowedSymbols) && caps.allowedSymbols.length ? `${caps.allowedSymbols.length} approved` : "All approved symbols"} />
+            <Row label="Max Lot Size" value={!caps ? CAPS_UNKNOWN : caps.maxLotSize != null ? String(caps.maxLotSize) : "Not set"} />
+            <Row label="Max Open Trades" value={!caps ? CAPS_UNKNOWN : caps.maxOpenTrades != null ? String(caps.maxOpenTrades) : "Not set"} />
+            <Row label="Stop Loss Required" value={!caps ? CAPS_UNKNOWN : caps.requireStopLoss ? "Yes" : "No"} tone={caps?.requireStopLoss ? "success" : "muted"} />
+            <Row label="Risk Controls" value={!caps ? CAPS_UNKNOWN : mode.hasRiskCaps ? "Active" : "Standard"} tone={caps && mode.hasRiskCaps ? "success" : "muted"} />
+            <Row label="Account Freeze" value={frozen ? "Yes" : "No"} tone={frozen ? "danger" : "success"} />
+          </div>
+          <Link href="/risk-settings" className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-primary hover:border-primary/40">
+            View Risk Limits
+          </Link>
+        </SectionCard>
+
+        <SectionCard title="Bridge Health" icon={Activity}>
+          <div className="divide-y divide-border/60">
+            <Row label="Connection" value={bridgeUp ? "Healthy" : statusUnreadable ? "Status unknown" : "Unavailable"} tone={bridgeUp ? "success" : "warning"} />
+            <Row label="Market Data" value={NOT_CHECKED} />
+            <Row label="Order Routing" value={executionLabel} tone={executionAvailable ? "success" : "warning"} />
+            <Row label="Result Reporting" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Position Refresh" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label="Account Refresh" value={bridgeUp ? NOT_CHECKED : statusUnreadable ? "Status unknown" : "Paused"} tone={bridgeUp ? "muted" : "warning"} />
+            <Row label={lastSyncLabel} value={lastSync} />
+          </div>
+          <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">
+            <RefreshCw className="h-4 w-4" /> Refresh Status
+          </button>
+        </SectionCard>
+
+        <SectionCard title="If the Bridge Disconnects" icon={Wifi}>
+          <p className="text-sm text-txt-secondary">If the shared MT5 bridge disconnects, ARX pauses new live execution until the bridge reconnects.</p>
+          <div className="mt-3 divide-y divide-border/60">
+            <Row label="New Trades" value="Paused" tone="warning" />
+            <Row label="Open Positions" value="Refresh delayed" tone="warning" />
+            <Row label={`${name} Analysis`} value="Still available" tone="success" />
+            <Row label="Scanner" value="Still available" tone="success" />
+            <Row label="Account Values" value="Update when restored" tone="muted" />
+          </div>
+          {bridgeUp ? (
+            <p className="mt-3 text-center text-xs text-txt-muted" data-testid="bridge-notify-connected">Connected now. Nothing to wait for.</p>
+          ) : notifyArmed ? (
+            <button type="button" onClick={() => setNotifyArmed(false)} data-testid="bridge-notify-cancel"
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/15">
+              <Bell className="h-4 w-4" /> Watching while this tab is open (cancel)
+            </button>
+          ) : (
+            <button type="button" onClick={armNotify} data-testid="bridge-notify-arm"
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-muted">
+              <Bell className="h-4 w-4" /> Notify me when restored
+            </button>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCard title="Account Snapshot" icon={Landmark}
+          action={<Link href="/analytics" className="text-xs text-primary hover:underline">View Account Analytics</Link>}>
+          {staleSnapshotNote && (
+            <p className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning" role="status" data-testid="account-snapshot-stale">
+              {staleSnapshotNote}
+            </p>
+          )}
+          {snapshot?.account || acct ? (
+            <div className="divide-y divide-border/60">
+              <Row label="Broker" value={snapshot?.broker ?? "—"} />
+              <Row label="Account" value={maskAccount(snapshot?.account)} />
+              <Row label="Balance" value={fmtMoney(acct?.balance ?? snapshot?.balance, snapshot?.currency)} />
+              <Row label="Equity" value={fmtMoney(acct?.equity ?? snapshot?.equity, snapshot?.currency)} />
+              <Row label="Free Margin" value={fmtMoney(snapshot?.freeMargin, snapshot?.currency)} />
+              <Row label="Margin Level" value={snapshot?.marginLevel != null ? `${Number(snapshot.marginLevel).toFixed(2)}%` : "—"} />
+              <Row label="Open Positions" value={openTrades == null ? "—" : String(openTrades)} />
+              <Row label="Allocation" value={allocationText} />
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-txt-muted">Account snapshot will appear once bridge data is available.</p>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Recent Bridge Activity" icon={Activity}
+          action={<Link href="/alerts" className="text-xs text-primary hover:underline">View All</Link>}>
+          {activity.length === 0 ? (
+            <p className="py-8 text-center text-sm text-txt-muted">Bridge activity will appear here once your account syncs.</p>
+          ) : (
+            <div className="space-y-2">
+              {activity.map((a, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2" data-testid="bridge-activity-row">
+                  <span className={cn("h-2 w-2 shrink-0 rounded-full", TONE_DOT[a.tone])} />
+                  <span className="w-24 shrink-0 text-xs text-txt-muted">{a.time}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">{a.event}</span>
+                  <Chip tone={a.tone}>{a.chip}</Chip>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-start gap-3">
+          <HelpCircle className="mt-0.5 h-5 w-5 text-primary" />
+          <div>
+            <div className="text-sm font-semibold">Need help?</div>
+            <p className="text-sm text-txt-secondary">Learn more about how the ARX shared MT5 bridge works and how it keeps your account safe.</p>
+          </div>
+        </div>
+        <a href={`${BASE}/help`} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
+          Bridge Help Center <ChevronRight className="h-4 w-4" />
+        </a>
+      </div>
+    </div>
+  );
+}

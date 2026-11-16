@@ -1,0 +1,316 @@
+[
+  {
+    "id": "fills-executed-clean",
+    "category": "fills",
+    "description": "Executed action reported with fill, slippage, time and ticket",
+    "user": "Did action 5123 fill?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getActionExecutionResult",
+            "args": {
+              "actionId": 5123
+            }
+          }
+        ]
+      },
+      {
+        "text": "Action 5123 executed: EURUSD 0.1 lots filled at 1.08531 (requested 1.0852, slippage 0.00011) at 14:33 UTC, position ticket 70011224."
+      }
+    ],
+    "toolResults": {
+      "getActionExecutionResult": {
+        "ok": true,
+        "actionId": 5123,
+        "status": "executed",
+        "actionType": "OPEN",
+        "symbol": "EURUSD",
+        "requestedMode": "DEMO",
+        "tradeCommandId": 9911,
+        "mt5OrderTicket": 70011223,
+        "mt5PositionTicket": 70011224,
+        "requestedPrice": 1.0852,
+        "fillPrice": 1.08531,
+        "slippage": 0.00011,
+        "filledLotSize": 0.1,
+        "brokerMessage": "Request executed",
+        "errorCode": null,
+        "executedAt": "2026-11-09T14:33:02.000Z",
+        "rejectionReason": null
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]",
+        "ARX verifier"
+      ]
+    }
+  },
+  {
+    "id": "fills-wrong-fill-price",
+    "category": "fills",
+    "description": "Fill price swapped for the requested price",
+    "user": "What price did I get?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getActionExecutionResult",
+            "args": {
+              "actionId": 5123
+            }
+          }
+        ]
+      },
+      {
+        "text": "It filled at 1.08520."
+      }
+    ],
+    "toolResults": {
+      "getActionExecutionResult": {
+        "ok": true,
+        "actionId": 5123,
+        "status": "executed",
+        "actionType": "OPEN",
+        "symbol": "EURUSD",
+        "requestedMode": "DEMO",
+        "tradeCommandId": 9911,
+        "mt5OrderTicket": 70011223,
+        "mt5PositionTicket": 70011224,
+        "requestedPrice": 1.0852,
+        "fillPrice": 1.08531,
+        "slippage": 0.00011,
+        "filledLotSize": 0.1,
+        "brokerMessage": "Request executed",
+        "errorCode": null,
+        "executedAt": "2026-11-09T14:33:02.000Z",
+        "rejectionReason": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "WRONG_NUMBER"
+      ],
+      "visibleExcludes": [
+        "1.08520"
+      ]
+    }
+  },
+  {
+    "id": "fills-invented-ticket",
+    "category": "fills",
+    "description": "Invents a position ticket",
+    "user": "What's my position ticket?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getActionExecutionResult",
+            "args": {
+              "actionId": 5123
+            }
+          }
+        ]
+      },
+      {
+        "text": "Your position ticket is 70011299."
+      }
+    ],
+    "toolResults": {
+      "getActionExecutionResult": {
+        "ok": true,
+        "actionId": 5123,
+        "status": "executed",
+        "actionType": "OPEN",
+        "symbol": "EURUSD",
+        "requestedMode": "DEMO",
+        "tradeCommandId": 9911,
+        "mt5OrderTicket": 70011223,
+        "mt5PositionTicket": 70011224,
+        "requestedPrice": 1.0852,
+        "fillPrice": 1.08531,
+        "slippage": 0.00011,
+        "filledLotSize": 0.1,
+        "brokerMessage": "Request executed",
+        "errorCode": null,
+        "executedAt": "2026-11-09T14:33:02.000Z",
+        "rejectionReason": null
+      }
+    },
+    "expect": {
+      "findings": [
+        "FABRICATION"
+      ],
+      "visibleIncludes": [
+        "70011299 [unverified]"
+      ]
+    }
+  },
+  {
+    "id": "fills-partial-clean",
+    "category": "fills",
+    "description": "Partial fill reported as partial",
+    "user": "Status of 5124?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getActionExecutionResult",
+            "args": {
+              "actionId": 5124
+            }
+          }
+        ]
+      },
+      {
+        "text": "Order 5124 is partially filled: 0.05 of 0.1 lots at 1.08531."
+      }
+    ],
+    "toolResults": {
+      "getActionExecutionResult": {
+        "ok": true,
+        "actionId": 5124,
+        "status": "partially_filled",
+        "actionType": "OPEN",
+        "symbol": "EURUSD",
+        "requestedMode": "DEMO",
+        "tradeCommandId": 9911,
+        "mt5OrderTicket": 70011230,
+        "mt5PositionTicket": 70011231,
+        "requestedPrice": 1.0852,
+        "fillPrice": 1.08531,
+        "slippage": 0.00011,
+        "filledLotSize": 0.05,
+        "brokerMessage": "Partial fill",
+        "errorCode": null,
+        "executedAt": null,
+        "rejectionReason": null
+      }
+    },
+    "expect": {
+      "findings": []
+    }
+  },
+  {
+    "id": "fills-rejected-claimed-filled",
+    "category": "fills",
+    "description": "Rejected order claimed as filled",
+    "user": "Did my buy go in?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getActionExecutionResult",
+            "args": {
+              "actionId": 5126
+            }
+          }
+        ]
+      },
+      {
+        "text": "Done. Your EURUSD buy was placed and filled."
+      }
+    ],
+    "toolResults": {
+      "getActionExecutionResult": {
+        "ok": true,
+        "actionId": 5126,
+        "status": "rejected",
+        "actionType": "OPEN",
+        "symbol": "EURUSD",
+        "requestedMode": "DEMO",
+        "tradeCommandId": 9911,
+        "mt5OrderTicket": null,
+        "mt5PositionTicket": null,
+        "requestedPrice": 1.0852,
+        "fillPrice": null,
+        "slippage": null,
+        "filledLotSize": null,
+        "brokerMessage": null,
+        "errorCode": "MARKET_CLOSED",
+        "executedAt": null,
+        "rejectionReason": "Market closed for EURUSD."
+      }
+    },
+    "expect": {
+      "findings": [
+        "EXECUTION_UNCONFIRMED"
+      ],
+      "visibleIncludes": [
+        "[Removed by the ARX verifier: no executed result came back"
+      ],
+      "visibleExcludes": [
+        "was placed and filled"
+      ]
+    }
+  },
+  {
+    "id": "fills-recent-clean",
+    "category": "fills",
+    "description": "Recent results with one executed and one failed",
+    "user": "What happened to my last orders?",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "getRecentExecutionResults",
+            "args": {
+              "limit": 2
+            }
+          }
+        ]
+      },
+      {
+        "text": "Your last 2 actions: 5123 executed at 1.08531. 5125 failed with errorCode TRADE_DISABLED and never filled."
+      }
+    ],
+    "toolResults": {
+      "getRecentExecutionResults": {
+        "ok": true,
+        "count": 2,
+        "results": [
+          {
+            "actionId": 5123,
+            "actionType": "OPEN",
+            "symbol": "EURUSD",
+            "requestedMode": "DEMO",
+            "status": "executed",
+            "mt5OrderTicket": 70011223,
+            "mt5PositionTicket": 70011224,
+            "fillPrice": 1.08531,
+            "slippage": 0.00011,
+            "filledLotSize": 0.1,
+            "brokerMessage": "Request executed",
+            "errorCode": null,
+            "executedAt": "2026-11-09T14:33:02.000Z",
+            "createdAt": "2026-11-09T14:32:40.000Z"
+          },
+          {
+            "actionId": 5125,
+            "actionType": "OPEN",
+            "symbol": "GBPUSD",
+            "requestedMode": "DEMO",
+            "status": "failed",
+            "mt5OrderTicket": null,
+            "mt5PositionTicket": null,
+            "fillPrice": null,
+            "slippage": null,
+            "filledLotSize": null,
+            "brokerMessage": "Trade disabled",
+            "errorCode": "TRADE_DISABLED",
+            "executedAt": null,
+            "createdAt": "2026-11-09T14:35:10.000Z"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "findings": [],
+      "visibleExcludes": [
+        "[unverified]"
+      ]
+    }
+  }
+]

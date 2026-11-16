@@ -1,0 +1,307 @@
+// A failed news lookup is NOT "no news risk".
+//
+// When the news intelligence lookup throws, or the economic calendar is
+// configured but did not answer, scheduled event risk was never checked. The
+// scanner final read, the Opportunity Map and the scalp engine must say so and
+// withhold actionable reads, instead of collapsing the failure to riskLevel
+// "none" ("Technicals clean and no major news catalyst.", READY_NOW, news LOW).
+//
+// Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
+//        src/lib/__qa__/scannerNewsUnchecked.test.ts
+
+import { test, mock } from "node:test";
+import assert from "node:assert/strict";
+import type { ScannerOpportunity } from "../marketScanner.js";
+import type { LateDetection } from "@workspace/domain/signal-intelligence";
+
+type Mode = "throw" | "fetch_error" | "connected_quiet" | "not_configured";
+let mode: Mode = "throw";
+
+function pack(calendar: { connected: boolean; provider: string; providerState: string }) {
+  return {
+    riskLevel: "none", bias: "unclear", timing: "quiet", recommendation: "watch",
+    // Mirrors newsIntelligenceService: only a connected calendar is "checked".
+    scheduledEventRisk: calendar.connected ? "checked" : "not_checked",
+    upcomingEvent: null, warningSummary: "No major scheduled news for EURUSD in the current window.",
+    dataSources: {
+      headlines: { connected: false, provider: "none", count: 0 },
+      calendar: { ...calendar, note: "" },
+      social: { connected: false, provider: "none", note: "" },
+    },
+  };
+}
+
+mock.module("../news/newsIntelligenceService.js", {
+  namedExports: {
+    getNewsIntelligence: async () => {
+      if (mode === "throw") throw new Error("news offline fixture");
+      if (mode === "fetch_error") return pack({ connected: false, provider: "trading_economics", providerState: "fetch_error" });
+      if (mode === "not_configured") return pack({ connected: false, provider: "none", providerState: "not_configured" });
+      return pack({ connected: true, provider: "trading_economics", providerState: "connected" });
+    },
+  },
+});
+
+const { decorateOpportunitiesWithNewsRisk, computeFinalRead } = await import("../marketScanner.js");
+const { toInput } = await import("../signalIntelligence/opportunityMapService.js");
+const { categorizeOpportunities } = await import("@workspace/domain/signal-intelligence");
+const { oppToScannerInput } = await import("../scalp/scalpService.js");
+const { evaluateScalp } = await import("../scalp/scalpEngine.js");
+const { evaluateMarketDataSufficiency } = await import("@workspace/domain/market");
+
+function liveRow(symbol = "EURUSD"): ScannerOpportunity {
+  return {
+    symbol,
+    timeframe: "M5",
+    bias: "bullish",
+    recommendedAction: "BUY",
+    confidenceScore: 72,
+    entrySniperScore: 70,
+    setupType: "Trend continuation",
+    entry: 1.1,
+    stopLoss: 1.099,
+    takeProfit: 1.102,
+    statusBadge: "TRADE_READY",
+    dataSource: "LIVE_FEED",
+    dataStatus: "live",
+    chartConfirmed: true,
+    historicalContext: { available: true, winRate: 55, alignsWithScanner: true },
+    opportunity: { score: 80, label: "STRONG" },
+  } as unknown as ScannerOpportunity;
+}
+
+const notLate: LateDetection = {
+  isLate: false, doNotChase: false, reason: null, distanceFromEntryPct: 0,
+  percentOfMoveComplete: 0, remainingRR: 2, candleExtensionAtr: 0,
+} as LateDetection;
+
+async function decorated(m: Mode, symbol = "EURUSD"): Promise<ScannerOpportunity> {
+  mode = m;
+  const [row] = await decorateOpportunitiesWithNewsRisk([liveRow(symbol)]);
+  assert.ok(row);
+  return row;
+}
+
+for (const m of ["throw", "fetch_error"] as const) {
+  test(`${m}: scanner final read does not claim 'no major news catalyst'`, async () => {
+    const row = await decorated(m, m === "throw" ? "EURUSD" : "GBPUSD");
+    assert.equal(row.newsContext?.eventRiskUnchecked, true);
+    const fr = computeFinalRead(row);
+    assert.notEqual(fr.label, "TRADE_WATCH");
+    assert.equal(fr.confidence, "LOW");
+    assert.ok(!fr.reasons.some((r) => /no major news catalyst/i.test(r)), fr.reasons.join(" | "));
+    assert.ok(fr.reasons.some((r) => /could not be checked/i.test(r)), fr.reasons.join(" | "));
+  });
+
+  test(`${m}: opportunity map row is not READY_NOW`, async () => {
+    const row = await decorated(m, m === "throw" ? "USDJPY" : "AUDUSD");
+    const withRead = { ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity;
+    const input = toInput(withRead, notLate);
+    const map = categorizeOpportunities([input]);
+    assert.notEqual(map.rows[0]?.category, "READY_NOW");
+    assert.match(String(map.rows[0]?.reason), /could not be checked/i);
+  });
+
+  test(`${m}: scalp engine does not read the unchecked news as LOW risk`, async () => {
+    const row = await decorated(m, m === "throw" ? "USDCAD" : "NZDUSD");
+    const scanner = oppToScannerInput(row);
+    assert.equal(scanner.newsRiskUnchecked, true);
+    const r = evaluateScalp({
+      symbol: "EURUSD",
+      currentPrice: 1.1,
+      spec: {
+        hasBrokerTruth: true, tradeMode: "FULL", tradeAllowed: true, visible: true, marketOpen: true,
+        digits: 5, point: 0.00001, minLot: 0.01, maxLot: 10, lotStep: 0.01, contractSize: 100000,
+        tickSize: 0.00001, tickValue: 1, stopsLevelPoints: 0, spreadPoints: 10, category: "forex",
+        displayName: "EURUSD",
+      },
+      scanner: {
+        ...scanner,
+        sufficiency: evaluateMarketDataSufficiency({
+          symbol: "EURUSD", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+        }),
+      },
+      account: { balance: 1000, equity: 1000, freeMargin: 1000, leverage: 100 },
+      mode: "ANY",
+      riskAmount: 10,
+    });
+    assert.equal(r.canBuildTrade, false);
+    assert.notEqual(r.status, "READY");
+    assert.equal(r.newsRiskUnchecked, true);
+    assert.match(r.plainEnglishReason, /could not be checked/i);
+    assert.doesNotMatch(r.plainEnglishReason, /high-impact news/i);
+  });
+}
+
+test("control: a connected, quiet calendar still reads as no news risk", async () => {
+  const row = await decorated("connected_quiet", "XAUUSD");
+  assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
+  const fr = computeFinalRead(row);
+  assert.equal(fr.label, "TRADE_WATCH");
+  assert.ok(!fr.reasons.some((r) => /could not be checked/i.test(r)));
+  assert.equal(oppToScannerInput(row).newsRiskUnchecked, undefined);
+});
+
+test("control: a calendar that is not configured is not reported as a failed check", async () => {
+  const row = await decorated("not_configured", "EURGBP");
+  assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
+});
+
+// No calendar configured: scheduled events were not checked at all. The read
+// stays technicals-only by design (nothing is withheld, unlike a failed check),
+// but "none" is not an observation: it must not lift confidence to HIGH, the
+// read must not say "no major news catalyst", and the scalp card must not show
+// news LOW (the Selected Market panel already says the calendar was not checked).
+test("not configured: the final read says news was not checked, never 'no major news', and is not HIGH from it", async () => {
+  const row = await decorated("not_configured", "EURCHF");
+  assert.equal(row.newsContext?.eventRiskNotConfigured, true);
+  const fr = computeFinalRead({ ...row, confidenceScore: 90 } as ScannerOpportunity);
+  assert.equal(fr.label, "TRADE_WATCH", "technicals-only by design: nothing is withheld");
+  assert.notEqual(fr.confidence, "HIGH", "unobserved news lifted confidence to HIGH");
+  assert.ok(!fr.reasons.some((r) => /no major news catalyst/i.test(r)), fr.reasons.join(" | "));
+  assert.ok(fr.reasons.some((r) => /No economic calendar is configured/.test(r)), fr.reasons.join(" | "));
+});
+
+test("not configured: the scalp result carries 'news not checked', not a LOW observation", async () => {
+  const row = await decorated("not_configured", "AUDNZD");
+  const scanner = oppToScannerInput(row);
+  assert.equal(scanner.newsRiskNotConfigured, true);
+  assert.equal(scanner.newsRiskUnchecked, undefined, "not a failed check: the engine does not fail closed");
+  const r = evaluateScalp({
+    symbol: "AUDNZD",
+    currentPrice: 1.1,
+    spec: {
+      hasBrokerTruth: true, tradeMode: "FULL", tradeAllowed: true, visible: true, marketOpen: true,
+      digits: 5, point: 0.00001, minLot: 0.01, maxLot: 10, lotStep: 0.01, contractSize: 100000,
+      tickSize: 0.00001, tickValue: 1, stopsLevelPoints: 0, spreadPoints: 10, category: "forex",
+      displayName: "AUDNZD",
+    },
+    scanner: {
+      ...scanner,
+      sufficiency: evaluateMarketDataSufficiency({
+        symbol: "AUDNZD", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+      }),
+    },
+    account: { balance: 1000, equity: 1000, freeMargin: 1000, leverage: 100 },
+    mode: "ANY",
+    riskAmount: 10,
+  });
+  assert.equal(r.newsRiskNotConfigured, true, `status ${r.status}`);
+});
+
+test("control: a connected calendar and a synthetic market are not flagged 'not configured'", async () => {
+  assert.notEqual((await decorated("connected_quiet", "USDCHF")).newsContext?.eventRiskNotConfigured, true);
+  assert.notEqual((await decorated("not_configured", "Volatility 75 Index")).newsContext?.eventRiskNotConfigured, true);
+});
+
+test("synthetic instruments are not held back by an unchecked calendar", async () => {
+  const row = await decorated("fetch_error", "Volatility 75 Index");
+  assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
+});
+
+// No economic calendar is connected: that is not a FAILED check (gating stays
+// as it is), but nothing scheduled was looked at either. riskLevel "none" was
+// mapped to a green "News LOW" on every scalp card. The row now carries the
+// pack's scheduledEventRisk and the scalp result / map row say "not checked" —
+// display only: eventRiskUnchecked, riskLevel and every decision are unchanged.
+const scalpSpec = {
+  hasBrokerTruth: true, tradeMode: "FULL" as const, tradeAllowed: true, visible: true, marketOpen: true,
+  digits: 5, point: 0.00001, minLot: 0.01, maxLot: 10, lotStep: 0.01, contractSize: 100000,
+  tickSize: 0.00001, tickValue: 1, stopsLevelPoints: 0, spreadPoints: 10, category: "forex",
+  displayName: "EURUSD",
+};
+function scalpFor(row: ScannerOpportunity) {
+  return evaluateScalp({
+    symbol: row.symbol,
+    currentPrice: 1.1,
+    spec: scalpSpec,
+    scanner: {
+      ...oppToScannerInput(row),
+      sufficiency: evaluateMarketDataSufficiency({
+        symbol: row.symbol, timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+      }),
+    },
+    account: { balance: 1000, equity: 1000, freeMargin: 1000, leverage: 100 },
+    mode: "ANY",
+    riskAmount: 10,
+  });
+}
+
+test("no calendar connected: the row carries 'not_checked' and scalp/map say news was not checked", async () => {
+  const row = await decorated("not_configured", "EURCHF");
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_checked");
+  assert.notEqual(row.newsContext?.eventRiskUnchecked, true, "gating input unchanged");
+  assert.equal(row.newsContext?.riskLevel, "none", "riskLevel unchanged");
+
+  const scanner = oppToScannerInput(row);
+  assert.equal(scanner.newsRiskNotChecked, true);
+  assert.equal(scanner.newsRiskUnchecked, undefined, "not a failed check: the engine does not fail closed on it");
+
+  const r = scalpFor(row);
+  assert.equal(r.newsRiskNotChecked, true, "the card can say 'Not checked' instead of LOW");
+
+  const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+  assert.equal(input.newsRiskNotChecked, true);
+  const mapRow = categorizeOpportunities([input]).rows[0];
+  assert.equal(mapRow?.newsRiskNotChecked, true);
+});
+
+test("no calendar connected: decisions are identical to a connected, quiet calendar (display only)", async () => {
+  const quiet = await decorated("connected_quiet", "EURAUD");
+  const unconnected = await decorated("not_configured", "EURAUD");
+  assert.equal(quiet.newsContext?.scheduledEventRisk, "checked");
+  const a = scalpFor(quiet);
+  const b = scalpFor(unconnected);
+  assert.equal(a.newsRiskNotChecked, undefined, "a calendar that answered was checked");
+  for (const k of ["status", "canBuildTrade", "userAction", "newsRisk", "qualityScore"] as const) {
+    assert.deepEqual(b[k], a[k], `${k} must not change`);
+  }
+  const qa = categorizeOpportunities([toInput({ ...quiet, finalRead: computeFinalRead(quiet) } as ScannerOpportunity, notLate)]);
+  const qb = categorizeOpportunities([toInput({ ...unconnected, finalRead: computeFinalRead(unconnected) } as ScannerOpportunity, notLate)]);
+  assert.equal(qb.rows[0]?.category, qa.rows[0]?.category);
+});
+
+test("synthetic instruments: scheduled events do not apply, so nothing is flagged as not checked", async () => {
+  const row = await decorated("not_configured", "Volatility 100 Index");
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_applicable");
+  assert.equal(oppToScannerInput(row).newsRiskNotChecked, undefined);
+});
+
+test("news lookup throws: the row says scheduled risk was not checked (and stays a failed check)", async () => {
+  const row = await decorated("throw", "GBPJPY");
+  assert.equal(row.newsContext?.eventRiskUnchecked, true);
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_checked");
+});
+
+// Review pass 2: newsRiskNotChecked is set for every "not_checked" row, which
+// includes a failed check (lookup threw, or a configured calendar did not
+// answer). The map's tooltip blamed "no economic calendar is connected" for
+// all of them. The map row now also carries newsRiskUnchecked for a failed
+// check, so the UI can name the real cause. Display only.
+for (const m of ["throw", "fetch_error"] as const) {
+  test(`${m}: the map row carries newsRiskUnchecked so the cause is a failed check, not 'no calendar'`, async () => {
+    const row = await decorated(m, "NZDJPY");
+    const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+    assert.equal(input.newsRiskUnchecked, true);
+    const mapRow = categorizeOpportunities([input]).rows[0];
+    assert.equal(mapRow?.newsRiskUnchecked, true);
+  });
+}
+
+test("no calendar configured / connected quiet: the map row does not carry newsRiskUnchecked", async () => {
+  for (const m of ["not_configured", "connected_quiet"] as const) {
+    const row = await decorated(m, "CADJPY");
+    const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+    assert.equal(input.newsRiskUnchecked, undefined, m);
+  }
+});
+
+test("newsRiskUnchecked on the map row is display only: the category is the same with or without it", async () => {
+  const row = await decorated("fetch_error", "CHFJPY");
+  const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+  const { newsRiskUnchecked: _flag, ...without } = input;
+  assert.equal(
+    categorizeOpportunities([input]).rows[0]?.category,
+    categorizeOpportunities([without]).rows[0]?.category,
+  );
+});

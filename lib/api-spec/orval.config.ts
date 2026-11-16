@@ -3,7 +3,6 @@ import path from "path";
 
 const root = path.resolve(__dirname, "..", "..");
 const apiClientReactSrc = path.resolve(root, "lib", "api-client-react", "src");
-const apiZodRoot = path.resolve(root, "lib", "api-zod");
 const apiZodSrc = path.resolve(root, "lib", "api-zod", "src");
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
@@ -49,15 +48,19 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiZodRoot,
+      workspace: apiZodSrc,
       client: "zod",
-      target: "src/generated",
-      schemas: { path: "src/generated/types", type: "typescript" },
+      target: "generated",
+      schemas: { path: "generated/types", type: "typescript" },
       mode: "split",
       clean: true,
       prettier: true,
       override: {
         zod: {
+          // Orval resolves `auto` from lib/api-spec/package.json, which has no
+          // zod dependency, so orval >= 8.23 falls back to Zod 4 syntax while
+          // the catalog installs zod 3. Pin to match the catalog.
+          version: 3,
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],

@@ -1,0 +1,226 @@
+{
+  "recordedAt": "2026-10-26T18:43:58.205247+00:00",
+  "scope": "Replit development only",
+  "workspace": "https://replit.com/@portavainc/ARX-AI-baseline-import",
+  "developmentHost": "fabb7c9c-fa80-41cb-8714-1e5066b998e6-00-2n4m6rgd0i5km.pike.replit.dev",
+  "sourceHead": "2f5a961f5afd0e65d776da229c1fcae474de6e58",
+  "privateDraftPR": "https://github.com/portava/arxai/pull/89",
+  "workspaceBefore": "48d05ced502172cfdf218ff15d5be38f4519a7bd",
+  "branch": "codex/deriv-public-development-20261026",
+  "upstreamFiles": 46,
+  "additionalFiles": [
+    "scripts/run-arx-api.sh",
+    "scripts/run-arx-api.test.mjs"
+  ],
+  "checks": {
+    "public_data": {
+      "exit_code": 0,
+      "seconds": 5,
+      "log_sha256": "c3d9b6f534d6e77bc13e4d8ef4365bcedfd8259a4d32cfb636a102bcf59f646e"
+    },
+    "entry_boundary": {
+      "exit_code": 0,
+      "seconds": 2,
+      "log_sha256": "a3e5ce83b89ae0d8855f609dc452e51ed4b7ff447946a91e496c87679df8f47c"
+    },
+    "forming_source": {
+      "exit_code": 0,
+      "seconds": 1,
+      "log_sha256": "2e1e7a9620876acc9767dafa734a09eb12a15a093606b3f6c2025527672aa75b"
+    },
+    "forming_bridge": {
+      "exit_code": 0,
+      "seconds": 1,
+      "log_sha256": "656e460ae88870c5d094bad14e0abe0b60b05f9f1a20da72c01fdcb391890d1b"
+    },
+    "health_ui": {
+      "exit_code": 0,
+      "seconds": 3,
+      "log_sha256": "e840c39e8595e5a6816e83a2bb8eb9d1cb7a6b078453cf2c6e61ca8878deba51"
+    },
+    "typecheck": {
+      "exit_code": 0,
+      "seconds": 60,
+      "log_sha256": "68598a8b74dfab48ffb1f5c2c6db73e327f0ee9e0334067cbda673ec664e77c3"
+    },
+    "guards": {
+      "exit_code": 0,
+      "seconds": 23,
+      "log_sha256": "ccc17eef66c16f26ff61d73bfd82b77ef2e8b9781367dc315bc8b77dc3be857f"
+    },
+    "api_build": {
+      "exit_code": 0,
+      "seconds": 2,
+      "log_sha256": "f7f09d5453e2d57b76619057371294f59a2266761afb1708d689ceb40c9d2b62"
+    },
+    "web_build": {
+      "exit_code": 0,
+      "seconds": 14,
+      "log_sha256": "61790c8a11305ee6f413d80c56b8e51f75089ed6ac89e2d921267923baf6af46"
+    }
+  },
+  "wrapperTestPassed": true,
+  "healthz": {
+    "http": 200,
+    "status": "ok"
+  },
+  "runtimeEvidenceMethod": "Authenticated development preview GET /api/admin/deriv-status twice, then GET /api/chart/candles?symbol=V75&timeframe=M1&limit=5; values transcribed from visible response. No credentials copied.",
+  "runtime": {
+    "mode": "public",
+    "source": "deriv_public",
+    "connected": true,
+    "subscriptions": 4,
+    "supportedStaticSymbols": 22,
+    "reconnectCount": 0,
+    "authorized": false,
+    "tradingAvailable": false,
+    "venueObservations": [
+      {
+        "responseAt": "2026-10-26T18:36:51.650Z",
+        "ticks": {
+          "V75": {
+            "at": "2026-10-26T18:36:50.000Z",
+            "ageMs": 1650
+          },
+          "V25_1S": {
+            "at": "2026-10-26T18:36:51.000Z",
+            "ageMs": 650
+          },
+          "V50_1S": {
+            "at": "2026-10-26T18:36:51.000Z",
+            "ageMs": 650
+          },
+          "V75_1S": {
+            "at": "2026-10-26T18:36:51.000Z",
+            "ageMs": 650
+          }
+        }
+      },
+      {
+        "responseAt": "2026-10-26T18:37:29.130Z",
+        "ticks": {
+          "V75": {
+            "at": "2026-10-26T18:37:28.000Z",
+            "ageMs": 1130
+          },
+          "V25_1S": {
+            "at": "2026-10-26T18:37:28.000Z",
+            "ageMs": 1130
+          },
+          "V50_1S": {
+            "at": "2026-10-26T18:37:28.000Z",
+            "ageMs": 1130
+          },
+          "V75_1S": {
+            "at": "2026-10-26T18:37:28.000Z",
+            "ageMs": 1130
+          }
+        }
+      }
+    ],
+    "chart": {
+      "receivedAt": "2026-10-26T18:37:44.249Z",
+      "symbol": "V75",
+      "timeframe": "M1",
+      "source": "deriv_public",
+      "quality": "clean",
+      "candleCount": 5,
+      "finalBars": 4,
+      "formingBars": 1,
+      "lastTickAt": "2026-10-26T18:37:44.000Z",
+      "lastCompleteOpenTime": "2026-10-26T18:36:00.000Z",
+      "lastCompleteOHLC": [
+        33512.7313,
+        33562.8694,
+        33505.037,
+        33562.8694
+      ],
+      "missing": 0,
+      "duplicate": 0,
+      "outOfOrder": 0,
+      "invalidOhlc": 0
+    }
+  },
+  "controls": {
+    "before": {
+      "publicDataEnabled": false,
+      "liveBrokerExecutionEnabled": false,
+      "legacyBrokerCredentialsExcludedByWrapper": true
+    },
+    "after": {
+      "publicDataEnabled": true,
+      "liveBrokerExecutionEnabled": false,
+      "legacyBrokerCredentialsExcludedByWrapper": true,
+      "accountAuthorization": false,
+      "uiRiskLock": "active"
+    },
+    "databaseTradingSettingsWritten": false,
+    "productionLauncherChanged": false,
+    "sharedSecretsChanged": false
+  },
+  "actions": {
+    "ordersPlaced": 0,
+    "demoTradingTests": 0,
+    "liveTradingTests": 0,
+    "published": false,
+    "mainMerged": false
+  },
+  "limitations": [
+    "Public last prices have no observed bid/ask spread; execution-ready scanner spread remains withheld.",
+    "The four default subscriptions were directly verified; other supported markets subscribe on demand.",
+    "Five-bar chart probe verifies provenance and OHLC only, not complete strategy history.",
+    "No private account/trading readiness certification or published deployment validation."
+  ],
+  "sourceSha256": {
+    "arxai/artifacts/api-server/package.json": "21555c0a7377dd0e3379546a29a3a8be7843f0a5bfba3cfc94e37efb06bfebb7",
+    "arxai/artifacts/api-server/src/index.ts": "fdf5b9dd29cc0fc8c7adfea8ed3b3b92f78c8db934e3703cea7af42ed35ee3a5",
+    "arxai/artifacts/api-server/src/lib/bridgeV2/ingest.ts": "b03388bc2f7e2610c5d41d51939a2150ed94507f502d4ca053d368ce57f6fda3",
+    "arxai/artifacts/api-server/src/lib/brokerHub/__qa__/brokerReadAdapters.test.ts": "c2c68d31dc12cd4eb76358629a2e83065445d9a77a946dedff38e87c870fb4f4",
+    "arxai/artifacts/api-server/src/lib/brokerHub/derivReadOnlyAdapter.ts": "e96a04a76fe6cdcc241c5c9ad23e7d42d0276f75affda2cdf3f6cdcd551ac26e",
+    "arxai/artifacts/api-server/src/lib/data/__qa__/brokerConfirmedGate.test.ts": "ba19d0b382de04b5eac6291c4b7065c3081b3472db6a79678b567c30e9149e52",
+    "arxai/artifacts/api-server/src/lib/data/brokerConfirmedFeed.ts": "7f215bf06534c2c12dffb7d98a78343cc5b54a9dc92c2740f179b50629bc0454",
+    "arxai/artifacts/api-server/src/lib/data/candleHistoryService.ts": "479f2c836ef283f189635e82dcf067d6c7160d66bd1fd290030e45c6cee7c8ca",
+    "arxai/artifacts/api-server/src/lib/data/chart/__qa__/derivFormingBridge.test.ts": "363d8fd9572c1752b9ecaaa440cd177b189c0213a6e2c5ead1db4725554c792c",
+    "arxai/artifacts/api-server/src/lib/data/chart/__qa__/formingBar.test.ts": "6c656a8a032b107c4767b497f500421ffcd57d0a73afc015d78034f1ae458000",
+    "arxai/artifacts/api-server/src/lib/data/chart/__qa__/formingTickStreamLatency.test.ts": "475385c679cc8190e5966d75974fa78d9d27f8e09b9a7d48aa439f8b0c61d3bb",
+    "arxai/artifacts/api-server/src/lib/data/chart/__qa__/formingTipSourceGate.test.ts": "e8de06fc5fcd14ece8ce59bd8de281beb14da35e83cad8cead4df226531dacff",
+    "arxai/artifacts/api-server/src/lib/data/chart/__qa__/formingTipSourceIsolation.test.ts": "db9c1eed19407cfb2c4460e677f2e254e098e9b1726de1487519f95b4f92318a",
+    "arxai/artifacts/api-server/src/lib/data/chart/candleNormalization.ts": "0062311eb2140c1ce1403d0d6dda1913ee54c885a100c7ab794949ab147ebd14",
+    "arxai/artifacts/api-server/src/lib/data/chart/candleTruthEngine.ts": "f6ab9923c363d850c6a2000689654d928da90913cfc33d35a6f0e75ccbf5171e",
+    "arxai/artifacts/api-server/src/lib/data/chart/chartDataService.ts": "dabb04b768b943e2be258bf90fe73363813a3c1ba484a71fbc908a9e75de0ef2",
+    "arxai/artifacts/api-server/src/lib/data/chart/derivFormingBridge.ts": "5c687844b3991aa8a9edc70e6e197d8310fccc880ce51b63886fb77a45b19928",
+    "arxai/artifacts/api-server/src/lib/data/chart/formingBarComposer.ts": "07715d5a23cb543f6a005883685825110b313342f094f1aa11036b851103288b",
+    "arxai/artifacts/api-server/src/lib/data/marketDataRouter.ts": "9738723eb20c20ca38773d75eafd923d6e0a32d98f2305ecd1bb9aafcedd428e",
+    "arxai/artifacts/api-server/src/lib/data/providerHealth.ts": "49b6480d0b4987e503197ad6294a8b64cce24ccbb72bc3aaee17c119ab399a66",
+    "arxai/artifacts/api-server/src/lib/data/providerRoutingMap.ts": "a0670e8ece52ed04429d5221e1cdc6eb30a095def8c3acb04af5f5fed55df813",
+    "arxai/artifacts/api-server/src/lib/data/providers/__qa__/derivPublicDataClient.test.ts": "aa5ad9318496895ee7e5db5975ce8bfaccd4871e614181a22a51c43501699ace",
+    "arxai/artifacts/api-server/src/lib/data/providers/__qa__/derivPublicDataWiring.test.ts": "dcd014dd34cee64cba7bbf23b9956e38095a6b9116d52940edb6f55f604f2737",
+    "arxai/artifacts/api-server/src/lib/data/providers/derivFeedClient.ts": "0db32f0fc5533ac3d55673f55a9a81d826f671ea92db23cc2ca249ca8c2b7694",
+    "arxai/artifacts/api-server/src/lib/data/providers/derivKeepAlive.ts": "c4433d21803b07d4c5ee5142bd83d44281568636b1ee657948d17b65c982af87",
+    "arxai/artifacts/api-server/src/lib/data/providers/derivProvider.ts": "367f417b09b86a9d37b691bda4970bb4ccbd35cbe79d8e585c72cb80d0faf507",
+    "arxai/artifacts/api-server/src/lib/data/providers/derivPublicDataClient.ts": "930530225e9545fdb6d2caa37e0195989b2ca2633f56080e91b8094f658c6b3f",
+    "arxai/artifacts/api-server/src/routes/adminDerivStatus.ts": "fe464e179f06cf22c90982a7050b85cf2d8a9c6273db8838773b9ff59c42ef08",
+    "arxai/artifacts/api-server/src/routes/chartTickStream.ts": "4285fcaa1cfcfee81bfcb1739385846d0d485af3b41ec47429cb59206f64e9e3",
+    "arxai/artifacts/api-server/src/scripts/derivPublicDataProbe.ts": "a142e1093f81ddb3c43b26fea0540376e9ae6ae521f67e1d226e1b932e4aa19d",
+    "arxai/artifacts/trading-dashboard/package.json": "b935a372db27c8033abc9f7890e1dcb4cca2af81c9f9cc37515979634d001e80",
+    "arxai/artifacts/trading-dashboard/src/components/charts/ARXNativeChart.stall-badge.test.tsx": "0871a493fb4043cc2e201c25b512bfab1fa15ea7095f73dbdba05860e3738f0d",
+    "arxai/artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tick-stream.test.tsx": "2da236c494a86b33507a7082ca3c3c8ab2e9dd96149789e4f01bd3c56ffa044c",
+    "arxai/artifacts/trading-dashboard/src/components/charts/ARXNativeChart.tsx": "9c0630a4f29d0f56e643443f4624ed4bcf82c2a9e183c96e28c2dddb8901e1a2",
+    "arxai/artifacts/trading-dashboard/src/components/charts/useTickStreamWatchdog.test.ts": "b6045d40505de37fc3afe10f8ed31c45f9a1545589d17a33d5a11fe81978fe45",
+    "arxai/artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx": "0eaf4296e3dac014f96150ed62a76813955763573fd75fc7637f468b29a19c4e",
+    "arxai/artifacts/trading-dashboard/src/lib/chartTickStreamContext.test.ts": "9ccf2f1a291245de021dc008cdbffbcfd7f170edd365f1f0b8ed44749a2abbcb",
+    "arxai/artifacts/trading-dashboard/src/lib/chartTickStreamContext.ts": "9476f648cbbcbf59d3e34294c599e7a5ddd921d55ffe83bccf14c791b7d47aaa",
+    "arxai/artifacts/trading-dashboard/src/lib/feed-confidence.providerInfo.test.ts": "84f41a2efd10acca6eb4d38eb8af8167e6736d1d2390198da4af8d9afbebcdf9",
+    "arxai/artifacts/trading-dashboard/src/lib/feed-confidence.ts": "b25c105d457c50a95aa2931a7e961e384f042a9e070bb8ec4dfa64c668462d61",
+    "arxai/artifacts/trading-dashboard/src/pages/admin/deriv-health.test.tsx": "d706fdc80c59750a92d920ae7c6ffee718cae3d26ef665da846eb58d0b99fb40",
+    "arxai/artifacts/trading-dashboard/src/pages/admin/deriv-health.tsx": "7394a5ce7756837d537143844073104670ebba6d9dbb976b148d9ad9e9089cea",
+    "arxai/docs/CHART_TIP_SOURCE_ISOLATION_2026_10_26.md": "4ed5baa79f54b871dbad28f6d977635230d263052180ef10f11b1bc7b77a8de6",
+    "arxai/docs/DERIV_PUBLIC_EXECUTION_BOUNDARY_2026_10_26.md": "bb0fd4c677ab2df90e12138ee3d068164deafc7b2ff2921d71bb5bf632aa5386",
+    "arxai/docs/DERIV_PUBLIC_MARKET_DATA.md": "2d926c44f6d5e3e2f2c257a41fd080d45d2709df04ccc02b89e53bf9e891cebd",
+    "arxai/package.json": "efbdd24cd62c9e91abbc1046d09e78822767afe8a6a70b6e2818805dd00c1c8d"
+  },
+  "wrapperSha256": {
+    "scripts/run-arx-api.sh": "cb0d75fb63b6330aed191fadf60fddee6cf7911081cdfef702d8c60756c9f17b",
+    "scripts/run-arx-api.test.mjs": "42eb3fd3c39990869a4bc67587e74731084c246ece58e8f57b3d2de1cfa57a8a"
+  }
+}

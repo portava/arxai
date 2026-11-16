@@ -1,0 +1,340 @@
+import { useEffect, useReducer, useState } from "react";
+import { type ChartFeedStatus } from "@workspace/api-client-react";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  Activity,
+  ShieldCheck,
+  ShieldAlert,
+  Landmark,
+  Boxes,
+  Globe,
+  Unplug,
+} from "lucide-react";
+import {
+  feedConfidence,
+  capConfidence,
+  providerInfo,
+  relativeTime,
+  isFutureTime,
+  feedReadinessLabel,
+  formatTrailingGap,
+  feedProvenanceChips,
+  isServerReceiveBasis,
+  type FeedSeverity,
+  type FeedProviderTier,
+} from "@/lib/feed-confidence";
+import type { LucideIcon } from "lucide-react";
+
+// ARX Native Chart — Level 3 feed confidence badge.
+//
+// A compact-when-clean / prominent-when-poor chip that surfaces the real
+// backend feed status (source, live/stale, latency, last update times,
+// missing-candle count, AI-usable, warning). The chip opens a popover with the
+// full readout. The component is purely presentational — it never gates anything.
+
+const DOT: Record<FeedSeverity, string> = {
+  clean: "bg-emerald-400",
+  caution: "bg-amber-400",
+  danger: "bg-red-400",
+  unknown: "bg-zinc-400",
+};
+
+const CHIP: Record<FeedSeverity, string> = {
+  // Compact + quiet when clean; filled + loud when degraded.
+  clean: "border-emerald-500/40 text-emerald-300",
+  caution: "border-amber-500/50 bg-amber-500/10 text-amber-200",
+  danger: "border-red-500/50 bg-red-500/15 text-red-200",
+  unknown: "border-zinc-600/60 bg-zinc-500/10 text-zinc-300",
+};
+
+// Provider trust tier → distinct icon + colour for the source sub-chip. The
+// MT5 broker (primary) reads emerald-shielded; third-party fallbacks read sky;
+// Deriv synthetic reads violet; no-feed reads zinc.
+const TIER_ICON: Record<FeedProviderTier, LucideIcon> = {
+  broker: Landmark,
+  synthetic: Boxes,
+  thirdParty: Globe,
+  none: Unplug,
+};
+
+const TIER_CHIP: Record<FeedProviderTier, string> = {
+  broker: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200",
+  synthetic: "border-violet-500/50 bg-violet-500/15 text-violet-200",
+  thirdParty: "border-sky-500/50 bg-sky-500/15 text-sky-200",
+  none: "border-zinc-600/60 bg-zinc-500/10 text-zinc-300",
+};
+
+const TIER_LABEL: Record<FeedProviderTier, string> = {
+  broker: "Broker feed (MT5)",
+  synthetic: "Synthetic feed",
+  thirdParty: "Fallback feed",
+  none: "No feed",
+};
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono text-zinc-200">{value}</span>
+    </div>
+  );
+}
+
+export interface FeedConfidenceBadgeProps {
+  feedStatus: ChartFeedStatus | null | undefined;
+  /** @deprecated Compatibility only; external-chart fallback is no longer rendered. */
+  showFallback?: boolean;
+  /** @deprecated Compatibility only; never called. */
+  onRequestFallback?: () => void;
+  /**
+   * Optional RESOLVED verdict that overrides the raw-feed verdict (Task #506).
+   * When provided, the badge consumes this instead of the socket-level feed
+   * quality so it can never claim Clean/AI when a stricter resolved verdict
+   * (shared scanner truth folded with the server read) says the feed is not
+   * confirmed:
+   *   - `true`  → confirmed; the badge may read Clean/AI.
+   *   - `false` → not confirmed; severity is capped away from "clean" and the
+   *               AI marker reads "No AI".
+   *   - `null`  → unknown (verdict still resolving) → neutral state.
+   * Omit (`undefined`) to keep the legacy raw-feed behaviour for other callers.
+   */
+  aiUsableResolved?: boolean | null;
+  /**
+   * Task #780 — when true, the ALWAYS-VISIBLE quality sub-chip appends an inline
+   * "· N missing" trailing-interval count (the SAME `trailingIntervals` the
+   * detail popover already shows) so a degrading feed is diagnosable without
+   * opening the popover. Opt-in (Eleanor chat feed chip): other callers keep the
+   * bare chip. Suppressed for a current feed (<=1), honest "· —" when null.
+   */
+  showTrailingGap?: boolean;
+  /**
+   * The timeframe this verdict describes (e.g. "M1"). When given it is shown on
+   * the always-visible chip and named in the accessible label, so a chip that
+   * sits away from its chart never leaves the reader guessing which
+   * timeframe's feed it graded.
+   */
+  timeframeLabel?: string;
+}
+
+export function FeedConfidenceBadge({
+  feedStatus,
+  aiUsableResolved,
+  showTrailingGap = false,
+  timeframeLabel,
+}: FeedConfidenceBadgeProps) {
+  const rawConf = feedConfidence(feedStatus);
+  // Cap the raw feed verdict by the resolved verdict when one is supplied, so
+  // the badge can never look more confident than the rest of the panel.
+  const conf = capConfidence(rawConf, aiUsableResolved);
+  const fs = feedStatus ?? null;
+  // The State row follows the same cap: a raw isLive is not shown as "Live"
+  // while the resolved verdict is unconfirmed (false) or still checking (null).
+  // A server-named not-live reason wins: stored bars are "Stored history" and a
+  // scheduled close is "Market closed", never "Delayed" (the same words the
+  // scanner strip and the chart chip use).
+  const rawFeedState = fs
+    ? fs.isLive !== true && fs.notLiveReason === "stored_history"
+      ? "Stored history"
+      : fs.isLive !== true && fs.notLiveReason === "market_closed"
+        ? "Market closed"
+        : fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed"
+    : "—";
+  // Whose feed this is, and whether two bridges were pushing it (Truth T2).
+  // Read loosely: this line's chart feed status does not state these yet.
+  const fsLoose = fs as { feedScope?: string | null; contention?: boolean | null; lastTickTimeBasis?: string | null } | null;
+  const provenance = feedProvenanceChips(fsLoose ? { feedScope: fsLoose.feedScope ?? null, contention: fsLoose.contention ?? null } : null);
+  // "Last tick" may be only when ARX received the tick, not the tick's own time.
+  const tickReceived = isServerReceiveBasis(fsLoose?.lastTickTimeBasis);
+  const feedStateLabel =
+    rawFeedState === "Live" && aiUsableResolved === false
+      ? "Unconfirmed (feed reports live)"
+      : rawFeedState === "Live" && aiUsableResolved === null
+        ? "Checking…"
+        : rawFeedState;
+  const provider = providerInfo(fs?.source);
+  const ProviderIcon = TIER_ICON[provider.tier];
+  // Task #776 — a synthetic served by the MT5 broker has NO separate Deriv tick
+  // stream, so liveness is judged on broker candle freshness alone (and
+  // "Last tick" is empty by design). Surface that explicitly so the empty tick
+  // row is never misread as a degraded/limited feed on a genuinely live broker
+  // synthetic.
+  const brokerSynthetic = fs?.assetClass === "synthetic" && provider.tier === "broker";
+  // Inline trailing-interval gap for the always-visible chip (opt-in). Reuses
+  // the shared formatTrailingGap over the SAME feed status the popover reads.
+  const inlineGap = showTrailingGap ? formatTrailingGap(fs?.trailingIntervals) : null;
+  // The popover's "Last tick" / "Last candle" ages are relative to NOW, so they
+  // re-render once a second while it is open instead of freezing at the age
+  // they had when it opened.
+  const [open, setOpen] = useState(false);
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, [open]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid="arx-feed-badge"
+          data-severity={conf.severity}
+          data-ai-usable={conf.aiUsable ? "true" : "false"}
+          data-provider-tier={provider.tier}
+          className="inline-flex items-center gap-1"
+          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}${timeframeLabel ? `. Timeframe: ${timeframeLabel}` : ""}`}
+        >
+          {/* Source sub-chip — distinct icon + colour per trust tier. Names the
+              primary broker feed vs. whatever fallback is actually serving. */}
+          <Badge
+            variant="outline"
+            data-testid="arx-feed-provider"
+            className={`flex items-center gap-1 text-[10px] font-medium ${TIER_CHIP[provider.tier]}`}
+          >
+            <ProviderIcon className="h-3 w-3" />
+            {provider.label}
+          </Badge>
+          {timeframeLabel ? (
+            <Badge
+              variant="outline"
+              data-testid="arx-feed-timeframe"
+              className="text-[10px] font-mono text-zinc-300"
+            >
+              {timeframeLabel}
+            </Badge>
+          ) : null}
+          {/* Quality sub-chip — live/stale severity + AI-usability. */}
+          <Badge
+            variant="outline"
+            className={`flex items-center gap-1.5 text-[10px] ${CHIP[conf.severity]}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${DOT[conf.severity]}`} />
+            {conf.statusLabel}
+            {inlineGap ? (
+              <span data-testid="arx-feed-inline-gap" className="opacity-90">
+                · {inlineGap}
+              </span>
+            ) : null}
+            {fs?.isLive && conf.severity === "clean" ? (
+              <Activity className="h-3 w-3" />
+            ) : null}
+            {conf.aiUsable ? (
+              <span className="inline-flex items-center gap-0.5">
+                <ShieldCheck className="h-3 w-3" /> AI
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 opacity-90">
+                <ShieldAlert className="h-3 w-3" /> No&nbsp;AI
+              </span>
+            )}
+          </Badge>
+          {provenance.map((chip) => (
+            <Badge
+              key={chip.key}
+              variant="outline"
+              data-testid={`arx-feed-scope-${chip.key}`}
+              title={chip.title}
+              className="text-[10px] font-medium border-amber-500/50 bg-amber-500/10 text-amber-200"
+            >
+              {chip.text}
+            </Badge>
+          ))}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-2" data-testid="arx-feed-detail">
+        <div className="flex items-center gap-2">
+          <ProviderIcon className="h-4 w-4 text-zinc-300" />
+          <span className="text-sm font-semibold text-zinc-100">{provider.label}</span>
+          <Badge
+            variant="outline"
+            className={`ml-auto text-[10px] font-medium ${TIER_CHIP[provider.tier]}`}
+          >
+            {TIER_LABEL[provider.tier]}
+          </Badge>
+        </div>
+        {/* What this source means for freshness/trust. */}
+        <p className="text-xs text-muted-foreground" data-testid="arx-feed-trust-note">
+          {provider.trustNote}
+        </p>
+
+        <div className="flex items-center gap-2 pt-0.5">
+          <span className={`h-2 w-2 rounded-full ${DOT[conf.severity]}`} />
+          <span className="text-xs font-medium text-zinc-200">{conf.statusLabel} feed</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{conf.message}</p>
+        {provenance.map((chip) => (
+          <p key={chip.key} className="text-xs text-amber-300" data-testid={`arx-feed-scope-note-${chip.key}`}>
+            {chip.text}. {chip.title}
+          </p>
+        ))}
+
+        <div className="space-y-1 rounded-md border border-zinc-800 p-2">
+          <Row label="Source" value={fs?.source || "—"} />
+          <Row label="State" value={feedStateLabel} />
+          {/* Server-side time to read the winning provider — NOT tick or bar age
+              (see "Last tick" / "Last candle"). Unknown when nothing served. */}
+          <Row label="Server read time" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
+          {/* A future candle time is the forming bar's scheduled close, not an
+              arrival — it says nothing about whether ticks are flowing. */}
+          <Row
+            label="Last candle"
+            value={
+              isFutureTime(fs?.lastCandleTime)
+                ? `Forming bar · closes ${relativeTime(fs?.lastCandleTime)}`
+                : relativeTime(fs?.lastCandleTime)
+            }
+          />
+          <Row
+            label="Last tick"
+            value={
+              brokerSynthetic && !fs?.lastTickTime
+                ? "broker candles"
+                : fs?.lastTickTime && tickReceived
+                  ? `${relativeTime(fs.lastTickTime)} (received)`
+                  : relativeTime(fs?.lastTickTime)
+            }
+          />
+          <Row label="Missing candles" value={fs ? fs.missingCandleCount : "—"} />
+          {/* Trailing-interval gap — how many recent bar-intervals the newest
+              bar lags behind now (clean <=1, delayed 2, stale >=3). Surfaces the
+              exact number that drives "delayed" vs "stale" so a degrading broker
+              feed is self-explanatory. null (no candles) reads "—". */}
+          <Row
+            label="Missing intervals"
+            value={
+              fs && fs.trailingIntervals != null ? fs.trailingIntervals : "—"
+            }
+          />
+          {fs && (fs.duplicateCount > 0 || fs.outOfOrderCount > 0 || fs.invalidOhlcCount > 0) ? (
+            <Row
+              label="Anomalies"
+              value={`${fs.duplicateCount} dup · ${fs.outOfOrderCount} ooo · ${fs.invalidOhlcCount} bad`}
+            />
+          ) : null}
+          <Row
+            label="AI-usable"
+            value={
+              conf.aiUsable ? (
+                <span className="text-emerald-300">Confirmed</span>
+              ) : (
+                <span className="text-amber-300">Not confirmed</span>
+              )
+            }
+          />
+          {fs?.feedReadinessState ? (
+            <Row label="Readiness" value={feedReadinessLabel(fs.feedReadinessState)} />
+          ) : null}
+        </div>
+
+        {fs?.warning ? (
+          <p className="text-xs text-amber-300" data-testid="arx-feed-warning">{fs.warning}</p>
+        ) : null}
+
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export default FeedConfidenceBadge;

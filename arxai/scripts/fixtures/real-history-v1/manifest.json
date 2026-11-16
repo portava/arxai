@@ -1,0 +1,188 @@
+{
+  "version": "arx-real-history-fixture-v1",
+  "retrievedOn": "2026-11-09",
+  "datasetHash": "fa83f149997cb8f96f7adfba349a60d409f689712311d32728755549dbc6d232",
+  "syntheticData": false,
+  "instruments": [
+    {
+      "symbol": "BTCUSDT",
+      "assetClass": "crypto",
+      "timeframe": "1d",
+      "ohlc": "ohlc",
+      "file": "BTCUSDT.binance.1d.csv",
+      "sha256": "fdcef4d3f287382d176f3225cd399819485fc05e0000e44de71f312570f8122b",
+      "bars": 2861,
+      "first": "2018-01-01",
+      "last": "2025-10-31",
+      "source": {
+        "name": "binance-public-data",
+        "url": "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1d/",
+        "upstreamVerification": "every monthly zip matched its published .CHECKSUM (94 files)",
+        "upstreamDigest": "69a1b4384109e818222013f5129f9661d4a32a0928c28cd89a7d70ff89ed6347",
+        "note": "Bitcoin vs Tether, Binance spot"
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "assetClass": "crypto",
+      "timeframe": "1d",
+      "ohlc": "ohlc",
+      "file": "ETHUSDT.binance.1d.csv",
+      "sha256": "075beab8223ad3bc9e978e94e16d3364b9639f131cc0fd2e200945e1d057793a",
+      "bars": 2861,
+      "first": "2018-01-01",
+      "last": "2025-10-31",
+      "source": {
+        "name": "binance-public-data",
+        "url": "https://data.binance.vision/data/spot/monthly/klines/ETHUSDT/1d/",
+        "upstreamVerification": "every monthly zip matched its published .CHECKSUM (94 files)",
+        "upstreamDigest": "422b72dca893e86e46212927d6ec008f514d471d5f008b4f7358d32c9cd6f0d9",
+        "note": "Ether vs Tether, Binance spot"
+      }
+    },
+    {
+      "symbol": "PAXGUSDT",
+      "assetClass": "metal",
+      "timeframe": "1d",
+      "ohlc": "ohlc",
+      "file": "PAXGUSDT.binance.1d.csv",
+      "sha256": "502e154c240865263bd28f528a7aa33e24ae098a09522d6fe14fb0f82a6a9862",
+      "bars": 1887,
+      "first": "2020-09-01",
+      "last": "2025-10-31",
+      "source": {
+        "name": "binance-public-data",
+        "url": "https://data.binance.vision/data/spot/monthly/klines/PAXGUSDT/1d/",
+        "upstreamVerification": "every monthly zip matched its published .CHECKSUM (62 files)",
+        "upstreamDigest": "cfe032888de6969457e43d8a8615f03497232200c3fff6d832747bfbd0cdaa20",
+        "note": "PAX Gold (1 token = 1 troy oz LBMA gold) vs Tether, Binance spot — a traded gold proxy, not the LBMA fix"
+      }
+    },
+    {
+      "symbol": "EURUSDT",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "ohlc",
+      "file": "EURUSDT.binance.1d.csv",
+      "sha256": "d8d438cbc6cad3e8dacb0eae0a0367e6b963c1b83fd711469ae9e214be676f78",
+      "bars": 2129,
+      "first": "2020-01-03",
+      "last": "2025-10-31",
+      "source": {
+        "name": "binance-public-data",
+        "url": "https://data.binance.vision/data/spot/monthly/klines/EURUSDT/1d/",
+        "upstreamVerification": "every monthly zip matched its published .CHECKSUM (70 files)",
+        "upstreamDigest": "77ac9bc9d0531f44d052c3bb6106b5583b447ca4574e0920023a43ccd97b08a7",
+        "note": "Euro vs Tether, Binance spot — real FX OHLC on a crypto venue"
+      }
+    },
+    {
+      "symbol": "EURUSD",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "EURUSD.fred-DEXUSEU.1d.csv",
+      "sha256": "18cf71fd8d7b615556226ebdc28b439a2fa63f4d20cfa0b3041b637c819001f4",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXUSEU",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "a6cb6e1ea23ef0bc0289038d2412f6d22bae37b6e7ecde085d2c7f631b3f495b",
+        "note": "FRED H.10 U.S. dollars to one euro. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    },
+    {
+      "symbol": "GBPUSD",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "GBPUSD.fred-DEXUSUK.1d.csv",
+      "sha256": "2bf3bd54ccdff32b2bf76e4281b51a1b4ddfca859de01b35fb830e5e9e1ee167",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXUSUK",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "8b165287187116f7ec67a48ff86ed2edfae05a327ad0a604eb74dee8200d4059",
+        "note": "FRED H.10 U.S. dollars to one pound. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    },
+    {
+      "symbol": "USDJPY",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "USDJPY.fred-DEXJPUS.1d.csv",
+      "sha256": "8e961357cf46e3dc344b64c487c94aae33a3acbf57f2bd1aa6e9e81384785c7f",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXJPUS",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "335adf3ab307bb83c4dc61d0715cbb9a37dd975befae376883c601aa620d9905",
+        "note": "FRED H.10 Japanese yen to one U.S. dollar. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    },
+    {
+      "symbol": "AUDUSD",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "AUDUSD.fred-DEXUSAL.1d.csv",
+      "sha256": "772100ae11b9b619ab5c42ca2f2adf425ab86fdd3cfe7569762d646472971f81",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXUSAL",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "90384e8e44c9a45ffd1edec791aae0b78c463fc3ee362ba687334360b3255c75",
+        "note": "FRED H.10 U.S. dollars to one Australian dollar. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    },
+    {
+      "symbol": "USDCAD",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "USDCAD.fred-DEXCAUS.1d.csv",
+      "sha256": "f42e80efb597ee98f1a5f2034737232857e4c6826be76e51724dbd6ec14692bb",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXCAUS",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "0080232a0a3ce5b9105f56da06f3babc4451e6afe1184cd73f6c499512c5e12b",
+        "note": "FRED H.10 Canadian dollars to one U.S. dollar. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    },
+    {
+      "symbol": "USDCHF",
+      "assetClass": "fx",
+      "timeframe": "1d",
+      "ohlc": "close_only",
+      "file": "USDCHF.fred-DEXSZUS.1d.csv",
+      "sha256": "a21478741bb7975990eff8ac0d8351ba02d9188574daf30d94bb838de4b580fe",
+      "bars": 3961,
+      "first": "2010-01-04",
+      "last": "2025-10-31",
+      "source": {
+        "name": "fred",
+        "url": "https://fred.stlouisfed.org/series/DEXSZUS",
+        "upstreamVerification": "FRED publishes no checksum; the raw download digest is recorded and the committed file is pinned by sha256",
+        "upstreamDigest": "5139009de0894285d36a2b0681ed634893d4bd4c96d67c739de0e09acb6fa30f",
+        "note": "FRED H.10 Swiss francs to one U.S. dollar. Public domain (Board of Governors H.10). Close-only daily fixing."
+      }
+    }
+  ]
+}

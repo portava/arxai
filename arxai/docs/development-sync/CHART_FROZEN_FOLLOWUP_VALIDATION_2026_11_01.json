@@ -1,0 +1,40 @@
+{
+  "applicationCommit": "f85d1c03df82406fb9c9727e26a4ff8f1d80ca5a",
+  "agentCommit": "973adfb8d0064de34fc9625c90b49aa9e85701b8",
+  "baseApplication": "31a45ff99bbd4385b1c5f4ad56b0df2cc29a297b",
+  "buildId": "f5c2432fa99fb0cd",
+  "validation": {
+    "frontend": {
+      "pass": 3332,
+      "fail": 0,
+      "skip": 11,
+      "filesPass": 208,
+      "filesSkip": 1
+    },
+    "dashboardTypecheck": "passed",
+    "guards": 87,
+    "bindingAssertions": 7,
+    "ordinaryBuild": "passed",
+    "actualScannerBrowserAssertions": 36,
+    "actualScannerBrowserFailures": 0,
+    "isolatedFocusedTests": 120
+  },
+  "browserCases": [
+    "polite explanation returns existing exact ledger",
+    "positive selected trade is not falsely described as loss",
+    "unsupported compound followup preserves frozen result and settings",
+    "sourceclock withdrawal removes markers and withholds stale outcome",
+    "closed research cannot reuse receipt",
+    "zero remote model,broker or unblocked write requests"
+  ],
+  "limitations": [
+    "Offline-generated qualified clock/basis metadata only; no real provider is qualified.",
+    "Functional browser check, not performance or parity.",
+    "Browser selected trade was positive; loss/zero/missing selection/source switch also covered in automated component/unit checks.",
+    "No new performance measurement;31a45ff9 results belong toearlierapplication.",
+    "Replit current updatepinnedb3029eb8 excludes thisfollowup; no duplicate update started.",
+    "Original requirement gaps capital/sizing/equity/benchmark and broader natural tool actions remain open."
+  ],
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/scanner-critical-path-20261101",
+  "agentReceipt": "/Users/areyouok/arx-tier1-release/chart-trade-loss-followup-20261101/receipt.json"
+}

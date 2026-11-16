@@ -1,0 +1,246 @@
+import { useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient, notifyManager, type QueryClient, type Query } from "@tanstack/react-query";
+import { suppressNextReturnTo } from "@/lib/authReturnTo";
+
+// Per-user identity client. Reads /api/me; null when logged out.
+// All requests use credentials: "include" so the httpOnly arx_user_session
+// cookie is sent. Identity itself is never written to localStorage.
+//
+// Fresh First-Load invariant — on logout we drop every per-user UI artifact
+// that could leak User A's context to User B on a shared browser:
+//   • highroll.activeSymbol / highroll.recentSymbols (last symbol + history)
+//   • highroll.chartSymbol                          (saved chart symbol)
+//   • highroll.onboarding.firstrun.dismissed.v1     (tour-dismissed flag)
+//   • arx.nav.recent.v1                             (recent visited routes)
+// User-scoped keys like `arx_feature_unlocks_v1:<userId>` are already
+// per-user and intentionally preserved.
+const CROSS_USER_LOCALSTORAGE_KEYS = [
+  "highroll.activeSymbol",
+  "highroll.recentSymbols",
+  "highroll.chartSymbol",
+  "highroll.onboarding.firstrun.dismissed.v1",
+  "arx.nav.recent.v1",
+] as const;
+
+function clearCrossUserLocalStorage(): void {
+  if (typeof window === "undefined") return;
+  for (const k of CROSS_USER_LOCALSTORAGE_KEYS) {
+    try { window.localStorage.removeItem(k); } catch { /* noop */ }
+  }
+}
+
+export interface CurrentUser {
+  id: number;
+  email: string;
+  name: string | null;
+  role: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ME_KEY = ["me"] as const;
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+const url = (p: string) => `${BASE}${p}`;
+
+function isMeKey(key: readonly unknown[]): boolean {
+  return key.length === 1 && key[0] === ME_KEY[0];
+}
+
+/**
+ * Drop every cached query except the identity itself. Many per-user reads
+ * (account mode, market edge, chart intelligence, trade health, scalp baskets,
+ * one-click status, live profile) are keyed without a user id, so after the
+ * signed-in identity changes their cached data belongs to someone else.
+ * Reset (not remove) so mounted observers stay attached and refetch for the
+ * new identity, showing a loading state instead of the old user's data.
+ *
+ * Reads keyed by the previous user's own id (the selected-market read, the
+ * opportunity map, watchlists, symbol truth) are cleared too, but not refetched
+ * here: their observers move to the new user's key on the next render, and a
+ * refetch now would send the previous user's read under the new session (one
+ * wasted request per read). One that is still mounted on a later tick is not
+ * a per-user key after all, so it is refetched then.
+ */
+export function resetPreviousUserQueries(qc: QueryClient, previousUserId?: number | null): void {
+  const keyedToPrevious = (q: Query) => previousUserId != null && keyCarriesUserId(q.queryKey, previousUserId);
+  const held = qc.getQueryCache().findAll({ predicate: (q: Query) => !isMeKey(q.queryKey) && keyedToPrevious(q) });
+  held.forEach((q) => q.reset());
+  void qc.resetQueries({ predicate: (q: Query) => !isMeKey(q.queryKey) && !keyedToPrevious(q) }).catch(() => undefined);
+  if (held.length === 0) return;
+  // Queued behind the identity's own observer notifications, then one more
+  // tick so React has re-rendered and moved the user-keyed observers.
+  notifyManager.schedule(() => {
+    setTimeout(() => {
+      void qc.refetchQueries(
+        { type: "active", predicate: (q: Query) => held.includes(q) },
+        { cancelRefetch: false },
+      ).catch(() => undefined);
+    }, 0);
+  });
+}
+
+/** A query key that names this user id: as an element, or as `{ userId }`. */
+function keyCarriesUserId(key: readonly unknown[], userId: number): boolean {
+  return key.some((part) => part === userId
+    || (typeof part === "object" && part !== null && (part as { userId?: unknown }).userId === userId));
+}
+
+// One identity watcher per QueryClient: when a /api/me response (another tab
+// signing out and in, or a session that expired) changes the user id, reset
+// the previous user's cached queries before they are shown as this user's.
+const identityWatchers = new WeakMap<QueryClient, () => void>();
+
+function watchIdentity(qc: QueryClient): void {
+  if (identityWatchers.has(qc)) return;
+  let lastId: number | null | undefined = qc.getQueryData<CurrentUser | null>(ME_KEY)?.id;
+  const unsubscribe = qc.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.action.type !== "success") return;
+    if (!isMeKey(event.query.queryKey)) return;
+    const nextId = (event.query.state.data as CurrentUser | null | undefined)?.id ?? null;
+    if (lastId != null && nextId !== lastId) resetPreviousUserQueries(qc, lastId);
+    lastId = nextId;
+  });
+  identityWatchers.set(qc, unsubscribe);
+}
+
+async function fetchMe(): Promise<CurrentUser | null> {
+  const r = await fetch(url("/api/me"), { credentials: "include" });
+  if (r.status === 401) return null;
+  if (!r.ok) throw new Error(`/api/me failed: ${r.status}`);
+  const body = (await r.json()) as { user: CurrentUser };
+  return body.user;
+}
+
+export function useCurrentUser() {
+  const qc = useQueryClient();
+  const wasAuthenticated = useRef(false);
+  useEffect(() => { watchIdentity(qc); }, [qc]);
+  const q = useQuery({
+    queryKey: ME_KEY,
+    queryFn: fetchMe,
+    // Session identity should be revalidated when a user returns to the app.
+    // Keep this shorter than general dashboard data so server-side revocation
+    // does not leave a stale authenticated state for long.
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (q.data) {
+      wasAuthenticated.current = true;
+      return;
+    }
+    if (!wasAuthenticated.current) return;
+
+    // A server-side revocation can sign the user out without going through
+    // useLogout. Drop private query results just as we do for an explicit
+    // logout, but keep /api/me cached as signed out so public auth pages render.
+    wasAuthenticated.current = false;
+    void qc.cancelQueries();
+    qc.removeQueries({
+      predicate: (query) =>
+        query.queryKey.length !== ME_KEY.length || query.queryKey[0] !== ME_KEY[0],
+    });
+    clearCrossUserLocalStorage();
+  }, [q.data, qc]);
+
+  return {
+    user: q.data ?? null,
+    isLoading: q.isLoading,
+    isError: q.isError,
+    isFetching: q.isFetching,
+    isSignedIn: !!q.data,
+    refetch: q.refetch,
+  };
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { email: string; password: string }) => {
+      const r = await fetch(url("/api/auth/login"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(vars),
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? "Sign in failed.");
+      }
+      return (await r.json()) as { user: CurrentUser };
+    },
+    onSuccess: (data) => {
+      // A new session: nothing cached before it may be shown as this user's.
+      resetPreviousUserQueries(qc, qc.getQueryData<CurrentUser | null>(ME_KEY)?.id ?? null);
+      qc.setQueryData(ME_KEY, data.user);
+    },
+  });
+}
+
+export interface RegisterError extends Error {
+  field?: string;
+}
+
+export function useRegister() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      email: string;
+      password: string;
+      name?: string;
+      registrationKey?: string;
+      inviteCode?: string;
+    }) => {
+      const r = await fetch(url("/api/auth/register"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(vars),
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { message?: string; field?: string };
+        const err: RegisterError = new Error(body.message ?? "Registration failed.");
+        err.field = body.field;
+        throw err;
+      }
+      return (await r.json()) as { user: CurrentUser };
+    },
+    onSuccess: (data) => {
+      // A new session: nothing cached before it may be shown as this user's.
+      resetPreviousUserQueries(qc, qc.getQueryData<CurrentUser | null>(ME_KEY)?.id ?? null);
+      qc.setQueryData(ME_KEY, data.user);
+    },
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      await fetch(url("/api/auth/user-logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+    },
+    onSuccess: () => {
+      // Notify active auth gates before removing their query observer.
+      qc.setQueryData(ME_KEY, null);
+      // Initiate cancellation before removing private queries. TanStack Query
+      // marks the requests cancelled synchronously; don't wait for the network
+      // promise, or a slow/held response could block sign-out navigation.
+      void qc.cancelQueries();
+      // Drop every cached query — they were scoped to the previous user.
+      qc.clear();
+      // Also drop every cross-user localStorage artifact (selected symbol,
+      // chart symbol, recent symbols, recent nav, tour-dismissed). This is
+      // the only way to guarantee that the NEXT user logging in on the same
+      // browser sees a Fresh First-Load state — no leftover trading context,
+      // no stale empty/non-empty heuristics, no other user's preferences.
+      clearCrossUserLocalStorage();
+      suppressNextReturnTo();
+    },
+  });
+}

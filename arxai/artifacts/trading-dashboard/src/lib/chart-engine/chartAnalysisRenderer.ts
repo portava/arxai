@@ -1,0 +1,523 @@
+import {formatSourceChartTime} from './chartClockEvidence';
+import type {VwapAnchor} from './chartStudies';
+import {ChartVolumeProfilePrimitive} from "./chartVolumeProfilePrimitive";
+import type {VolumeProfileInspection} from "./chartVolumeProfile";
+import {studyId} from "./chartStudies";
+import { volumeInputQuantity, observedTradeVolumeIdentity, observedTickVolume } from "./chartVolume";
+import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "./arxCanvas";
+import type { ChartEngineCandle } from "./types";
+import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
+import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
+import { EMPTY_DRAWING_FIDELITY, type DrawingFidelity } from "./drawingRenderFidelity";
+import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
+
+export type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area" | "Baseline">;
+interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[]; rendered: StudyPoint[];profilePrimitive?:ChartVolumeProfilePrimitive }
+
+/** Separate ownership for user studies/drawings. Clearing these never removes
+ * execution overlays or server-detected structure. Auxiliary series never add
+ * invented timestamps to the shared time scale. */
+export class ChartAnalysisRenderer {
+  private studies: StudyHandle[] = [];
+  private studyKey = "";
+  private priceOnlyScale = false;
+  private compactTitles = false;
+  private drawings: ChartDrawing[] = [];
+  private drawingsVisible = true;
+  private drawingPrimitive: ChartDrawingPrimitive | null = null;
+  private selectedDrawing: string | null = null;
+  private frame: number | null = null;
+  private pending: { candles: ChartEngineCandle[]; from: number } | null = null;
+  private displayWindow: { from: number; to: number } | null = null;
+  private rendering = false;
+  /** Numeric OHLC/time and qualified quantity of every consumed bar; source identity stays separate. */
+  private inputs: number[] = [];
+  private inputVolumeIdentities:(string|null)[]=[];
+  private inputFinality:(string|undefined)[]=[];
+  private inputClock:(string|null|undefined)[]=[];
+  // Display-only native tick observations. No archive OHLC enters calculators,
+  // research, VWAP, volume profiles or the current-feed input snapshots.
+  private archiveTickPoints: StudyPoint[] = [];
+  private onViewport = () => {
+    if (this.rendering || !this.studies.length) return;
+    const window = this.nextWindow();
+    if (window !== this.displayWindow || (this.archiveTickPoints.length > 0
+      && this.studies.some(study => study.calculator.config.kind === "tick_volume"))) this.renderWindow(window);
+  };
+  constructor(private chart: IChartApi, private price: PriceSeries) {
+    chart.timeScale().subscribeVisibleLogicalRangeChange(this.onViewport);
+  }
+  /** Exclude overlay studies from automatic price fitting, not from rendering.
+   * Oscillators retain their independent scales and fixed ranges. */
+  setPriceOnlyScale(enabled: boolean): boolean {
+    if (this.priceOnlyScale === enabled) return false;
+    this.priceOnlyScale = enabled;
+    const autoscaleInfoProvider: AutoscaleInfoProvider = enabled ? () => null : original => original();
+    for (const study of this.studies) if (!studyDefinition(study.calculator.config.kind).pane) {
+      for (const line of study.lines) line.applyOptions({autoscaleInfoProvider});
+    }
+    return true;
+  }
+  /** Pane titles float over the last plotted value in the chart library.
+   * Narrow charts use the existing named data window instead; this updates
+   * presentation only, without recalculating or replacing any plotted data. */
+  setViewportWidth(width:number):void {
+    if(!Number.isFinite(width)||width<=0)return;
+    const compact=width<600;
+    if(compact===this.compactTitles)return;
+    for(const study of this.studies)study.lines.forEach((line,channel)=>{
+      const oldTitle=studySeriesOptions(study.calculator.config,channel,this.compactTitles).options.title;
+      const title=studySeriesOptions(study.calculator.config,channel,compact).options.title;
+      if(title!==oldTitle)line.applyOptions({title});
+    });
+    this.compactTitles=compact;
+  }
+  setStudies(configs: ChartStudy[], candles: ChartEngineCandle[]): void {
+    const valid = validatePreferences({studies:configs}).studies;
+    const key = JSON.stringify(valid);
+    if (this.studyKey === key) return;
+    const range = this.chart.timeScale().getVisibleLogicalRange();
+    // Appending, removing or editing studies keeps the series and calculators
+    // of untouched studies. Anything that cannot reproduce a full rebuild
+    // exactly (reorder, insertion before a kept study, unexpected panes or a
+    // manually scaled oscillator pane) takes the full rebuild instead.
+    if (!this.patchStudies(valid, key, candles, range)) this.rebuildStudies(valid, key, candles, range);
+  }
+  setArchiveTickVolume(candles: ChartEngineCandle[]): void {
+    const next = candles.map(candle => ({ time: candle.time, values: [observedTickVolume(candle.volumeEvidence)] }));
+    if (samePoints(next, this.archiveTickPoints)) return;
+    this.archiveTickPoints = next;
+    if (this.studies.some(study => study.calculator.config.kind === "tick_volume")) this.renderWindow(this.nextWindow());
+  }
+  private visibleStudyPoints(study: StudyHandle, window: { from: number; to: number }): StudyPoint[] {
+    const points = study.calculator.points;
+    if (study.calculator.config.kind !== "tick_volume" || !this.archiveTickPoints.length) return points.slice(window.from, window.to);
+    // The current window wins on overlaps, including an unavailable current
+    // quantity. Archive observations are never substituted into that window.
+    let lo = 0, hi = this.archiveTickPoints.length;
+    const firstCurrent = points[0]?.time ?? Infinity;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.archiveTickPoints[mid]!.time < firstCurrent) lo = mid + 1; else hi = mid; }
+    const count = lo;
+    const visible = studyDisplayWindow(count + points.length, this.inputRange(count + points.length,
+      i => i < count ? this.archiveTickPoints[i]!.time : points[i - count]!.time), null);
+    return [...this.archiveTickPoints.slice(visible.from, Math.min(visible.to, count)),
+      ...points.slice(Math.max(0, visible.from - count), Math.max(0, visible.to - count))];
+  }
+  private rebuildStudies(valid: ChartStudy[], key: string, candles: ChartEngineCandle[], range: LogicalRange | null): void {
+    this.cancelPending();
+    this.clearStudies(); this.displayWindow = null; this.studyKey = key;
+    let pane = 0;
+    for (const config of valid) {
+      const paneIndex = studyDefinition(config.kind).pane ? ++pane : 0;
+      this.studies.push({calculator:new StudyCalculator(config),lines:this.addStudySeries(config, paneIndex),rendered:[]});
+    }
+    // Set proportions only after all panes exist; inserting a later pane must
+    // not collapse the first oscillator to the library minimum height.
+    this.resizeStudyPanes();
+    this.refresh(candles, 0, true);
+    if (range) this.chart.timeScale().setVisibleLogicalRange(range);
+  }
+  private addStudySeries(config: ChartStudy, paneIndex: number): ISeriesApi<"Line" | "Histogram">[] {
+    const definition = studyDefinition(config.kind);
+    if(config.kind === "volume_profile")return [];
+    return definition.channels.map((_, i) => {
+      const spec = studySeriesOptions(config, i, this.compactTitles);
+      if (this.priceOnlyScale && paneIndex === 0) spec.options.autoscaleInfoProvider = () => null;
+      const line: ISeriesApi<"Line" | "Histogram"> = spec.histogram
+        ? this.chart.addSeries(HistogramSeries, spec.options, paneIndex)
+        : this.chart.addSeries(LineSeries, spec.options, paneIndex);
+      if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:""});
+      return line;
+    });
+  }
+  /** Reconciles the current studies with `valid` so that series, options,
+   * panes, draw order and rendered data equal what rebuildStudies would leave.
+   * Returns false, before changing anything, when that cannot be guaranteed. */
+  private patchStudies(valid: ChartStudy[], key: string, candles: ChartEngineCandle[], range: LogicalRange | null): boolean {
+    const previous = this.studies;
+    if (!previous.length || !valid.length) return false;
+    const index = new Map(previous.map((study, i) => [studyMatchKey(study.calculator.config, i), i]));
+    if (index.size !== previous.length) return false;
+    const reuse: (StudyHandle | undefined)[] = [];
+    const seen = new Set<string>();
+    let last = -1, added = false;
+    for (const [i, config] of valid.entries()) {
+      const match = studyMatchKey(config, i);
+      if (seen.has(match)) return false;
+      seen.add(match);
+      const at = index.get(match);
+      if (at === undefined) { added = true; reuse.push(undefined); continue; }
+      // Kept studies must keep their order and precede every new study, or
+      // the rebuild's pane numbering and draw order could not be reproduced.
+      if (added || at <= last) return false;
+      last = at; reuse.push(previous[at]);
+    }
+    if (last < 0) return false;
+    const kept = new Set(reuse);
+    // One pane per oscillator, in study order, holding only its own series.
+    const panes = this.chart.panes();
+    const oscillators = previous.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    if (panes.length !== oscillators.length + 1) return false;
+    for (const [i, study] of oscillators.entries()) {
+      if (!sameSeries(panes[i + 1]!.getSeries(), study.lines)) return false;
+      // A rebuild recreates the pane, whose price scales start from the chart
+      // options. A pane the user scaled by hand would be reset, so rebuild.
+      if (kept.has(study) && !this.freshPaneScales(i + 1)) return false;
+    }
+    this.cancelPending();
+    this.studyKey = key;
+    const dirty = this.firstInputChange(candles);
+    let exact = false;
+    this.rendering = true;
+    try {
+      for (const study of [...previous].reverse()) if (!kept.has(study)) { if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive); for (const line of study.lines) this.chart.removeSeries(line); }
+      let pane = 0;
+      this.studies = valid.map((config, i) => {
+        const paneIndex = studyDefinition(config.kind).pane ? ++pane : 0;
+        const old = reuse[i];
+        if (!old) return {calculator:new StudyCalculator(config),lines:this.addStudySeries(config, paneIndex),rendered:[]};
+        if (JSON.stringify(old.calculator.config) === JSON.stringify(config)) return old;
+        // Same kind: reconcile presentation options before refreshing data.
+        old.lines.forEach((line, channel) => {
+          const change = changedOptions(studySeriesOptions(old.calculator.config, channel, this.compactTitles).options, studySeriesOptions(config, channel, this.compactTitles).options);
+          if (change) line.applyOptions(change);
+        });
+        return {calculator:old.calculator.updatePresentation(config) ? old.calculator : new StudyCalculator(config),lines:old.lines,rendered:old.rendered,profilePrimitive:old.profilePrimitive};
+      });
+      exact = this.matchRebuildLayout();
+    } finally { this.rendering = false; }
+    if (!exact) { this.rebuildStudies(valid, key, candles, range); return true; }
+    this.resizeStudyPanes();
+    // Kept calculators continue from the first input that differs from what
+    // they consumed; new calculators start at 0 (calculate clamps to them).
+    for (const study of this.studies) study.calculator.calculate(candles, dirty, false);
+    this.recordInputs(candles, dirty);
+    this.refreshProfiles();
+    // The window a rebuild would choose: it starts from displayWindow = null.
+    const window = studyDisplayWindow(candles.length, this.inputRange(candles.length, i => candles[i]!.time), null);
+    this.displayWindow = window;
+    this.rendering = true;
+    try {
+      for (const study of this.studies) {
+        const visible = this.visibleStudyPoints(study, window);
+        const unchanged = samePoints(study.rendered, visible);
+        study.rendered = visible;
+        if (!unchanged) study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
+      }
+    } finally { this.rendering = false; }
+    if (range) this.chart.timeScale().setVisibleLogicalRange(range);
+    return true;
+  }
+  private resizeStudyPanes(): void {
+    const paneStudies = this.studies.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    this.chart.panes().forEach((pane, index) => {
+      const kind = paneStudies[index - 1]?.calculator.config.kind;
+      pane.setStretchFactor(index === 0 ? 3 : kind === "tick_volume" || kind === "trade_volume" ? 0.55 : 1);
+    });
+  }
+  /** After a patch: the panes must be the rebuild's panes, and pane 0 must
+   * draw the overlay studies last in study order, as freshly added series. */
+  private matchRebuildLayout(): boolean {
+    const panes = this.chart.panes();
+    const oscillators = this.studies.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    if (panes.length !== oscillators.length + 1) return false;
+    if (!oscillators.every((study, i) => sameSeries(panes[i + 1]!.getSeries(), study.lines))) return false;
+    const overlays = this.studies.filter(study => !studyDefinition(study.calculator.config.kind).pane).flatMap(study => study.lines);
+    const series = panes[0]!.getSeries();
+    if (!sameSeries(series.slice(series.length - overlays.length), overlays)) {
+      for (const line of overlays) line.setSeriesOrder(series.length - 1);
+    }
+    return true;
+  }
+  /** Perf caveat: in the ARX Canvas renderer, applyOptions on a default price scale or
+   * right price scale of ANY pane also merges those options into the chart
+   * options. The drawing freeze path (lightweightChartsAdapter freeze) sets
+   * autoScale:false on pane 0 and restores pane 0's previous value, so a
+   * hand-scaled pane 0 leaves autoScale:false in the chart options. Kept
+   * oscillator panes created before that no longer match, so the next study
+   * change takes the full rebuild. The rebuild creates its panes from the
+   * merged options, so later changes patch again: the incremental saving is
+   * lost once per such scale-option change, not for the session, and the
+   * output is correct either way. */
+  private freshPaneScales(pane: number): boolean {
+    const options = this.chart.options();
+    return sameValue(this.chart.priceScale("left", pane).options(), options.leftPriceScale) &&
+      sameValue(this.chart.priceScale("right", pane).options(), options.rightPriceScale);
+  }
+  /** Every calculator has consumed exactly these bar inputs. */
+  private recordInputs(candles: ChartEngineCandle[], from: number): void {
+    const start = Math.max(0, Math.min(from, this.inputs.length / INPUT_STRIDE, candles.length));
+    const inputs = this.inputs;
+    inputs.length = candles.length * INPUT_STRIDE;
+    this.inputVolumeIdentities.length=candles.length;this.inputFinality.length=candles.length;this.inputClock.length=candles.length;
+    for (let i = start, k = start * INPUT_STRIDE; i < candles.length; i++, k += INPUT_STRIDE) {
+      const bar = candles[i]!;
+      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close; inputs[k + 5] = volumeInputQuantity(bar.volumeEvidence);
+      this.inputVolumeIdentities[i]=observedTradeVolumeIdentity(bar.volumeEvidence);
+      this.inputFinality[i]=bar.profileEvidence?.finality;this.inputClock[i]=bar.profileEvidence?.clockAuthority;
+    }
+  }
+  private firstInputChange(candles: ChartEngineCandle[]): number {
+    const inputs = this.inputs, count = Math.min(inputs.length / INPUT_STRIDE, candles.length);
+    for (let i = 0, k = 0; i < count; i++, k += INPUT_STRIDE) {
+      const bar = candles[i]!;
+      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4] || volumeInputQuantity(bar.volumeEvidence) !== inputs[k + 5] || observedTradeVolumeIdentity(bar.volumeEvidence) !== this.inputVolumeIdentities[i] || bar.profileEvidence?.finality!==this.inputFinality[i] || bar.profileEvidence?.clockAuthority!==this.inputClock[i]) return i;
+    }
+    return count;
+  }
+  /** Price writes can move the shared time axis several times in one JS task.
+   * Render studies once against the final viewport, before that task can paint. */
+  batchViewport(work: () => void): void {
+    const previous = this.rendering;
+    this.rendering = true;
+    try { work(); } finally { this.rendering = previous; }
+  }
+  refresh(candles: ChartEngineCandle[], from: number, replace: boolean): void {
+    // A stream revision may still be queued when a poll/seek arrives. Its
+    // earliest dirty index must survive coalescing into this synchronous read.
+    const dirtyFrom = Math.min(from, this.pending?.from ?? from);
+    this.cancelPending();
+    for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom, false);
+    if (this.studies.length) this.recordInputs(candles, dirtyFrom);
+    this.refreshProfiles();
+    const window = this.nextWindow();
+    if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
+    this.displayWindow = window;
+    this.rendering = true;
+    try {
+      for (const study of this.studies) {
+        const next = this.visibleStudyPoints(study, window);
+        const previous = study.rendered;
+        let same = 0;
+        while (same < previous.length && same < next.length && sameStudyPoint(previous[same]!, next[same]!)) same++;
+        // Only a small changed tail can use the series tail API. A moved buffer,
+        // historical correction or large seek keeps the complete replacement.
+        const removed = previous.length - same, added = next.length - same;
+        study.lines.forEach((line, channel) => {
+          if (!removed && !added) return;
+          // LWC pop counts plotted values, not whitespace rows. Warmup/null
+          // channels must replace their data so removed timestamps cannot linger
+          // or cause pop to remove an earlier finite value instead.
+          const finite = (point: StudyPoint | undefined) => point?.values[channel] != null && Number.isFinite(point.values[channel]);
+          const finiteTail = finite(previous.at(-1)) && finite(next.at(-1)) &&
+            previous.slice(same).every(finite) && next.slice(same).every(finite);
+          if (removed > 32 || added > 32 || !finiteTail) {
+            line.setData(next.map(point => this.renderPoint(study, point, channel)));
+          } else if (removed === 1 && added > 0 && previous[same]!.time === next[same]!.time) {
+            // Revising the last point uses update, preserving the shared axis.
+            for (const point of next.slice(same)) line.update(this.renderPoint(study, point, channel));
+          } else {
+            if (removed) line.pop(removed);
+            for (const point of next.slice(same)) line.update(this.renderPoint(study, point, channel));
+          }
+        });
+        study.rendered = next;
+      }
+    } finally { this.rendering = false; }
+  }
+  private renderPoint(study: StudyHandle, point: StudyPoint, channel: number) {
+    const value = point.values[channel];
+    return value == null || !Number.isFinite(value) ? {time: point.time as UTCTimestamp} : {
+      time: point.time as UTCTimestamp, value,
+      ...(study.calculator.config.kind === "macd" && channel === 2 ? {color: value >= 0 ? "#10b981" : "#ef4444"} : {}),
+    };
+  }
+  private nextWindow() {
+    const count = this.inputs.length / INPUT_STRIDE;
+    return studyDisplayWindow(count, this.inputRange(count, i => this.inputs[i * INPUT_STRIDE]!), this.displayWindow);
+  }
+  private inputRange(count: number, timeAt: (index: number) => number): LogicalRange | null {
+    const scale = this.chart.timeScale(), visible = scale.getVisibleRange?.();
+    if (!visible || typeof visible.from !== "number" || typeof visible.to !== "number") return scale.getVisibleLogicalRange();
+    const index = (time: number, upper: boolean) => {
+      let lo = 0, hi = count;
+      while (lo < hi) { const mid = (lo + hi) >>> 1; if (timeAt(mid) < time || (upper && timeAt(mid) === time)) lo = mid + 1; else hi = mid; }
+      return lo;
+    };
+    // The shared axis can also contain display-only archive bars. Map back
+    // into each calculator's actual inputs rather than copying global indices.
+    return { from: index(visible.from, false), to: index(visible.to, true) - 1 };
+  }
+  /** Keep all calculated values for inspection/replay, but only ask the chart
+   * library to rebuild visible study geometry plus a generous pan buffer. Its
+   * line renderer otherwise rebuilds every historical point on each frame. */
+  private renderWindow(window: { from: number; to: number }): void {
+    this.displayWindow = window;
+    this.rendering = true;
+    try {
+      for (const study of this.studies) {
+        const visible = this.visibleStudyPoints(study, window);
+        study.rendered = visible;
+        study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
+      }
+    } finally { this.rendering = false; }
+  }
+  /** Streams may deliver many revisions before the browser can display one.
+   * Preserve every new candle in canonical history, then recalculate/render the
+   * changed suffix once per frame. Never run a study update for each pixel tick. */
+  refreshLater(candles: ChartEngineCandle[], from: number): void {
+    if (!this.studies.length) return;
+    this.pending = { candles, from: Math.min(from, this.pending?.from ?? from) };
+    if (this.frame == null) this.frame = requestAnimationFrame(() => this.flushPending());
+  }
+  flushPending(): void {
+    const pending = this.pending;
+    this.cancelPending();
+    if (pending) this.refresh(pending.candles, pending.from, false);
+  }
+  private cancelPending(): void {
+    if (this.frame != null) cancelAnimationFrame(this.frame);
+    this.frame = null;
+    this.pending = null;
+  }
+  destroy(): void { for(const study of this.studies)if(study.profilePrimitive){this.price.detachPrimitive(study.profilePrimitive);study.profilePrimitive=undefined;} this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
+  inspect(time: number, anchorEvidence?:(anchor:VwapAnchor)=>{utcQualified:boolean}): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[] {
+    this.flushPending();
+    return this.studies.map(({ calculator }) => {
+      if(calculator.config.kind === "volume_profile") {
+        const result=calculator.profileResult;
+        return {label:studyLabel(calculator.config),color:calculator.config.color,...(result?.status==='held'?{reason:result.reason}:{}),values:[{name:calculator.config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',value:result?.status==='ready'?result.totalTradeUnits:null}]};
+      }
+      let lo = 0, hi = calculator.points.length - 1;
+      let values: (number | null)[] = [];
+      let reason:string|undefined;
+      while (lo <= hi) {
+        const mid = (lo + hi) >>> 1;
+        const point = calculator.points[mid]!;
+        if (point.time === time) { values = point.values; reason=point.reason; break; }
+        if (point.time < time) lo = mid + 1; else hi = mid - 1;
+      }
+      if (!values.length && calculator.config.kind === "tick_volume" && time < (calculator.points[0]?.time ?? Infinity)) {
+        lo = 0; hi = this.archiveTickPoints.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >>> 1, point = this.archiveTickPoints[mid]!;
+          if (point.time === time) { values = point.values; break; }
+          if (point.time < time) lo = mid + 1; else hi = mid - 1;
+        }
+      }
+      return {
+        label: studyLabel(calculator.config), ...(calculator.config.kind==='vwap'&&calculator.config.vwapAnchor?{displayLabel:`VWAP · ${calculator.config.source??'hlc3'} · observed-bar anchor ${formatSourceChartTime(calculator.config.vwapAnchor.time,anchorEvidence?.(calculator.config.vwapAnchor).utcQualified??false,'UTC',{seconds:true})}`} : {}), color: calculator.config.color, ...(reason ? {reason} : {}),
+        values: studyDefinition(calculator.config.kind).channels.map((name, index) => ({ name: calculator.config.lineStyles?.[index]?.visible === false ? `${name} (hidden)` : name, value: values[index] ?? null })),
+      };
+    });
+  }
+  inspectProfiles():VolumeProfileInspection[] {
+    this.flushPending();
+    return this.studies.flatMap(({calculator})=>calculator.profileResult?[{id:studyId(calculator.config),label:studyLabel(calculator.config),visible:calculator.config.lineStyles?.[0]?.visible!==false,result:calculator.profileResult}]:[]);
+  }
+  private refreshProfiles():void {
+    const visible=this.studies.filter(study=>study.calculator.config.kind==='volume_profile'&&study.calculator.profileResult?.status==='ready'&&study.calculator.config.lineStyles?.[0]?.visible!==false);
+    for(const study of this.studies){
+      const slot=visible.indexOf(study);
+      if(slot<0){if(study.profilePrimitive){this.price.detachPrimitive(study.profilePrimitive);study.profilePrimitive=undefined;}continue;}
+      if(!study.profilePrimitive){study.profilePrimitive=new ChartVolumeProfilePrimitive();this.price.attachPrimitive(study.profilePrimitive);}
+      study.profilePrimitive.setData(study.calculator.profileResult!,study.calculator.config.lineStyles?.[0]?.color??study.calculator.config.color,slot,visible.length);
+    }
+  }
+  setDrawings(drawings: ChartDrawing[], candles: ChartEngineCandle[]): void {
+    this.drawings = validateDrawings(drawings);
+    this.refreshDrawings(candles);
+  }
+  setDrawingsVisible(visible: boolean): void {
+    this.drawingsVisible = visible;
+    this.drawingPrimitive?.setVisible(visible);
+  }
+  refreshDrawings(candles: ChartEngineCandle[]): void {
+    if (!this.drawingPrimitive && this.drawings.length) {
+      this.drawingPrimitive = new ChartDrawingPrimitive();
+      this.price.attachPrimitive(this.drawingPrimitive);
+      this.drawingPrimitive.setSelection(this.selectedDrawing);
+    }
+    this.drawingPrimitive?.setData(this.drawings, candles);
+    this.drawingPrimitive?.setVisible(this.drawingsVisible);
+  }
+  /** Read back the painted drawings against their stored anchors (render evidence). */
+  measureDrawings(priceStep: number): DrawingFidelity {
+    return this.drawingPrimitive?.measureRender(priceStep) ?? { ...EMPTY_DRAWING_FIDELITY, unplaced: this.drawings.filter(d => !d.hidden).length };
+  }
+  selectDrawing(id: string | null): void { this.selectedDrawing = id; this.drawingPrimitive?.setSelection(id); }
+  replacePriceSeries(price: PriceSeries, candles: ChartEngineCandle[]): void {
+    if (this.drawingPrimitive) this.price.detachPrimitive(this.drawingPrimitive);
+    for(const study of this.studies)if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive);
+    this.price = price;
+    for(const study of this.studies)if(study.profilePrimitive)this.price.attachPrimitive(study.profilePrimitive);
+    if (this.drawingPrimitive) this.price.attachPrimitive(this.drawingPrimitive);
+    this.refreshDrawings(candles);
+  }
+  private clearStudies(): void {
+    for(const study of this.studies)if(study.profilePrimitive)this.price.detachPrimitive(study.profilePrimitive);
+    // Empty oscillator panes are automatically removed by the library.
+    for (const study of [...this.studies].reverse()) for (const line of study.lines) this.chart.removeSeries(line);
+    this.studies = [];
+  }
+}
+
+/** The main price series owns the complete time axis. Studies may safely render
+ * a subset of those same timestamps; no resampling or fabricated points occur. */
+export function studyDisplayWindow(count: number, visible: LogicalRange | null, current: { from: number; to: number } | null) {
+  if (!visible || !count) return current?.from === 0 && current.to === count ? current : { from: 0, to: count };
+  const from = Math.max(0, Math.min(count, Math.floor(visible.from)));
+  const to = Math.max(from, Math.min(count, Math.ceil(visible.to) + 1));
+  if (current && from >= current.from && (current.from === 0 || from - current.from >= 50) &&
+      from - current.from <= 400) {
+    if (current.to <= count && to <= current.to && (current.to === count || current.to - to >= 50)) return current;
+    // Keep the left buffer stable while the revealed tail grows/shrinks. Moving
+    // it on every single bar would rebuild every study's shared time-axis data.
+    if (Math.abs(current.to - count) <= 32 && to <= count && count - to < 50) {
+      return current.to === count ? current : {from: current.from, to: count};
+    }
+  }
+  return { from: Math.max(0, from - 200), to: Math.min(count, to + 200) };
+}
+
+/** Series options exactly as a full rebuild creates them. */
+function studySeriesOptions(config: ChartStudy, channel: number, compactTitles=false):
+  { histogram: true; options: HistogramSeriesPartialOptions } | { histogram: false; options: LineSeriesPartialOptions } {
+  const definition = studyDefinition(config.kind);
+  const style = config.lineStyles?.[channel];
+  const visible = style?.visible !== false;
+  if (config.kind === "tick_volume" || config.kind === "trade_volume") {
+    return {histogram:true,options:{visible,color:studyChannelColor(config,channel),priceLineVisible:false,lastValueVisible:false,title:compactTitles?"":studyLabel(config),priceFormat:{type:"price",precision:0,minMove:1}}};
+  }
+  if (config.kind === "macd" && channel === 2) {
+    return {histogram:true,options:{visible,color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
+  }
+  const title = definition.pane && !compactTitles ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
+  return {histogram:false,options:{visible,color:studyChannelColor(config,channel), lineWidth:style?.width ?? 1,lineStyle:style?.style === "dashed" ? LineStyle.Dashed : style?.style === "dotted" ? LineStyle.Dotted : LineStyle.Solid,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
+}
+/** Options that differ between two same-kind specs. Functions depend on the
+ * kind only (autoscale range), so they never differ. */
+function changedOptions(previous: object, next: object): LineSeriesPartialOptions | null {
+  const before = previous as Record<string, unknown>, after = next as Record<string, unknown>;
+  const change: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (typeof after[key] === "function" || sameValue(before[key], after[key])) continue;
+    change[key] = after[key];
+  }
+  return Object.keys(change).length ? change as LineSeriesPartialOptions : null;
+}
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  // A key holding undefined and a missing key configure the same thing.
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) if (!sameValue(left[key], right[key])) return false;
+  return true;
+}
+/** Identity used to keep a study across edits: id and kind, or position and
+ * kind for studies saved without an id. */
+function studyMatchKey(config: ChartStudy, index: number): string {
+  return config.id ? `id:${config.id}:${config.kind}` : `at:${index}:${config.kind}`;
+}
+function sameSeries(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+function samePoints(a: StudyPoint[], b: StudyPoint[]): boolean {
+  return a.length === b.length && a.every((point, i) => sameStudyPoint(point, b[i]!));
+}
+const INPUT_STRIDE = 6;
+
+function sameStudyPoint(a: StudyPoint, b: StudyPoint): boolean {
+  return a === b || a.time === b.time && a.values.length === b.values.length &&
+    a.values.every((value, index) => Object.is(value, b.values[index]));
+}

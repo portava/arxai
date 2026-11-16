@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "applicationCommit": "31a45ff99bbd4385b1c5f4ad56b0df2cc29a297b",
+  "baseCommit": "02eae8e8521b5fe1cd5a020cb2ef13b95f112b08",
+  "buildId": "b4bc13c71ac6511d",
+  "validation": {
+    "frontend": {
+      "pass": 3319,
+      "fail": 0,
+      "skip": 11,
+      "filesPass": 207,
+      "filesSkip": 1
+    },
+    "guards": {
+      "pass": 87,
+      "fail": 0,
+      "bindings": 7
+    },
+    "dashboardTypecheck": "pass",
+    "declarations": "pass",
+    "ordinaryBuild": "pass",
+    "truthBrowserAssertions": 22,
+    "stockProfileDesktopAssertions": 275,
+    "stockProfileMobileAssertions": 35
+  },
+  "geometry": [
+    {
+      "width": 320,
+      "bounds": {
+        "x": 22,
+        "y": 650.1875,
+        "width": 276,
+        "height": 360,
+        "top": 650.1875,
+        "right": 298,
+        "bottom": 1010.1875,
+        "left": 22
+      },
+      "sampledUnobscuredHeight": 135,
+      "horizontalOverflow": false,
+      "restrictions": "Data validation failed \u2014 AI analysis paused\nSource clock: UTC mapping unverified",
+      "detailsOpen": false
+    },
+    {
+      "width": 390,
+      "bounds": {
+        "x": 22,
+        "y": 594.90625,
+        "width": 346,
+        "height": 360,
+        "top": 594.90625,
+        "right": 368,
+        "bottom": 954.90625,
+        "left": 22
+      },
+      "sampledUnobscuredHeight": 190,
+      "horizontalOverflow": false,
+      "restrictions": "Data validation failed \u2014 AI analysis paused\nSource clock: UTC mapping unverified",
+      "detailsOpen": false
+    },
+    {
+      "width": 1440,
+      "bounds": {
+        "x": 290,
+        "y": 704.875,
+        "width": 1100,
+        "height": 520,
+        "top": 704.875,
+        "right": 1390,
+        "bottom": 1224.875,
+        "left": 290
+      },
+      "sampledUnobscuredHeight": 390,
+      "horizontalOverflow": false,
+      "restrictions": "Data validation failed \u2014 AI analysis paused\nSource clock: UTC mapping unverified",
+      "detailsOpen": false
+    },
+    {
+      "width": 320,
+      "state": "injected offline stream error",
+      "bounds": {
+        "x": 22,
+        "y": 658.1875,
+        "width": 276,
+        "height": 360
+      },
+      "restrictions": "Data validation failed \u2014 AI analysis paused\nSource clock: UTC mapping unverified",
+      "overflow": false
+    }
+  ],
+  "navigation": {
+    "normal": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 5,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 56.90000009536743,
+        "maxMs": 66.5,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 5,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 52.90000009536743,
+        "maxMs": 55.5,
+        "failedIndices": []
+      }
+    ],
+    "cpu4x": [
+      {
+        "viewport": "desktop",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 266.19999980926514,
+        "maxMs": 286.2000002861023,
+        "failedIndices": []
+      },
+      {
+        "viewport": "mobile",
+        "planned": 5,
+        "recorded": 5,
+        "valid": 5,
+        "meets100ms": 0,
+        "successfulTimingDistributionOnly": true,
+        "medianMs": 251,
+        "maxMs": 253.90000009536743,
+        "failedIndices": []
+      }
+    ],
+    "normalPassed": true,
+    "cpu4xPassed": false
+  },
+  "limitations": [
+    "Offline historical synthetic bars and fixed 80ms candle response delay; no provider, published app or broker measurement.",
+    "Two rendering opportunities are not hardware paint. Full OHLC witness cost is included, never subtracted.",
+    "Desktop/mobile viewports are browser emulation, not physical devices. Active AI analysis remains unavailable.",
+    "Navigation controls are already exposed on both sizes; no drawer opening or forced DOM click is substituted.",
+    "Fixture journal flushes occur before navigation and after evidence collection, outside measured clicks. An interrupted pending attempt is retained as incomplete.",
+    "Resource responseEnd is browser network completion, not JSON parsing or React query-cache readiness. Long tasks and frame gaps show overlap, not causation.",
+    "First click target remains open:4xCPU0/10 within100ms; no causal speedup claim from avoiding a state update.",
+    "Existing idle/intent preload may start and finish before click; this is postclick display timing, not clickinitiated network+render.",
+    "Owned heavy checks paused; whole host not isolated.",
+    "No matched TradingView/MT5 speed comparison, physical paint/device or actual published app/provider measurement.",
+    "Original AI requirements, capital/sizing/benchmark and broad natural tool controls remain incomplete.",
+    "Separate AI followup work not included in this application or receipts.",
+    "No mainmerge/deploy/existingDBchange/runtimeactivation/worker/email/trading/broker/provider/model action."
+  ],
+  "rawDirectory": "/Users/areyouok/arx-tier1-release/scanner-critical-path-20261101",
+  "retainedFailures": [
+    "initial compact stream injection assumed default nonstream fixture had a stream;14assertions passed thenfailed",
+    "beforefix nonstream false reconnect browser evidence",
+    "beforefix regressions and studytest harness correction retained in agent receipts",
+    "all10cpu4x samples exceed100ms",
+    "Replit previous source actualpage route/browser acceptance incomplete and benchmarktimedout"
+  ],
+  "replitPreviousSourceReport": {
+    "observedAt": "2026-11-01T10:44:24.735621+00:00",
+    "phase": "paused",
+    "importedUpstream": "f419a37b235ad7f7b9d83ac6e7d96fad674251f1",
+    "upstreamApplication": "f6e64fbea949e3ce21a99696dfab0b3c975f6caa",
+    "combinedApplication": "7bd175eaeb0344b9ee91fe8a86e06c11e1535971",
+    "qaCorrection": "ecbfde354f28c06624bdcd3628dc2a247cccbd4e",
+    "workspaceCheckpoint": "652d49e0ee69fd893e29b24f06c8360119d02d77",
+    "clean": true,
+    "validation": {
+      "frontend": {
+        "pass": 3294,
+        "fail": 0,
+        "skip": 11
+      },
+      "backendTargeted": {
+        "pass": 521,
+        "fail": 0
+      },
+      "guards": 87,
+      "bindings": 7,
+      "recorderDisclosure": 22,
+      "typechecks": "passed",
+      "isolatedBuilds": "both passed"
+    },
+    "browserLimitations": [
+      "actual Scanner:2 harness passes,1 unresolved route failure,1skip,3unstarted,zero candle requests",
+      "isolated chart7functional passes",
+      "benchmark timed out45s;no trustworthy timings;8completion states unknown",
+      "positive actual-page stock/profile and focus/navigation acceptance remain open"
+    ],
+    "runtime": "original API process/start time,11API output files and305frontend output files unchanged;activation deferred",
+    "report": "ARX_CHART_VOLUME_PROFILE_DEVELOPMENT.md",
+    "receiptDirectory": "generated-artifacts/arx-volume-profile-validation/",
+    "source": "Replit read-only connector report; not independently rerun"
+  }
+}

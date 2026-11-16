@@ -1,0 +1,392 @@
+import { useState } from "react";
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Sparkles, Loader2, RefreshCw, MessageCircle, Crosshair, ShieldAlert } from "lucide-react";
+import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { buildReasoningFromChartRead } from "@/lib/eleanorReasoningBlock";
+import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+import { candleIntervalMs } from "@workspace/domain/market";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
+import {
+  chartReadAsOfLabel,
+  chartReadExpiresAtMs,
+  resolveHtfRead,
+  isFeedLimitedAction,
+  resolveEleanorReadPanelState,
+  withRouteReadLayer,
+  type ChartRead,
+} from "@/lib/eleanorReadPanelState";
+import { useEleanorReadStore } from "@/components/scanner/eleanorReadStore";
+import { useAssistantName } from "@/lib/assistant-name";
+import { resolveEleanorCtaState } from "@/lib/eleanorCtaState";
+import {
+  ACTIONABILITY_PENDING_UI,
+  actionabilityDisplayUi,
+  resolveVisibleActionButtonLabel,
+  type ScannerActionabilityDisplay,
+  type ActionDirection,
+} from "@/lib/scannerActionability";
+
+// EleanorChartRead — a compact, on-demand "Eleanor reads this chart" panel.
+//
+// SAFETY: routes ONLY through the read-only assistant pipeline
+// (`POST /api/me/assistant/read-chart`), which returns
+// `{ readOnlyMode:true, safetyMode:"paper_only", liveLocked:true }`. Eleanor can
+// NEVER place, modify, or close a trade from here — it only reads the REAL
+// candles the user is looking at into a structured, plain-English read with
+// higher-timeframe bias and conditional buy/sell triggers. It never forces a
+// trade when confidence is low, and never fabricates prices.
+//
+// FEED HONESTY: before (and after) a read, the panel surfaces the SHARED scanner
+// truth for the exact symbol/timeframe (the ONE `useScannerTruth` contract every
+// scanner surface consumes — Task #391). When that truth is not fully actionable
+// (analysis.level !== "full") it shows a clear "feed not confirmed" notice and
+// forwards `aiUsable: false` to the endpoint so the read is stamped
+// `dataQuality: "insufficient"` — Eleanor never silently reads a stale/invalid feed,
+// and never disagrees with the header strip / chart / read-gate.
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+
+function biasTone(bias: string): string {
+  const b = bias.toLowerCase();
+  if (b.includes("bull")) return "text-success";
+  if (b.includes("bear")) return "text-danger";
+  if (b.includes("range")) return "text-primary";
+  return "text-txt-secondary";
+}
+
+function confTone(conf: string): string {
+  const c = conf.toLowerCase();
+  if (c === "high") return "text-success";
+  if (c === "medium") return "text-warning";
+  return "text-txt-muted";
+}
+
+export function EleanorChartRead({
+  symbol,
+  timeframe,
+  draft,
+  aiUsable: aiUsableProp,
+  canonicalAction,
+  canonicalDirection,
+  canonicalReadId,
+  newsRiskLabel,
+}: {
+  symbol: string;
+  timeframe: string;
+  draft: { side: "BUY" | "SELL"; entry: number; sl: number; tp: number } | null;
+  /**
+   * Optional override of the Level 3 feed verdict from a parent that already
+   * tracks it (e.g. an ARXNativeChart `onChartContextChange`). When omitted, the
+   * panel resolves the verdict itself from the feed-status contract.
+   */
+  aiUsable?: boolean;
+  /**
+   * The page's event-risk sentence (lib/eventRiskCopy eventRiskLine) from the
+   * parent's per-symbol truth read — the SAME line the market-read card prints.
+   * The chart-read endpoint consults no calendar, so when omitted the Risk row
+   * says "Event risk not assessed in this read." and claims nothing else.
+   */
+  newsRiskLabel?: string | null;
+  /**
+   * Canonical verdict from the parent's shared scanner-truth cycle. When provided,
+   * the "Prepare Trade" button is display-gated on this verdict (canAct) so the
+   * Eleanor panel can never show an actionable CTA while the header/chart say wait.
+   * Convergence is downward-only — this can only restrict, never grant, affordances.
+   * Display-only: no execution gate touches this.
+   */
+  canonicalAction?: ScannerActionabilityDisplay;
+  /**
+   * Direction derived from the canonical verdict's bias (BUY | SELL | null).
+   * Drives the directional button label ("Prepare Conditional Buy", "Prepare Sell").
+   */
+  canonicalDirection?: ActionDirection;
+  /**
+   * Stable read-cycle ID from the parent consolidated truth block. Attached as a
+   * data attribute in dev builds for cross-surface tracing.
+   */
+  canonicalReadId?: string;
+}) {
+  // The server read is lifted to a page-level store keyed by symbol+timeframe
+  // (Task #600) so the header strip's Eleanor cell shares the SAME read and the two
+  // can never disagree. Switching symbol/timeframe reads a different key (an
+  // empty key = honest pre-read state). Loading/error stay local to this panel.
+  const { name } = useAssistantName();
+  const store = useEleanorReadStore();
+  const read = store.get(symbol, timeframe);
+  const setRead = (next: ChartRead | null) => store.set(symbol, timeframe, next);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
+  // panel can warn the user BEFORE Eleanor reads a stale or invalid feed — and so
+  // its verdict can never diverge from the header strip / chart / read-gate.
+  const { truth, feedStatus } = useScannerTruth(symbol, timeframe);
+
+  // ONE derived verdict (Task #506). The badge, banner, and body all read from
+  // this single resolution — the shared scanner truth folded together with the
+  // server read-chart response — so they can never render contradictory claims
+  // (e.g. badge "Clean · AI" + banner "not confirmed" + body "cannot verify").
+  // A read is a one-shot snapshot of the chart at its newest CLOSED candle
+  // (server `observedAt`). Once the next candle has closed (observedAt + one
+  // interval) — or its time is unknown — it no longer describes the current chart.
+  const readExpiresAtMs = chartReadExpiresAtMs(
+    read,
+    candleIntervalMs(normalizeChartTimeframe(timeframe)) ?? Number.NaN,
+  );
+  const readNowMs = useEvidenceDeadline(
+    readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,
+  );
+  const readExpired =
+    readExpiresAtMs != null && !(Number.isFinite(readExpiresAtMs) && readNowMs < readExpiresAtMs);
+  const readAsOf = chartReadAsOfLabel(read);
+  const panel = resolveEleanorReadPanelState({
+    truthLevel: truth?.analysis.level ?? null,
+    truthReason: truth?.analysis.reason ?? null,
+    aiUsableProp,
+    read,
+    readExpired,
+    // The page's canonical action says the feed is limited → the badge can't
+    // claim Clean/AI and the panel agrees with the header's "Limited read".
+    actionFeedLimited: isFeedLimitedAction(canonicalAction),
+    assistantName: name,
+  });
+  const feedNotConfirmed = panel.feedNotConfirmed;
+  // Task #602 — a directional STRUCTURAL read is available, but the exact live
+  // setup (entry/stop/target) is withheld until the feed confirms. This is a
+  // distinct, more-informative state than a bare "feed not confirmed" block.
+  const structuralOnly = panel.verdict === "structural_only";
+  const reportedAiUsable = panel.reportedAiUsable;
+
+  // Canonical verdict gate (display-only). When the parent passes its shared
+  // consolidated actionability, the Prepare Trade CTA is gated on canAct so the
+  // Eleanor panel can never offer an actionable button while the header/chart
+  // surface shows a degraded / wait state. Convergence is downward-only — this
+  // can only restrict the button, never grant affordances beyond what the canonical
+  // verdict permits. When no canonical is provided (e.g. standalone use), fall back
+  // to PENDING which resolves to canAct: false (safe default).
+  const canonicalUi = actionabilityDisplayUi(canonicalAction ?? "PENDING");
+  // The account's trading status is a SEPARATE authority from the data/setup
+  // verdict: read from the SAME shared truth the TRADING tile uses, so a blocked
+  // account is never offered "Prepare Trade" and the disabled button names the
+  // account-level reason (not the feed) — identical wording to the tile.
+  const cta = resolveEleanorCtaState({
+    canAct: canonicalUi.canAct,
+    verdictCopy: canonicalUi.copy,
+    pendingCopy: ACTIONABILITY_PENDING_UI.copy,
+    verdictLabel: resolveVisibleActionButtonLabel(
+      canonicalAction ?? "PENDING",
+      canonicalDirection ?? null,
+    ),
+    tradingStatus: truth?.consolidated?.tradingStatus,
+    tradingDetail: truth?.strip?.trading?.detail,
+  });
+  const buttonLabel = cta.label;
+
+  const ask = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const body = {
+        symbol,
+        timeframe,
+        ...(reportedAiUsable != null ? { aiUsable: reportedAiUsable } : {}),
+        ...(draft ? { draft } : {}),
+      };
+      const r = await fetch(`${BASE}/api/me/assistant/read-chart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = (await r.json()) as { chartRead: ChartRead; readLayer?: unknown };
+      // Downgrade-only: the route's own readLayer can only lower the payload's.
+      setRead(withRouteReadLayer(j.chartRead, j.readLayer));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-eleanor/25 bg-card p-4" data-testid="eleanor-chart-read">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-eleanor/15 text-eleanor ring-1 ring-eleanor/25">
+          <Sparkles className="h-[18px] w-[18px]" />
+        </span>
+        <span className="text-[15px] font-semibold text-foreground">{name} Chart Read</span>
+        {/* Level 3 feed-quality chip — capped by the ONE resolved verdict so it
+            can never read Clean/AI when the panel says the feed isn't confirmed. */}
+        <FeedConfidenceBadge feedStatus={feedStatus} aiUsableResolved={panel.badgeAiUsable} />
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-8 gap-1.5 px-3 text-xs"
+          disabled={loading}
+          onClick={() => void ask()}
+          data-testid="eleanor-chart-read-ask"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {read ? "Re-read" : draft ? "Read my plan" : "Read this chart"}
+        </Button>
+      </div>
+
+      {/* Feed-not-confirmed notice — shown whenever the ONE resolved verdict says
+          the feed isn't confirmed. The appended reason is resolved to describe the
+          SAME dimension that drove the downgrade, so the header and reason can
+          never contradict (never "not confirmed" + "valid for a live read"). */}
+      {feedNotConfirmed && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          data-testid="eleanor-chart-read-feed-warning"
+        >
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Feed not confirmed — {name} may have limited visibility on {symbol} {timeframe}.
+            {panel.reason ? ` ${panel.reason}` : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Structural-read notice (Task #602) — a directional read IS available,
+          but the exact entry/stop/target are withheld until the feed confirms.
+          Distinct from the hard "feed not confirmed" block above so the user
+          knows the structure below is real and only the live setup is pending. */}
+      {structuralOnly && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary"
+          data-testid="eleanor-chart-read-structural-notice"
+        >
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Structural read available — exact entry, stop, and target are withheld for {symbol} {timeframe}.
+            {panel.reason ? ` ${panel.reason}` : ""}
+          </span>
+        </div>
+      )}
+
+      {err && <div className="mt-2 text-sm text-danger" data-testid="eleanor-chart-read-err">{name} couldn't read this chart ({err}).</div>}
+
+      {!read && !err && (
+        <p className="mt-3 text-sm text-txt-secondary">Tap “Read this chart” and {name} will break down bias, conditions, levels, and risk for {symbol} {timeframe}.</p>
+      )}
+
+      {/* Gated read — the server could not verify the feed, so there is no
+          directional structure to show. Surface the honest reason instead. */}
+      {read && read.gated && (
+        <div className="mt-3 space-y-2" data-testid="eleanor-chart-read-gated">
+          {read.headline && <p className="text-sm text-txt-secondary">{read.headline}</p>}
+          {read.blockedReason && <p className="text-xs text-txt-muted">{read.blockedReason}</p>}
+          {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
+        </div>
+      )}
+
+      {read && !read.gated && (
+        <div className="mt-3 space-y-3" data-testid="eleanor-chart-read-body">
+          {/* Data time of this one-shot read — never presented as "now". */}
+          <p
+            className={`text-[11px] ${panel.readExpired ? "text-warning" : "text-txt-muted"}`}
+            data-testid="eleanor-chart-read-asof"
+          >
+            {readAsOf
+              ? `Read from closed candles · newest closed candle ${readAsOf}`
+              : "Read time unknown"}
+            {panel.readExpired ? " · expired — tap Re-read for the current chart" : ""}
+          </p>
+
+          {/* Bias / Confidence / HTF row */}
+          <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
+            <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="eleanor-chart-read-bias" />
+            <Metric label="Structure confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
+            {(() => {
+              // "—" when the server did not read the HTF (null / legacy sentinel);
+              // the label names the server's HTF timeframe when it sent one.
+              const htf = resolveHtfRead(read);
+              return (
+                <Metric
+                  label={htf.label ? `HTF (${htf.label}) bias` : "HTF Bias"}
+                  value={htf.bias ?? "—"}
+                  className={biasTone(htf.bias ?? "")}
+                  testid="eleanor-chart-read-htf-bias"
+                />
+              );
+            })()}
+          </div>
+
+          {/* Eleanor's full reasoning — ALWAYS visible (no accordion). Honesty flags
+              from the ONE panel verdict flow into the builder, so a structural-only
+              / unconfirmed read renders WAIT/conditional with the limitation stated
+              in Feed/Data and never fabricates a direction or level. */}
+          <EleanorReasoningBlock
+            data={buildReasoningFromChartRead({
+              read,
+              symbol,
+              timeframe,
+              structuralOnly,
+              feedNotConfirmed,
+              reason: panel.reason,
+              expired: panel.readExpired,
+              asOf: readAsOf,
+              newsRiskLabel,
+            }, name)}
+            testid="eleanor-chart-read-reasoning"
+          />
+
+          {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
+
+          {cta.tradingNote && (
+            <p className="text-xs text-txt-secondary" data-testid="eleanor-chart-trading-blocked">
+              {cta.tradingNote}
+            </p>
+          )}
+
+          {/* Actions — "Prepare Trade" CTA is display-gated on the canonical verdict
+              so the Eleanor panel can never show an actionable CTA while the
+              header/chart surface shows a degraded or wait state. Downward-only. */}
+          <div
+            className="grid grid-cols-2 gap-2 pt-1"
+            {...(import.meta.env.DEV && canonicalReadId ? { "data-canonical-read-id": canonicalReadId } : {})}
+          >
+            {cta.showLink ? (
+              <Link
+                href="/trade-command-room"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-semibold text-white hover:bg-primary/90"
+                data-testid="eleanor-chart-prepare-trade"
+              >
+                <Crosshair className="h-4 w-4" /> {buttonLabel}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className="flex h-10 cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-primary/30 text-sm font-semibold text-white/50"
+                disabled
+                data-testid="eleanor-chart-prepare-trade"
+                title={cta.disabledTitle ?? undefined}
+              >
+                <Crosshair className="h-4 w-4" /> {buttonLabel}
+              </button>
+            )}
+            <Link href="/ai-command-center" className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-eleanor/30 text-sm font-semibold text-eleanor hover:bg-eleanor/10" data-testid="eleanor-chart-ask-eleanor">
+              <MessageCircle className="h-4 w-4" /> Ask {name}
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value, className, testid }: { label: string; value: string; className?: string; testid?: string }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-txt-muted">{label}</div>
+      <div className={`text-sm font-bold ${className ?? "text-foreground"}`} data-testid={testid}>{value}</div>
+    </div>
+  );
+}
+
+export default EleanorChartRead;

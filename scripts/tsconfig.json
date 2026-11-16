@@ -1,14 +1,9 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "incremental": true,
+    "outDir": "dist",
+    "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src"],
-  "exclude": [
-    "src/qaScannerBridgeRouting.ts",
-    "src/qaScannerSelectedMarket.ts",
-    "src/runDemoOrderEndToEnd.ts"
-  ]
+  "include": ["src"]
 }

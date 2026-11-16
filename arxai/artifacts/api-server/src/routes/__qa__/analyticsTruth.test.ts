@@ -1,0 +1,476 @@
+// Truth: the Analytics Command Center describes the paper book accurately.
+//
+// Offline: the REAL analytics router (and its exported helpers) run over an
+// in-memory db fake. No database, no broker, no network.
+import { test, mock, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { getTableName, type Table } from "drizzle-orm";
+import { createFakeDb, withRouter, type FakeRows } from "./_fakeRouteDb.js";
+
+const realDb = await import("@workspace/db");
+let fake = createFakeDb({});
+const dbProxy = new Proxy({}, { get: (_t, p) => (fake.db as Record<string | symbol, unknown>)[p] });
+mock.module("@workspace/db", { namedExports: { ...realDb, db: dbProxy } });
+
+const mod = await import("../analytics.js");
+const router = mod.default;
+
+function setRows(rows: FakeRows) { fake = createFakeDb(rows); }
+beforeEach(() => setRows({}));
+
+function order(over: Record<string, unknown>) {
+  return {
+    id: 1, userId: 7, paperAccountId: 1, symbol: "EURUSD", direction: "BUY", orderType: "MARKET",
+    lotSize: 1, entryPrice: 1.085, stopLoss: 1.08, takeProfit: 1.095, status: "CLOSED_TP",
+    openedAt: new Date("2026-10-20T08:00:00Z"), closedAt: new Date("2026-10-20T09:00:00Z"),
+    exitPrice: 1.095, profitLoss: 1, strategyId: null, tradePlanId: null, decisionId: null,
+    clientRequestKey: null, createdAt: new Date(), updatedAt: new Date(),
+    ...over,
+  };
+}
+
+async function getJson(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  let body: Record<string, unknown> = {};
+  await withRouter(router, { id: 7 }, async (base) => {
+    const r = await fetch(`${base}${path}`, init);
+    body = await r.json() as Record<string, unknown>;
+    assert.equal(r.status, 200, JSON.stringify(body));
+  });
+  return body;
+}
+
+// ── Session heatmap ─────────────────────────────────────────────────────────
+// New York closes at 21:00 UTC. A trade opened at 22:30 UTC (Sydney / Tokyo
+// open) was counted in NEWYORK because every hour from 13 to 23 mapped there.
+test("session: 21:00–24:00 UTC is the Asia-Pacific session, not New York", () => {
+  assert.equal(mod.sessionOf(new Date("2026-10-20T22:30:00Z")), "ASIA");
+  assert.equal(mod.sessionOf(new Date("2026-10-20T21:00:00Z")), "ASIA");
+  assert.equal(mod.sessionOf(new Date("2026-10-20T03:00:00Z")), "ASIA");
+  assert.equal(mod.sessionOf(new Date("2026-10-20T07:00:00Z")), "LONDON");
+  assert.equal(mod.sessionOf(new Date("2026-10-20T13:00:00Z")), "NEWYORK");
+  assert.equal(mod.sessionOf(new Date("2026-10-20T20:59:00Z")), "NEWYORK");
+});
+
+test("session: GET /analytics/session buckets a 22:30Z trade in ASIA and states the hours", async () => {
+  setRows({
+    paper_orders: [
+      order({ id: 1, openedAt: new Date("2026-10-20T22:30:00Z") }),
+      order({ id: 2, openedAt: new Date("2026-10-20T14:00:00Z") }),
+    ],
+    post_trade_debriefs: [],
+  });
+  const body = await getJson("/analytics/session");
+  const session = body["session"] as Record<string, { trades: number }>;
+  assert.equal(session["ASIA"]!.trades, 1);
+  assert.equal(session["NEWYORK"]!.trades, 1);
+  assert.match(String(body["sessionBasis"]), /NEWYORK 13:00–21:00/);
+  assert.match(String(body["sessionBasis"]), /ASIA 21:00–07:00/);
+});
+
+// ── Snapshot freshness and coverage ─────────────────────────────────────────
+// A fake whose select chain honours .limit(n), as Postgres does, so a read
+// capped at 1000 rows is observable. Rows come back in fixture order.
+function setRowsWithLimits(rows: FakeRows) {
+  const base = createFakeDb(rows);
+  const chainFor = (all: unknown[]) => {
+    let out = [...all];
+    const self: Record<string, unknown> = new Proxy({}, {
+      get(_t, prop) {
+        if (prop === "then") return (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(out).then(ok, bad);
+        if (prop === "catch") return (bad: (e: unknown) => unknown) => Promise.resolve(out).catch(bad);
+        if (prop === "limit") return (n: number) => { out = out.slice(0, n); return self; };
+        return () => self;
+      },
+    });
+    return self;
+  };
+  fake = { ...base, db: { ...base.db, select: () => ({ from: (table: Table) => chainFor(rows[getTableName(table)] ?? []) }) } };
+}
+
+// 1001 closed EURUSD trades in open-time order; only the NEWEST is a loser.
+function thousandAndOne() {
+  return Array.from({ length: 1001 }, (_, i) => order({
+    id: i + 1,
+    openedAt: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000),
+    ...(i === 1000 ? { exitPrice: 1.08, status: "CLOSED_SL" } : {}),
+  }));
+}
+
+test("snapshot: the figures cover every closed trade, not the oldest 1000", async () => {
+  setRowsWithLimits({
+    paper_orders: thousandAndOne(),
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 1001);
+  // 1000 winners of +$1,000 and the newest trade a −$500 loser.
+  assert.equal(Math.round(s.netProfitLoss as number), 1000 * 1000 - 500);
+});
+
+test("strategy, drawdown and session panels read the same 1001 trades", async () => {
+  setRowsWithLimits({ paper_orders: thousandAndOne(), post_trade_debriefs: [] });
+  const strat = await getJson("/analytics/strategy");
+  assert.equal((strat["strategies"] as Array<{ trades: number }>)[0]!.trades, 1001);
+  const dd = await getJson("/analytics/drawdown");
+  assert.equal((dd["equityCurve"] as unknown[]).length, 1001);
+  assert.equal(dd["maxDrawdown"], 500);
+  const sess = await getJson("/analytics/session");
+  const buckets = Object.values(sess["session"] as Record<string, { trades: number }>);
+  assert.equal(buckets.reduce((a, b) => a + b.trades, 0), 1001);
+});
+
+test("GET /analytics/snapshot: the saved snapshot keeps its time; current figures are computed now with asOf", async () => {
+  const savedAt = new Date("2026-10-20T10:00:00Z");
+  setRows({
+    analytics_snapshots: [{ id: 3, userId: 7, totalTrades: 3, netProfitLoss: 3000, winRate: 1, createdAt: savedAt }],
+    paper_orders: [1, 2, 3, 4, 5].map((id) => order({ id })),
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const before = Date.now();
+  const body = await getJson("/analytics/snapshot");
+  const saved = body["snapshot"] as Record<string, unknown>;
+  assert.equal(saved["totalTrades"], 3);
+  assert.equal(saved["createdAt"], savedAt.toISOString());
+  const current = body["current"] as Record<string, unknown>;
+  assert.ok(current, "live figures are returned");
+  assert.equal(current["totalTrades"], 5);
+  const asOf = Date.parse(String(current["asOf"]));
+  assert.ok(Number.isFinite(asOf) && asOf >= before - 1000, `asOf ${String(current["asOf"])} is the time of this read`);
+  assert.equal(body["currentError"], null);
+});
+
+// ── Highlights: what "strongest" names ──────────────────────────────────────
+function edgeRow(over: Record<string, unknown>) {
+  return {
+    id: 1, userId: 7, edgeName: "symbol=EURUSD", symbol: "EURUSD", strategyId: null, timeframe: null,
+    sessionName: null, marketCondition: null, sampleSize: 12, winRate: 0.75, averageRr: 1.5,
+    expectancy: 40, profitFactor: 2, disciplineScoreAvg: 0, executionScoreAvg: 0, emotionalScoreAvg: 0,
+    confidenceScore: 50, status: "DEVELOPING_EDGE", aiSummary: "", createdAt: new Date("2026-10-20T10:00:00Z"),
+    ...over,
+  };
+}
+
+test("highlights: the 'strategy' cards rank symbols; best is net profitable, worst net losing", async () => {
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD", strategyId: "A" }),
+      order({ id: 2, symbol: "GBPUSD", strategyId: "B", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.32, exitPrice: 1.29, status: "CLOSED_SL" }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, "GBPUSD");
+  assert.match(s.highlightBasis.symbols, /net P&L/);
+  // The stored "strategy" columns have always held a symbol.
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal("strongestSymbol" in mod.toSnapshotRow(s), false, "not a snapshot column");
+});
+
+test("highlights: one profitable symbol is the best and not also the worst", async () => {
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, null);
+});
+
+// The stored "strategy" columns are read by tradeDecision.orchestrate (the
+// paper autopilot's decision): weakest === symbol is a WARN (+10 risk, no
+// confidence), strongest === symbol a +10 PASS. They keep their 16c8a1a0
+// meaning, plain top and bottom symbol by net P&L of sized trades, so the
+// sign-gated display highlights can never loosen that input.
+test("highlights: the stored columns keep the plain top/bottom ranking the trade decision reads", async () => {
+  // One profitable symbol: it is both the stored strongest and weakest (WARN in
+  // the trade decision, as before), while the card shows no worst symbol.
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  let s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "EURUSD");
+  assert.equal(s.weakestSymbol, null);
+
+  // Two profitable symbols: the less profitable one is the stored weakest.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.301, exitPrice: 1.301 }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, null, "the card names no worst symbol when none is net losing");
+
+  // Every symbol losing: the stored ranking is unchanged from 16c8a1a0 too.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD", exitPrice: 1.084, status: "CLOSED_SL" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.32, exitPrice: 1.29, status: "CLOSED_SL" }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, null);
+
+  // No sized closed trade: nothing ranks, as before.
+  setRows({ paper_orders: [order({ id: 1, symbol: "US30", entryPrice: 42000, stopLoss: 41900, takeProfit: 42200, exitPrice: 42200 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  s = await mod.computeSnapshot(7);
+  assert.equal(s.pnlCoverage.sizedTrades, 0);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, null);
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, null);
+});
+
+test("highlights: edge slices come from the edge board's current, re-derived reports", async () => {
+  setRows({
+    paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [],
+    edge_discovery_reports: [
+      // Legacy no-losses marker row: the board re-derives it to DEVELOPING_EDGE.
+      edgeRow({ id: 1, edgeName: "symbol=EURUSD", profitFactor: 999, status: "STRONG_EDGE", confidenceScore: 100 }),
+      // GBPUSD: an old STRONG generation, but the current run is NO_EDGE.
+      edgeRow({ id: 2, edgeName: "symbol=GBPUSD", status: "STRONG_EDGE", confidenceScore: 90, createdAt: new Date("2026-10-01T10:00:00Z") }),
+      edgeRow({ id: 3, edgeName: "symbol=GBPUSD", status: "NO_EDGE", expectancy: -50, confidenceScore: 40, createdAt: new Date("2026-10-21T10:00:00Z") }),
+      // Too little data: neither strongest nor weakest.
+      edgeRow({ id: 4, edgeName: "emotion=CALM", status: "INSUFFICIENT_DATA", sampleSize: 3, confidenceScore: 95 }),
+    ],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestEdgeSlice?.label, "EURUSD (by symbol)");
+  assert.equal(s.strongestEdgeSlice?.status, "DEVELOPING_EDGE");
+  assert.notEqual(s.strongestEdgeSlice?.confidenceScore, 100);
+  assert.equal(s.weakestEdgeSlice?.label, "GBPUSD (by symbol)");
+  assert.equal(s.weakestEdgeSlice?.status, "NO_EDGE");
+  assert.match(s.highlightBasis.edgeSlices, /not by your results in a market condition/);
+});
+
+// ── Nothing measured is null, not 0 ─────────────────────────────────────────
+test("unmeasured: a new user's figures are null with a reason, not 0 or failing scores", async () => {
+  setRows({ paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 0);
+  for (const k of ["winRate", "netProfitLoss", "expectancy", "profitFactor", "averageRr", "maxDrawdown",
+    "disciplineScoreAvg", "executionScoreAvg", "emotionalScoreAvg", "consistencyScoreAvg"] as const) {
+    assert.equal(s[k], null, `${k} is not measured`);
+    assert.ok(s.unmeasured[k], `${k} says why`);
+  }
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /No Trader Skill profile/);
+  // The NOT NULL columns still get the column default, as before.
+  const row = mod.toSnapshotRow(s);
+  assert.equal(row.winRate, 0);
+  assert.equal(row.disciplineScoreAvg, 0);
+});
+
+test("unmeasured: a skill profile with no debriefs does not score discipline, execution or emotion", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [{ id: 1, userId: 7, disciplineScore: 0, executionScore: 0, consistencyScore: 0, emotionalControlScore: 0, updatedAt: new Date("2026-10-27T09:00:00Z") }],
+    post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null);
+  assert.equal(s.executionScoreAvg, null);
+  assert.equal(s.emotionalScoreAvg, null);
+  assert.equal(s.consistencyScoreAvg, null);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /No post-trade debriefs/);
+  assert.equal(s.behaviorAsOf, "2026-10-27T09:00:00.000Z");
+  // One winning trade: measured win rate and P&L, but no profit factor.
+  assert.equal(s.winRate, 1);
+  assert.equal(s.netProfitLoss, 1000);
+  assert.equal(s.profitFactor, null);
+  assert.equal(s.profitFactorBasis, "NO_LOSING_TRADE");
+  assert.match(s.unmeasured["profitFactor"]!, /No losing trade/);
+  assert.equal(mod.toSnapshotRow(s).profitFactor, 999, "stored exactly as before");
+});
+
+// Trader Skill scores execution only from checklist answers and emotional
+// control only from a recorded emotion; with neither it stores 0. Automatic
+// debriefs (written on every paper close) have an empty checklist and no
+// emotion, so they are evidence for discipline only.
+const PROFILE_AT = new Date("2026-10-27T09:00:00Z");
+function skillProfile(over: Record<string, unknown> = {}) {
+  return { id: 1, userId: 7, disciplineScore: 40, executionScore: 0, consistencyScore: 0, emotionalControlScore: 0,
+    updatedAt: PROFILE_AT, ...over };
+}
+function autoDebrief(id: number, createdAt: Date) {
+  return { id, userId: 7, tradeId: id, followedPlan: 1, traderEmotionAfter: null, checklist: [],
+    createdBy: "SYSTEM_AUTO_DEBRIEF", createdAt };
+}
+
+test("unmeasured: automatic debriefs alone do not measure execution or emotional control", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile()],
+    post_trade_debriefs: [autoDebrief(1, new Date("2026-10-26T09:00:00Z")), autoDebrief(2, new Date("2026-10-26T10:00:00Z"))],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, null, "no checklist answers: execution was not measured");
+  assert.equal(s.emotionalScoreAvg, null, "no recorded emotion: emotional control was not measured");
+  assert.match(s.unmeasured["executionScoreAvg"]!, /checklist answers/);
+  assert.match(s.unmeasured["emotionalScoreAvg"]!, /records how you felt/);
+  // The profile scored discipline above 0, so some followed-plan flag was observed.
+  assert.equal(s.disciplineScoreAvg, 40);
+});
+
+// Review pass 3: an automatic debrief writes followedPlan = didFollowDecision === true ? 1 : 0,
+// and didFollowDecision is null when the paper order has no orchestrator decision (manual
+// and scanner paper trades). That 0 is a placeholder, not an observation, yet any debrief
+// before the profile counted Discipline as measured: Trader Skill stored 0 (0 followed of N)
+// and the board showed Discipline 0/100 with nothing about plan-following observed.
+test("unmeasured: automatic debriefs of trades with no orchestrator decision do not measure discipline", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [
+      { ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), followedPlan: 0, decisionId: null, autoMeta: { did_follow_decision: null } },
+      { ...autoDebrief(2, new Date("2026-10-26T10:00:00Z")), followedPlan: 0, decisionId: null, autoMeta: {} },
+    ],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null, "was 0: a placeholder followed-plan 0 read as a measured failing score");
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /records whether you followed your plan/);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /automatic debriefs of trades with no orchestrator decision do not/);
+  assert.equal(mod.toSnapshotRow(s).disciplineScoreAvg, 0, "the stored row is as before");
+});
+
+test("measured: an automatic debrief that recorded whether the orchestrator's decision was followed measures discipline", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [
+      { ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), followedPlan: 0, decisionId: 31, autoMeta: { did_follow_decision: false } },
+    ],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, 0, "observed: the trade went against the decision");
+  assert.equal(s.unmeasured["disciplineScoreAvg"], undefined);
+});
+
+test("measured: a user debrief that answered a plan question measures discipline; one with no plan answers does not", async () => {
+  const user = (checklist: unknown[]) => ({ ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), createdBy: "USER", followedPlan: 0, checklist });
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [user([{ id: "followed_plan", answer: "NO" }])],
+    edge_discovery_reports: [],
+  });
+  assert.equal((await mod.computeSnapshot(7)).disciplineScoreAvg, 0);
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [user([{ id: "patient_entry", answer: "YES" }])],
+    edge_discovery_reports: [],
+  });
+  assert.equal((await mod.computeSnapshot(7)).disciplineScoreAvg, null, "no plan question answered: the 0 is the default");
+});
+
+test("unmeasured: a profile computed before any debrief does not count later debriefs as its evidence", async () => {
+  const after = new Date("2026-10-28T09:00:00Z");
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [{ ...autoDebrief(1, after), traderEmotionAfter: "CALM", checklist: [{ id: "q1", answer: "YES" }] }],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null);
+  assert.equal(s.executionScoreAvg, null);
+  assert.equal(s.emotionalScoreAvg, null);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /from before your Trader Skill profile was computed/);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /Recalculate/);
+});
+
+test("measured: a pillar the profile scored above 0 was measured, even with its debriefs out of the read window", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ executionScore: 80, emotionalControlScore: 60 })],
+    // Only automatic debriefs written after the profile are in the newest window.
+    post_trade_debriefs: [autoDebrief(1, new Date("2026-10-28T09:00:00Z"))],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, 80);
+  assert.equal(s.emotionalScoreAvg, 60);
+  assert.equal(s.disciplineScoreAvg, 40);
+  assert.equal(mod.toSnapshotRow(s).executionScoreAvg, 80, "the stored row keeps the profile's score");
+});
+
+test("measured: checklist answers and a recorded emotion before the profile measure their pillars", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ executionScore: 100, emotionalControlScore: 100 })],
+    post_trade_debriefs: [{ ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), createdBy: "USER",
+      traderEmotionAfter: "CALM", checklist: [{ id: "q1", answer: "YES" }] }],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, 100);
+  assert.equal(s.emotionalScoreAvg, 100);
+  assert.equal(s.unmeasured["executionScoreAvg"], undefined);
+});
+
+test("unmeasured: a trade with no stop distance has no R and is not counted as 0R", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 }), order({ id: 2, stopLoss: 1.085 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(Math.round((s.averageRr as number) * 100) / 100, 2);
+});
+
+test("unmeasured: GET /analytics/snapshot sends the nulls in current", async () => {
+  setRows({ analytics_snapshots: [], paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const body = await getJson("/analytics/snapshot");
+  const current = body["current"] as Record<string, unknown>;
+  assert.equal(current["winRate"], null);
+  assert.equal(current["disciplineScoreAvg"], null);
+  assert.equal(current["emotionalScoreAvg"], null);
+});
+
+// ── One paper book, consistent figures across boards ────────────────────────
+function debrief(id: number, emotion: string) {
+  // Written before the profile below was computed (created_at is NOT NULL).
+  return { id, userId: 7, paperOrderId: id, followedPlan: 1, traderEmotionAfter: emotion, checklist: [],
+    createdAt: new Date("2026-10-26T09:00:00Z") };
+}
+
+test("consistency: Emotional is Trader Skill's emotional control score, not a CALM-only share", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    // Trader Skill counts NEUTRAL and RELIEVED as controlled: 100 here.
+    trader_skill_profiles: [{ id: 1, userId: 7, disciplineScore: 90, executionScore: 70, consistencyScore: 40,
+      emotionalControlScore: 100, updatedAt: new Date("2026-10-27T09:00:00Z") }],
+    post_trade_debriefs: [debrief(1, "NEUTRAL"), debrief(2, "RELIEVED")],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.emotionalScoreAvg, 100, "the same number Trader Skill shows as Emotional control");
+});
+
+test("consistency: a cancelled order with an exit price is not a closed trade", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 }), order({ id: 2, status: "CANCELLED", exitPrice: 1.08 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 1);
+  assert.equal(s.netProfitLoss, 1000);
+});
+
+test("consistency: the P&L basis says it differs from Eleanor Memory's booked demo P&L", async () => {
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.match(s.pnlCoverage.note, /USD at each instrument's contract size/);
+  assert.match(s.pnlCoverage.note, /Eleanor Memory and your demo account show the P&L the paper venue booked on each close/);
+  assert.match(s.pnlCoverage.note, /closes booked before contract sizing may carry price move × lots × 100/);
+  // Eleanor Memory leaves an unsized close out; the demo balance counts a loss at
+  // the risk model and a win as 0. It used to say "0 in Eleanor Memory".
+  assert.match(s.pnlCoverage.note, /could not size is left out of Eleanor Memory and counted in your demo balance at the paper risk model when it lost \(0 when it won\)/);
+  assert.doesNotMatch(s.pnlCoverage.note, /placeholder \(0 in Eleanor Memory/);
+  assert.match(s.pnlCoverage.note, /can differ from this one/);
+});

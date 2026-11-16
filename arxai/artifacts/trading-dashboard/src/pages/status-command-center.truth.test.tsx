@@ -1,0 +1,230 @@
+/**
+ * Status Command Center truth: rows must describe what was actually read.
+ *
+ * - Emergency Stop: no source on this page reports the platform emergency
+ *   stop / kill switch, so the row must not read a measured "off".
+ * - A failed /api/mt5/diagnostic-summary read is "unknown", never the
+ *   default safe posture (live disabled, demo-only, read-only) with full marks.
+ */
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup, within, renderHook, waitFor, act } from "@testing-library/react";
+import { collectRuntimeContext } from "@/assistant/runtimeContext";
+import type { BridgeDiagnosticSummary, RuntimeContext } from "@/assistant/runtimeContextTypes";
+import { buildSetupWizard } from "@/statusCommand/setupWizard";
+import { computeReadinessScore } from "@/statusCommand/readinessScore";
+import { diagnose, fixFirst } from "@/assistant/appDoctor";
+
+const holder: { ctx: RuntimeContext | null } = { ctx: null };
+
+vi.mock("@/assistant/useRuntimeContext", () => ({
+  useRuntimeContext: () => holder.ctx,
+}));
+vi.mock("@/hooks/useTradingMode", () => ({
+  useTradingMode: () => ({ isLoading: true, envelope: null, isLiveShared: false, cleanModeLabel: "", cleanBlockedReason: null, cleanUserMessage: "" }),
+}));
+
+import StatusCommandCenter from "./status-command-center";
+
+const connectedBridge: BridgeDiagnosticSummary = {
+  bridgeMode: "connected",
+  heartbeatPresent: true,
+  lastHeartbeatAt: "2026-10-28T10:00:00.000Z",
+  heartbeatAgeSeconds: 3,
+  brokerExecutionEnabled: false,
+  brokerReadOnly: true,
+  liveTradingEnabled: false,
+  paperOnly: false,
+  safestNextStep: "Stay read-only.",
+  reason: "Bridge is connected.",
+  fetchedAt: "2026-10-28T10:00:03.000Z",
+};
+
+afterEach(() => { cleanup(); holder.ctx = null; });
+
+function runtimeRow(label: string): string {
+  const card = screen.getByTestId("scc-runtime-card");
+  const dt = within(card).getByText(label);
+  return (dt.nextElementSibling as HTMLElement).textContent ?? "";
+}
+
+describe("Emergency Stop is not a measured 'off'", () => {
+  it("runtime context does not claim the emergency stop is off when no source reported it", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: connectedBridge });
+    expect(ctx.emergencyStopActive).not.toBe(false);
+    expect(ctx.emergencyStopActive).toBeNull();
+  });
+
+  it("setup wizard does not say 'Emergency Stop not engaged.' without a reading", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: connectedBridge });
+    const step = buildSetupWizard(ctx).find((s) => s.id === "wz-emergency")!;
+    expect(step.statusText).not.toMatch(/not engaged/i);
+    expect(step.statusText).toMatch(/not read|not checked/i);
+  });
+
+  it("Runtime Status row does not read 'off' when the emergency stop was never read", () => {
+    holder.ctx = collectRuntimeContext({ route: "/status-command-center", bridge: connectedBridge });
+    render(<StatusCommandCenter />);
+    const v = runtimeRow("Emergency Stop");
+    expect(v).not.toBe("off");
+    expect(v).toMatch(/not checked/i);
+  });
+
+  it("still renders ENGAGED when a source reports it", () => {
+    holder.ctx = { ...collectRuntimeContext({ route: "/status-command-center", bridge: connectedBridge }), emergencyStopActive: true };
+    render(<StatusCommandCenter />);
+    expect(runtimeRow("Emergency Stop")).toBe("ENGAGED");
+    expect(screen.getByTestId("scc-blocker-emergency-stop")).toBeTruthy();
+  });
+});
+
+describe("failed diagnostic fetch is unknown, not a default safe posture", () => {
+  it("runtime context reports unknown posture fields when no bridge summary was read", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: undefined });
+    expect(ctx.liveTradingDisabled).toBeNull();
+    expect(ctx.brokerExecutionDisabled).toBeNull();
+    expect(ctx.brokerReadOnly).toBeNull();
+    expect(ctx.paperOnly).toBeNull();
+    expect(ctx.simulatorMode).toBeNull();
+    expect(ctx.heartbeatPresent).toBeNull();
+    expect(ctx.tradingMode).toBe("unknown");
+    expect(ctx.activeSafetyLocks).not.toContain("LIVE TRADING DISABLED");
+    expect(ctx.bridgeStatus).toBe("unavailable");
+  });
+
+  it("readiness score awards no points for unread safety locks, demo mode, heartbeat or broker mode", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    const score = computeReadinessScore(ctx, []);
+    for (const id of ["safety-locks", "paper-simulator", "heartbeat", "broker-mode"] as const) {
+      const s = score.sections.find((x) => x.id === id)!;
+      expect(s.score, id).toBe(0);
+      expect(s.level, id).toBe("unavailable");
+    }
+    expect(score.liveUnavailableReason).toMatch(/could not be read/i);
+  });
+
+  it("an unreadable EA connection (bridgeMode unknown) is not an observed absence, not 'deferred', and earns no points", () => {
+    // appDoctor: getUserActiveConnection() threw → bridgeMode "unknown",
+    // heartbeatPresent false (from !!undefined), heartbeatAgeSeconds null.
+    const unreadBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "unknown", heartbeatPresent: false, heartbeatScope: "your_connection",
+      lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+      reason: "The bridge heartbeat status could not be read, so the bridge state is unknown; treating as deferred for safety.",
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: unreadBridge });
+    expect(ctx.heartbeatPresent).toBeNull();
+    expect(ctx.heartbeatAgeSeconds).toBeNull();
+    const score = computeReadinessScore(ctx, []);
+    const hb = score.sections.find((x) => x.id === "heartbeat")!;
+    expect(hb.score).toBe(0);
+    expect(hb.level).toBe("unavailable");
+    expect(hb.summary).not.toMatch(/deferred|expected/i);
+    expect(hb.summary).toMatch(/could not be read/i);
+    const bridge = score.sections.find((x) => x.id === "mt5-bridge")!;
+    expect(bridge.score).toBe(0);
+    expect(bridge.level).toBe("unavailable");
+    expect(bridge.summary).toMatch(/could not be read/i);
+    const wz = buildSetupWizard(ctx);
+    expect(wz.find((s) => s.id === "wz-heartbeat")!.statusText).not.toMatch(/not expected|deferred/i);
+    expect(wz.find((s) => s.id === "wz-heartbeat")!.statusText).toMatch(/could not be read/i);
+    expect(wz.find((s) => s.id === "wz-mt5")!.statusText).toMatch(/could not be read/i);
+    holder.ctx = ctx;
+    render(<StatusCommandCenter />);
+    expect(runtimeRow("Heartbeat")).toMatch(/^not checked — your EA connection could not be read/);
+  });
+
+  // App Doctor and the safety-lock list must not call an unread EA connection
+  // "deferred" (or claim simulator mode): nobody observed that state. The
+  // fail-closed mt5Deferred flag stays set; only the copy says what was read.
+  it("App Doctor and the lock list say an unreadable EA connection could not be read, not 'deferred'", () => {
+    const unreadBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "unknown", heartbeatPresent: false, heartbeatScope: "your_connection",
+      lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+      reason: "The bridge heartbeat status could not be read, so the bridge state is unknown; treating as deferred for safety.",
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: unreadBridge });
+    expect(ctx.mt5Deferred).toBe(true); // still fail-closed
+    const ds = diagnose(ctx);
+    expect(ds.some((d) => d.id === "doc-bridge-deferred")).toBe(false);
+    const unread = ds.find((d) => d.id === "doc-bridge-unread")!;
+    expect(unread).toBeTruthy();
+    expect(unread.explanation).toMatch(/could not be read/i);
+    expect(unread.explanation).toMatch(/unknown/i);
+    expect(unread.explanation).toMatch(/treated as deferred for safety/i);
+    expect(unread.explanation).not.toMatch(/simulator mode/i);
+    expect(unread.evidence).toContain("bridgeMode=unknown");
+    expect(ctx.activeSafetyLocks).not.toContain("MT5 DEFERRED");
+    expect(ctx.activeSafetyLocks.join(" ")).toMatch(/MT5 BRIDGE UNREAD/);
+    const ff = fixFirst(ctx);
+    const shown = [ff.primary, ...ff.alternates].filter(Boolean).map((d) => d!.explanation).join("\n");
+    expect(shown).not.toMatch(/bridge is deferred or disconnected/i);
+    holder.ctx = ctx;
+    render(<StatusCommandCenter />);
+    const page = document.body.textContent ?? "";
+    expect(page).not.toMatch(/The MT5 bridge is deferred or disconnected/);
+    // Case-insensitive: the Active Blockers card was titled "MT5 Deferred".
+    expect(page).not.toMatch(/MT5 deferred/i);
+    expect(page).not.toMatch(/intentionally deferred/i);
+    const card = screen.getByTestId("scc-blocker-mt5-deferred").textContent ?? "";
+    expect(card).toMatch(/MT5 bridge state unknown/);
+    expect(card).toMatch(/could not be read/);
+    expect(card).toMatch(/treated as deferred for safety/);
+  });
+
+  it("a bridge the server read as deferred is still diagnosed as deferred", () => {
+    const deferredBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "deferred", heartbeatPresent: false, lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: deferredBridge });
+    const ds = diagnose(ctx);
+    expect(ds.some((d) => d.id === "doc-bridge-deferred")).toBe(true);
+    expect(ds.some((d) => d.id === "doc-bridge-unread")).toBe(false);
+    expect(ctx.activeSafetyLocks).toContain("MT5 DEFERRED");
+  });
+
+  it("a bridge summary that was never read scores the MT5 Bridge section 0, not 5", () => {
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    const bridge = computeReadinessScore(ctx, []).sections.find((x) => x.id === "mt5-bridge")!;
+    expect(bridge.score).toBe(0);
+    expect(bridge.level).toBe("unavailable");
+  });
+
+  it("Status Command Center shows unknown rows and a fetch-failure disclosure", () => {
+    holder.ctx = collectRuntimeContext({ route: "/status-command-center", bridge: null, bridgeStatus: "unavailable" });
+    render(<StatusCommandCenter />);
+    expect(runtimeRow("Live trading disabled")).toBe("unknown");
+    expect(runtimeRow("Demo-only")).toBe("unknown");
+    expect(runtimeRow("Broker read-only")).toBe("unknown");
+    // heartbeatLine names why the row is unknown: the summary was never read.
+    expect(runtimeRow("Heartbeat")).toBe("not checked — bridge summary unavailable");
+    expect(runtimeRow("Heartbeat")).not.toMatch(/^(present|absent|none)\b/);
+    expect(runtimeRow("Server posture")).toMatch(/could not be read/i);
+    expect(screen.getByTestId("scc-blocker-posture-unknown")).toBeTruthy();
+    expect(screen.queryByTestId("scc-blocker-live-trading-disabled")).toBeNull();
+    // The bridge was never read, so the checklist must not say it is offline.
+    expect(screen.queryByText(/Bridge is offline/i)).toBeNull();
+  });
+
+  it("useRuntimeContext drops the previous bridge summary when a later fetch fails", async () => {
+    vi.doUnmock("@/assistant/useRuntimeContext");
+    const { useRuntimeContext } = await vi.importActual<typeof import("@/assistant/useRuntimeContext")>("@/assistant/useRuntimeContext");
+    let fail = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (fail) throw new Error("network down");
+      const body = String(url).includes("diagnostic-summary") ? connectedBridge : null;
+      return new Response(JSON.stringify(body), { status: body ? 200 : 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { result } = renderHook(() => useRuntimeContext());
+      await waitFor(() => expect(result.current.bridgeStatus).toBe("loaded"));
+      expect(result.current.liveTradingDisabled).toBe(true);
+      fail = true;
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+      await waitFor(() => expect(result.current.bridgeStatus).toBe("unavailable"));
+      expect(result.current.bridge).toBeNull();
+      expect(result.current.liveTradingDisabled).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

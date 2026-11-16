@@ -1,0 +1,264 @@
+/**
+ * ARX Readiness Score — 10 sections, each 0..10, total 0..100.
+ *
+ * IMPORTANT: A high readiness score NEVER implies live trading is available.
+ * The "Live Trading" lock is server-enforced and cannot be unlocked from the UI.
+ * The score is a setup/clarity indicator only.
+ */
+import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
+import type { ChecklistItem } from "@/knowledge/setupChecklist";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
+
+export type ReadinessSectionId =
+  | "app-health"
+  | "permission"
+  | "safety-locks"
+  | "paper-simulator"
+  | "mt5-bridge"
+  | "heartbeat"
+  | "broker-mode"
+  | "risk-controls"
+  | "assistant-knowledge"
+  | "runtime-diagnostics";
+
+export type SectionLevel = "ready" | "attention" | "blocked" | "unavailable" | "info";
+
+export interface ReadinessSection {
+  id: ReadinessSectionId;
+  title: string;
+  score: number; // 0..10
+  max: number;   // always 10
+  level: SectionLevel;
+  summary: string;
+  evidence: string[];
+}
+
+export interface ReadinessScore {
+  total: number;          // 0..100
+  max: 100;
+  sections: ReadinessSection[];
+  /** Human-readable mode banner. */
+  mode: string;
+  /** Always returned — even with score=100, this stays true until server clears the lock. */
+  liveTradingStillUnavailable: boolean;
+  liveUnavailableReason: string;
+}
+
+function clamp(n: number): number { return Math.max(0, Math.min(10, Math.round(n))); }
+
+export function computeReadinessScore(
+  ctx: RuntimeContext,
+  checklist: ChecklistItem[],
+  opts?: { knowledgeScore?: number; runtimeFailedEndpoints?: number },
+): ReadinessScore {
+  const sections: ReadinessSection[] = [];
+
+  // 1. App Health — server, db, feedback reachable
+  {
+    const h = ctx.health;
+    let s = 0;
+    const ev: string[] = [];
+    if (h?.serverReachable) { s += 4; ev.push("server reachable"); }
+    if (h?.databaseReachable) { s += 3; ev.push("database reachable"); }
+    if (h?.feedbackHealthy) { s += 3; ev.push("feedback service healthy"); }
+    sections.push({
+      id: "app-health", title: "App Health", score: clamp(s), max: 10,
+      level: !h ? "unavailable" : s >= 8 ? "ready" : s >= 4 ? "attention" : "blocked",
+      summary: !h
+        ? ctx.healthStatus === "unavailable" ? "Health summary could not be read (/api/app/health-summary failed)." : "Health probe has not finished yet."
+        : `${ev.length}/3 backend services reachable.`,
+      evidence: ev,
+    });
+  }
+
+  // 2. Permission — known role hint
+  {
+    const role = ctx.serverRoleHint;
+    const known = role !== "unknown";
+    sections.push({
+      id: "permission", title: "User Permission",
+      score: known ? 10 : 5, max: 10,
+      level: known ? "info" : "attention",
+      summary: known ? `Role hint: ${role}.` : "Server has not provided a role hint yet.",
+      evidence: [`serverRoleHint=${role}`],
+    });
+  }
+
+  // 3. Safety Locks — protective; presence is INFO, absence is attention
+  {
+    const locks = ctx.activeSafetyLocks;
+    const liveLock = ctx.liveTradingDisabled;
+    sections.push({
+      id: "safety-locks", title: "Safety Locks",
+      // Locks are protective — full score whenever LIVE TRADING DISABLED is in place.
+      // Unread posture (null) earns nothing: it is not evidence of a lock.
+      score: liveLock === null ? 0 : liveLock ? 10 : 5, max: 10,
+      level: liveLock === null ? "unavailable" : liveLock ? "info" : "attention",
+      summary: liveLock === null
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary does not read the live-trading lock, live arming or your account mode, so this section is not scored. The server still gates execution."
+          : "Server safety posture could not be read, so the locks are unknown; server still gates execution."
+        : liveLock
+          ? "Server-enforced safety locks are active and working as intended."
+          : "Safety locks not detected from the client view; server still gates execution.",
+      evidence: liveLock === null
+        ? ctx.executionPostureUnmeasured ? ["executionPostureMeasured=false"] : [`bridgeStatus=${ctx.bridgeStatus ?? "unknown"}`]
+        : locks,
+    });
+  }
+
+  // 4. Demo / Simulator readiness
+  {
+    const unread = ctx.paperOnly === null && ctx.simulatorMode === null;
+    const ok = ctx.paperOnly === true || ctx.simulatorMode === true;
+    sections.push({
+      id: "paper-simulator", title: "Demo / Simulator Readiness",
+      score: unread ? 0 : ok ? 10 : 4, max: 10,
+      level: unread ? "unavailable" : ok ? "ready" : "attention",
+      summary: unread
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary only describes your own MT5 bridge, not which surface your orders go to. Your account mode is the authority."
+          : "Demo/simulator mode could not be read from the server."
+        : ok ? "Simulator/demo mode is the active execution surface." : "Simulator/demo mode not detected.",
+      evidence: [`tradingMode=${ctx.tradingMode}`, `paperOnly=${ctx.paperOnly}`, `simulatorMode=${ctx.simulatorMode}`],
+    });
+  }
+
+  // 5. MT5 Bridge
+  {
+    // An unread bridge (no summary, or the server could not read the EA
+    // connection: bridgeMode "unknown") earns nothing, like the other unread sections.
+    const mode = ctx.bridge?.bridgeMode ?? "unknown";
+    const known = mode === "connected" || mode === "deferred" || mode === "disconnected" || mode === "simulator";
+    const score = mode === "connected" ? 10 : mode === "deferred" ? 7 : mode === "disconnected" ? 3 : known ? 5 : 0;
+    const level: SectionLevel =
+      mode === "connected" ? "ready" :
+      mode === "deferred" ? "info" :
+      mode === "disconnected" ? "blocked" : known ? "attention" : "unavailable";
+    sections.push({
+      id: "mt5-bridge", title: "MT5 Bridge",
+      score, max: 10, level,
+      summary:
+        mode === "deferred" ? "Bridge intentionally deferred — ARX runs in simulator mode."
+        : mode === "connected" ? "Bridge connected — broker remains read-only by default."
+        : mode === "disconnected" ? "Bridge token configured, but no connection."
+        : known ? `Bridge mode: ${mode}.`
+        : !ctx.bridge
+          ? ctx.bridgeStatus === "loading" ? "Bridge summary has not loaded yet." : "Bridge state could not be read (/api/mt5/diagnostic-summary failed)."
+          : "Bridge state could not be read: the server could not read the EA connection, so it is unknown (the server treats it as deferred).",
+      evidence: [`bridgeMode=${mode}`],
+    });
+  }
+
+  // 6. Heartbeat
+  {
+    const present = ctx.heartbeatPresent;
+    const age = ctx.heartbeatAgeSeconds;
+    // Shared heartbeat policy: only the fresh band (< 15 s) is "ready".
+    const fresh = present === true && isHeartbeatAgeSecondsFresh(age);
+    sections.push({
+      id: "heartbeat", title: "Heartbeat",
+      score: present === null ? 0 : fresh ? 10 : present ? 6 : ctx.mt5Deferred ? 7 : 2, max: 10,
+      level: present === null ? "unavailable" : fresh ? "ready" : present ? "attention" : ctx.mt5Deferred ? "info" : "blocked",
+      summary: present === null
+        ? ctx.bridge?.bridgeMode === "unknown"
+          ? "Heartbeat not checked — the EA connection could not be read from the server."
+          : "Heartbeat status could not be read from the server."
+        : fresh
+        ? `Fresh heartbeat (${age}s ago).`
+        : present ? "Heartbeat seen, but stale."
+        : ctx.mt5Deferred ? "No heartbeat expected — bridge is deferred."
+        : "No recent heartbeat from the EA.",
+      evidence: [`heartbeatPresent=${present}`, `ageSeconds=${age ?? "n/a"}`],
+    });
+  }
+
+  // 7. Broker Mode (read-only is the safe default)
+  {
+    const ro = ctx.brokerReadOnly;
+    sections.push({
+      id: "broker-mode", title: "Broker Mode",
+      score: ro === null ? 0 : ro ? 10 : 5, max: 10,
+      level: ro === null ? "unavailable" : ro ? "info" : "attention",
+      summary: ro === null
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary reports a fixed read-only value, not the broker execution gates."
+          : "Broker mode could not be read from the server."
+        : ro ? "Broker is read-only (safe default)." : "Broker is NOT read-only — investigate before any execution.",
+      evidence: [`brokerReadOnly=${ro}`, `brokerExecutionDisabled=${ctx.brokerExecutionDisabled}`],
+    });
+  }
+
+  // 8. Risk Controls — proxied by setup checklist "risk-reviewed"
+  {
+    const risk = checklist.find((c) => c.id === "risk-reviewed");
+    const status = risk?.status ?? "incomplete";
+    sections.push({
+      id: "risk-controls", title: "Risk Controls",
+      score: status === "complete" ? 10 : status === "blocked" ? 3 : 6, max: 10,
+      level: status === "complete" ? "ready" : status === "blocked" ? "blocked" : "attention",
+      summary: status === "complete" ? "Risk Governor reviewed." : "Risk Governor review pending.",
+      evidence: [`risk-reviewed=${status}`],
+    });
+  }
+
+  // 9. Assistant Knowledge — uses optional knowledgeScore (0..100); maps to 0..10.
+  //    Not supplied (or not a finite number) → the audit was not measured here:
+  //    the section scores 0 and says so, never a default "100/100".
+  {
+    const raw = opts?.knowledgeScore;
+    const ks = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : null;
+    if (ks == null) {
+      sections.push({
+        id: "assistant-knowledge", title: "Assistant Knowledge",
+        score: 0, max: 10,
+        level: "unavailable",
+        summary: "Knowledge audit has not been run for this view, so this section is not scored.",
+        evidence: ["knowledgeAudit=not measured"],
+      });
+    } else {
+      const s = clamp(ks / 10);
+      sections.push({
+        id: "assistant-knowledge", title: "Assistant Knowledge",
+        score: s, max: 10,
+        level: s >= 8 ? "ready" : s >= 5 ? "attention" : "blocked",
+        summary: `Knowledge audit score: ${ks}/100.`,
+        evidence: [`knowledgeAudit=${ks}`],
+      });
+    }
+  }
+
+  // 10. Runtime Diagnostics — penalize recent error/failure activity
+  {
+    const errs = ctx.recentErrors.length;
+    const fails = opts?.runtimeFailedEndpoints ?? ctx.recentFailedEndpoints.length;
+    const penalty = Math.min(8, errs + fails);
+    const s = clamp(10 - penalty);
+    sections.push({
+      id: "runtime-diagnostics", title: "Runtime Diagnostics",
+      score: s, max: 10,
+      level: s >= 8 ? "ready" : s >= 5 ? "attention" : "blocked",
+      summary: errs === 0 && fails === 0
+        ? "No recent errors captured."
+        : `${errs} error(s) and ${fails} failed API call(s) recently.`,
+      evidence: [`recentErrors=${errs}`, `failedEndpoints=${fails}`],
+    });
+  }
+
+  const total = sections.reduce((acc, s) => acc + s.score, 0);
+  const liveUnavailableReason =
+    ctx.emergencyStopActive === true ? "Emergency Stop is engaged."
+    : ctx.bridge === null ? "The server's bridge and safety posture could not be read, so the active lock is unknown."
+    : !ctx.heartbeatPresent ? "No confirmed MT5 heartbeat."
+    : ctx.mt5Deferred ? "MT5 bridge is deferred."
+    : ctx.brokerReadOnly === true ? "Broker is in read-only mode."
+    : ctx.liveTradingDisabled === true ? "Server-enforced LIVE TRADING DISABLED lock."
+    : "Execution remains server-gated regardless of UI score.";
+
+  return {
+    total, max: 100, sections,
+    mode: ctx.tradingMode.toUpperCase(),
+    liveTradingStillUnavailable: true,
+    liveUnavailableReason,
+  };
+}

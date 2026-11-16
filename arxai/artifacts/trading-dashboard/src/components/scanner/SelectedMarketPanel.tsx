@@ -1,0 +1,517 @@
+import { TickingTime } from "@/components/ui/TickingTime";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LiveTradeTicket } from "@/components/live/LiveTradeTicket";
+import { AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
+import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
+import { TradabilityBadge } from "@/components/live/TradabilityBadge";
+import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
+import { resolveSymbol } from "@/lib/symbolRegistry";
+import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
+import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
+import { resolveTradeAffordance } from "@/lib/trade-affordance";
+import {
+  resolveSelectedMarketView,
+  selectedMarketDataAsOfLabel,
+  selectedMarketReadShown,
+  NOT_LIVE_LEVELS_REASON,
+} from "@/components/scanner/selectedMarketView";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
+import { buildReasoningFromOppMap } from "@/lib/eleanorReasoningBlock";
+import { selectedNewsDisplay } from "@/lib/selectedMarketEvidence";
+import { useAssistantName } from "@/lib/assistant-name";
+import { eventCountdownFromIso } from "@/lib/eventCountdown";
+import { calendarEventWhen, isDateOnlyCalendarSource } from "@/lib/calendarCoverage";
+import { derivFeedStateFromStatus, type DerivStatusPayload } from "@/lib/derivFeedState";
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+
+// The news-risk level the panel states (badge and reasoning block) comes from
+// selectedNewsDisplay (lib/selectedMarketEvidence): downgrade-only, "unknown"
+// when the calendar was not checked, and "unknown (release time not
+// published)" when the level was measured to a date-only release's marker.
+
+function biasBadgeClass(b: "BUY" | "SELL" | "NEUTRAL" | "WAIT"): string {
+  if (b === "BUY") return "bg-success/20 text-success border-success/40";
+  if (b === "SELL") return "bg-danger/20 text-danger border-danger/40";
+  if (b === "WAIT") return "bg-warning/20 text-warning border-warning/40";
+  return "bg-zinc-500/20 text-foreground border-zinc-500/40";
+}
+function impactBadgeClass(i: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"): string {
+  if (i === "CRITICAL") return "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40";
+  if (i === "HIGH") return "bg-rose-500/20 text-danger border-rose-500/40";
+  if (i === "MEDIUM") return "bg-amber-500/20 text-warning border-amber-500/40";
+  return "bg-zinc-500/20 text-foreground border-zinc-500/40";
+}
+
+// A stamp later than now (beyond this clock-skew allowance) is not an
+// observation. dataAsOf is the newest provider bar's closeTime, which for a
+// still-forming bar is its SCHEDULED close in the future.
+const FUTURE_STAMP_SKEW_MS = 5_000;
+
+// Age of a past timestamp against a ticking now; null when the stamp is
+// missing, malformed or in the future (never clamped to "0s ago").
+function timeAgo(iso: string, nowTs: number): string | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t) || t > nowTs + FUTURE_STAMP_SKEW_MS) return null;
+  const s = Math.max(0, Math.floor((nowTs - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  return `${Math.floor(s / 60)}m ago`;
+}
+
+
+export function SelectedMarketPanel() {
+  // Bridge with the app-wide chart symbol bus. Selecting a symbol here
+  // immediately updates chart / trade ticket / Eleanor context everywhere.
+  const [chartSym] = useChartSymbol();
+  const { name } = useAssistantName();
+  const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
+  const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
+  // Ages and event countdowns are computed against a ticking clock (never the
+  // server's build-time minute offset), so they advance between polls. Each
+  // label owns its clock (TickingTime), so a one-second tick never re-renders
+  // the whole panel.
+
+  // Compact public Deriv status — drives the "Deriv feed not configured"
+  // badge in SymbolExplorer. Synthetics stay selectable either way.
+  // The status endpoint is auth-gated (per-user session). A 401 / network
+  // failure means the status is UNKNOWN — it must NEVER be rendered as
+  // "Deriv feed not configured" (that false badge made a healthy feed look
+  // broken). Only an explicit `configured:false` payload means unconfigured.
+  const derivStatus = useQuery<DerivStatusPayload>({
+    queryKey: ["deriv-status"],
+    queryFn: async () => {
+      try {
+        const r = await fetch(`${BASE}/api/market-data/deriv/status`, { credentials: "include" });
+        if (!r.ok) return { statusKnown: false };
+        return { statusKnown: true, ...(await r.json()) };
+      } catch { return { statusKnown: false }; }
+    },
+    refetchOnWindowFocus: false,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+  const derivConfigured = derivStatus.data?.configured !== false;
+  // The Synthetic chip's feed note follows the server's readiness fields
+  // (hasRecentTick / healthSummary), never the socket flag alone: an open
+  // socket with no recent tick is not live, and a failing connection is not
+  // "connecting". A failed status request says so.
+  const derivFeedState = derivFeedStateFromStatus(derivStatus.data);
+
+  // Active scanner timeframe (e.g. "15m"), normalized to the backend candles
+  // enum (e.g. "M15"). The analysis must match the timeframe the user's chart
+  // is on, so it flows into BOTH the fetch URL and the react-query key.
+  const [scannerTf] = useScannerTimeframe();
+  // Shared /api/market-scanner/selected-market read: panel + truth header use
+  // the exact same user/symbol/timeframe key, request and cancellation signal.
+  const q = useSelectedMarketSnapshot(activeSymbol, scannerTf);
+  const selection = JSON.stringify(q.queryKey);
+  useEffect(() => { setTicket(null); }, [selection, q.isError, q.data?.ok]);
+
+  // Shared scanner feed-truth for the focused symbol/timeframe — same source the
+  // header strip and chart read. Drives an honest, NON-BLOCKING feed warning on
+  // this panel and inside the live ticket it opens. Never gates the trade.
+  // A FAILED feed read (truth null + isError) is stated as "couldn't be
+  // checked", exactly as in the Scanner trade modal — never silence.
+  const { truth: feedTruth, isError: feedReadFailed } = useScannerTruth(activeSymbol, scannerTf);
+  const liveAffordance = resolveTradeAffordance(feedTruth, "live", { isError: feedReadFailed });
+  const liveFeedWarning = liveAffordance.warningTitle
+    ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
+    : null;
+
+  async function manualRefresh() {
+    try { await q.refresh(); }
+    catch { /* The shared query owns the visible failure; never publish old data as a refresh. */ }
+  }
+
+  /** Single point that switches global market focus. */
+  function selectSymbol(canonical: string) {
+    // Broadcast to chart, trade ticket, Eleanor context.
+    setChartSymbol(canonical);
+    // Scroll the explanation card into view on mobile.
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setTimeout(() => {
+        document.querySelector('[data-testid="selected-market-panel"]')
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
+  }
+
+  const snap = q.isError ? undefined : q.data;
+  // A snapshot only drives the full "ok" render path when it actually carries
+  // the structural pieces that path reads (highlights + explanation). A
+  // truthy-but-partial payload (ok:true but missing those) has historically
+  // thrown into the route error boundary elsewhere in this app — here it must
+  // degrade to the friendly fallback context card, never crash the panel.
+  const ok =
+    snap?.ok === true && snap.highlights != null && snap.explanation != null
+      ? snap
+      : null;
+  // Anything with data that is NOT a complete ok snapshot → fallback context.
+  // Covers ok:false AND the partial-ok payload that would otherwise crash.
+  const fallback = snap != null && !ok ? snap : null;
+  const fallbackSymbol = fallback?.symbol;
+  const fallbackMessage =
+    fallback && fallback.ok === false ? fallback.message : undefined;
+
+  // Downgrade-only: a read the feed cannot support is never shown as direction.
+  const readShown = ok ? selectedMarketReadShown(ok) : false;
+  const readWithheldReason = ok && !readShown
+    ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
+    : null;
+
+  // ONE display precision for this snapshot's levels, shared by the
+  // Highlights box and the reasoning block's S/R row (the scanner truth's
+  // instrument precision, never rounding away digits the levels carry).
+  const levelPrecision = resolveDisplayPricePrecision(
+    feedTruth?.candles?.pricePrecision ?? null,
+    ok
+      ? [
+          ok.highlights.entryZone?.low, ok.highlights.entryZone?.high,
+          ok.highlights.suggestedStop, ok.highlights.suggestedTakeProfit,
+        ]
+      : [],
+  );
+
+  // Downgrade-only: the news level and an empty event list read as checked
+  // only when the server says the calendar was checked (either evidence field;
+  // a "not checked / not available" in either one wins). Events from an
+  // unchecked calendar are not promoted.
+  const newsDisplay = selectedNewsDisplay(ok?.newsRisk);
+  const calendarChecked = newsDisplay.showEvents;
+  const calendarNote = ok
+    ? ok.newsRisk?.calendarNote
+      ?? (calendarChecked || ok.newsRisk?.applicability === "not_applicable"
+        ? null
+        : "The economic calendar could not be checked, so scheduled events are not shown.")
+    : null;
+
+  const eleanorNote = useMemo(() => {
+    if (!ok) return null;
+    if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
+    return `${ok.explanation.hedge} ${ok.explanation.why}`;
+  }, [ok, readWithheldReason]);
+
+  // ONE always-visible Eleanor Reasoning Block for the selected/detail view.
+  // Honesty: levelsWithheld / a degraded dataState collapse this to
+  // WAIT/conditional with the limit stated in Feed/Data — never a fabricated
+  // entry/stop/target. Display only; grants no execution permission.
+  const oppReasoning = useMemo(() => {
+    if (!ok) return null;
+    if (readWithheldReason) {
+      // Downgrade-only: no side, confidence, trend or level reaches the
+      // reasoning block when the feed cannot support a directional read.
+      return buildReasoningFromOppMap({
+        symbol: ok.symbol,
+        timeframe: ok.timeframe,
+        bias: "WAIT",
+        confidenceLabel: "",
+        trendState: "",
+        volatilityLabel: "",
+        entryZone: null,
+        suggestedStop: null,
+        suggestedTakeProfit: null,
+        riskRewardRatio: 0,
+        riskWarnings: ok.highlights.riskWarnings ?? [],
+        explanation: {
+          hedge: "No directional read right now.",
+          why: readWithheldReason,
+          whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+          risk: "There is no actionable read until the feed is confirmed live.",
+          invalidation: "Not available without a current read.",
+          cautions: ok.explanation.cautions ?? [],
+        },
+        levelsWithheld: true,
+        levelsWithheldReason: readWithheldReason,
+        dataState: ok.dataState ?? null,
+        dataSourceLabel: ok.dataSourceLabel ?? null,
+        newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+        newsCalendarAvailable: ok.newsRisk?.calendarAvailable,
+        newsApplicability: ok.newsRisk?.applicability,
+        newsCalendarChecked: ok.newsRisk?.calendarChecked,
+        newsLevelBasis: ok.newsRisk?.levelBasis ?? null,
+      });
+    }
+    return buildReasoningFromOppMap({
+      symbol: ok.symbol,
+      timeframe: ok.timeframe,
+      bias: ok.highlights.bias,
+      confidenceLabel: ok.highlights.confidenceLabel,
+      trendState: ok.highlights.trendState,
+      volatilityLabel: ok.highlights.volatilityLabel,
+      entryZone: ok.highlights.entryZone ?? null,
+      suggestedStop: ok.highlights.suggestedStop ?? null,
+      suggestedTakeProfit: ok.highlights.suggestedTakeProfit ?? null,
+      riskRewardRatio: ok.highlights.riskRewardRatio,
+      riskWarnings: ok.highlights.riskWarnings ?? [],
+      explanation: {
+        hedge: ok.explanation.hedge,
+        why: ok.explanation.why,
+        whyItMatters: ok.explanation.whyItMatters,
+        risk: ok.explanation.risk,
+        invalidation: ok.explanation.invalidation,
+        cautions: ok.explanation.cautions ?? [],
+      },
+      levelsWithheld: ok.levelsWithheld ?? undefined,
+      levelsWithheldReason: ok.levelsWithheldReason ?? null,
+      dataState: ok.dataState ?? null,
+      dataSourceLabel: ok.dataSourceLabel ?? null,
+      newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      newsCalendarAvailable: ok.newsRisk?.calendarAvailable,
+      newsApplicability: ok.newsRisk?.applicability,
+      newsCalendarChecked: ok.newsRisk?.calendarChecked,
+      newsLevelBasis: ok.newsRisk?.levelBasis ?? null,
+      pricePrecision: levelPrecision,
+    });
+  }, [ok, readWithheldReason, levelPrecision]);
+
+  return (
+    <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-success/15 text-success ring-1 ring-success/25">
+            <Sparkles className="h-[18px] w-[18px]" />
+          </span>
+          <span>Pick a market — {name} explains it</span>
+        </CardTitle>
+        <div className="flex items-center gap-2 pt-2">
+          <Badge variant="outline" className="font-mono" data-testid="badge-active-symbol">{activeSymbol}</Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={manualRefresh}
+            disabled={q.isFetching || !q.enabled}
+            data-testid="btn-refresh-symbol"
+            className="ml-auto"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+        <div className="pt-2">
+          <TradabilityBadge symbol={activeSymbol} />
+        </div>
+        <div className="pt-2">
+          <SymbolExplorer
+            activeSymbol={activeSymbol}
+            derivFeedConfigured={derivConfigured}
+            derivFeedState={derivFeedState}
+            onSelect={(canonical) => selectSymbol(canonical)}
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {q.isLoading && <div className="text-sm text-muted-foreground" role="status">Loading market…</div>}
+        {q.isError && <div className="text-sm text-warning" role="alert">Market analysis could not be refreshed. Try again.</div>}
+        {fallback && (() => {
+          // When the legacy scanner endpoint can't deliver a complete snapshot
+          // (e.g. Deriv synthetics, fresh symbols, OR a truthy-but-partial
+          // payload missing highlights/explanation), fall back to a friendly
+          // registry-sourced card instead of the old "<SYMBOL> unavailable"
+          // destructive alert. Trade panel and chart still use the selected
+          // symbol normally.
+          const reg = resolveSymbol(activeSymbol);
+          if (reg) {
+            return (
+              <div
+                className="rounded-xl border border-border bg-background/40 p-3 space-y-1"
+                data-testid="selected-market-snapshot-pending"
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  <Sparkles className="h-4 w-4 text-success" />
+                  <span className="font-semibold text-foreground">{reg.displayName}</span>
+                  <Badge variant="outline" className="ml-auto uppercase text-[10px]">{reg.marketType}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {reg.canonicalSymbol} is loaded. {name} is checking whether this
+                  market has a clean setup — she'll show the bias, risk, and
+                  entry conditions before you decide.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <Alert variant="destructive" data-testid="selected-market-unavailable">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{fallbackSymbol ? `${fallbackSymbol} unavailable` : "Symbol unavailable"}</AlertTitle>
+              <AlertDescription>{fallbackMessage ?? "This market couldn't be analyzed right now."}</AlertDescription>
+            </Alert>
+          );
+        })()}
+        {ok && (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline">{ok.symbol}</Badge>
+              <Badge variant="outline">{ok.timeframe}</Badge>
+              {readShown ? (
+                <>
+                  <Badge className={biasBadgeClass(ok.highlights.bias)} data-testid="badge-selected-bias">{ok.highlights.bias}</Badge>
+                  <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
+                  <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
+                  <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+                </>
+              ) : (
+                <Badge variant="outline" data-testid="badge-read-withheld" title={readWithheldReason ?? undefined}>
+                  No directional read
+                </Badge>
+              )}
+              {ok.dataSourceLabel && (
+                <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
+              )}
+              <span className="ml-auto" data-testid="text-selected-last-updated">
+                {ok.dataAsOf && Number.isFinite(Date.parse(ok.dataAsOf))
+                  ? <TickingTime timestamp={ok.dataAsOf} format={selectedMarketDataAsOfLabel} />
+                  : selectedMarketDataAsOfLabel(ok.dataAsOf, Date.now())}
+              </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-eleanor-cache-note">
+              {ok.dataAsOf
+                ? <>Analysis built <TickingTime timestamp={ok.generatedAt} format={(iso, now) => timeAgo(iso, now) ?? "at an unconfirmed time"} />{ok.cacheHit ? " · cached" : ""}. </>
+                : ""}
+              {name} Market Intelligence uses cached market analysis and updates on interval/event triggers (no live AI/LLM call per refresh).
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border bg-background/40 p-3">
+                <div className="text-xs font-semibold mb-2 text-foreground">Highlights</div>
+                {(() => {
+                  const view = resolveSelectedMarketView(ok);
+                  if (view.kind === "levels") {
+                    const l = view.levels;
+                    return (
+                      <dl className="text-xs space-y-1" data-testid="selected-market-levels">
+                        <div className="flex justify-between"><dt className="text-txt-muted">Entry zone</dt>
+                          <dd className="font-mono">{formatInstrumentPrice(l.entryLow, levelPrecision)} – {formatInstrumentPrice(l.entryHigh, levelPrecision)}</dd></div>
+                        <div className="flex justify-between"><dt className="text-txt-muted">Suggested stop</dt>
+                          <dd className="font-mono">{formatInstrumentPrice(l.stop, levelPrecision)}</dd></div>
+                        <div className="flex justify-between"><dt className="text-txt-muted">Possible target</dt>
+                          <dd className="font-mono">{formatInstrumentPrice(l.target, levelPrecision)}</dd></div>
+                        <div className="flex justify-between"><dt className="text-txt-muted">Risk : reward</dt>
+                          <dd className="font-mono">1 : {l.riskReward}</dd></div>
+                      </dl>
+                    );
+                  }
+                  return (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid={view.kind === "waiting" ? "selected-market-levels-waiting" : "selected-market-levels-withheld"}
+                    >
+                      {view.kind === "waiting"
+                        ? "Waiting for a confirmed live feed before showing entry, stop, and target."
+                        : view.reason}
+                    </p>
+                  );
+                })()}
+                {(ok.highlights.riskWarnings ?? []).length > 0 && (
+                  <div className="mt-2 text-xs text-danger">
+                    {(ok.highlights.riskWarnings ?? []).map((w, i) => (<div key={i}>⚠ {w}</div>))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border bg-background/40 p-3">
+                <div className="text-xs font-semibold mb-2 text-foreground">{name}'s read</div>
+                {oppReasoning && (
+                  <EleanorReasoningBlock data={oppReasoning} testid="opp-map-reasoning" dense />
+                )}
+                <p className="text-[10px] italic text-muted-foreground mt-2">{ok.explanation.disclaimer}</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
+                <Badge variant="outline" className="text-[10px]" data-testid="badge-selected-news-risk">
+                  News risk: {newsDisplay.label}
+                </Badge>
+              </div>
+              {calendarNote && (
+                <div className="text-xs text-muted-foreground mb-1" data-testid="text-selected-calendar-note">{calendarNote}</div>
+              )}
+              {/* An empty list reads as a quiet day only for a checked calendar
+                  with no note. A calendar note (calendar not checked; no
+                  currency mapping, so only events tagged to the symbol are
+                  listed; synthetic market) already says what the list does not
+                  cover, so it is never followed by "No medium/high impact
+                  events" (a partial check is not an all-clear). */}
+              {!newsDisplay.showEvents || (ok.upcomingEvents ?? []).length === 0
+                ? (calendarNote
+                  ? null
+                  : <div className="text-xs text-muted-foreground">{newsDisplay.eventsMessage}</div>)
+                : (
+                  <ul className="text-xs space-y-1">
+                    {(ok.upcomingEvents ?? []).map((e) => (
+                      <li key={e.externalId} className="flex items-center gap-2">
+                        <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
+                        <span className="font-mono text-txt-muted">{e.currency}</span>
+                        <span className="flex-1 truncate">{e.title}</span>
+                        <span
+                          className="text-txt-muted"
+                          data-testid="text-selected-event-countdown"
+                          title={isDateOnlyCalendarSource(e.source) ? "The calendar source publishes only this release's date, not its time." : undefined}
+                        >
+                          {/* A date-only source (FRED) publishes no release time: name
+                              the date itself — never a countdown to its midnight
+                              date marker. The server lists and counts these rows by
+                              the UTC date, so a relative "today / tomorrow / 1d ago"
+                              from the viewer's local date could contradict it. */}
+                          {Number.isFinite(Date.parse(e.eventTime))
+                            ? <TickingTime timestamp={e.eventTime} format={(iso, now) => isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, now).display : eventCountdownFromIso(iso, now)} />
+                            : isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, Date.now()).display : eventCountdownFromIso(e.eventTime, Date.now())}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              {newsDisplay.showEvents && ok.newsRisk?.summary && ok.newsRisk.summary !== calendarNote && (
+                <div className="text-xs mt-2 text-warning">{ok.newsRisk.summary}</div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <Button
+                  className="bg-success hover:bg-success/90 text-white font-bold h-11 text-base sm:flex-1 sm:min-w-[120px]"
+                  onClick={() => { setTicket({ selection, side: "BUY" }); }}
+                  data-testid="btn-open-ticket-buy"
+                >BUY</Button>
+                <Button
+                  className="bg-danger hover:bg-danger/90 text-white font-bold h-11 text-base sm:flex-1 sm:min-w-[120px]"
+                  onClick={() => { setTicket({ selection, side: "SELL" }); }}
+                  data-testid="btn-open-ticket-sell"
+                >SELL</Button>
+              </div>
+              {liveFeedWarning && (
+                <p className="text-[11px] text-amber-300 flex items-start gap-1.5" data-testid="selected-market-feed-warning">
+                  <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                  <span><strong>{liveFeedWarning.warningTitle}.</strong> {liveFeedWarning.warningDetail}</span>
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Trade ticket runs every server safety gate before any order is placed.
+              </p>
+            </div>
+          </>
+        )}
+      </CardContent>
+
+      {ok && (
+        <LiveTradeTicket
+          key={selection}
+          open={ticket?.selection === selection}
+          onOpenChange={(open) => { if (!open) setTicket(null); }}
+          defaultSymbol={ok.symbol}
+          defaultSide={ticket?.side ?? "BUY"}
+          sourcePage="SCANNER_SELECTED_MARKET"
+          eleanorExplanationSummary={eleanorNote}
+          feedWarning={liveFeedWarning}
+        />
+      )}
+    </Card>
+  );
+}

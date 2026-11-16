@@ -1,0 +1,346 @@
+import { useEffect, useState } from "react";
+
+interface CoachReport {
+  coach_report_id: string;
+  generated_at: string;
+  liveTradingStatus: string;
+  reportType: string;
+  traderStatus: {
+    /** false (or absent on an older server) when the Risk Governor did not run. */
+    readinessEvaluated?: boolean;
+    readinessUnavailableReason?: string | null;
+    readinessScore: number | null;
+    readinessGrade: string | null;
+    readinessLevel: string | null;
+    governorStatus: string;
+    paperTradingAllowed: boolean | null;
+    autopilotAllowed: boolean | null;
+    liveTradingAllowed: boolean;
+  };
+  performanceSummary: Record<string, unknown>;
+  topStrengths: string[];
+  topWeaknesses: string[];
+  repeatedMistakes: { tag: string; count: number; severity: number; symbol: string; recommendedGuardrail: string }[];
+  activeRiskFlags: { code: string; message: string; severity?: string }[];
+  currentFocusAreas: string[];
+  nextBestActions: string[];
+  preSessionChecklist: { id: string; label: string; required: boolean; auto?: boolean }[];
+  postSessionReviewQuestions: string[];
+  warnings: string[];
+  coachingSummary: string;
+}
+
+interface PlaybookEntry {
+  id: number;
+  playbookEntryId: string;
+  title: string;
+  status: string;
+  symbol: string;
+  setupName: string;
+  actionBias: string;
+  confidenceLevel: string;
+  sampleSize: number;
+  winRate: number;
+  edgeScore: number;
+  avgPnl: number;
+  mistakeWarnings: unknown[];
+}
+
+interface WeeklyPlan {
+  week_start: string;
+  week_end: string;
+  mainGoal: string;
+  focusAreas: string[];
+  rulesToPractice: string[];
+  mistakesToReduce: string[];
+  setupsToStudy: string[];
+  setupsToAvoid: string[];
+  paperTradingTargets: { maxTradesPerDay: number; maxLossPerDay: number; requiredDebriefs: number };
+  successCriteria: string[];
+  warnings: string[];
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  ACTIVE: "bg-green-600 text-white",
+  WATCHLIST: "bg-yellow-500 text-black",
+  REVIEW: "bg-orange-500 text-white",
+  AVOID: "bg-red-600 text-white",
+};
+
+const GOV_BADGE: Record<string, string> = {
+  PAPER_ALLOWED: "bg-green-600 text-white",
+  PAPER_CAUTION: "bg-yellow-500 text-black",
+  PAPER_PAUSED: "bg-orange-500 text-white",
+  WATCH_ONLY: "bg-red-500 text-white",
+  LOCKED: "bg-red-700 text-white",
+  UNKNOWN: "bg-gray-500 text-white",
+};
+
+/** The governor status as this page names it (paper modes read as DEMO_*). */
+function governorStatusLabel(status: string): string {
+  if (status === "PAPER_ALLOWED") return "DEMO_ALLOWED";
+  if (status === "PAPER_CAUTION") return "DEMO_CAUTION";
+  if (status === "PAPER_PAUSED") return "DEMO_PAUSED";
+  return status;
+}
+
+/** "2026-10-28 08:00 UTC", or null when the report carries no usable time. */
+function reportTimeLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+export default function TraderCoachPage() {
+  const [coach, setCoach] = useState<CoachReport | null>(null);
+  const [playbook, setPlaybook] = useState<PlaybookEntry[]>([]);
+  const [weekly, setWeekly] = useState<WeeklyPlan | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function loadAll() {
+    setLoading(true); setErr(null);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const [c, p, w] = await Promise.all([
+        fetch(`${base}/api/trader-coach/status`).then(r => r.json()),
+        fetch(`${base}/api/trader-coach/playbook?limit=200`).then(r => r.json()),
+        fetch(`${base}/api/trader-coach/weekly`).then(r => r.json()),
+      ]);
+      setCoach(c.coach);
+      setPlaybook(p.playbook ?? []);
+      setWeekly(w.weekly);
+    } catch (e) {
+      setErr(String(e).slice(0, 200));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function regeneratePlaybook() {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    await fetch(`${base}/api/trader-coach/playbook/generate`, { method: "POST" });
+    await loadAll();
+  }
+
+  useEffect(() => { void loadAll(); }, []);
+
+  if (loading) return <div className="p-6 text-gray-300">Loading Trader Coach…</div>;
+  if (err) return <div className="p-6 text-red-400">Failed to load: {err}</div>;
+  if (!coach) return <div className="p-6">No coach data.</div>;
+
+  const govBadge = GOV_BADGE[coach.traderStatus.governorStatus] ?? GOV_BADGE.UNKNOWN;
+  // Client may only downgrade: show a readiness figure only when the server
+  // says the governor was evaluated and every part of the figure is present.
+  const ts = coach.traderStatus;
+  const readinessKnown = ts.readinessEvaluated === true && ts.governorStatus !== "UNKNOWN"
+    && ts.readinessScore != null && ts.readinessGrade != null && ts.readinessLevel != null;
+  // The governor_ok checklist row is the one "system check" this report does
+  // read: say what it read (and when), never "not checked by this report".
+  // When the report read LOCKED, "not LOCKED" cannot be confirmed, so the row
+  // gets no checkbox, the same as the server's STOP row.
+  const governorRead = !!ts.governorStatus && ts.governorStatus !== "UNKNOWN";
+  const governorLocked = ts.governorStatus === "LOCKED"
+    || coach.preSessionChecklist.some(item => item.id === "system_locked");
+  const reportTime = reportTimeLabel(coach.generated_at);
+  const readAt = reportTime ? `when this report was generated (${reportTime})` : "when this report was generated";
+
+  return (
+    <div className="p-6 space-y-6 text-gray-100">
+      <header className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-bold">Trader Coach</h1>
+        {/* This page never reads the account mode, so it says what the coach
+            does (reviews paper trading, places no orders) — not whether the
+            account is armed for live trading. */}
+        <span className="px-2 py-1 rounded text-xs bg-blue-700">Paper trading review</span>
+        <span className="px-2 py-1 rounded text-xs bg-gray-700">Coaching only · places no orders</span>
+        <span className={`px-2 py-1 rounded text-xs ${govBadge}`}>Governor: {governorStatusLabel(coach.traderStatus.governorStatus)}</span>
+        {readinessKnown ? (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness">
+            Readiness {ts.readinessScore}/{ts.readinessGrade} ({ts.readinessLevel})
+          </span>
+        ) : (
+          <span className="px-2 py-1 rounded text-xs bg-gray-700" data-testid="coach-readiness" title={ts.readinessUnavailableReason ?? undefined}>
+            Readiness unavailable — not evaluated
+          </span>
+        )}
+        <button onClick={loadAll} className="ml-auto px-3 py-1 bg-blue-600 rounded text-sm">Refresh</button>
+      </header>
+
+      <section className="bg-gray-900 p-4 rounded">
+        <h2 className="text-lg font-semibold mb-2">Coaching summary</h2>
+        <p className="text-sm text-gray-300">{coach.coachingSummary}</p>
+      </section>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2">Current focus areas</h3>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {coach.currentFocusAreas.map((f, i) => <li key={i}>{f}</li>)}
+            {coach.currentFocusAreas.length === 0 && <li className="text-gray-500">No focus areas yet.</li>}
+          </ul>
+        </section>
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2">Next best actions</h3>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {coach.nextBestActions.map((a, i) => <li key={i}>{a}</li>)}
+            {coach.nextBestActions.length === 0 && <li className="text-gray-500">No actions yet.</li>}
+          </ul>
+        </section>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2 text-green-400">Top strengths</h3>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {coach.topStrengths.map((s, i) => <li key={i}>{s}</li>)}
+            {coach.topStrengths.length === 0 && <li className="text-gray-500">Build sample size first.</li>}
+          </ul>
+        </section>
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2 text-red-400">Top weaknesses</h3>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {coach.topWeaknesses.map((s, i) => <li key={i}>{s}</li>)}
+            {coach.topWeaknesses.length === 0 && <li className="text-gray-500">None identified.</li>}
+          </ul>
+        </section>
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2 text-yellow-400">Repeated mistakes</h3>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {coach.repeatedMistakes.map((m, i) => (
+              <li key={i}>{m.tag} <span className="text-gray-500">({m.count}× / sev {m.severity})</span></li>
+            ))}
+            {coach.repeatedMistakes.length === 0 && <li className="text-gray-500">None yet.</li>}
+          </ul>
+        </section>
+      </div>
+
+      <section className="bg-gray-900 p-4 rounded">
+        <h3 className="font-semibold mb-2">Daily Prep — pre-session checklist</h3>
+        <p className="text-xs text-gray-400 mb-2">
+          {governorRead
+            ? "Apart from the Risk Governor status, this report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on)."
+            : "This report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on)."}
+          {" "}Tick each row yourself once you have confirmed it on the relevant page.
+          {governorLocked &&
+            " The Risk Governor rows show the LOCKED status this report read; they cannot be ticked off here."}
+        </p>
+        <ul className="text-sm space-y-1" data-testid="pre-session-checklist">
+          {coach.preSessionChecklist.map(item => item.id === "system_locked" ? (
+            // The server only adds this row when the Risk Governor status it
+            // read for this report is LOCKED, so it is a measured finding, not
+            // a user confirmation: no checkbox, so it cannot be "cleared".
+            <li key={item.id} className="flex gap-2 text-red-300" data-testid={`checklist-${item.id}`} role="alert">
+              <span aria-hidden="true" className="font-bold">■</span>
+              <span>{item.label}</span>
+              <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
+            </li>
+          ) : item.id === "governor_ok" && governorLocked ? (
+            // This report read the governor as LOCKED, so "not LOCKED" cannot
+            // be confirmed: no checkbox to tick.
+            <li key={item.id} className="flex gap-2 text-red-300" data-testid={`checklist-${item.id}`}>
+              <span aria-hidden="true" className="font-bold">■</span>
+              <span>{item.label}</span>
+              <span className="text-xs text-red-400">(Risk Governor reports LOCKED: this row cannot be confirmed)</span>
+            </li>
+          ) : (
+            <li key={item.id} className="flex gap-2" data-testid={`checklist-${item.id}`}>
+              <input type="checkbox" aria-label={item.label} />
+              <span>{item.label}</span>
+              {item.id === "governor_ok" && governorRead ? (
+                <span className="text-xs text-amber-400">
+                  (Risk Governor read as {governorStatusLabel(ts.governorStatus)} {readAt}; re-check before trading)
+                </span>
+              ) : item.auto ? (
+                <span className="text-xs text-amber-400">(system check — not checked by this report; verify before trading)</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="bg-gray-900 p-4 rounded">
+        <div className="flex items-center mb-2">
+          <h3 className="font-semibold">Playbook entries ({playbook.length})</h3>
+          <button onClick={regeneratePlaybook} className="ml-auto px-3 py-1 bg-blue-600 rounded text-xs">Regenerate playbook</button>
+        </div>
+        {playbook.length === 0 ? (
+          <p className="text-sm text-gray-500">No playbook entries yet — capture more demo trades and learning events.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-gray-400">
+              <tr>
+                <th className="p-1">Status</th>
+                <th className="p-1">Symbol</th>
+                <th className="p-1">Setup</th>
+                <th className="p-1">Bias</th>
+                <th className="p-1">Confidence</th>
+                <th className="p-1 text-right">Sample</th>
+                <th className="p-1 text-right">Win %</th>
+                <th className="p-1 text-right">Edge</th>
+              </tr>
+            </thead>
+            <tbody>
+              {playbook.map(e => (
+                <tr key={e.id} className="border-t border-gray-800">
+                  <td className="p-1"><span className={`px-2 py-0.5 rounded text-xs ${STATUS_BADGE[e.status] ?? "bg-gray-600"}`}>{e.status}</span></td>
+                  <td className="p-1">{e.symbol}</td>
+                  <td className="p-1">{e.setupName}</td>
+                  <td className="p-1">{e.actionBias}</td>
+                  <td className="p-1">{e.confidenceLevel}</td>
+                  <td className="p-1 text-right">{e.sampleSize}</td>
+                  <td className="p-1 text-right">{e.winRate.toFixed(1)}</td>
+                  <td className="p-1 text-right">{e.edgeScore.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {weekly && (
+        <section className="bg-gray-900 p-4 rounded">
+          <h3 className="font-semibold mb-2">Weekly Plan ({weekly.week_start} → {weekly.week_end})</h3>
+          <p className="text-sm mb-2"><strong>Main goal:</strong> {weekly.mainGoal}</p>
+          <div className="grid md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <h4 className="font-semibold text-yellow-400">Practice rules</h4>
+              <ul className="list-disc pl-5">{weekly.rulesToPractice.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-red-400">Mistakes to reduce</h4>
+              <ul className="list-disc pl-5">{weekly.mistakesToReduce.map((m, i) => <li key={i}>{m}</li>)}</ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-green-400">Setups to study</h4>
+              <ul className="list-disc pl-5">{weekly.setupsToStudy.map((s, i) => <li key={i}>{s}</li>)}</ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-orange-400">Setups to avoid</h4>
+              <ul className="list-disc pl-5">{weekly.setupsToAvoid.map((s, i) => <li key={i}>{s}</li>)}</ul>
+            </div>
+            <div className="md:col-span-2">
+              <h4 className="font-semibold">Success criteria</h4>
+              <ul className="list-disc pl-5">{weekly.successCriteria.map((s, i) => <li key={i}>{s}</li>)}</ul>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="bg-gray-900 p-4 rounded">
+        <h3 className="font-semibold mb-2">Post-session review questions</h3>
+        <ol className="list-decimal pl-5 text-sm space-y-1">
+          {coach.postSessionReviewQuestions.map((q, i) => <li key={i}>{q}</li>)}
+        </ol>
+      </section>
+
+      <section className="bg-yellow-950 border border-yellow-700 p-4 rounded">
+        <h3 className="font-semibold mb-2 text-yellow-300">Warnings</h3>
+        <ul className="list-disc pl-5 text-sm space-y-1">
+          {coach.warnings.map((w, i) => <li key={i}>{w}</li>)}
+        </ul>
+      </section>
+    </div>
+  );
+}

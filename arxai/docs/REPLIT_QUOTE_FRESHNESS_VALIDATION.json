@@ -1,0 +1,89 @@
+{
+  "at": "2026-10-25T12:22:52.282330+00:00",
+  "github_pr": "https://github.com/portava/arxai/pull/70",
+  "github_head": "ef5d3fc012b9b3e0291819a316cbdc9bcac0bd1b",
+  "github_status": "MERGED with explicit owner approval",
+  "verification": {
+    "quote-regressions": {
+      "exit_code": 0,
+      "seconds": 5,
+      "log_sha256": "627e638392bdb7d6f9c45b0745cec6c638e147400fd62176adcfc56de26713ed"
+    },
+    "quote-typecheck": {
+      "exit_code": 0,
+      "seconds": 34,
+      "log_sha256": "d6743742a7c68327395f5864f92db1c7ebbd9db85bf56e2e04d1d4dd78da06eb"
+    },
+    "quote-guards": {
+      "exit_code": 0,
+      "seconds": 27,
+      "log_sha256": "7f1515b3705f17f8dd48d77745b70e396bbef1018a38844f8c30e1b823ade40c"
+    },
+    "quote-production-build": {
+      "exit_code": 0,
+      "seconds": 2,
+      "log_sha256": "8cfe48465e2b94f191588fdd91498e2c34960b071ac96dd8ddcb65e846bbc84f"
+    }
+  },
+  "regression_tests_passed": 86,
+  "guards_passed": 87,
+  "real_provider_after_fix": {
+    "at": "2026-10-25T12:19:04.920Z",
+    "provider": "composite(polygon,finnhub,alpha_vantage)",
+    "quotes": [
+      {
+        "symbol": "AAPL",
+        "source": "alpha_vantage",
+        "price": 347.725,
+        "bid": null,
+        "ask": null,
+        "asOf": "2026-10-23T00:00:00.000Z",
+        "freshness": "STALE",
+        "stale": true
+      },
+      {
+        "symbol": "EURUSD",
+        "source": "alpha_vantage",
+        "price": null,
+        "bid": null,
+        "ask": null,
+        "asOf": null,
+        "freshness": "UNAVAILABLE",
+        "stale": true
+      }
+    ],
+    "candles": {
+      "source": "finnhub",
+      "count": 0,
+      "asOf": null,
+      "freshness": "UNAVAILABLE"
+    }
+  },
+  "connection_inventory": {
+    "mt5_count": 0,
+    "mt5_recent_heartbeats": 0,
+    "mt5_demo_connections": 0,
+    "metadata_connections": 0,
+    "settings_rows": 1
+  },
+  "production_published": false,
+  "broker_commands_issued": false,
+  "development_restart": {
+    "at": "2026-10-25T12:23:53.624685+00:00",
+    "smoke": {
+      "api_health": {
+        "status": 200,
+        "expected": 200
+      },
+      "anonymous_identity": {
+        "status": 401,
+        "expected": 401
+      },
+      "login_page": {
+        "status": 200,
+        "expected": 200
+      }
+    }
+  },
+  "github_merge_commit": "d0508e52c6de6e23bf2df9cc297713beebbd359e"
+}

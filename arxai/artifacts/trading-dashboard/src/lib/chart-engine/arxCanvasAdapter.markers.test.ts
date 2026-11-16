@@ -1,0 +1,219 @@
+// Adapter marker re-anchoring — regression lock for the Scanner/native chart
+// "Value is null at SeriesBarColorer.Candlestick" repaint crash.
+//
+// lightweight-charts v5 resolves every series marker to a bar via findBar();
+// a marker whose time no longer matches a loaded bar makes findBar() return
+// null and the candlestick colorer throws during PAINT — uncatchable at any
+// call site. The two historical dangling paths this test locks shut:
+//
+//   1. setCandles slides the fixed-size window forward (oldest bars roll off)
+//      while structural markers stay anchored to a dropped bar. The adapter
+//      must RE-SNAP its stored structure markers in the same tick as setData.
+//   2. setOverlays trusted the caller-passed latestBarTime; if that bar was
+//      sanitize-dropped (or the caller's state lags), the direction marker
+//      dangled. The adapter must snap the anchor onto a real in-series bar.
+//
+// Also locks the skip-optimization: a candle refresh that does NOT move any
+// snapped anchor must not redraw the structure layer (no marker churn on every
+// poll), and destroy() must drop the raw structure so a rebuilt chart cannot
+// resurrect stale anchors.
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { createSeriesMarkersMock } = vi.hoisted(() => ({
+  createSeriesMarkersMock: vi.fn(() => ({ detach: vi.fn() })),
+}));
+
+vi.mock("@/lib/chart-engine/arxCanvas", () => {
+  const makeLineSeries = () => ({ setData: vi.fn() });
+  const makeCandleSeries = () => ({
+    setData: vi.fn(),
+    update: vi.fn(),
+    options: vi.fn(() => ({ priceLineVisible: true, lastValueVisible: true })),
+    applyOptions: vi.fn(),
+    createPriceLine: vi.fn(() => ({})),
+    removePriceLine: vi.fn(),
+    priceToCoordinate: vi.fn(() => 0),
+  });
+  const CandlestickSeries = { __kind: "CandlestickSeries" };
+  const LineSeries = { __kind: "LineSeries" };
+  const createChart = vi.fn(() => ({
+    addSeries: vi.fn((type: unknown) =>
+      type === CandlestickSeries ? makeCandleSeries() : makeLineSeries(),
+    ),
+    removeSeries: vi.fn(),
+    subscribeCrosshairMove: vi.fn(),
+    applyOptions: vi.fn(),
+    remove: vi.fn(),
+    timeScale: vi.fn(() => ({
+      subscribeVisibleLogicalRangeChange: vi.fn(),
+      getVisibleLogicalRange: vi.fn(() => null),
+      setVisibleLogicalRange: vi.fn(),
+      setVisibleRange: vi.fn(),
+      fitContent: vi.fn(),
+    })),
+  }));
+  return {
+    createChart,
+    CandlestickSeries,
+    LineSeries,
+    createSeriesMarkers: (...args: unknown[]) => createSeriesMarkersMock(...args),
+    ColorType: { Solid: "solid" },
+    CrosshairMode: { Normal: 0 },
+    LineStyle: { Solid: 0, Dashed: 2 },
+  };
+});
+
+import { ArxCanvasAdapter } from "./arxCanvasAdapter";
+import { createChart } from "@/lib/chart-engine/arxCanvas";
+import type { ChartEngineCandle, ChartStructureMarker } from "./types";
+import type { ChartOverlay } from "@/lib/chart-overlays";
+
+// jsdom has no ResizeObserver.
+class FakeResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+it("forecast paths are three line series from the issue price, the highest one carrying the range down to the lowest", () => {
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container: document.createElement("div"), height: 400 });
+  adapter.setCandles([bar(60), bar(120)]);
+  const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
+  const realSeries = chart.addSeries.mock.results[0].value;
+  const before = realSeries.setData.mock.calls.length;
+  const shifted = (b: ChartEngineCandle, d: number) => ({ ...b, high: b.high + d, low: b.low + d, close: b.close + d });
+  adapter.setGhostPaths([
+    { id: "BULL", color: "#0a0", label: "Bull", candles: [shifted(bar(180), 0.2), shifted(bar(240), 0.4)] },
+    { id: "MIDDLE", color: "#00a", label: "Middle", candles: [bar(180), bar(240)] },
+    { id: "BEAR", color: "#a00", label: "Bear", candles: [shifted(bar(180), -0.2), shifted(bar(240), -0.4)] },
+  ]);
+  expect(chart.addSeries).toHaveBeenCalledTimes(5); // closed, forming, three forecast paths
+  const calls = chart.addSeries.mock.calls.slice(2);
+  expect(calls.every((call: unknown[]) => (call[0] as { __kind: string }).__kind === "LineSeries")).toBe(true);
+  const opts = calls.map((call: unknown[]) => call[1] as Record<string, unknown>);
+  expect(opts.map(o => o.endLabel)).toEqual(["Bull", "Middle", "Bear"]);
+  expect(opts.map(o => o.forecastPath)).toEqual([true, true, true]);
+  const bullData = chart.addSeries.mock.results[2].value.setData.mock.calls[0][0];
+  const bearData = chart.addSeries.mock.results[4].value.setData.mock.calls[0][0];
+  expect(bullData[0]).toEqual({ time: 120, value: bar(180).open }); // starts one bar before, at the issue price
+  expect(opts[0]!.bandLower).toEqual(bearData);
+  expect(opts[1]!.bandLower).toBeUndefined();
+  expect(realSeries.setData.mock.calls.length).toBe(before);
+  adapter.setGhostPaths([]);
+  expect(chart.removeSeries).toHaveBeenCalledTimes(3);
+  expect(chart.removeSeries.mock.calls.some((call: unknown[]) => call[0] === realSeries)).toBe(false);
+  adapter.destroy();
+});
+
+function bar(time: number): ChartEngineCandle {
+  return { time, open: 1, high: 2, low: 0.5, close: 1.5 };
+}
+
+function structMarker(time: number): ChartStructureMarker {
+  return { time, position: "aboveBar", color: "#fff", label: "BOS" };
+}
+
+/** All marker times passed in the LAST createSeriesMarkers call. */
+function lastMarkerTimes(): number[] {
+  const calls = createSeriesMarkersMock.mock.calls;
+  expect(calls.length).toBeGreaterThan(0);
+  const markers = calls[calls.length - 1]![1] as Array<{ time: number }>;
+  return markers.map((m) => m.time);
+}
+
+function makeAdapter(): ArxCanvasAdapter {
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container: document.createElement("div"), height: 300 });
+  return adapter;
+}
+
+beforeEach(() => {
+  createSeriesMarkersMock.mockClear();
+});
+
+describe("ArxCanvasAdapter marker re-anchoring (repaint-crash lock)", () => {
+  it("re-snaps structure markers when setCandles slides the window past their bar", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([bar(100), bar(200), bar(300)]);
+
+    adapter.setStructureLines([], [structMarker(100)]);
+    expect(lastMarkerTimes()).toEqual([100]);
+
+    // Window slides forward — bar 100 rolls off. The stored marker MUST be
+    // re-anchored onto a bar that is actually in the series (snaps forward to
+    // the new first bar), in the same tick as setData.
+    const callsBefore = createSeriesMarkersMock.mock.calls.length;
+    adapter.setCandles([bar(200), bar(300), bar(400)]);
+    expect(createSeriesMarkersMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(lastMarkerTimes()).toEqual([200]);
+  });
+
+  it("skips the structure redraw when a candle refresh moves no anchor", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([bar(100), bar(200), bar(300)]);
+    adapter.setStructureLines([], [structMarker(200)]);
+
+    const callsBefore = createSeriesMarkersMock.mock.calls.length;
+    // New bar appended, anchor bar 200 still present — nothing may redraw.
+    adapter.setCandles([bar(100), bar(200), bar(300), bar(400)]);
+    expect(createSeriesMarkersMock.mock.calls.length).toBe(callsBefore);
+  });
+
+  it("drops structure markers entirely when the series has no bars", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([]);
+    adapter.setStructureLines([], [structMarker(100)]);
+    // No bars → no marker layer at all (never an unanchored marker).
+    expect(createSeriesMarkersMock).not.toHaveBeenCalled();
+  });
+
+  it("snaps the setOverlays direction-marker anchor onto a real in-series bar", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([bar(100), bar(200), bar(300)]);
+
+    const overlay: ChartOverlay = {
+      id: "pos-1",
+      type: "marker",
+      symbol: "EURUSD",
+      label: "BUY",
+      marker: { side: "BUY" },
+    } as ChartOverlay;
+
+    // Caller passes an anchor time that is NOT a loaded bar (e.g. the raw last
+    // candle was sanitize-dropped). It must snap to the containing bar (200).
+    adapter.setOverlays([overlay], 250);
+    expect(lastMarkerTimes()).toEqual([200]);
+  });
+
+  it("destroy() drops raw structure so a rebuilt chart cannot resurrect stale anchors", () => {
+    const adapter = makeAdapter();
+    adapter.setCandles([bar(100), bar(200)]);
+    adapter.setStructureLines([], [structMarker(100)]);
+
+    adapter.destroy();
+    createSeriesMarkersMock.mockClear();
+
+    // Fresh init + candles: no structure has been handed to THIS chart yet, so
+    // nothing may be drawn from the previous instance's raw state.
+    adapter.init({ container: document.createElement("div"), height: 300 });
+    adapter.setCandles([bar(200), bar(300)]);
+    expect(createSeriesMarkersMock).not.toHaveBeenCalled();
+  });
+});
+
+it("draws a replaced original as faint lines beneath the live paths, outside the shaded range", () => {
+  const adapter = new ArxCanvasAdapter();
+  adapter.init({ container: document.createElement("div"), height: 400 });
+  adapter.setCandles([bar(60), bar(120)]);
+  const chart = vi.mocked(createChart).mock.results.at(-1)!.value;
+  adapter.setGhostPaths([
+    { id: "BULL", color: "#0a0", candles: [bar(180), bar(240)], faded: true },
+    { id: "BULL", color: "#0a0", label: "Bull", candles: [bar(180), bar(240)] },
+  ]);
+  const opts = chart.addSeries.mock.calls.slice(2).map((call: unknown[]) => call[1] as Record<string, unknown>);
+  expect(opts.map(o => [o.faded ?? false, o.endLabel ?? null])).toEqual([[true, null], [false, "Bull"]]);
+  adapter.destroy();
+});

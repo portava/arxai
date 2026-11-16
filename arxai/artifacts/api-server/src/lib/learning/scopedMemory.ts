@@ -1,0 +1,302 @@
+// Learning memory with scopes — the one owner of strategy_edges and
+// mistake_patterns (Tier 1 finalization, item 8).
+//
+// Every trade outcome teaches three kinds of memory, never one global pool:
+//   user      — the trader's own edges and mistakes; only they read them;
+//   scoped    — strategy / account / broker / instrument / portfolio memory
+//               owned by the same trader, keyed by scope_key;
+//   platform  — an anonymized aggregate across traders: no owner, no trade
+//               id, and traders only read a cohort once at least
+//               PLATFORM_MIN_CONTRIBUTORS distinct traders stand behind it.
+// Legacy rows written before scopes existed have unknown contributors and
+// stay visible to operators only.
+//
+// Learning informs scoring, never permission: nothing here can relax a Risk
+// Governor rule (ci guard learning-memory-single-owner keeps every read and
+// write in this file).
+
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { db, mistakePatternsTable, strategyEdgesTable, type MistakePattern, type StrategyEdge } from "@workspace/db";
+
+export type MemoryTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export const OWNED_SCOPE_TYPES = ["strategy", "account", "broker", "instrument", "portfolio"] as const;
+export type OwnedScopeType = (typeof OWNED_SCOPE_TYPES)[number];
+export type LearningScopeType = "user" | OwnedScopeType | "platform";
+export interface OwnedScope { type: OwnedScopeType; key: string }
+
+/** Distinct traders a platform cohort needs before traders may read it. */
+export const PLATFORM_MIN_CONTRIBUTORS = 3;
+
+// Bounds (design contract of the learning engine).
+export const EDGE_MIN = -100;
+export const EDGE_MAX = 100;
+export const CONF_ADJ_MIN = -15;
+export const CONF_ADJ_MAX = 15;
+export const RISK_ADJ_MIN = -15;
+export const RISK_ADJ_MAX = 15;
+export const SEVERITY_MAX = 100;
+export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+interface ScopeRef { scopeType: LearningScopeType; scopeOwner: number; scopeKey: string }
+const USER = (owner: number): ScopeRef => ({ scopeType: "user", scopeOwner: owner, scopeKey: "" });
+const PLATFORM: ScopeRef = { scopeType: "platform", scopeOwner: 0, scopeKey: "" };
+
+function cleanScopes(scopes: OwnedScope[] | undefined, owner: number): ScopeRef[] {
+  const seen = new Set<string>();
+  const out: ScopeRef[] = [];
+  for (const s of scopes ?? []) {
+    const key = String(s.key ?? "").trim().slice(0, 120);
+    if (!OWNED_SCOPE_TYPES.includes(s.type) || !key || seen.has(`${s.type}:${key}`)) continue;
+    seen.add(`${s.type}:${key}`);
+    out.push({ scopeType: s.type, scopeOwner: owner, scopeKey: key });
+  }
+  return out;
+}
+
+// ── Writes ────────────────────────────────────────────────────────────────
+
+export interface EdgeOutcome {
+  symbol: string; signalName: string; action: string; result: string;
+  /** null = the trade's P&L could not be sized: it is not added to netPnl or avgPnl. */
+  pnl: number | null;
+  tradeId: number;
+  deltaEdge: number; deltaConf: number; deltaRisk: number;
+}
+
+/**
+ * How many sized samples an edge's avgPnl is the mean of, or null when the
+ * row cannot tell. There is no column for it (no schema change); applyEdge
+ * keeps avgPnl = netPnl / sized, so it is read back as netPnl / avgPnl. With
+ * netPnl and avgPnl both 0 the sized samples sum to exactly 0 or there are
+ * none. A sized win adds more than 0 and a sized loss less than 0, so only a
+ * breakeven or other result, or a win offset by a loss, can sum to 0; without
+ * those there is no sized sample yet.
+ */
+function sizedSamplesOf(e: Pick<StrategyEdge, "sampleCount" | "winCount" | "lossCount" | "breakEvenCount" | "netPnl" | "avgPnl">): number | null {
+  const { sampleCount, winCount, lossCount, breakEvenCount, netPnl, avgPnl } = e;
+  if (!Number.isFinite(netPnl) || !Number.isFinite(avgPnl)) return null;
+  if (avgPnl !== 0) {
+    const n = Math.round(netPnl / avgPnl);
+    // net_pnl and avg_pnl are stored as real (float4): allow its rounding.
+    if (n < 1 || n > sampleCount || Math.abs(n * avgPnl - netPnl) > 1e-3 * Math.abs(netPnl) + 1e-6) return null;
+    return n;
+  }
+  if (netPnl !== 0) return null;
+  const other = sampleCount - winCount - lossCount - breakEvenCount;
+  return breakEvenCount === 0 && other === 0 && (winCount === 0 || lossCount === 0) ? 0 : null;
+}
+
+async function applyEdge(tx: MemoryTransaction, ref: ScopeRef, o: EdgeOutcome, contributors: number | null): Promise<{ row: StrategyEdge; created: boolean }> {
+  const where = and(
+    eq(strategyEdgesTable.scopeType, ref.scopeType), eq(strategyEdgesTable.scopeOwner, ref.scopeOwner),
+    eq(strategyEdgesTable.scopeKey, ref.scopeKey), eq(strategyEdgesTable.symbol, o.symbol),
+    eq(strategyEdgesTable.signalName, o.signalName), eq(strategyEdgesTable.action, o.action),
+  );
+  const existing = (await tx.select().from(strategyEdgesTable).where(where).limit(1))[0];
+  const isWin = o.result === "WIN";
+  const isLoss = o.result === "LOSS";
+  const isBE = o.result === "BREAKEVEN" || o.result === "BREAK_EVEN";
+  const platform = ref.scopeType === "platform";
+  const tradeId = platform ? null : o.tradeId;
+
+  if (!existing) {
+    const [row] = await tx.insert(strategyEdgesTable).values({
+      ...ref,
+      userId: platform ? null : ref.scopeOwner,
+      contributors,
+      symbol: o.symbol, strategyName: o.signalName, signalName: o.signalName, action: o.action,
+      sampleCount: 1, winCount: isWin ? 1 : 0, lossCount: isLoss ? 1 : 0, breakEvenCount: isBE ? 1 : 0,
+      // NOT NULL columns with no count of unsized samples: an edge first seen
+      // on a trade whose P&L is not known starts at 0, which sizedSamplesOf
+      // reads back as "no sized sample yet".
+      netPnl: o.pnl ?? 0, avgPnl: o.pnl ?? 0,
+      confidenceAdjustment: clamp(o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
+      riskAdjustment: clamp(o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
+      edgeScore: clamp(o.deltaEdge, EDGE_MIN, EDGE_MAX),
+      lastResult: o.result, lastTradeId: tradeId,
+    }).returning();
+    return { row: row!, created: true };
+  }
+  const sampleCount = existing.sampleCount + 1;
+  // A trade whose P&L is not known adds nothing to netPnl and leaves avgPnl
+  // as it was (it used to add a measured 0 and pull the average toward 0).
+  // A sized trade averages over the sized samples only: dividing by
+  // sampleCount would count every earlier unsized sample as a 0 again.
+  const netPnl = o.pnl == null ? existing.netPnl : existing.netPnl + o.pnl;
+  let avgPnl = existing.avgPnl;
+  if (o.pnl != null) {
+    const sized = sizedSamplesOf(existing);
+    // When the row cannot tell, divide by every sample as before: that can
+    // only pull the average toward 0, never make it look larger than it is.
+    avgPnl = netPnl / (sized == null ? sampleCount : sized + 1);
+  }
+  const [row] = await tx.update(strategyEdgesTable).set({
+    sampleCount,
+    winCount: existing.winCount + (isWin ? 1 : 0),
+    lossCount: existing.lossCount + (isLoss ? 1 : 0),
+    breakEvenCount: existing.breakEvenCount + (isBE ? 1 : 0),
+    netPnl, avgPnl,
+    confidenceAdjustment: clamp(existing.confidenceAdjustment + o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
+    riskAdjustment: clamp(existing.riskAdjustment + o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
+    edgeScore: clamp(existing.edgeScore + o.deltaEdge, EDGE_MIN, EDGE_MAX),
+    lastResult: o.result, lastTradeId: tradeId,
+    ...(contributors != null && (!platform || existing.contributors != null) ? { contributors } : {}),
+    updatedAt: new Date(),
+  }).where(eq(strategyEdgesTable.id, existing.id)).returning();
+  return { row: row!, created: false };
+}
+
+/**
+ * Teach one signal's outcome to the trader's memory, their scoped memories
+ * and the anonymized platform aggregate. Returns the trader's own row.
+ * `share: false` (an outcome no real debrief backs) teaches the private
+ * memory only, so nobody can feed other traders fabricated outcomes.
+ */
+export async function recordEdgeOutcome(ownerUserId: number, o: EdgeOutcome, scopes?: OwnedScope[], share = true, transaction?: MemoryTransaction): Promise<StrategyEdge> {
+  const write = async (tx: MemoryTransaction) => {
+    // The platform cohort is shared across owners. Serialize the entire fold,
+    // including first-row creation and contributor membership, in one transaction.
+    const key = JSON.stringify(["learning-edge", o.symbol, o.signalName, o.action]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const own = await applyEdge(tx, USER(ownerUserId), o, share ? 1 : null);
+    if (!share) return own.row;
+    for (const ref of cleanScopes(scopes, ownerUserId)) await applyEdge(tx, ref, o, null);
+    // Count verified membership independently of private-row creation. Older
+    // private rows have no membership marker and are conservatively excluded
+    // until their next verified outcome; never inflate an anonymity threshold.
+    const [members] = await tx.select({ count: sql<number>`count(*)::int` }).from(strategyEdgesTable).where(and(
+      eq(strategyEdgesTable.scopeType, "user"), eq(strategyEdgesTable.contributors, 1),
+      eq(strategyEdgesTable.symbol, o.symbol), eq(strategyEdgesTable.signalName, o.signalName), eq(strategyEdgesTable.action, o.action),
+    ));
+    await applyEdge(tx, PLATFORM, o, members!.count);
+    return own.row;
+  };
+  return transaction ? write(transaction) : db.transaction(write);
+}
+
+export interface MistakeOutcome { tag: string; symbol: string; action: string; isLoss: boolean; tradeId: number; guardrail: string }
+
+async function applyMistake(tx: MemoryTransaction, ref: ScopeRef, o: MistakeOutcome, contributors: number | null): Promise<{ row: MistakePattern; created: boolean }> {
+  const where = and(
+    eq(mistakePatternsTable.scopeType, ref.scopeType), eq(mistakePatternsTable.scopeOwner, ref.scopeOwner),
+    eq(mistakePatternsTable.scopeKey, ref.scopeKey), eq(mistakePatternsTable.tag, o.tag),
+    eq(mistakePatternsTable.symbol, o.symbol), eq(mistakePatternsTable.action, o.action),
+  );
+  const existing = (await tx.select().from(mistakePatternsTable).where(where).limit(1))[0];
+  const sevDelta = o.isLoss ? 8 : 2;
+  const platform = ref.scopeType === "platform";
+  const tradeId = platform ? null : o.tradeId;
+  if (!existing) {
+    const [row] = await tx.insert(mistakePatternsTable).values({
+      ...ref,
+      userId: platform ? null : ref.scopeOwner,
+      contributors,
+      tag: o.tag, symbol: o.symbol, action: o.action, count: 1, lastTradeId: tradeId,
+      severityScore: clamp(sevDelta, 0, SEVERITY_MAX), recommendedGuardrail: o.guardrail,
+    }).returning();
+    return { row: row!, created: true };
+  }
+  const [row] = await tx.update(mistakePatternsTable).set({
+    count: existing.count + 1,
+    severityScore: clamp(existing.severityScore + sevDelta, 0, SEVERITY_MAX),
+    lastTradeId: tradeId,
+    recommendedGuardrail: o.guardrail || existing.recommendedGuardrail,
+    ...(contributors != null && (!platform || existing.contributors != null) ? { contributors } : {}),
+    updatedAt: new Date(),
+  }).where(eq(mistakePatternsTable.id, existing.id)).returning();
+  return { row: row!, created: false };
+}
+
+/** Teach one mistake tag to the trader's memory, their scoped memories and the platform aggregate (see `share` above). */
+export async function recordMistakeOutcome(ownerUserId: number, o: MistakeOutcome, scopes?: OwnedScope[], share = true, transaction?: MemoryTransaction): Promise<MistakePattern> {
+  const write = async (tx: MemoryTransaction) => {
+    const key = JSON.stringify(["learning-mistake", o.symbol, o.tag, o.action]);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    const own = await applyMistake(tx, USER(ownerUserId), o, share ? 1 : null);
+    if (!share) return own.row;
+    for (const ref of cleanScopes(scopes, ownerUserId)) await applyMistake(tx, ref, o, null);
+    const [members] = await tx.select({ count: sql<number>`count(*)::int` }).from(mistakePatternsTable).where(and(
+      eq(mistakePatternsTable.scopeType, "user"), eq(mistakePatternsTable.contributors, 1),
+      eq(mistakePatternsTable.tag, o.tag), eq(mistakePatternsTable.symbol, o.symbol), eq(mistakePatternsTable.action, o.action),
+    ));
+    await applyMistake(tx, PLATFORM, o, members!.count);
+    return own.row;
+  };
+  return transaction ? write(transaction) : db.transaction(write);
+}
+
+// ── Reads ─────────────────────────────────────────────────────────────────
+
+export interface MemoryFilter { symbol?: string; action?: string; limit?: number }
+
+/** A platform row as traders see it: no owner, no trade id. */
+export type AnonymizedEdge = Omit<StrategyEdge, "userId" | "lastTradeId" | "scopeOwner">;
+export type AnonymizedMistake = Omit<MistakePattern, "userId" | "lastTradeId" | "scopeOwner">;
+
+function anonymize<T extends { userId: number | null; lastTradeId: number | null; scopeOwner: number }>(r: T): Omit<T, "userId" | "lastTradeId" | "scopeOwner"> {
+  const { userId: _u, lastTradeId: _t, scopeOwner: _o, ...rest } = r;
+  return rest;
+}
+
+function edgeFilter(f: MemoryFilter): SQL[] {
+  const c: SQL[] = [];
+  if (f.symbol) c.push(eq(strategyEdgesTable.symbol, f.symbol));
+  if (f.action) c.push(eq(strategyEdgesTable.action, f.action));
+  return c;
+}
+function mistakeFilter(f: MemoryFilter): SQL[] {
+  const c: SQL[] = [];
+  if (f.symbol) c.push(eq(mistakePatternsTable.symbol, f.symbol));
+  if (f.action) c.push(eq(mistakePatternsTable.action, f.action));
+  return c;
+}
+
+/** The trader's own memory: user scope by default, or the scoped kinds named. */
+export async function listOwnEdges(userId: number, f: MemoryFilter & { scopeTypes?: Array<"user" | OwnedScopeType> } = {}): Promise<StrategyEdge[]> {
+  const q = db.select().from(strategyEdgesTable).where(and(
+    eq(strategyEdgesTable.scopeOwner, userId), ne(strategyEdgesTable.scopeType, "platform"),
+    inArray(strategyEdgesTable.scopeType, f.scopeTypes ?? ["user"]), ...edgeFilter(f),
+  )).orderBy(desc(strategyEdgesTable.updatedAt));
+  return f.limit != null ? q.limit(f.limit) : q;
+}
+
+export async function listOwnMistakes(userId: number, f: MemoryFilter & { scopeTypes?: Array<"user" | OwnedScopeType> } = {}): Promise<MistakePattern[]> {
+  const q = db.select().from(mistakePatternsTable).where(and(
+    eq(mistakePatternsTable.scopeOwner, userId), ne(mistakePatternsTable.scopeType, "platform"),
+    inArray(mistakePatternsTable.scopeType, f.scopeTypes ?? ["user"]), ...mistakeFilter(f),
+  )).orderBy(desc(mistakePatternsTable.severityScore));
+  return f.limit != null ? q.limit(f.limit) : q;
+}
+
+/** Anonymized platform memory, only cohorts with enough distinct traders behind them. */
+export async function listPlatformEdges(f: MemoryFilter = {}): Promise<AnonymizedEdge[]> {
+  const q = db.select().from(strategyEdgesTable).where(and(
+    eq(strategyEdgesTable.scopeType, "platform"), isNotNull(strategyEdgesTable.contributors),
+    gte(strategyEdgesTable.contributors, PLATFORM_MIN_CONTRIBUTORS), ...edgeFilter(f),
+  )).orderBy(desc(strategyEdgesTable.updatedAt));
+  return (f.limit != null ? await q.limit(f.limit) : await q).map(anonymize);
+}
+
+export async function listPlatformMistakes(f: MemoryFilter = {}): Promise<AnonymizedMistake[]> {
+  const q = db.select().from(mistakePatternsTable).where(and(
+    eq(mistakePatternsTable.scopeType, "platform"), isNotNull(mistakePatternsTable.contributors),
+    gte(mistakePatternsTable.contributors, PLATFORM_MIN_CONTRIBUTORS), ...mistakeFilter(f),
+  )).orderBy(desc(mistakePatternsTable.severityScore));
+  return (f.limit != null ? await q.limit(f.limit) : await q).map(anonymize);
+}
+
+/** Operator view across every scope, legacy rows included. */
+export async function listEdgesForOperator(f: MemoryFilter & { scopeType?: LearningScopeType } = {}): Promise<StrategyEdge[]> {
+  const c = edgeFilter(f);
+  if (f.scopeType) c.push(eq(strategyEdgesTable.scopeType, f.scopeType));
+  return db.select().from(strategyEdgesTable).where(c.length ? and(...c) : undefined)
+    .orderBy(desc(strategyEdgesTable.updatedAt)).limit(f.limit ?? 100);
+}
+
+export async function listMistakesForOperator(f: MemoryFilter & { scopeType?: LearningScopeType } = {}): Promise<MistakePattern[]> {
+  const c = mistakeFilter(f);
+  if (f.scopeType) c.push(eq(mistakePatternsTable.scopeType, f.scopeType));
+  return db.select().from(mistakePatternsTable).where(c.length ? and(...c) : undefined)
+    .orderBy(desc(mistakePatternsTable.severityScore)).limit(f.limit ?? 100);
+}

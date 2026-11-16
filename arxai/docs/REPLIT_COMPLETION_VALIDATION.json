@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-25T13:42:31.928877+00:00",
+  "workspace": "ARX AI baseline import @portavainc",
+  "base_checkpoint": "a34c93a039f9d08d1ee8eec49ea299a86d441d93",
+  "recovery_branch": "codex/backup-before-completion-20261025",
+  "github": {
+    "merged_pr71": "da5b7cb79b3d2e8a13f889d7b3c1dd5690792f22",
+    "pr72": "062bfc16e7b5699f8a1147284953aa12c0fa497b",
+    "pr73": "b498ae80a9dee579cee5a62fdf5a3510f09d2f7c",
+    "pr72_pr73_merge_status": "pending owner approval"
+  },
+  "checks": {
+    "demo_core": {
+      "exit_code": 0,
+      "seconds": 1.5,
+      "log_sha256": "53b9bfb5979715d9b33b42f1be08b45dc696573f60dd0b5e3ae2d504211a8286"
+    },
+    "release_regressions": {
+      "exit_code": 0,
+      "seconds": 7.1,
+      "log_sha256": "cbfe37b5c8881189b241f51ee559a356f801233221aa6db2f664487dcd504b33"
+    },
+    "launcher": {
+      "exit_code": 0,
+      "seconds": 0.3,
+      "log_sha256": "d2ef204079f24f77707f2016df4679b2ce91900872618473253a961aca2999da"
+    },
+    "bridge_regressions": {
+      "exit_code": 0,
+      "seconds": 3.7,
+      "log_sha256": "755f24f13889152cc01aaf1953eaf0ab09a28057d8bfec1ef466de8796aa5e41"
+    },
+    "api_typecheck": {
+      "exit_code": 0,
+      "seconds": 34.4,
+      "log_sha256": "d6743742a7c68327395f5864f92db1c7ebbd9db85bf56e2e04d1d4dd78da06eb"
+    },
+    "web_typecheck": {
+      "exit_code": 0,
+      "seconds": 5.1,
+      "log_sha256": "059db5be152aa305ef6b8dd2c19dacd1533b37c2d80640b47836a9daacb2626a"
+    },
+    "guards": {
+      "exit_code": 0,
+      "seconds": 25.1,
+      "log_sha256": "deb2b9138ef903a42f23ac55bc9712fe112d7b57995050045a170bacd57afb52"
+    },
+    "api_build": {
+      "exit_code": 0,
+      "seconds": 1.4,
+      "log_sha256": "03f3bb2840dccebacc6b6c2c2e55b72e8c335eaddd0ad52cc487b950eb4cdb9a"
+    },
+    "web_build": {
+      "exit_code": 0,
+      "seconds": 14.8,
+      "log_sha256": "93915396345ed6c6ad64aec0e5176e7bb8040e661309a25d92b850e31186b908"
+    },
+    "scorecard": {
+      "exit_code": 0,
+      "seconds": 0.2,
+      "log_sha256": "c6352adff70a6982c739a1cd77bbb43d2425eefd2dc2112b92b0ceebf2a6ca31"
+    }
+  },
+  "http_smoke": {
+    "liveness": {
+      "status": 200,
+      "expected": 200,
+      "pass": true
+    },
+    "database_readiness": {
+      "status": 200,
+      "expected": 200,
+      "pass": true
+    },
+    "anonymous_identity": {
+      "status": 401,
+      "expected": 401,
+      "pass": true
+    },
+    "login": {
+      "status": 200,
+      "expected": 200,
+      "pass": true
+    },
+    "anonymous_manifest": {
+      "status": 401,
+      "expected": 401,
+      "pass": true
+    },
+    "anonymous_zip": {
+      "status": 401,
+      "expected": 401,
+      "pass": true
+    }
+  },
+  "email_configuration": {
+    "configured": true,
+    "deliveryVerified": false,
+    "reason": "CONFIGURED_DELIVERY_UNVERIFIED"
+  },
+  "counts": {
+    "demo_core_offline_assertions": 56,
+    "bridge_regressions": 46,
+    "non_broker_regressions": 19,
+    "launcher_regressions": 7,
+    "guards": 87,
+    "scorecard_unit_tests": 8
+  },
+  "source_sha256": {
+    "arxai/artifacts/api-server/src/lib/mt5/__qa__/bridgePackage.test.ts": "cc287355981769ee604ee1b6314257144633644c56085b2cd5afc84feb4e535f",
+    "arxai/artifacts/api-server/src/lib/mt5/bridgePackage.ts": "917b0a30456b291c3b0cf1e8fe100585fe1755ba957059321f944bbe8ac44cbf",
+    "arxai/artifacts/api-server/src/routes/broker.ts": "ce7caae25b0e31ad1382f56201eb44075146c625303be1ecfde755bb2ee901c4",
+    "arxai/artifacts/trading-dashboard/src/pages/mt5-setup.tsx": "58e55037f9f119f638fc82a3462c45786cb7e409d0f248a349974c812fa3b19e",
+    "arxai/docs/TIER1_MT5_DEMO_READINESS.md": "b68313eb72bff8937b6aeee858f7c04e2626fe65f6ac4721b69c2e4772c0c698",
+    "arxai/mt5-bridge/ArxDemoExecution.mqh": "e81aa17fd95b242c9d0785357bbb8bc827df9a773d1a048d95a55d819156900d",
+    "arxai/mt5-bridge/BRIDGE_TESTING_CHECKLIST.md": "f61f42e198829e3f23bfc1d99f9cd61ef0d78d4ad31de7d3b7f8a7caa1cd8a4f",
+    "arxai/mt5-bridge/README_SETUP.md": "c508b220d0653227e12a7c1d21fac2829fa433e8ee4f3900d8d078d79e55ac83",
+    "arxai/mt5-bridge/ReplitMT5BridgeEA_v131.mq5": "f3f5a87d1a8d9be2f6887ec04b42e2c65dc5b3f02179dc1f595c63edeaa505f4",
+    "arxai/mt5-bridge/TROUBLESHOOTING.md": "5e57c69ce81d3a13b9e1b79f48ab515e636ef12d7f7f6e199861bef8721c6d48",
+    "arxai/mt5-bridge/tests/demo_core_test.cpp": "2c6fffe5b446f051fe75db222b1bf774da8654c338e603717bb48ab47c4f6acf",
+    "arxai/mt5-bridge/tests/run_demo_core.py": "ffa30a00c2f5aa0d876943cf787c7a6a49bf765e56adfd90d4d4129b1fa87939",
+    "arxai/artifacts/api-server/src/lib/email/resend.ts": "7e357328573f3de1ac6a228b9439921b991a3114eb88f1cb6c3644cb1351a166",
+    "arxai/artifacts/api-server/src/routes/auth.ts": "fad58ffa265854aedbb6b78367f3845cdaff5c2a78539b2ddf27c6749a4cd365",
+    "arxai/artifacts/api-server/src/routes/health.ts": "f653a49fa6f133fc7a043ee95be4191348786cfff6f6f296f1072b3d63da86e7",
+    "arxai/artifacts/api-server/src/lib/auth/__qa__/publicOrigin.test.ts": "d09b4b037a9a0a217cfb04bc401198c5f8322a848db9fd121f0614e41fe1402b",
+    "arxai/artifacts/api-server/src/lib/auth/publicOrigin.ts": "30bba35c5ae2a7daee8adc29cb6563e8bea2daec961db2511daaa471295ab930",
+    "arxai/artifacts/api-server/src/lib/email/__qa__/resend.test.ts": "d348bfb50e4ca1360ca62d216375f8bea4d6a32807e06e36470fa7850eb621c8",
+    "arxai/artifacts/api-server/src/lib/startup/__qa__/dependencyReadiness.test.ts": "d2948196a71acefe91861772e6b437aed2ec54bc18bea2639192aacf94c38e49",
+    "arxai/artifacts/api-server/src/lib/startup/databaseReadiness.ts": "f71c4162171874f8a3bfa16ee07a0e5e04cc394392b6d4c81994f9bd79a1c0eb",
+    "arxai/artifacts/api-server/src/lib/startup/dependencyReadiness.ts": "6b6b5c02d641c14b240c59e89fe34b68ca00550ba9dcb5368e87550391498476",
+    "arxai/artifacts/api-server/src/routes/__qa__/forgotPasswordPrivacy.test.ts": "bff60e88af4652d87169270c87030ca4227295e18675ba01a7977ff893836ea6",
+    "arxai/artifacts/api-server/src/routes/__qa__/healthReadiness.test.ts": "b6c17826c8f1f1f777d5be0052db5e89d942bcb54b54f8ea911aa0f95f56a692",
+    "arxai/artifacts/api-server/src/scripts/emailReadinessCheck.ts": "516efcc87df582397769e3a513af8e7815744c1986f509c9ae3e1526f8a85124",
+    "arxai/scripts/release/build-arx-production.sh": "09e4a89be5bce56295d1aa52d1419425f55eb27880e132a02c61e86ce66a8d31",
+    "arxai/scripts/release/check-arx-production-env.mjs": "66e7aeb78a303e5c642eaf7a6dcbdd52de0b83b9706ddea2de08a94a0887c245",
+    "arxai/scripts/release/check-arx-production-env.test.mjs": "c0c05567df4263ccae5cb2ee85e275f77548fc5e6771c5ad90c8fe56a297c703",
+    "arxai/scripts/release/run-arx-production.sh": "cc33448e9ccda6ff8b28591d2006856b35a4e090653fcb81a833ffdf976726bf",
+    "arxai/artifacts/api-server/package.json": "aa08b17528796b928424250ffdd0de30fe623edb7f8471079462d07979f1a6bb",
+    "arxai/package.json": "ebf03e0d609ca05ae4e43b23d41dcf0ba901ea6fd492b7558d8e171b28355f3c",
+    "arxai/docs/TIER1_NON_BROKER_READINESS.md": "65098da01ece8494abb9f9586a54084462a9e29638f6d97141a3e7cbab7eb8a6",
+    "arxai/docs/TIER1_OWNER_RUNBOOK.md": "bcee259e68430ebc0ec82c086e3dfe436ebeb1c8683ee089e9ed9d8c5ca403ef"
+  },
+  "broker_orders": 0,
+  "production_published": false,
+  "limitations": [
+    "Broker lifecycle remains unverified; no EA attached by this work.",
+    "Real email delivery remains unverified; no reset requests sent.",
+    "Development evidence is not production evidence.",
+    "Existing Replit adapters, sign-out and reset-token redaction preserved."
+  ]
+}
