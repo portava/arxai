@@ -1,6 +1,6 @@
 import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { marketAxisTimeLabel } from "./chartTimeZone";
-import { withTrendAverages, trendAverageColor, TREND_AVERAGE_BULL, TREND_AVERAGE_BEAR } from "./chartTrendAverages";
+import { withTrendAverages, TREND_AVERAGE_FAST_COLOR, TREND_AVERAGE_SLOW_COLOR } from "./chartTrendAverages";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import {
   createChart,
@@ -399,7 +399,7 @@ describe("20 and 50 period moving averages", () => {
     const close = 100 + (i < 80 ? i : 160 - i);
     return { time: 1_700_000_000 + i * 60, open: close, high: close + 1, low: close - 1, close };
   });
-  it("draws each average blue where it rises and red where it falls", () => {
+  it("draws the 20 as one solid blue line and the 50 as one solid red line, as MT5 does", () => {
     Object.defineProperty(container, "clientWidth", { value: 900, configurable: true });
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
     const adapter = new ArxCanvasAdapter();
@@ -410,16 +410,17 @@ describe("20 and 50 period moving averages", () => {
     (adapter as any).chart.timeScale().setVisibleLogicalRange({ from: 0, to: 159 });
     const lines = (adapter as any).chart.series.filter((s: any) => s.kind === "Line");
     expect(lines).toHaveLength(2);
-    for (const [line, period] of [[lines[0], 20], [lines[1], 50]] as const) {
+    for (const [line, period, color] of [[lines[0], 20, TREND_AVERAGE_FAST_COLOR], [lines[1], 50, TREND_AVERAGE_SLOW_COLOR]] as const) {
       const points = line.data.filter((p: any) => "value" in p);
       expect(points[0].time).toBe(wave[period - 1]!.time);
-      for (let i = 1; i < points.length; i++) {
-        const rising = points[i].value >= points[i - 1].value;
-        expect(points[i].color).toBe(rising ? TREND_AVERAGE_BULL : TREND_AVERAGE_BEAR);
-      }
-      expect(points.some((p: any) => p.color === TREND_AVERAGE_BULL)).toBe(true);
-      expect(points.some((p: any) => p.color === TREND_AVERAGE_BEAR)).toBe(true);
+      // One colour for the whole line, rising or falling: no per-point colours.
+      expect(line.options().color).toBe(color);
+      expect(points.every((p: any) => p.color === undefined)).toBe(true);
     }
+    // The 20 both rises and falls over the wave and keeps one colour throughout.
+    const values = lines[0].data.filter((p: any) => "value" in p).map((p: any) => p.value);
+    expect(values.some((v: number, i: number) => i > 0 && v > values[i - 1]!)).toBe(true);
+    expect(values.some((v: number, i: number) => i > 0 && v < values[i - 1]!)).toBe(true);
     // Off leaves only the user's own studies.
     adapter.setStudies(withTrendAverages([], false));
     expect((adapter as any).chart.series.filter((s: any) => s.kind === "Line")).toHaveLength(0);
@@ -429,12 +430,9 @@ describe("20 and 50 period moving averages", () => {
     const own = [{ kind: "sma" as const, period: 20, color: "#ffffff" }];
     const shown = withTrendAverages(own, true);
     expect(shown.map(s => s.id ?? s.kind)).toEqual(["arx-trend-ma-20", "arx-trend-ma-50", "sma"]);
+    expect(shown.slice(0, 2).map(s => s.color)).toEqual([TREND_AVERAGE_FAST_COLOR, TREND_AVERAGE_SLOW_COLOR]);
     expect(withTrendAverages(shown, true)).toHaveLength(3);
     expect(withTrendAverages(shown, false)).toEqual(own);
-    expect(trendAverageColor(2, 1)).toBe(TREND_AVERAGE_BULL);
-    expect(trendAverageColor(1, 1)).toBe(TREND_AVERAGE_BULL);
-    expect(trendAverageColor(0.5, 1)).toBe(TREND_AVERAGE_BEAR);
-    expect(trendAverageColor(0.5, null)).toBe(TREND_AVERAGE_BULL);
   });
   it("paints a coloured line segment by segment in the colour of the point it ends at", () => {
     const strokes: string[] = [];

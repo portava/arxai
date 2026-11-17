@@ -1809,8 +1809,8 @@ export function ARXNativeChart({
   const sectionClass = (name: "tools" | "forecast" | "read") => !detailsAsPopup || detailsSection === "all" || detailsSection === name ? "contents" : "hidden";
   const clockStatus = utcClockQualified ? "Clock: UTC" : "Source clock · UTC unverified";
   const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
-  // 20 and 50 period moving averages: blue where rising (bull), red where falling (bear).
-  const averagesToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.movingAverages !== false} title="20 and 50 period simple moving averages of the close. Blue where the average rises, red where it falls." onClick={() => setPreferences(previous => ({ ...previous, movingAverages: previous.movingAverages === false }))} data-testid="chart-moving-averages-toggle">MA 20/50 {preferences.movingAverages === false ? "off" : "on"}</Button>;
+  // 20 period (blue) and 50 period (red) moving averages, fixed colours as in MT5.
+  const averagesToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.movingAverages !== false} title="20 period (blue) and 50 period (red) simple moving averages of the close." onClick={() => setPreferences(previous => ({ ...previous, movingAverages: previous.movingAverages === false }))} data-testid="chart-moving-averages-toggle">MA 20/50 {preferences.movingAverages === false ? "off" : "on"}</Button>;
   const menuItem = "h-8 justify-start px-2 text-xs";
   const closeMenu = () => setChartMenuOpen(false);
   // Secondary actions, one menu. The controls stay mounted while it is closed.

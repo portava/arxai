@@ -4,7 +4,6 @@ import {ChartVolumeProfilePrimitive} from "./chartVolumeProfilePrimitive";
 import type {VolumeProfileInspection} from "./chartVolumeProfile";
 import {studyId} from "./chartStudies";
 import { volumeInputQuantity, observedTradeVolumeIdentity, observedTickVolume } from "./chartVolume";
-import { isTrendAverage, trendAverageColor } from "./chartTrendAverages";
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions, type AutoscaleInfoProvider } from "./arxCanvas";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyChannelColor, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
@@ -321,15 +320,7 @@ export class ChartAnalysisRenderer {
     return value == null || !Number.isFinite(value) ? {time: point.time as UTCTimestamp} : {
       time: point.time as UTCTimestamp, value,
       ...(study.calculator.config.kind === "macd" && channel === 2 ? {color: value >= 0 ? "#10b981" : "#ef4444"} : {}),
-      ...(isTrendAverage(study.calculator.config) ? {color: trendAverageColor(value, this.previousValue(study, point.time, channel))} : {}),
     };
-  }
-  /** The calculated value on the bar before `time` (binary search; points are time-ordered). */
-  private previousValue(study: StudyHandle, time: number, channel: number): number | null {
-    const points = study.calculator.points;
-    let lo = 0, hi = points.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (points[mid]!.time < time) lo = mid + 1; else hi = mid; }
-    return lo > 0 ? points[lo - 1]!.values[channel] ?? null : null;
   }
   private nextWindow() {
     const count = this.inputs.length / INPUT_STRIDE;
