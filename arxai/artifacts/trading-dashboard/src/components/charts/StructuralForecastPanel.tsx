@@ -41,7 +41,7 @@ export function rangeSentence(f: StructuralForecast): string | null {
     ? "Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here."
     : r.reason === "TOO_FEW_TEST_SETUPS"
       ? "Range engine for this market: volatility — too little tested history to judge the history engine yet."
-      : "Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here.";
+      : `Range engine for this market: volatility — sized from ${r.volatility === "HOUR_OF_WEEK" ? "how much this market usually moves at these hours of the week and how active it has been today" : "recent price swings"}, because the history range did not score reliably better here.`;
   const direction = f.directionEdge
     ? " Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown."
     : " Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.";

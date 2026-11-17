@@ -233,6 +233,7 @@
     "test:objective-sizing": "tsx ./src/objectiveSizingTest.ts",
     "test:vol-forecast": "tsx ./src/volForecastTest.ts",
     "test:vol-forecast-research": "tsx ./src/volForecastResearchTest.ts",
+    "test:structural-vol-range-research": "tsx ./src/structuralVolRangeResearchTest.ts",
     "test:edge-studies": "tsx ./src/edgeStudiesTest.ts",
     "research:edge-studies": "tsx ./src/research/runEdgeStudies.ts",
     "test:session-edge-research": "tsx ./src/sessionEdgeResearchTest.ts",

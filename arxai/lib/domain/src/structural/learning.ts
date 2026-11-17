@@ -25,13 +25,14 @@ export const RANGE_ENGINE_POLICY = Object.freeze({ minTested: 40, checkpoints: [
  * bound; otherwise the simpler volatility range is kept. The same setups
  * decide whether the analogs' up/down share beats a coin flip.
  */
-export function chooseRangeEngine(model: StructuralModel, tests: readonly Episode[]): RangeEngineChoice {
+export function chooseRangeEngine(model: StructuralModel, tests: readonly Episode[],
+  volBandAt?: (e: Episode) => VolBand | null): RangeEngineChoice {
   const gains: number[] = [], directionGains: number[] = [];
   let hIn = 0, vIn = 0, checks = 0, dirBrier = 0;
   for (const e of tests) {
     if (e.future.length < 60) continue;
     const hist = analogTrajectories(model, e.history, e.features, 60, "HISTORY");
-    const vol = analogTrajectories(model, e.history, e.features, 60, "VOLATILITY");
+    const vol = analogTrajectories(model, e.history, e.features, 60, "VOLATILITY", volBandAt?.(e) ?? null);
     if (hist.length !== 3 || vol.length !== 3) continue;
     const start = e.history.at(-1)!.close;
     let gain = 0;
@@ -57,13 +58,30 @@ export function chooseRangeEngine(model: StructuralModel, tests: readonly Episod
 }
 
 /**
+ * The VOLATILITY engine's range: the 25%-75% band of a random walk at the
+ * volatility of the forecast's own recent bars, +-0.6745 sigma sqrt(bars
+ * ahead) in logs, sigma the RMS of the close-to-close log returns in
+ * `history`. Symmetric, so it carries no direction. Exported so research can
+ * score exactly what the product draws (docs/STRUCTURAL_VOL_RANGE_RESULTS.md).
+ */
+export type VolBand = { bull: number[]; bear: number[] };
+export function volatilityBand(history: readonly StructuralBar[], horizonBars: number): VolBand {
+  const returns = history.slice(1).map((b, j) => Math.log(b.close / history[j]!.close)).filter(Number.isFinite);
+  const sigma = returns.length ? Math.sqrt(returns.reduce((s, r) => s + r * r, 0) / returns.length) : 0;
+  const edge = (sign: 1 | -1) => Array.from({ length: horizonBars }, (_, j) => Math.exp(sign * .6745 * sigma * Math.sqrt(j + 1)) - 1);
+  return { bull: edge(1), bear: edge(-1) };
+}
+
+/**
  * Projected paths from the most similar past setups. Similarity is distance in
  * the model's own structural features, standardized over the training set. Only
  * episodes whose whole future closed before the forecast are eligible, so no
  * path can contain anything that happened after it was issued.
  */
 export function analogTrajectories(model: StructuralModel, history: readonly StructuralBar[], features: readonly number[], horizonBars = 60,
-  engine: RangeEngine = model.rangeEngine?.engine ?? "VOLATILITY"): Trajectory[] {
+  engine: RangeEngine = model.rangeEngine?.engine ?? "VOLATILITY",
+  /** The hour-of-week band (volRange.ts) when the model has one; otherwise the 120-bar band. */
+  seasonalBand: VolBand | null = null): Trajectory[] {
   const last = history.at(-1);
   if (!last) return [];
   const asOf = last.closeTime, start = last.close, step = model.stepMs ?? 60_000;
@@ -97,13 +115,14 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
   });
   // Bull and bear come from the engine chosen for this market when the model
   // was fitted (see chooseRangeEngine):
-  // VOLATILITY: the 25%-75% range of a random walk at the volatility of the
-  //   forecast's own recent bars (+-0.6745 sigma sqrt(bars ahead), in logs).
+  // VOLATILITY: the 25%-75% range of a random walk, +-0.6745 sqrt(variance
+  //   ahead) in logs. On M15/H1 the variance is the hour-of-week forecast
+  //   (volRange.ts); elsewhere it is the forecast's own recent 120 bars.
   // HISTORY: the analogs' own drift-free 25th/75th percentiles, bar by bar.
-  const returns = history.slice(1).map((b, j) => Math.log(b.close / history[j]!.close)).filter(Number.isFinite);
-  const sigma = returns.length ? Math.sqrt(returns.reduce((s, r) => s + r * r, 0) / returns.length) : 0;
-  const edge = (sign: 1 | -1) => Array.from({ length: horizonBars }, (_, j) => Math.exp(sign * .6745 * sigma * Math.sqrt(j + 1)) - 1);
-  const bullPath = engine === "HISTORY" ? band(.75) : edge(1), bearPath = engine === "HISTORY" ? band(.25) : edge(-1);
+  const vol = engine === "HISTORY" ? null
+    : seasonalBand && seasonalBand.bull.length >= horizonBars ? { bull: seasonalBand.bull.slice(0, horizonBars), bear: seasonalBand.bear.slice(0, horizonBars) }
+    : volatilityBand(history, horizonBars);
+  const bullPath = vol ? vol.bull : band(.75), bearPath = vol ? vol.bear : band(.25);
   // The middle stays the analogs' drift-free median, kept inside the range.
   const middlePath = band(.5).map((x, j) => Math.min(bullPath[j]!, Math.max(bearPath[j]!, x)));
   const ends = adj.map(r => r.at(-1)!), bullEnd = bullPath.at(-1)!, bearEnd = bearPath.at(-1)!;

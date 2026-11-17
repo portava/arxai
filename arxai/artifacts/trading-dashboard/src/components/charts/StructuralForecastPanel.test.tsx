@@ -101,6 +101,10 @@ describe("ARX structural forecast controls", () => {
     expect(rangeSentence({ range: { engine: "HISTORY", reason: "HISTORY_RELIABLY_BETTER", tested: 109, historyInside: .24, volatilityInside: .09 }, directionEdge: true } as never))
       .toBe("Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here. On 109 setups the model did not learn from, the history range held 24% of outcomes and the volatility range 9% (ideal 50%). Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown.");
     expect(rangeSentence({} as never)).toBeNull();
+    const vol = (volatility?: string) => rangeSentence({ range: { engine: "VOLATILITY", reason: "HISTORY_NOT_RELIABLY_BETTER", tested: 0, historyInside: null, volatilityInside: null, volatility } } as never);
+    expect(vol("HOUR_OF_WEEK")).toContain("sized from how much this market usually moves at these hours of the week and how active it has been today");
+    expect(vol("RECENT_120_BARS")).toContain("sized from recent price swings");
+    expect(vol()).toContain("sized from recent price swings");
   });
   it("in dynamic mode shows an update over its faint original and grades updates apart from fresh forecasts", async () => {
     const onPaths = vi.fn();
