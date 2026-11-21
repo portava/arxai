@@ -195,8 +195,10 @@ test("control: a connected calendar and a synthetic market are not flagged 'not 
 });
 
 test("synthetic instruments are not held back by an unchecked calendar", async () => {
-  const row = await decorated("fetch_error", "Volatility 75 Index");
-  assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
+  for (const symbol of ["Volatility 75 Index", "V75", "V50_1S", "1HZ50V", "R_75"]) {
+    const row = await decorated("fetch_error", symbol);
+    assert.notEqual(row.newsContext?.eventRiskUnchecked, true, symbol);
+  }
 });
 
 // No economic calendar is connected: that is not a FAILED check (gating stays

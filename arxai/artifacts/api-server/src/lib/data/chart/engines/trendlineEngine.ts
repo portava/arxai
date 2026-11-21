@@ -14,10 +14,11 @@
 // SAFETY: this module only MEASURES geometry. It carries no feed/execution
 // knowledge and no display caps — `resolveTrendlineTruth` (domain) folds the
 // feed/sufficiency facts and applies every display cap downstream. The detector
-// therefore imports ONLY the display-side TYPES from the domain barrel, never any
+// reuses the domain ranking to describe the same dominant line the chart shows, without any
 // execution/safety surface. A "break" requires a decisive CLOSE beyond the line
 // by an ATR-normalized distance — never a wick-only pierce.
 
+import { pickDominantTrendline } from "@workspace/domain/market";
 import type {
   ActiveTrendline,
   PatternChange,
@@ -148,7 +149,7 @@ export function detectTrendlines(
     }
   }
 
-  const dominant = trendlines[0] ?? null;
+  const dominant = pickDominantTrendline(trendlines);
   const trendlineChange = dominant ? buildTrendlineChange(dominant) : NONE_CHANGE;
   const patternChange = buildPatternChange(ctx, trendlines, lowSwings, highSwings);
 

@@ -11,9 +11,9 @@ describe("scanner result card direction chip", () => {
   it("never shows SELL beside AVOID_FOR_NOW", () => {
     expect(scannerResultActionChip("SELL", "AVOID_FOR_NOW").text).toBe("Avoid for now");
   });
-  it("keeps the raw action when the final read allows watching or waiting", () => {
+  it("distinguishes a confirmed direction from a setup to watch", () => {
     expect(scannerResultActionChip("BUY", "TRADE_WATCH")).toEqual({ text: "BUY", variant: "default", withheld: false });
-    expect(scannerResultActionChip("SELL", "WAIT_FOR_CONFIRMATION").text).toBe("SELL");
+    expect(scannerResultActionChip("SELL", "WAIT_FOR_CONFIRMATION").text).toBe("Watch sell setup");
     expect(scannerResultActionChip("BUY", undefined).text).toBe("BUY");
   });
 });

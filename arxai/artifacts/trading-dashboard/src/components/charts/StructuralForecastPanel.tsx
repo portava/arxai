@@ -101,7 +101,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         label: `${labels[path.scenario]} ${pct(path.probability)}`, candles: path.candles })));
   }, [row, history, canonicalSymbol, selected, onPaths, horizonId]);
 
-  const generate = useCallback(async (historyOnly = false) => {
+  const generate = useCallback(async (historyOnly = false, showOnChart = false) => {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setBusy(true); setError(null);
     try {
@@ -109,7 +109,15 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
       const historyResponse = await fetch(`${basePath}/api/me/structural/forecasts?symbol=${encodeURIComponent(symbol)}`, { credentials: "include", signal: controller.signal });
       if (historyResponse.ok) {
         const memory = await historyResponse.json();
-        if (!controller.signal.aborted) setHistory(memory.forecasts ?? []);
+        if (!controller.signal.aborted) {
+          const saved: Row[] = memory.forecasts ?? [];
+          setHistory(saved);
+          if (historyOnly) {
+            const latest = saved.filter(r => rowHorizonId(r) === preset.id && r.forecast.origin.symbol === canonicalSymbol)
+              .sort((a,b) => b.issuedAt - a.issuedAt)[0];
+            setRow(latest ?? null);
+          }
+        }
       } else if (historyOnly) throw new Error("prediction memory unavailable");
       if (historyOnly) return;
       const response = await fetch(`${basePath}/api/me/structural/forecasts`, { method: "POST", credentials: "include",
@@ -121,11 +129,14 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         const facts = d ? ` (${d.timeframe ?? preset.timeframe} feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} unbroken closed bars${d.barsBeforeLastGap ? `, ${d.barsBeforeLastGap} older bars behind a gap` : ""}${d.trainingWindows != null ? `; ${d.trainingWindows} of ${d.trainingWindowsNeeded} gap-free training windows` : ""}; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
         throw new Error(`${String(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE").replaceAll("_", " ").toLowerCase()}${facts}`);
       }
-      if (!controller.signal.aborted) setRow(result as Row);
+      if (!controller.signal.aborted) {
+        setRow(result as Row);
+        if (showOnChart && chartTimeframe && chartTimeframe !== preset.timeframe) onShowOnTimeframe?.(preset.timeframe);
+      }
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message.replaceAll("_", " ") : "forecast unavailable");
     } finally { if (!controller.signal.aborted) setBusy(false); }
-  }, [symbol, preset.id]);
+  }, [symbol, preset, canonicalSymbol, chartTimeframe, onShowOnTimeframe]);
 
   useEffect(() => {
     if (!auto) return;
@@ -156,11 +167,11 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     <div className="flex flex-wrap items-center gap-3">
       <strong className="text-zinc-100">ARX structural forecast</strong>
       <label>Window <select aria-label="Forecast window" data-testid="forecast-window" className="rounded bg-zinc-900 p-1" value={preset.id}
-        onChange={e => { setHorizonId(e.target.value); setAuto(false); setError(null); }}>
+        onChange={e => { request.current?.abort(); setBusy(false); setHorizonId(e.target.value); setAuto(false); setError(null); }}>
         {FORECAST_HORIZONS.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}</select></label>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => void generate()}>{busy ? "Building forecast…" : `Forecast ${preset.label} ahead`}</Button>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => void generate(false, true)}>{busy ? "Building forecast…" : `Forecast ${preset.label} ahead`}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void generate(true)}>Refresh saved forecasts</Button>
-      <label className="flex items-center gap-1"><input type="checkbox" aria-label="Dynamic forecast" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(); }} /> Dynamic: re-forecast each {preset.timeframe} bar</label>
+      <label className="flex items-center gap-1"><input type="checkbox" aria-label="Dynamic forecast" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(false, true); }} /> Dynamic: re-forecast each {preset.timeframe} bar</label>
     </div>
     {error && <p role="alert" className="mt-2 text-amber-300">Forecast unavailable: {error}. Saved forecasts remain unchanged.</p>}
     {shown && shown.forecast.origin.symbol === canonicalSymbol && <>

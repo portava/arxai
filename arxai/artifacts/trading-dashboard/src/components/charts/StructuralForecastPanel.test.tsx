@@ -48,13 +48,15 @@ describe("ARX structural forecast controls", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/H4 feed.*50 of 153 gap-free training windows/);
     expect(JSON.parse(fetch.mock.calls[3]![1].body)).toEqual({ symbol: "V75", horizon: "1w" });
   });
-  it("does not draw a window's paths on a chart of another candle length and offers to switch", async () => {
+  it("switches the chart to the requested forecast interval on success", async () => {
     const onShow = vi.fn();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: true, ...row, forecast: { ...row.forecast, horizonId: "24h" } })));
     const { rerender } = render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} chartTimeframe="M1" onShowOnTimeframe={onShow} />);
     fireEvent.change(screen.getByLabelText("Forecast window"), { target: { value: "24h" } });
     fireEvent.click(screen.getByRole("button", { name: "Forecast 24 hours ahead" }));
     const notice = await screen.findByTestId("forecast-timeframe-mismatch");
+    expect(onShow).toHaveBeenCalledTimes(1);
+    expect(onShow).toHaveBeenCalledWith("M30");
     expect(notice.textContent).toMatch(/M30 candles and are not drawn on this M1 chart/);
     fireEvent.click(screen.getByRole("button", { name: "Show on M30" }));
     expect(onShow).toHaveBeenCalledWith("M30");
@@ -137,6 +139,7 @@ describe("ARX structural forecast controls", () => {
     vi.stubGlobal("fetch", fetch);
     render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Refresh saved forecasts" }));
+    await screen.findByLabelText("Selected horizon probabilities");
     await screen.findByText("1 hour resolved: 1");
     expect(screen.getByText("Brier: 0.3800")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Saved forecast"), { target: { value: row.id } });

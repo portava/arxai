@@ -292,7 +292,7 @@ function clampConfidence(n: number): number {
  * broken/retesting/reclaimed > exhausted > failed), then more touches, then
  * highest raw confidence. Deterministic tie-break on the stable id.
  */
-function pickDominant(lines: ActiveTrendline[]): ActiveTrendline | null {
+export function pickDominantTrendline(lines: ActiveTrendline[]): ActiveTrendline | null {
   if (lines.length === 0) return null;
   return [...lines].sort((a, b) => {
     const s = STATUS_RANK[b.status] - STATUS_RANK[a.status];
@@ -343,7 +343,7 @@ export function resolveTrendlineTruth(
   trendlineChange: TrendlineChange = NONE_CHANGE,
   patternChange: PatternChange = NONE_PATTERN_CHANGE,
 ): TrendlineTruthVerdict {
-  const dominant = pickDominant(activeTrendlines);
+  const dominant = pickDominantTrendline(activeTrendlines);
   const warnings: string[] = [];
 
   if (!dominant) {

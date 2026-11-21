@@ -802,10 +802,10 @@ export default function MarketScanner() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-xs space-y-2">
-                {o.finalRead?.label === "WAIT_FOR_CONFIRMATION" && (
-                  <p data-testid={`scanner-wait-condition-${o.symbol}`}>
-                    <strong>Waiting for confirmation</strong>{" "}
-                    {o.finalRead.headline || scannerFinalReadReasons(o.finalRead)[0] || "The latest scan did not supply a trigger."}
+                {o.finalRead && (
+                  <p data-testid={o.finalRead.label === "WAIT_FOR_CONFIRMATION" ? `scanner-wait-condition-${o.symbol}` : `scanner-next-action-${o.symbol}`}>
+                    <strong>Next action</strong>{" "}
+                    {o.finalRead.headline || scannerFinalReadReasons(o.finalRead)[0] || chip.text}
                   </p>
                 )}
                 {(() => {
@@ -854,9 +854,9 @@ export default function MarketScanner() {
                 })()}
                 <div className="text-xs flex items-center justify-between gap-2">
                   <span><span className="text-muted-foreground">Setup:</span> {o.setupType}</span>
-                  <SetupQualityBadge symbol={o.symbol} side={o.recommendedAction === "SELL" ? "sell" : "buy"} />
+                  {!chip.withheld && (o.recommendedAction === "BUY" || o.recommendedAction === "SELL") && <SetupQualityBadge symbol={o.symbol} side={o.recommendedAction === "SELL" ? "sell" : "buy"} />}
                 </div>
-                <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>
+                {!chip.withheld && <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>}
                 {o.reasonToAvoid && <div className="text-xs text-rose-400">⚠ {o.reasonToAvoid}</div>}
                 {chip.withheld ? (
                   // Eleanor's Setup Reason explains the raw BUY / SELL action. Under
@@ -867,7 +867,7 @@ export default function MarketScanner() {
                     data-testid={`scanner-final-read-note-${o.symbol}`}
                   >
                     <div>
-                      Setup reason not shown: the server's final read for this row is "{chip.text}".
+                      {chip.text}
                     </div>
                     {(() => {
                       const reasons = scannerFinalReadReasons(o.finalRead);

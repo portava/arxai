@@ -153,7 +153,7 @@ interface RegimeStateEntry {
   oppositeStreak: number;
   /** Open time of the last bar the machine stepped on. */
   lastBarTime: string;
-  inputFingerprint: string;
+  barFingerprints: string[];
 }
 
 const regimeState = new Map<string, RegimeStateEntry>();
@@ -193,13 +193,19 @@ export function resolveScannerRegime(
   if (held && barMs < Date.parse(held.lastBarTime)) {
     return unknownRead("An older candle window cannot advance the current regime state.");
   }
-  const inputFingerprint = JSON.stringify(candles.map((bar) => [bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume ?? null]));
-  if (held && held.lastBarTime === lastBarTime && held.inputFingerprint !== inputFingerprint) {
-    return unknownRead("The closed candle window changed without a new bar — wait for fresh confirmation.");
-  }
+  const barFingerprints = candles.map(bar => JSON.stringify([bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume ?? null]));
 
   if (held && held.lastBarTime === lastBarTime) {
-    // Same closed bar — no new evidence; return the held state.
+    // A forming candle can displace the oldest closed candle from a fixed-size
+    // request. Only compare the shared suffix. A revised or missing interior
+    // candle still invalidates the read until another bar closes.
+    const shared = Math.min(barFingerprints.length, held.barFingerprints.length);
+    for (let i = 1; i <= shared; i++) {
+      if (barFingerprints.at(-i) !== held.barFingerprints.at(-i)) {
+        return unknownRead("A closed candle was revised. Recheck when the next candle closes.");
+      }
+    }
+    if (barFingerprints.length > held.barFingerprints.length) held.barFingerprints = barFingerprints;
     return {
       regime: held.record.phase,
       substate: held.record.substate,
@@ -210,7 +216,7 @@ export function resolveScannerRegime(
   }
 
   const { next, oppositeStreakAfter } = stepMarketState(held?.record ?? null, signals, held?.oppositeStreak ?? 0);
-  regimeState.set(key, { record: next, oppositeStreak: oppositeStreakAfter, lastBarTime, inputFingerprint });
+  regimeState.set(key, { record: next, oppositeStreak: oppositeStreakAfter, lastBarTime, barFingerprints });
   return {
     regime: next.phase,
     substate: next.substate,

@@ -22,6 +22,9 @@ export function scannerResultActionChip(
 ): ScannerResultActionChip {
   if (finalReadLabel === "NO_TRADE") return { text: "No trade", variant: "outline", withheld: true };
   if (finalReadLabel === "AVOID_FOR_NOW") return { text: "Avoid for now", variant: "outline", withheld: true };
+  if (finalReadLabel === "WAIT_FOR_CONFIRMATION" && (recommendedAction === "BUY" || recommendedAction === "SELL")) {
+    return { text: `Watch ${recommendedAction.toLowerCase()} setup`, variant: "outline", withheld: true };
+  }
   const variant = recommendedAction === "BUY" ? "default" : recommendedAction === "SELL" ? "destructive" : "outline";
   return { text: recommendedAction, variant, withheld: false };
 }

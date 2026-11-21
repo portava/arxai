@@ -201,7 +201,17 @@ test("a wait headline names the candle interval and observed confirmation level"
   const read = computeFinalRead(opp({ trendlineImpact: impact({ labelHint: "break_unconfirmed" }), trendlineConfirmationLevel: 105.75 }));
   assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
   assert.match(read.headline, /M5 candle to close beyond the trendline at 105\.75/);
+  const forming = computeFinalRead(opp({ trendlineImpact: impact({ labelHint: "forming_line" }), trendlineConfirmationLevel: 105.75 }));
+  assert.match(forming.headline, /third touch of the trendline at 105.75/);
   const missing = computeFinalRead(opp({ trendlineImpact: impact({ labelHint: "retest_watch" }) }));
   assert.match(missing.headline, /retest the trendline and hold on a closed M5 candle/);
   assert.doesNotMatch(missing.headline, /undefined|NaN/);
+});
+
+test("only a confirmed live direction names the entry, stop and target", () => {
+  const ready = computeFinalRead(opp({ ...READABLE, recommendedAction: "BUY" }));
+  assert.equal(ready.label, "TRADE_WATCH");
+  assert.match(ready.headline, /BUY setup.*entry at 1.1, stop at 1.09, target at 1.12/);
+  const stale = computeFinalRead(opp({ ...READABLE, dataSource: "STALE_FEED" }));
+  assert.doesNotMatch(stale.headline, /Reference entry/);
 });

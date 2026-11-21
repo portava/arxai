@@ -385,6 +385,7 @@ export interface ScannerOpportunity {
    */
   patternImpact?: PatternScannerImpact;
   patternConfirmationLevel?: number;
+  patternTrigger?: { name: string; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null };
   /**
    * TRENDLINE TRUTH (Task #649) — display-only CHILD input. The folded
    * downgrade/within-cap hints from `resolveTrendlineTruth`. When present,
@@ -396,6 +397,7 @@ export interface ScannerOpportunity {
    */
   trendlineImpact?: TrendlineScannerImpact;
   trendlineConfirmationLevel?: number;
+  trendlineTrigger?: { name: string; bias: "bullish" | "bearish" | "neutral"; side: "bullish" | "bearish" | "neutral"; reclaimed: boolean };
   /**
    * ONE MARKET-STATE AUTHORITY (R7 step 3) — the hysteresis state machine's
    * regime read for this symbol/timeframe, computed ONLY from real routed
@@ -637,8 +639,9 @@ export function computeFinalRead(
   const news = opp.newsContext ?? null;
   const reasons: string[] = [];
   const confirmations: string[] = [];
-  const atLevel = (level?: number) => level != null && Number.isFinite(level) && level > 0
-    ? ` at ${level.toLocaleString("en-US", { maximumSignificantDigits: 9 })}` : "";
+  const priceText = (level?: number) => level != null && Number.isFinite(level) && level > 0
+    ? level.toLocaleString("en-US", { maximumSignificantDigits: 9 }) : "";
+  const atLevel = (level?: number) => priceText(level) ? ` at ${priceText(level)}` : "";
   // No win rate exists for same-time bars (see historical-comparison).
   const histScore: number | null = null;
   const newsLevel = news?.riskLevel ?? "none";
@@ -681,7 +684,10 @@ export function computeFinalRead(
   // 3. Weak technical signal → no trade regardless of news.
   if (opp.statusBadge === "REJECTED_BY_RISK" || opp.statusBadge === "CHOPPY_MARKET") {
     label = "NO_TRADE";
-    reasons.push("No clean trade right now — setup rejected by risk rules.");
+    reasons.push(opp.reasonToAvoid || "No clean trade right now — setup rejected by risk rules.");
+  } else if (opp.statusBadge === "SPREAD_TOO_HIGH") {
+    label = "NO_TRADE";
+    reasons.push(opp.reasonToAvoid || "The scan rejected this setup with a risk score above 65.");
   } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
     // Same non-actionable outcome as before (never raised), with the true cause.
     label = "NO_TRADE";
@@ -689,7 +695,7 @@ export function computeFinalRead(
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
-    confirmations.push("Wait for technical confidence to clear the scanner’s minimum on a new scan.");
+    confirmations.push("Recheck after the next candle closes. Technical confidence must reach 50/100.");
   } else if (opp.statusBadge === "WAIT_FOR_CONFIRMATION" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical setup wants confirmation.");
@@ -804,6 +810,7 @@ export function computeFinalRead(
   if (opp.regime && opp.regime.regime === "UNKNOWN") {
     confidence = "LOW";
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+    confirmations.unshift(opp.regime.reasons?.[0] || `Recheck after the next ${opp.timeframe} candle closes for a market regime reading.`);
     reasons.push("Market regime is UNKNOWN — new opportunities are withheld until the state machine can classify this market from real candles.");
   }
 
@@ -836,7 +843,7 @@ export function computeFinalRead(
       confidence = "LOW";
       reasons.push("A recent chart pattern failed or was invalidated.");
     } else if (pat.labelHint === "too_late_chase") {
-      if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("The chart pattern looks late/exhausted — avoid chasing it.");
     } else if (pat.contextOnly) {
@@ -845,12 +852,22 @@ export function computeFinalRead(
       reasons.push("Chart pattern is context only — the feed is not live-confirmed.");
     } else if (pat.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
-      reasons.push("Chart pattern conflicts with the higher-timeframe read — treat as conditional.");
-      confirmations.push("Wait for the chart pattern and higher-timeframe direction to agree.");
+      reasons.push("Chart pattern conflicts with the measured trend on this timeframe — treat as conditional.");
+      confirmations.push(opp.patternTrigger
+        ? `${opp.patternTrigger.name} points ${opp.patternTrigger.bias} against the ${opp.timeframe} trend. Recheck their directions after the next ${opp.timeframe} close.`
+        : "Wait for the chart pattern and measured trend on this timeframe to agree.");
     } else if (pat.labelHint === "forming_setup" || pat.labelHint === "needs_confirmation") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Chart pattern is forming, not confirmed — wait for the trigger.");
-      confirmations.push(`Wait for a closed ${opp.timeframe} candle to confirm the chart pattern${atLevel(opp.patternConfirmationLevel)}.`);
+      const setup = opp.patternTrigger;
+      const level = priceText(opp.patternConfirmationLevel);
+      if (level && setup && setup.bias !== "neutral") {
+        const side = setup.bias === "bullish" ? "above" : "below";
+        const invalid = atLevel(setup.invalidation ?? undefined);
+        confirmations.push(`Watch ${setup.name} for a ${opp.timeframe} close ${side} ${level}.${invalid ? ` Invalidation${invalid}.` : ""}`);
+      } else {
+        confirmations.push(`Wait for a closed ${opp.timeframe} candle to confirm ${setup?.name ?? "the chart pattern"}${atLevel(opp.patternConfirmationLevel)}.`);
+      }
     } else if (pat.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("Chart pattern has limited room to the next level.");
@@ -873,7 +890,7 @@ export function computeFinalRead(
       confidence = "LOW";
       reasons.push("A recent trendline break looks like a trap/false break.");
     } else if (tl.labelHint === "too_late_chase") {
-      if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("The trendline move looks late/over-extended — avoid chasing it.");
     } else if (tl.contextOnly || tl.labelHint === "context_only") {
@@ -887,8 +904,10 @@ export function computeFinalRead(
       confirmations.push(`Wait for the next ${opp.timeframe} structure read to confirm the new trend after the shift.`);
     } else if (tl.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
-      reasons.push("Trendline conflicts with the higher-timeframe read — treat as conditional.");
-      confirmations.push("Wait for the trendline and higher-timeframe direction to agree.");
+      reasons.push("Trendline conflicts with the measured trend on this timeframe — treat as conditional.");
+      confirmations.push(opp.trendlineTrigger
+        ? `${opp.trendlineTrigger.name} points ${opp.trendlineTrigger.bias} against the ${opp.timeframe} trend. Recheck their directions after the next ${opp.timeframe} close.`
+        : "Wait for the trendline and measured trend on this timeframe to agree.");
     } else if (
       tl.labelHint === "forming_line" ||
       tl.labelHint === "needs_confirmation" ||
@@ -896,10 +915,20 @@ export function computeFinalRead(
       tl.labelHint === "retest_watch"
     ) {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
-      reasons.push("Trendline break/retest is not confirmed yet — wait for the close-beyond.");
-      confirmations.push(tl.labelHint === "retest_watch"
-        ? `Wait for price to retest the trendline${atLevel(opp.trendlineConfirmationLevel)} and hold on a closed ${opp.timeframe} candle.`
-        : `Wait for a ${opp.timeframe} candle to close beyond the trendline${atLevel(opp.trendlineConfirmationLevel)}.`);
+      const line = atLevel(opp.trendlineConfirmationLevel);
+      const observed = opp.trendlineTrigger;
+      const observedSide = observed?.side === "bullish" ? "above" : observed?.side === "bearish" ? "below" : null;
+      const hold = observedSide && line ? `hold ${observedSide} ${priceText(opp.trendlineConfirmationLevel)}` : "hold";
+      const trigger = observed?.reclaimed
+        ? `${observed.name} was reclaimed${line}. The previous breakout failed.`
+        : tl.labelHint === "forming_line"
+        ? `Watch for a third touch of the trendline${line}. Recheck at the ${opp.timeframe} close.`
+        : tl.labelHint === "retest_watch" || tl.labelHint === "needs_confirmation"
+          ? `Wait for price to retest the trendline${observedSide ? "" : line} and ${hold} on a closed ${opp.timeframe} candle.`
+          : `Wait for a ${opp.timeframe} candle to close beyond the trendline${line}.`;
+      if (observed?.reclaimed && label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
+      reasons.push(trigger);
+      confirmations.push(trigger);
     } else if (tl.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("Trendline target has limited room to the next level.");
@@ -920,10 +949,12 @@ export function computeFinalRead(
     if (newsLevel === "high" || newsLevel === "medium") confirmations.unshift("Wait for the elevated news-risk window to clear.");
   }
   const headline =
-    label === "NO_TRADE" ? "No trade right now." :
-    label === "AVOID_FOR_NOW" ? "Avoid for now." :
+    label === "NO_TRADE" ? `Skip this setup. ${reasons[0]}` :
+    label === "AVOID_FOR_NOW" ? `Skip this setup. ${reasons.at(-1)}` :
     label === "WAIT_FOR_CONFIRMATION" ? (confirmations.length ? [...new Set(confirmations)].slice(0, 2).join(" ") : reasons[0] ?? "Waiting for the next verified market read.") :
-    "Watchlist candidate.";
+    opp.selectable && opp.tradeable && (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && opp.entry > 0 && opp.stopLoss > 0 && opp.takeProfit > 0
+      ? `Review the ${opp.recommendedAction} setup on ${opp.symbol} ${opp.timeframe}. Reference entry${atLevel(opp.entry)}, stop${atLevel(opp.stopLoss)}, target${atLevel(opp.takeProfit)}.`
+      : "Watchlist candidate.";
 
   // Simulator-derived reads are analysis-only: the truth cap above already
   // floored them to non-actionable/LOW; this marks them explicitly so every
@@ -1812,6 +1843,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // data). The verdict's downgrade-only `scannerTruthImpact` is folded into
     // computeFinalRead/scannerActionability later; it can never raise a read.
     // Fail-open: the service returns null on any error / insufficient window.
+    let patternTrigger: ScannerOpportunity["patternTrigger"];
     let patternConfirmationLevel: number | undefined;
     let patternImpact: ScannerOpportunity["patternImpact"];
     if (routed?.rawCandles && routed.rawCandles.length > 0) {
@@ -1832,7 +1864,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         volatilityAtr: null,
       });
       patternImpact = verdict?.scannerTruthImpact;
-      if (chartConfirmed && sufficiency.canShowTradeSetup) patternConfirmationLevel = verdict?.confirmationLevel ?? undefined;
+      if (chartConfirmed && sufficiency.canShowTradeSetup && verdict?.dominantPattern) {
+        patternConfirmationLevel = verdict.confirmationLevel ?? undefined;
+        patternTrigger = { name: verdict.dominantPattern.name, bias: verdict.bias, invalidation: verdict.invalidationLevel };
+      }
     }
 
     // ── TRENDLINE TRUTH (Task #649) — display-only CHILD input ─────────────────
@@ -1841,6 +1876,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // data). The verdict's downgrade-only `scannerTruthImpact` is folded into
     // computeFinalRead/scannerActionability later; it can never raise a read.
     // Fail-open: the service returns null on any error / insufficient window.
+    let trendlineTrigger: ScannerOpportunity["trendlineTrigger"];
     let trendlineConfirmationLevel: number | undefined;
     let trendlineImpact: ScannerOpportunity["trendlineImpact"];
     if (routed?.rawCandles && routed.rawCandles.length > 0) {
@@ -1861,7 +1897,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         volatilityAtr: null,
       });
       trendlineImpact = tlVerdict?.scannerTruthImpact;
-      if (chartConfirmed && sufficiency.canShowTradeSetup) trendlineConfirmationLevel = tlVerdict?.confirmationLevel ?? undefined;
+      if (chartConfirmed && sufficiency.canShowTradeSetup && tlVerdict?.dominantTrendline) {
+        trendlineConfirmationLevel = tlVerdict.confirmationLevel ?? undefined;
+        trendlineTrigger = { name: tlVerdict.dominantTrendline.name, bias: tlVerdict.dominantTrendline.bias, side: tlVerdict.trendlineChange.bias, reclaimed: tlVerdict.status === "reclaimed" };
+      }
     }
 
     // ── READABILITY CONTRACT (display-only) ────────────────────────────────────
@@ -1912,9 +1951,9 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       regime,
       featureSnapshot,
       patternImpact,
-      patternConfirmationLevel,
+      patternConfirmationLevel, patternTrigger,
       trendlineImpact,
-      trendlineConfirmationLevel,
+      trendlineConfirmationLevel, trendlineTrigger,
       ...scannerCalibrationFields(sym, tf, displayAction, displayConfidenceScore),
     };
     if (routed) bindScannerSource(op, routed.sourceIdentity);

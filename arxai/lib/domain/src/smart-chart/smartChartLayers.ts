@@ -10,6 +10,7 @@
 // a NOT_AVAILABLE check, or a NO_PROVIDER behavior — never a fabricated value.
 // No internal enum token (UPPER_SNAKE) is ever placed in a user-facing string.
 
+import { resolveArxMarket } from "../market/arxFocusMarkets";
 import type { HandshakeOverallStatus } from "../handshake/handshake.types";
 import type {
   NewsBehaviorMode,
@@ -95,6 +96,7 @@ export function topAffectingSeverity(
 export function isSyntheticInstrument(symbol: string): boolean {
   const s = symbol.toUpperCase();
   return (
+    resolveArxMarket(symbol)?.category === "synthetic" ||
     s.includes("VOLATILITY") ||
     s.includes("CRASH") ||
     s.includes("BOOM") ||

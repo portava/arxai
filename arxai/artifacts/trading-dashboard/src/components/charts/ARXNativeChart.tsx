@@ -1421,8 +1421,9 @@ export function ARXNativeChart({
   }, [layers.drawings, chartEpoch]);
 
   useEffect(() => {
-    adapterRef.current?.setGhostPaths?.(visibleScenarioPaths);
-  }, [visibleScenarioPaths, chartEpoch]);
+    // Fit the projection only after real candles for its timeframe are on the axis.
+    adapterRef.current?.setGhostPaths?.(hasCandles ? visibleScenarioPaths : []);
+  }, [visibleScenarioPaths, chartEpoch, hasCandles]);
 
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -1944,13 +1945,17 @@ export function ARXNativeChart({
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
   </Fragment>;
 
+  const showForecastTimeframe = useCallback((tf: string) => {
+    if (isChartInterval(tf)) setTimeframe(tf);
+  }, [setTimeframe]);
+
   const chartDetailsContent = <>
     <div className={sectionClass("tools")} data-testid="arx-details-section-tools">
     {chartControls}
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
     </div>
     <div className={sectionClass("forecast")} data-testid="arx-details-section-forecast">
-    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${resolvedSymbol}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} chartTimeframe={timeframe} onShowOnTimeframe={tf => { if (isChartInterval(tf)) setTimeframe(tf); }} /></div>
+    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${resolvedSymbol}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} chartTimeframe={timeframe} onShowOnTimeframe={showForecastTimeframe} /></div>
     </div>
     <div className={sectionClass("read")} data-testid="arx-details-section-read">
       <div id="arx-smart-chart-read" data-testid="arx-smart-chart-read"><SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} /></div>

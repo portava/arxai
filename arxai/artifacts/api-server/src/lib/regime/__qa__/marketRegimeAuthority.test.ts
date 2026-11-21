@@ -179,6 +179,7 @@ test("an older window or a same-bar correction cannot advance or borrow future r
   const newer = bars(61, { driftPerBar: 1 });
   const held = resolveScannerRegime("EURUSD", "M5", newer, "mt5:bridge-1");
   assert.equal(resolveScannerRegime("EURUSD", "M5", older, "mt5:bridge-1").regime, "UNKNOWN");
+  assert.deepEqual(resolveScannerRegime("EURUSD", "M5", newer.slice(1), "mt5:bridge-1"), held);
   const correction = structuredClone(newer); correction[20]!.close += 0.01;
   assert.equal(resolveScannerRegime("EURUSD", "M5", correction, "mt5:bridge-1").regime, "UNKNOWN");
   assert.deepEqual(resolveScannerRegime("EURUSD", "M5", newer, "mt5:bridge-1"), held);
