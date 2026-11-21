@@ -135,3 +135,24 @@ test("a drift watch needs an aligned entry trigger and a spent pullback cannot f
   assert.deepEqual(driftPullbackTrigger([reclaim, { ...pullback, close: 99 }], "SELL"),
     { side: "SELL", level: 100, confirmed: true });
 });
+
+test("an aligned confirmed pattern can use one follow-through bar while an unrelated line forms", () => {
+  const bars = [
+    { open: 102, high: 103, low: 99, close: 100 },
+    { open: 100, high: 106, low: 100, close: 105 },
+    { open: 105, high: 108, low: 104, close: 107 },
+  ];
+  const row = mkOpp({ setupType: "Upward drift", regime: { regime: "TREND_UP", substate: null,
+    confidence01: .8, consecutiveConfirmations: 4, reasons: [] }, driftTrigger: driftPullbackTrigger(bars, "BUY"),
+    patternTrigger: { name: "Break and retest", bias: "bullish", confirmed: true, invalidation: 99 },
+    patternImpact: { labelHint: "needs_confirmation", conditional: true, qualityCeiling: "medium",
+      contextOnly: false, confidenceCeiling: 80, supportive: false, edgeAdjustment: 0 },
+    trendlineImpact: { labelHint: "forming_line", conditional: true, qualityCeiling: "medium",
+      contextOnly: false, confidenceCeiling: 60, supportive: false, edgeAdjustment: -5 } });
+  assert.equal(row.driftTrigger?.followThroughLevel, 103);
+  assert.equal(computeFinalRead(row).label, "TRADE_WATCH");
+  assert.equal(computeFinalRead({ ...row, chartConfirmed: false }).label, "WAIT_FOR_CONFIRMATION");
+  assert.equal(computeFinalRead({ ...row, patternTrigger: { ...row.patternTrigger!, confirmed: false } }).label, "WAIT_FOR_CONFIRMATION");
+  assert.equal(computeFinalRead({ ...row, trendlineImpact: { ...row.trendlineImpact!, labelHint: "trap_risk" } }).label, "AVOID_FOR_NOW");
+  assert.equal(driftPullbackTrigger([...bars, bars[2]!], "BUY")?.followThroughLevel, undefined);
+});

@@ -56,6 +56,7 @@ import {
 } from "@workspace/domain/profit-mission";
 import { isApprovedArxMarket } from "@workspace/domain/market";
 import { annotateScanProposals, exposureBudgetFrom } from "./missionExecutionQuality.js";
+import { reviewScannerOpportunities } from "./scannerReview.js";
 import { scanSymbolTimeframe, type ScannerOpportunity } from "./marketScanner.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 
@@ -172,17 +173,19 @@ function mapUrgency(confidence: number): ProposalUrgency {
  * Honest by construction: a setup is only actionable on a selectable LIVE feed;
  * anything else becomes a context-only record explaining the honest state.
  */
-function opportunityToProposal(
+export function opportunityToProposal(
   agentKey: MissionAgentKey,
   proposalId: string,
   opp: ScannerOpportunity,
 ): AgentProposal {
   const liveAndSelectable =
     ACTIONABLE_DATA_SOURCES.has(opp.dataSource) && opp.selectable && opp.tradeable;
-  const direction = liveAndSelectable ? mapDirection(opp.recommendedAction) : "NONE";
+  const actionable = liveAndSelectable && opp.finalRead?.label === "TRADE_WATCH" && !opp.finalRead.analysisOnly;
+  const direction = actionable ? mapDirection(opp.recommendedAction) : "NONE";
+  const waitReason = opp.finalRead?.headline ?? "Waiting for a final Scanner read.";
   const confidence = liveAndSelectable ? Math.max(0, Math.min(100, opp.confidenceScore)) : 0;
   const expectedR =
-    liveAndSelectable && Number.isFinite(opp.riskRewardRatio) && opp.riskRewardRatio > 0
+    direction !== "NONE" && Number.isFinite(opp.riskRewardRatio) && opp.riskRewardRatio > 0
       ? opp.riskRewardRatio
       : null;
   const warnings: string[] = [];
@@ -191,6 +194,8 @@ function opportunityToProposal(
       opp.disabledReason ??
         `No confirmed live feed for ${opp.symbol} (${opp.dataSource}) — context only, no setup.`,
     );
+  } else if (!actionable) {
+    warnings.push(waitReason);
   } else if (opp.reasonToAvoid) {
     warnings.push(opp.reasonToAvoid);
   }
@@ -204,18 +209,18 @@ function opportunityToProposal(
     confidence,
     urgency: mapUrgency(confidence),
     entryPlan: {
-      entryPrice: liveAndSelectable ? opp.entry : null,
+      entryPrice: direction !== "NONE" ? opp.entry : null,
       entryZoneLow: null,
       entryZoneHigh: null,
     },
     riskPlan: {
-      stopLoss: liveAndSelectable ? opp.stopLoss : null,
-      takeProfit: liveAndSelectable ? opp.takeProfit : null,
+      stopLoss: direction !== "NONE" ? opp.stopLoss : null,
+      takeProfit: direction !== "NONE" ? opp.takeProfit : null,
       riskAmount: null,
       expectedR,
     },
     reason: liveAndSelectable
-      ? opp.reasonForTrade || "Setup scouted from live feed."
+      ? actionable ? opp.reasonForTrade || "Setup scouted from live feed." : waitReason
       : `Awaiting a confirmed live feed for ${opp.symbol}.`,
     invalidationLevel: null,
     warnings,
@@ -226,6 +231,7 @@ function opportunityToProposal(
       confidenceScore: opp.confidenceScore,
       riskRewardRatio: opp.riskRewardRatio,
       recommendedAction: opp.recommendedAction,
+      finalRead: opp.finalRead?.label ?? null,
     },
     status: "proposed",
     riskObjection: null,
@@ -324,7 +330,13 @@ export async function runMissionScan(args: {
   // composed over scanner truth (no re-derivation) after the debate resolves.
   const oppByProposalId = new Map<string, ScannerOpportunity>();
   // Every specialist judges the same observation of a market in this scan.
-  const observations = new Map<string, ScannerOpportunity | null>();
+  const raw: ScannerOpportunity[] = [];
+  for (const symbol of symbols) {
+    if (!proposers.some(agent => agentProposesOn(agent, symbol))) continue;
+    const row = await scanSymbolTimeframe(symbol, timeframe).catch(() => null);
+    if (row) raw.push(row);
+  }
+  const observations = new Map((await reviewScannerOpportunities(raw)).map(row => [row.symbol, row]));
 
   for (const agent of proposers) {
     const eligible = symbols.filter((sym) => agentProposesOn(agent, sym));
@@ -333,9 +345,6 @@ export async function runMissionScan(args: {
     // Scout each eligible symbol; keep the single best read for this agent.
     let best: { opp: ScannerOpportunity; proposal: AgentProposal } | null = null;
     for (const sym of eligible) {
-      if (!observations.has(sym)) {
-        observations.set(sym, await scanSymbolTimeframe(sym, timeframe).catch(() => null));
-      }
       const opp = observations.get(sym);
       if (!opp) continue;
       if (ACTIONABLE_DATA_SOURCES.has(opp.dataSource) && opp.selectable) liveFeedConnected = true;

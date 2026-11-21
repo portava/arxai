@@ -14,12 +14,9 @@ import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js
 import {
   scanOnceSnapshot, scannerSnapshot, scannerFeedNote, scannerStart, scannerStop, scannerStatus,
   opportunityScore, sessionPlan, decisionStream, listAlerts, alertAction, alertCount, alertCountCoverage,
-  decorateOpportunitiesWithHistory, decorateOpportunitiesWithNewsRisk,
-  decorateOpportunitiesWithFinalRead, decorateOpportunitiesWithTimingContext,
-  decorateOpportunitiesWithFvgRead,
-  rankScannerOpportunities,
   DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES, UNIVERSES, UNIVERSE_IDS, type UniverseId,
 } from "../lib/marketScanner.js";
+import { reviewScannerOpportunities } from "../lib/scannerReview.js";
 import {
   projectOpportunitiesForViewer,
   viewerSeesSimulatorDetail,
@@ -80,15 +77,7 @@ router.get("/market-scanner/opportunities", withScannerReadAdmission(async (req,
   const status = scannerStatus();
   const snapshot = scannerSnapshot(parsedLimit.data);
   const base = snapshot?.opportunities ?? [];
-  const withHistory = await decorateOpportunitiesWithHistory(base);
-  const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
-  const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
-  const withFvg = await decorateOpportunitiesWithFvgRead(withTiming);
-  // Re-rank after the timing boost with the SAME three-tier measured ranking
-  // the scan used (calibrated probability → measured base rate → raw score,
-  // labelled unmeasured). The heat-adjusted score only orders rows inside the
-  // unmeasured tier and breaks ties; it never outranks a measured row.
-  const decorated = decorateOpportunitiesWithFinalRead(rankScannerOpportunities(withFvg));
+  const decorated = await reviewScannerOpportunities(base);
   // Non-admin/owner viewers never see simulator-derived indicator values:
   // simulator rows are masked to an honest "Waiting for verified feed" state.
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
@@ -179,15 +168,7 @@ router.post("/market-scanner/scan", requireUser, withScannerReadAdmission(async 
   }
   const snapshot = await scanOnceSnapshot(p.data);
   const opps = snapshot.opportunities;
-  const withHistory = await decorateOpportunitiesWithHistory(opps);
-  const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
-  const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
-  const withFvg = await decorateOpportunitiesWithFvgRead(withTiming);
-  // Re-rank after the timing boost with the SAME three-tier measured ranking
-  // the scan used (calibrated probability → measured base rate → raw score,
-  // labelled unmeasured). The heat-adjusted score only orders rows inside the
-  // unmeasured tier and breaks ties; it never outranks a measured row.
-  const decorated = decorateOpportunitiesWithFinalRead(rankScannerOpportunities(withFvg));
+  const decorated = await reviewScannerOpportunities(opps);
   // Non-admin/owner viewers never see simulator-derived indicator values.
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
   return res.json({

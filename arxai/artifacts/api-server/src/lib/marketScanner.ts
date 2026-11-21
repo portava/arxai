@@ -841,8 +841,21 @@ export function computeFinalRead(
   //    ran). A `supportive` confirmed pattern adds NO label change (the feed/
   //    sufficiency/chart caps remain the sole authority for actionability); it
   //    only contributes its edge nudge to the opportunity score upstream.
+  const side = opp.recommendedAction, buy = side === "BUY";
+  const driftSetup = (buy || side === "SELL") && opp.setupType === (buy ? "Upward drift" : "Downward drift");
+  const bias = buy ? "bullish" : "bearish";
+  const aligned = opp.regime?.regime === (buy ? "TREND_UP" : "TREND_DOWN");
+  const timing = opp.timingContext;
+  const trigger = opp.driftTrigger?.side === side ? opp.driftTrigger : undefined;
+  const matchingPattern = opp.patternTrigger?.confirmed && opp.patternTrigger.bias === bias;
+  const followThrough = matchingPattern ? trigger?.followThroughLevel : undefined;
+  const entryConfirmed = driftSetup && aligned && (trigger?.confirmed === true || followThrough !== undefined);
   const pat = opp.patternImpact;
-  if (pat && pat.labelHint !== "none") {
+  const patternIsSecondary = entryConfirmed && !pat?.contextOnly &&
+    (pat?.labelHint === "forming_setup" || (pat?.labelHint === "needs_confirmation" && matchingPattern));
+  if (patternIsSecondary) {
+    reasons.push(matchingPattern ? "The chart pattern and the closed pullback entry agree." : "A separate chart pattern is still forming.");
+  } else if (pat && pat.labelHint !== "none") {
     if (pat.labelHint === "failed_setup") {
       if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") {
         label = "AVOID_FOR_NOW";
@@ -891,7 +904,9 @@ export function computeFinalRead(
   //    change (the feed/sufficiency/chart/pattern caps remain the sole authority
   //    for actionability); it only contributes its edge nudge upstream.
   const tl = opp.trendlineImpact;
-  if (tl && tl.labelHint !== "none" && tl.labelHint !== "supportive") {
+  if (entryConfirmed && tl?.labelHint === "forming_line" && !tl.contextOnly && !opp.trendlineTrigger?.reclaimed) {
+    reasons.push("A separate trendline still has only two touches.");
+  } else if (tl && tl.labelHint !== "none" && tl.labelHint !== "supportive") {
     if (tl.labelHint === "trap_risk") {
       if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") {
         label = "AVOID_FOR_NOW";
@@ -946,22 +961,17 @@ export function computeFinalRead(
     }
   }
 
-  const side = opp.recommendedAction;
-  const drift = side === "BUY" ? "Upward drift" : "Downward drift";
-  if (label === "TRADE_WATCH" && (side === "BUY" || side === "SELL") && opp.setupType === drift) {
-    const buy = side === "BUY", trend = buy ? "TREND_UP" : "TREND_DOWN";
-    const bias = buy ? "bullish" : "bearish", timing = opp.timingContext;
-    const structure = (pat?.labelHint === "supportive" && opp.patternTrigger?.confirmed && opp.patternTrigger.bias === bias)
-      || (tl?.labelHint === "supportive" && opp.trendlineTrigger?.bias === bias);
-    const trigger = opp.driftTrigger?.side === side ? opp.driftTrigger : undefined;
-    const aligned = opp.regime?.regime === trend;
+  const structure = (pat?.labelHint === "supportive" && matchingPattern)
+    || (tl?.labelHint === "supportive" && opp.trendlineTrigger?.bias === bias);
+  if (label === "TRADE_WATCH" && driftSetup) {
     const timed = timing?.timeframe === opp.timeframe && timing.entryPermission === "GO" && timing.pressureBias === side;
     if (timing?.timeframe === opp.timeframe && ["NO_TRADE", "STAND_DOWN", "WAIT_NEWS"].includes(timing.entryPermission)) {
       label = timing.entryPermission === "WAIT_NEWS" ? "WAIT_FOR_CONFIRMATION" : "AVOID_FOR_NOW";
       reasons.push(timing.actionReason);
       confirmations.push(timing.actionReason);
-    } else if (structure || (aligned && (trigger?.confirmed || timed))) {
+    } else if (structure || entryConfirmed || (aligned && timed)) {
       reasons.push(structure ? "Chart structure confirms the entry direction." : timed ? "Entry timing and pressure agree with the trend."
+        : followThrough !== undefined ? `Two ${opp.timeframe} closes held beyond ${priceText(followThrough)} and the second extended the breakout with the confirmed chart pattern.`
         : `The ${opp.timeframe} pullback closed back through ${priceText(trigger?.level ?? undefined)} with the trend.`);
     } else {
       label = "WAIT_FOR_CONFIRMATION";
@@ -1495,7 +1505,12 @@ export function driftPullbackTrigger(
   const buy = side === "BUY";
   let level: number | null = null;
   let reclaimed: number | null = null;
+  let followThroughLevel: number | undefined;
+  let previous: (typeof bars)[number] | undefined;
   for (const bar of bars) {
+    followThroughLevel = previous && reclaimed !== null &&
+      (buy ? bar.close > previous.high : bar.close < previous.low) ? reclaimed : undefined;
+    previous = bar;
     reclaimed = null;
     // Honor the already displayed closing threshold even on a bearish-bodied
     // gap up (or bullish-bodied gap down). A new pullback only replaces an
@@ -1507,7 +1522,8 @@ export function driftPullbackTrigger(
       level = buy ? bar.high : bar.low;
     }
   }
-  return { side, level: reclaimed ?? level, confirmed: reclaimed !== null };
+  return { side, level: reclaimed ?? level, confirmed: reclaimed !== null,
+    ...(followThroughLevel !== undefined ? { followThroughLevel } : {}) };
 }
 
 /**
