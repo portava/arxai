@@ -106,7 +106,8 @@ ensureSafetyCoreInitialized()
     });
   })
   .then(() => {
-    httpServer = app.listen(port, (err) => {
+    const address = process.env.ARX_LOOPBACK_ONLY === "true" ? { port, host: "127.0.0.1" } : { port };
+    httpServer = app.listen(address, (err) => {
       if (err) {
         logger.error({ err }, "Error listening on port");
         process.exit(1);

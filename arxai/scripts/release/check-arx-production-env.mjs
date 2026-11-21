@@ -20,12 +20,16 @@ export function checkProductionEnvironment(env) {
       && !u.search && !u.hash && u.pathname === '/'
       && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)
       && !u.hostname.endsWith('.localhost') && !u.hostname.endsWith('.replit.dev');
+    if (env.ARX_LOOPBACK_ONLY === 'true') {
+      const localOrigin = new URL('http://127.0.0.1:' + env.PORT).origin;
+      origin = u.href === localOrigin + '/';
+    }
     if (env.APP_PUBLIC_ORIGIN) {
       const reset = new URL(env.APP_PUBLIC_ORIGIN);
       origin = origin && reset.origin === u.origin && reset.pathname === '/' && !reset.search && !reset.hash && !reset.username && !reset.password;
     }
   } catch {}
-  add('HTTPS public origin configured', origin);
+  add(env.ARX_LOOPBACK_ONLY === 'true' ? 'loopback origin configured' : 'HTTPS public origin configured', origin);
   return { ok: checks.every(c => c.ok), checks };
 }
 

@@ -11,6 +11,11 @@ export function resolvePublicOrigin(env: NodeJS.ProcessEnv = process.env): strin
     const url = new URL(raw);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash
       || url.pathname !== '/') throw new Error();
+    if (env.ARX_LOOPBACK_ONLY === "true") {
+      if (!/^\d+$/.test(env.PORT ?? "") || Number(env.PORT) < 1 ||
+        url.href !== new URL(`http://127.0.0.1:${env.PORT}`).href) throw new Error();
+      return url.origin;
+    }
     if (production && (url.protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
       || url.hostname.endsWith('.localhost') || url.hostname.endsWith('.replit.dev'))) throw new Error();
     return url.origin;

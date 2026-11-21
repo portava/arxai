@@ -25,3 +25,10 @@ test("development retains explicit local and Replit preview fallbacks", () => {
   assert.equal(resolvePublicOrigin({ NODE_ENV: "test", REPLIT_DEV_DOMAIN: "preview.replit.dev" }), "https://preview.replit.dev");
   assert.equal(resolvePublicOrigin({ NODE_ENV: "development", APP_PUBLIC_ORIGIN: "http://localhost:24210/" }), "http://localhost:24210");
 });
+
+test("local-only reset links use the exact listening origin", () => {
+  const local = { NODE_ENV: "production", ARX_LOOPBACK_ONLY: "true", PORT: "48121", APP_BASE_URL: "http://127.0.0.1:48121" };
+  assert.equal(resolvePublicOrigin(local), local.APP_BASE_URL);
+  assert.throws(() => resolvePublicOrigin({ ...local, APP_PUBLIC_ORIGIN: "https://remote.example" }));
+  assert.throws(() => resolvePublicOrigin({ ...local, PORT: "48122" }));
+});

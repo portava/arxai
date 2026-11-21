@@ -21,6 +21,17 @@ import path from "node:path";
 import { pool } from "@workspace/db";
 
 const app: Express = express();
+if (process.env.ARX_LOOPBACK_ONLY === "true") {
+  const local = new URL(`http://127.0.0.1:${process.env.PORT}`);
+  app.use((req, res, next) => {
+    const origin = req.get("origin");
+    if (req.get("host") !== local.host || (origin !== undefined && origin !== local.origin)) {
+      res.sendStatus(403);
+      return;
+    }
+    next();
+  });
+}
 // An idle connection error is recoverable: pg removes the failed connection.
 // Observe it without allowing EventEmitter's unhandled error to kill the API.
 pool.on("error", (err) => logger.error({ err }, "Idle database connection failed"));
