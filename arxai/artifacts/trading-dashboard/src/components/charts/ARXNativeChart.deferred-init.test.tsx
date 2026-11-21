@@ -175,6 +175,7 @@ describe("initial responsive chart height", () => {
   it("keeps OHLC, high–low range and qualified volume visible below the compact chart", () => {
     vi.stubGlobal("innerWidth", 1280);
     candleResponse = liveResponse("EURUSD", "H1");
+    Object.assign(candleResponse.candles[0]!, { volumeEvidence: { kind: "tick_count", unit: "ticks", quantity: 53, reason: null } });
     render(<ARXNativeChart symbol="EURUSD" timeframe="H1" compactWorkspace showFeedStatus={false} overlays={NO_OVERLAYS}/>);
     const inspector = screen.getByTestId("chart-candle-inspector");
     expect(inspector.closest("[hidden]")).toBeNull();
@@ -1106,7 +1107,8 @@ describe("qualified volume handoff to native renderer",()=>{
     candleResponse=liveResponse("EURUSD","H1");
     localStorage.setItem("arx.chart.preferences.v1",JSON.stringify({studies:[{kind:"tick_volume",period:1,color:"#38bdf8"}]}));
     render(<ARXNativeChart symbol="EURUSD" timeframe="H1"/>);
-    expect(screen.getByText(/Tick volume unavailable for these loaded candles/)).toBeTruthy();
+    expect(screen.getByText(/Tick volume unavailable for these loaded candles/).closest("details")).toBeTruthy();
+    expect(created[0]!.setStudies.mock.lastCall![0]).toEqual([]);
   });
   it("preserves explicit source-qualified historical counts and never promotes partial ticks",()=>{
     const data=liveResponse("EURUSD","H1");

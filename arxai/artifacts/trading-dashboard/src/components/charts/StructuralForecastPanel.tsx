@@ -27,9 +27,9 @@ export function trajectoryLabel(t: Trajectory, p: Triple | undefined, directionE
 }
 /** The short label drawn where a path ends on the chart, e.g. "Bull +0.10% · range top". */
 export function trajectoryChartLabel(t: Trajectory, directionEdge = false, weights?: Triple): string {
-  if (t.kind === "MIDDLE") return `Middle ${signed(t.endChange)} · median`;
+  if (t.kind === "MIDDLE") return weights ? "Median" : `Middle ${signed(t.endChange)} · median`;
   const up = t.kind === "BULL";
-  if (weights) return `${up ? "Up" : "Down"} first ${formatWeight(weights[up ? 0 : 1])} · range ${up ? "top" : "bottom"}`;
+  if (weights) return `${up ? "Up" : "Down"} first ${formatWeight(weights[up ? 0 : 1])}`;
   return `${pathNames[t.kind]} ${signed(t.endChange)} · ${directionEdge ? `${pct(t.share)} ${up ? "higher" : "lower"}` : `range ${up ? "top" : "bottom"}`}`;
 }
 /** Which engine drew the range on this market, why, and whether up/down has a tested edge. */
@@ -103,6 +103,13 @@ export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionR
 }
 
 const formatWeight = (p: number) => p > 0 && p < 0.0005 ? "<0.1%" : `${(100 * p).toFixed(1)}%`;
+
+export function forecastHeadline(read: ForecastDirectionRead) {
+  if (!read.favoriteScenario) return "No clear favorite";
+  const index = allScenarios.indexOf(read.favoriteScenario);
+  const label = ["Up first", "Down first", "No break"][index];
+  return `${label} ${formatWeight(read.weights[index]!)}`;
+}
 
 export function ForecastDirectionSummary({ read }: { read: ForecastDirectionRead }) {
   const ended = Date.now() >= read.endsAt;

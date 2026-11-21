@@ -133,7 +133,7 @@ function toOverlayTf(tf: string): OverlayTf | null {
 function toAnnotationTf(tf: string): ChartAnnotationCreateRequestTimeframe | null { return toOverlayTf(tf); }
 
 // ── Smart Chart Layers (Task #197) — per-layer visibility toggles, persisted
-//    across sessions. Defaults: everything visible. Keyed globally (not
+//    across sessions. Structure readings open below the plot. Level guides are opt-in. Keyed globally (not
 //    per-symbol) so a trader's preference follows them between instruments.
 type SmartLayerGroup =
   | "structure"
@@ -156,7 +156,7 @@ const LAYER_TOGGLE_KEY = "arx.smartChart.layerToggles.v1";
 
 function loadLayerToggles(): Record<SmartLayerGroup, boolean> {
   const base: Record<SmartLayerGroup, boolean> = {
-    structure: true,
+    structure: false,
     signal_zones: true,
     targets: true,
     execution_cost: true,
@@ -953,6 +953,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       sourceDataNote: hi.sourceDataNote ?? null,
     });
   }, [smartData, candles.length, symbol, handshakeNowMs]);
+  const structureReadings = smartLayers.filter(l => l.group === "structure" && !l.reserved && l.price != null && Number.isFinite(l.price));
   const reservedLayers = useMemo(() => smartLayers.filter((l) => l.reserved), [smartLayers]);
   // The overlay handshake badge must defer to a neutral "unavailable" label
   // while the smart-layer query is degraded (errored / refetch-failed). React
@@ -1584,6 +1585,10 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       if (l.reserved) continue; // reserved slots: no live value to draw yet
       if (l.group === "news") continue; // news is time-based → drawn as markers
       if (!layerToggles[l.group as SmartLayerGroup]) continue;
+      if (l.group === "structure") {
+        add(l.price, "rgba(148,163,184,0.42)", "", true);
+        continue;
+      }
       const color = smartLayerColor(l.severity);
       const dashed = l.kind === "zone" || l.group === "signal_zones";
       if (l.kind === "zone") {
@@ -2314,6 +2319,16 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
               onPointerUp: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
               onPointerMove: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
           }}
+          chartReadings={structureReadings.length > 0 && <details data-testid="scanner-price-readings" className="border-t border-border px-3 text-xs">
+            <summary className="cursor-pointer py-2 font-medium">Chart readings <span className="ml-1 text-muted-foreground">· {structureReadings.length} levels</span></summary>
+            <label className="mb-2 inline-flex items-center gap-2"><input type="checkbox" checked={layerToggles.structure} onChange={() => toggleLayer("structure")} /> Show level guides on chart</label>
+            {overlayDegraded && <p className="mb-2 text-amber-300">Showing the last readings received. The latest refresh failed.</p>}
+            <ul className="mb-2 divide-y divide-border">
+              {structureReadings.map(level => <li key={level.id} className="flex items-baseline gap-3 py-1.5">
+                <span className="shrink-0 font-mono tabular-nums">{fmt(level.price!)}</span><span>{level.label}</span>
+              </li>)}
+            </ul>
+          </details>}
           canvasOverlay={<>
               {menu && (
                 <ChartCommandMenu

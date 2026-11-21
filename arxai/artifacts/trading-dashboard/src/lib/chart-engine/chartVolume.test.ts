@@ -13,7 +13,7 @@ describe("source-qualified tick volume through existing study engine",()=>{
     expect(chartDisplayStudies([],true,false,true)[0]?.kind).toBe("trade_volume");
     expect(chartDisplayStudies([config],true,true,false)).toEqual([config]);
     expect(chartDisplayStudies([config],false,true,false)).toEqual([]);
-    expect(chartDisplayStudies([],true,false,false)[0]?.kind).toBe("tick_volume");
+    expect(chartDisplayStudies([],true,false,false)).toEqual([]);
   });
   it("distinguishes observed zero ticks, traded units and missing volume in the bottom readout",()=>{
     expect(candleVolumeLabel(evidence(0))).toBe("Tick volume 0");

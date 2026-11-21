@@ -12,7 +12,7 @@ import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-en
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLayersMenu } from "./ChartLayersMenu";
-import { StructuralForecastPanel, ForecastDirectionSummary, routeProgress, type ForecastDrawPath, type ForecastDirectionRead } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, ForecastDirectionSummary, forecastHeadline, routeProgress, type ForecastDrawPath, type ForecastDirectionRead } from "./StructuralForecastPanel";
 import {
   allLayers,
   overlayLayer,
@@ -284,6 +284,7 @@ export interface ARXNativeChartProps {
   onMarketFrozenChange?: (frozen: { lastBrokerTimeMs: number | null } | null) => void;
   canvasEvents?: Pick<HTMLAttributes<HTMLDivElement>, "onContextMenu" | "onPointerDown" | "onPointerUp" | "onPointerMove">;
   canvasOverlay?: ReactNode;
+  chartReadings?: ReactNode;
   /** Max candles to request (default 300; contract caps at 5000). */
   limit?: number;
   /**
@@ -344,6 +345,7 @@ export function ARXNativeChart({
   onMarketFrozenChange,
   canvasEvents,
   canvasOverlay,
+  chartReadings,
   limit = 300,
   overlays: suppliedOverlays = EMPTY_OVERLAYS,
   onChartContextChange,
@@ -365,7 +367,7 @@ export function ARXNativeChart({
   const [preferencesSaved, setPreferencesSaved] = useState(true);
   const [layers, setLayers] = useState<ChartLayerVisibility>(() => allLayers(true));
   const [forecastRead, setForecastRead] = useState<ForecastDirectionRead | null>(null);
-  const [showOriginalForecast, setShowOriginalForecast] = useState(true);
+  const [showOriginalForecast, setShowOriginalForecast] = useState(false);
   const [scenarioGhostPaths, setScenarioGhostPaths] = useState<ChartGhostPath[]>([]);
   const [renderVerdict, setRenderVerdict] = useState<RenderVerdict | null>(null);
   const scaleMode = preferences.scale;
@@ -1093,7 +1095,8 @@ export function ARXNativeChart({
   const hasQualifiedTradeVolume = useMemo(() => mergedEngineCandles.some(candle => observedTradeVolume(candle.volumeEvidence) != null), [mergedEngineCandles]);
   const displayStudies = useMemo(() => chartDisplayStudies(preferences.studies, preferences.volumePane !== false, hasQualifiedTickVolume, hasQualifiedTradeVolume), [preferences.studies, preferences.volumePane, hasQualifiedTickVolume, hasQualifiedTradeVolume]);
   const tradeVolumeSelected = displayStudies.some(study => ["trade_volume","vwap"].includes(study.kind) && study.lineStyles?.[0]?.visible !== false);
-  const tickVolumeSelected = displayStudies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false);
+  const tickVolumeUnavailable = preferences.volumePane !== false && hasCandles && !hasQualifiedTickVolume
+    && (!hasQualifiedTradeVolume || preferences.studies.some(study => study.kind === "tick_volume" && study.lineStyles?.[0]?.visible !== false));
   useEffect(() => {
     adapterRef.current?.setStudies?.(displayStudies);
     updateLegend(inspectedCandleRef.current);
@@ -1902,7 +1905,7 @@ export function ARXNativeChart({
   // Sections stay mounted; the window shows the one that was asked for.
   const sectionClass = (name: "tools" | "forecast" | "read") => !detailsAsPopup || detailsSection === "all" || detailsSection === name ? "contents" : "hidden";
   const clockStatus = utcClockQualified ? "Clock: UTC" : "Source clock · UTC unverified";
-  const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle">Volume {preferences.volumePane === false ? "off" : "on"}</Button>;
+  const volumeToggle = <Button size="sm" variant="outline" className="h-7 px-2 text-xs" aria-pressed={preferences.volumePane !== false} onClick={() => setPreferences(previous => ({ ...previous, volumePane: previous.volumePane === false }))} data-testid="chart-volume-toggle" title="Show volume when the feed supplies qualified observations">Volume {preferences.volumePane === false ? "off" : hasQualifiedTickVolume || hasQualifiedTradeVolume ? "on" : "unavailable"}</Button>;
   const compactQuickTools = compactDesktopWorkspace ? (
     <div
       className="flex min-w-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-2 py-1.5"
@@ -2126,7 +2129,7 @@ export function ARXNativeChart({
       {compactQuickTools}
       {replayError && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{replayError}</p>}
       {tradeVolumeSelected && hasCandles && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
-      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles.</p>}
+
       {!supportedTimeframe && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* This is a presentation of the existing owners, not another verdict.
@@ -2150,6 +2153,7 @@ export function ARXNativeChart({
           <summary className={`cursor-pointer px-3 ${compactDesktopWorkspace ? "py-1" : "py-1.5"} text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`}>
             <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{stripLabel} · {timeframe}</span>
           </summary>
+      {tickVolumeUnavailable && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles.</p>}
       {/* Feed strip — the server's grade of the candle response on screen
           (capped exactly like the header chip) and the specific reason when it
           is stale, invalid or unavailable. Informational only; it never gates
@@ -2271,7 +2275,12 @@ export function ARXNativeChart({
       </section>
 
       {forecastRead?.symbol === resolvedSymbol && forecastRead.timeframe === timeframe && (
-        <section aria-label="Chart forecast" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border px-3 py-2">
+        <details aria-label="Chart forecast" className="border-t border-border px-3 text-xs">
+          <summary className="cursor-pointer py-2">
+            <strong>{forecastHeadline(forecastRead)}</strong> · {forecastRead.window}
+            <span className="ml-2 text-muted-foreground">{forecastRead.savedFallback ? "Saved forecast · live update unavailable" : Date.now() >= forecastRead.endsAt ? "Forecast ended" : "Forecast details"}</span>
+          </summary>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pb-2">
           <ForecastDirectionSummary read={forecastRead} />
           {routeRead && <div data-testid="forecast-route-progress" className="min-w-0 text-xs">
             {routeStats ? <>
@@ -2288,7 +2297,8 @@ export function ARXNativeChart({
             {scenarioPathsOnThisChart.some(p => p.faded) &&
               <label className="inline-flex items-center gap-1"><input type="checkbox" checked={showOriginalForecast} onChange={e => setShowOriginalForecast(e.target.checked)} /> Show dashed original forecast</label>}
           </div>
-        </section>
+          </div>
+        </details>
       )}
       <CardContent key="plot" className={compactWorkspace ? "arx-native-plot relative p-0" : "relative p-0"}>
         {/* The chart canvas is always mounted so the v5 series handle is stable;
@@ -2381,6 +2391,7 @@ export function ARXNativeChart({
           </div>
         )}
       </CardContent>
+      {chartReadings}
       <output ref={legendRef} aria-label="Candle time, OHLC prices, high–low range and volume" className="block min-h-8 whitespace-normal break-words border-t border-zinc-800 pl-3 pr-20 py-2 font-mono text-[11px] leading-5 text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect its prices, range and volume
       </output>

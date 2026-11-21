@@ -5,7 +5,7 @@ export type { CandleVolumeEvidence } from "@workspace/api-client-react";
 /** Volume is visible by default; saved study settings remain intact when hidden. */
 export function chartDisplayStudies(studies: ChartStudy[], enabled: boolean, hasTicks: boolean, hasTrades: boolean): ChartStudy[] {
   const isVolume = (study: ChartStudy) => study.kind === "tick_volume" || study.kind === "trade_volume";
-  if (!enabled) return studies.filter(study => !isVolume(study));
+  if (!enabled || (!hasTicks && !hasTrades)) return studies.filter(study => !isVolume(study));
   if (studies.some(study => isVolume(study) && study.lineStyles?.[0]?.visible !== false)) return studies;
   return [...studies, { id: "arx-default-volume", kind: hasTrades && !hasTicks ? "trade_volume" : "tick_volume", period: 1, color: "#22c55e" }];
 }

@@ -80,7 +80,7 @@ describe("ARX structural forecast controls", () => {
     const labels = onPaths.mock.lastCall![0].map((p: { label: string }) => p.label);
     // Short labels on the chart; the full sentence stays in the panel's path list.
     // No tested direction edge on this market: the "x% higher" share is not shown.
-    expect(labels).toEqual(["Up first 50.0% · range top", "Middle +0.10% · median", "Down first 30.0% · range bottom"]);
+    expect(labels).toEqual(["Up first 50.0%", "Median", "Down first 30.0%"]);
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · top of the range · up-break first 50%");
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · bottom of the range · down-break first 30%");
     expect(screen.getByLabelText("Projected paths").textContent).not.toMatch(/ended higher|ended lower/);
