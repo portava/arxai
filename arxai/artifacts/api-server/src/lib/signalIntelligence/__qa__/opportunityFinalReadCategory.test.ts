@@ -127,6 +127,11 @@ test("a drift watch needs an aligned entry trigger and a spent pullback cannot f
   assert.equal(read([pullback, reclaim, { ...reclaim, close: 105 }]).label, "WAIT_FOR_CONFIRMATION");
   assert.equal(computeFinalRead({ ...row, regime: { ...row.regime!, regime: "RANGE" },
     driftTrigger: driftPullbackTrigger([pullback, reclaim], "BUY") }).label, "WAIT_FOR_CONFIRMATION");
+  const redAbove = { open: 108, high: 109, low: 104, close: 105 };
+  assert.equal(read([pullback, redAbove]).label, "TRADE_WATCH");
+  const greenBelow = { open: 96, high: 99, low: 95, close: 98 };
+  assert.deepEqual(driftPullbackTrigger([reclaim, greenBelow], "SELL"),
+    { side: "SELL", level: 100, confirmed: true });
   assert.deepEqual(driftPullbackTrigger([reclaim, { ...pullback, close: 99 }], "SELL"),
     { side: "SELL", level: 100, confirmed: true });
 });

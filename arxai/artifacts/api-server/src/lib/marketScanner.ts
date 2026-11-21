@@ -1493,18 +1493,21 @@ export function driftPullbackTrigger(
 ) {
   if (side !== "BUY" && side !== "SELL") return undefined;
   const buy = side === "BUY";
-  let level: number | null = null, confirmed = false;
+  let level: number | null = null;
+  let reclaimed: number | null = null;
   for (const bar of bars) {
-    confirmed = false;
-    if (buy ? bar.close < bar.open : bar.close > bar.open) {
+    reclaimed = null;
+    // Honor the already displayed closing threshold even on a bearish-bodied
+    // gap up (or bullish-bodied gap down). A new pullback only replaces an
+    // unbroken level.
+    if (level !== null && (buy ? bar.close > level : bar.close < level)) {
+      reclaimed = level;
+      level = null;
+    } else if (buy ? bar.close < bar.open : bar.close > bar.open) {
       level = buy ? bar.high : bar.low;
-    } else if (level !== null && (buy ? bar.close > level : bar.close < level)) {
-      confirmed = true;
-      // A spent trigger must not fire again without a new pullback.
-      if (bar !== bars.at(-1)) level = null;
     }
   }
-  return { side, level, confirmed };
+  return { side, level: reclaimed ?? level, confirmed: reclaimed !== null };
 }
 
 /**
