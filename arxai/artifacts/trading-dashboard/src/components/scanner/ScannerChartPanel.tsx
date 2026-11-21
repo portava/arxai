@@ -152,14 +152,19 @@ const SMART_LAYER_TOGGLES: { id: SmartLayerGroup; label: string }[] = [
   { id: "trade_health", label: "Health" },
 ];
 
+const readingGroups = [
+  { id: "structure", label: "Support and resistance" }, { id: "signal_zones", label: "Setup zones" },
+  { id: "targets", label: "Proposed stop and targets" }, { id: "execution_cost", label: "Estimated trading costs" },
+] as const;
+
 const LAYER_TOGGLE_KEY = "arx.smartChart.layerToggles.v1";
 
 function loadLayerToggles(): Record<SmartLayerGroup, boolean> {
   const base: Record<SmartLayerGroup, boolean> = {
     structure: false,
-    signal_zones: true,
-    targets: true,
-    execution_cost: true,
+    signal_zones: false,
+    targets: false,
+    execution_cost: false,
     trade_health: true,
     news: true,
   };
@@ -953,7 +958,8 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       sourceDataNote: hi.sourceDataNote ?? null,
     });
   }, [smartData, candles.length, symbol, handshakeNowMs]);
-  const structureReadings = smartLayers.filter(l => l.group === "structure" && !l.reserved && l.price != null && Number.isFinite(l.price));
+  const readings = smartLayers.filter(l => !l.reserved && readingGroups.some(g => g.id === l.group)
+    && (l.kind === "line" ? Number.isFinite(l.price) : l.kind === "zone" && Number.isFinite(l.priceFrom) && Number.isFinite(l.priceTo)));
   const reservedLayers = useMemo(() => smartLayers.filter((l) => l.reserved), [smartLayers]);
   // The overlay handshake badge must defer to a neutral "unavailable" label
   // while the smart-layer query is degraded (errored / refetch-failed). React
@@ -1585,17 +1591,15 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       if (l.reserved) continue; // reserved slots: no live value to draw yet
       if (l.group === "news") continue; // news is time-based → drawn as markers
       if (!layerToggles[l.group as SmartLayerGroup]) continue;
-      if (l.group === "structure") {
-        add(l.price, "rgba(148,163,184,0.42)", "", true);
-        continue;
-      }
-      const color = smartLayerColor(l.severity);
-      const dashed = l.kind === "zone" || l.group === "signal_zones";
+      const advisory = readingGroups.some(g => g.id === l.group);
+      const title = advisory ? "" : l.label;
+      const color = l.group === "structure" ? "rgba(148,163,184,0.42)" : smartLayerColor(l.severity);
+      const dashed = advisory || l.kind === "zone";
       if (l.kind === "zone") {
-        add(l.priceFrom, color, l.label, dashed);
-        add(l.priceTo, color, l.label, dashed);
+        add(l.priceFrom, color, title, dashed);
+        add(l.priceTo, color, title, dashed);
       } else if (l.kind === "line") {
-        add(l.price, color, l.label, dashed);
+        add(l.price, color, title, dashed);
       }
     }
 
@@ -2319,15 +2323,21 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
               onPointerUp: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
               onPointerMove: () => { if (longPressRef.current) window.clearTimeout(longPressRef.current); longPressRef.current = null; },
           }}
-          chartReadings={structureReadings.length > 0 && <details data-testid="scanner-price-readings" className="border-t border-border px-3 text-xs">
-            <summary className="cursor-pointer py-2 font-medium">Chart readings <span className="ml-1 text-muted-foreground">· {structureReadings.length} levels</span></summary>
-            <label className="mb-2 inline-flex items-center gap-2"><input type="checkbox" checked={layerToggles.structure} onChange={() => toggleLayer("structure")} /> Show level guides on chart</label>
+          chartReadings={readings.length > 0 && <details data-testid="scanner-price-readings" className="border-t border-border px-3 text-xs">
+            <summary className="cursor-pointer py-2 font-medium">Chart readings <span className="ml-1 text-muted-foreground">· {readings.length} levels</span></summary>
             {overlayDegraded && <p className="mb-2 text-amber-300">Showing the last readings received. The latest refresh failed.</p>}
-            <ul className="mb-2 divide-y divide-border">
-              {structureReadings.map(level => <li key={level.id} className="flex items-baseline gap-3 py-1.5">
-                <span className="shrink-0 font-mono tabular-nums">{fmt(level.price!)}</span><span>{level.label}</span>
-              </li>)}
-            </ul>
+            {readingGroups.map(group => {
+              const rows = readings.filter(level => level.group === group.id);
+              return rows.length > 0 && <section key={group.id} className="mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-1">
+                  <strong>{group.label}</strong>
+                  <label className="inline-flex items-center gap-1.5"><input type="checkbox" aria-label={`Show ${group.label.toLowerCase()} guides`} checked={layerToggles[group.id]} onChange={() => toggleLayer(group.id)} /> Show guides</label>
+                </div>
+                <ul>{rows.map(level => <li key={level.id} className="flex items-baseline justify-between gap-3 py-1">
+                  <span>{level.label}</span><span className="shrink-0 font-mono tabular-nums">{level.kind === "zone" ? `${fmt(level.priceFrom!)} – ${fmt(level.priceTo!)}` : fmt(level.price!)}</span>
+                </li>)}</ul>
+              </section>;
+            })}
           </details>}
           canvasOverlay={<>
               {menu && (
