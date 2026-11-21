@@ -233,6 +233,28 @@ export class CanvasSeries<T extends SeriesType> {
   }
 }
 
+interface LevelTag { label: string; price: number; to?: number; top: number; bottom: number; anchor: number; color: string }
+
+/** Keep the text rows apart while each connector stays at its true price. */
+export function arrangeLevelTags<T extends { anchor: number }>(tags: T[], height: number, spacing = 24) {
+  const groups = [...tags].sort((a, b) => a.anchor - b.anchor).map(tag => ({ tags: [tag], anchor: tag.anchor, y: 0 }));
+  const capacity = Math.max(1, Math.floor(height / spacing));
+  while (groups.length > capacity) {
+    let closest = 0;
+    for (let i = 1; i + 1 < groups.length; i++) {
+      if (groups[i + 1]!.anchor - groups[i]!.anchor < groups[closest + 1]!.anchor - groups[closest]!.anchor) closest = i;
+    }
+    const left = groups[closest]!, right = groups.splice(closest + 1, 1)[0]!;
+    left.tags.push(...right.tags);
+    left.anchor = left.tags.reduce((sum, t) => sum + t.anchor, 0) / left.tags.length;
+  }
+  let floor = spacing / 2;
+  for (const row of groups) { row.y = Math.max(floor, row.anchor); floor = row.y + spacing; }
+  let ceiling = height - spacing / 2;
+  for (let i = groups.length - 1; i >= 0; i--) { const row = groups[i]!; row.y = Math.min(ceiling, row.y); ceiling = row.y - spacing; }
+  return groups;
+}
+
 export class CanvasChart {
   readonly canvas: HTMLCanvasElement;
   readonly series: CanvasSeries<SeriesType>[] = [];
@@ -241,6 +263,7 @@ export class CanvasChart {
   private paneWeights = new Map<number, number>([[0, 3]]);
   private paneScaleOptions = new Map<string, Options>();
   private width = 0;
+  private readingWidth = 0;
   private height = 0;
   private frame = 0;
   private dead = false;
@@ -562,7 +585,7 @@ export class CanvasChart {
     return this.x(index);
   }
   private plotWidth() {
-    return Math.max(1, this.width - 82);
+    return Math.max(1, this.width - 82 - this.readingWidth);
   }
   private plotHeight() {
     return Math.max(1, this.height - 24);
@@ -894,8 +917,22 @@ export class CanvasChart {
   private paint() {
     const c = this.ctx;
     if (!c || this.dead) return;
-    const w = this.plotWidth(),
-      h = this.plotHeight();
+    const mainHeight = this.paneHeight(0);
+    const tags: LevelTag[] = [];
+    for (const series of this.series) {
+      if (series.paneIndex !== 0 || series.options().visible === false) continue;
+      for (const line of series.lines) {
+        const o = line.options();
+        if (!o.levelReading) continue;
+        const from = this.priceToCoordinate(o.price), to = this.priceToCoordinate(o.levelReading.to ?? o.price);
+        if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) continue;
+        const top = Math.max(0, Math.min(from, to)), bottom = Math.min(mainHeight, Math.max(from, to));
+        if (top <= bottom) tags.push({ label: o.levelReading.tag, price: o.price, to: o.levelReading.to,
+          color: o.color, top, bottom, anchor: (top + bottom) / 2 });
+      }
+    }
+    this.readingWidth = tags.length ? Math.min(98, Math.round(this.width * .2)) : 0;
+    const w = this.plotWidth(), axisX = w + this.readingWidth, h = this.plotHeight();
     const dark = document.documentElement.classList.contains("dark");
     const text = dark ? "#91a5bc" : "#596c80",
       grid = dark ? "#1c2a3b" : "#e5ebf1",
@@ -944,7 +981,7 @@ export class CanvasChart {
         const y = top + paneH * (margins.top + margins.available * inverted);
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
         c.fillStyle = text;
-        c.fillText(pane > 0 && paneFormat ? paneFormat.format(price) : fmt(price), w + 5, y);
+        c.fillText(pane > 0 && paneFormat ? paneFormat.format(price) : fmt(price), axisX + 5, y);
       }
       if (pane > 0) {
         c.strokeStyle = dark ? "#31445c" : "#cad3de";
@@ -1151,13 +1188,14 @@ export class CanvasChart {
         }
       for (const line of s.lines) {
         const lineOptions = line.options();
+        if (lineOptions.levelReading) continue;
         const y = localY(Number(lineOptions.price));
         if (!Number.isFinite(y) || y < top || y > top + paneH) continue;
         c.strokeStyle = lineOptions.color ?? "#57d7f0";
         c.lineWidth = Number(lineOptions.lineWidth) || 1;
         c.setLineDash(lineOptions.lineStyle ? [5, 4] : []);
         c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); c.setLineDash([]);
-        if (lineOptions.axisLabelVisible) { c.fillStyle = lineOptions.axisLabelColor ?? c.strokeStyle; c.fillText(lineOptions.title ?? fmt(Number(lineOptions.price)), w + 8, y); }
+        if (lineOptions.axisLabelVisible) { c.fillStyle = lineOptions.axisLabelColor ?? c.strokeStyle; c.fillText(lineOptions.title ?? fmt(Number(lineOptions.price)), axisX + 8, y); }
       }
       if (s.primitives.size) {
         const target: CanvasRenderingTarget2D = {
@@ -1172,8 +1210,8 @@ export class CanvasChart {
           for (const view of primitive.paneViews?.() ?? []) view.renderer().draw(target);
           for (const axis of primitive.priceAxisViews?.() ?? []) if (axis.visible()) {
             const y = top + axis.coordinate();
-            c.fillStyle = axis.backColor(); c.fillRect(w + 2, y - 8, 80, 16);
-            c.fillStyle = axis.textColor(); c.fillText(axis.text(), w + 5, y);
+            c.fillStyle = axis.backColor(); c.fillRect(axisX + 2, y - 8, 80, 16);
+            c.fillStyle = axis.textColor(); c.fillText(axis.text(), axisX + 5, y);
           }
         }
       }
@@ -1260,6 +1298,7 @@ export class CanvasChart {
     }
     c.restore();
     const priceLine = (o: Options) => {
+      if (o.levelReading) return;
       const y = this.priceToCoordinate(o.price);
       if (y == null) return;
       c.strokeStyle = o.color || "#4ebed3";
@@ -1272,9 +1311,9 @@ export class CanvasChart {
       c.setLineDash([]);
       if (o.axisLabelVisible !== false) {
         c.fillStyle = o.color || "#4ebed3";
-        c.fillRect(w, y - 9, 82, 18);
+        c.fillRect(axisX, y - 9, 82, 18);
         c.fillStyle = "#08121e";
-        c.fillText(fmt(o.price), w + 7, y);
+        c.fillText(fmt(o.price), axisX + 7, y);
       }
       if (o.title) {
         c.fillStyle = background;
@@ -1293,6 +1332,30 @@ export class CanvasChart {
           lineStyle: 2,
           axisLabelVisible: s.options().lastValueVisible,
         });
+    }
+    if (tags.length) {
+      c.save();
+      c.beginPath(); c.rect(w, 0, this.readingWidth, mainHeight); c.clip();
+      for (const row of arrangeLevelTags(tags, mainHeight)) {
+        const first = row.tags[0]!;
+        for (const t of row.tags) {
+          c.strokeStyle = t.color; c.lineWidth = 1; c.setLineDash([]);
+          if (t.to != null) {
+            c.beginPath(); c.moveTo(w, t.top); c.lineTo(w + 3, t.top); c.lineTo(w + 3, t.bottom); c.lineTo(w, t.bottom); c.stroke();
+          }
+          c.beginPath(); c.moveTo(w + 3, t.anchor); c.lineTo(w + 6, t.anchor); c.lineTo(w + 11, row.y); c.stroke();
+          c.fillStyle = t.color; c.beginPath(); c.moveTo(w, t.anchor); c.lineTo(w + 5, t.anchor - 3); c.lineTo(w + 5, t.anchor + 3); c.closePath(); c.fill();
+        }
+        const single = row.tags.length === 1;
+        c.fillStyle = text; c.font = "10px Arial, sans-serif";
+        const tagLabel = this.readingWidth >= 90 ? first.label.replace(/^R · /, "Resistance · ").replace(/^S · /, "Support · ") : first.label;
+        c.fillText(single ? tagLabel : `${row.tags.length} nearby levels`, w + 12, row.y - 5, this.readingWidth - 14);
+        const prices = row.tags.flatMap(t => t.to == null ? [t.price] : [t.price, t.to]);
+        const low = Math.min(...prices), high = Math.max(...prices);
+        const value = low === high ? fmt(low) : `${fmt(low)}–${fmt(high)}`;
+        c.font = "9px Arial, sans-serif"; c.fillText(value, w + 12, row.y + 5, this.readingWidth - 14);
+      }
+      c.restore();
     }
     if (this.hover && this.hover.x < w && this.hover.y < h) {
       const { x, y } = this.hover;

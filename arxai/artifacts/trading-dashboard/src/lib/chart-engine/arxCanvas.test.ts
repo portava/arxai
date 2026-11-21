@@ -2,6 +2,7 @@ import { ArxCanvasAdapter } from "./arxCanvasAdapter";
 import { marketAxisTimeLabel } from "./chartTimeZone";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import {
+  arrangeLevelTags,
   createChart,
   CandlestickSeries,
   createSeriesMarkers,
@@ -134,6 +135,33 @@ describe("ARX renderer market-data and viewport contract", () => {
     chart.remove();
   });
 
+  it("separates outside labels without shifting their true price anchors", () => {
+    const rows = arrangeLevelTags([{anchor:98},{anchor:93},{anchor:92}], 100);
+    expect(rows.map(row=>row.anchor)).toEqual([92,93,98]);
+    expect(rows.map(row=>row.y)).toEqual([40,64,88]);
+    const crowded=arrangeLevelTags([{anchor:1},{anchor:2},{anchor:40}], 48);
+    expect(crowded).toHaveLength(2);
+    expect(crowded[0]!.tags.map(t=>t.anchor)).toEqual([1,2]);
+  });
+  it("places an advisory label and value outside the price plot and releases the margin when hidden", () => {
+    const paints: {t:string;x:number;y:number}[]=[];
+    const target:any={measureText:(t:string)=>({width:t.length*6}),fillText:(t:string,x:number,y:number)=>paints.push({t,x,y})};
+    const ctx=new Proxy(target,{get:(t,k)=>k in t?t[k]:()=>{}});
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(ctx);
+    const chart=createChart(container,{width:800,height:400});
+    const series=chart.addSeries(CandlestickSeries,{timelineSource:true});
+    series.setData(bars);
+    const full=(chart as any).plotWidth();
+    const price=bars.at(-1)!.close;
+    const tag=series.createPriceLine({price,levelReading:{tag:"S · retested"},color:"#91a5bc"});
+    (chart as any).paint();
+    const right=(chart as any).plotWidth();
+    expect(right).toBeLessThan(full);
+    expect(paints.find(p=>p.t==="Support · retested")!.x).toBeGreaterThan(right);
+    series.removePriceLine(tag); (chart as any).paint();
+    expect((chart as any).plotWidth()).toBe(full);
+    chart.remove();
+  });
   it("draws forecast paths as lines with a shaded range, dims what real bars passed, and keeps labels apart", () => {
     const strokes: Array<{ color: string; alpha: number }> = [], fills: Array<{ color: string; alpha: number }> = [];
     const labels: Array<{ text: string; y: number }> = [];

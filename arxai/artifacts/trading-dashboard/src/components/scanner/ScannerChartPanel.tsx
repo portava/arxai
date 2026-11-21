@@ -133,7 +133,7 @@ function toOverlayTf(tf: string): OverlayTf | null {
 function toAnnotationTf(tf: string): ChartAnnotationCreateRequestTimeframe | null { return toOverlayTf(tf); }
 
 // ── Smart Chart Layers (Task #197) — per-layer visibility toggles, persisted
-//    across sessions. Structure readings open below the plot. Level guides are opt-in. Keyed globally (not
+//    across sessions. Level readings use the chart margin. Each group can be hidden. Keyed globally (not
 //    per-symbol) so a trader's preference follows them between instruments.
 type SmartLayerGroup =
   | "structure"
@@ -157,14 +157,27 @@ const readingGroups = [
   { id: "targets", label: "Proposed stop and targets" }, { id: "execution_cost", label: "Estimated trading costs" },
 ] as const;
 
+function readingTag(layer: SmartChartLayer): string {
+  if (layer.group === "structure") {
+    const [level, state] = layer.label.split(" — ");
+    const status: Record<string, string> = {
+      "broken, and price has come back to retest it": "retested", "fresh (not yet tested)": "fresh",
+      "a possible trap zone": "possible trap", invalidated: "invalid",
+    };
+    return state ? `${level === "Resistance" ? "R" : "S"} · ${status[state] ?? state}` : layer.label;
+  }
+  return ({ "Expected fill range": "Est. fill", "Break-even (after cost)": "Break-even", "Stop loss": "Setup stop",
+    "Late — do not chase": "Late zone" } as Record<string, string>)[layer.label] ?? layer.label;
+}
+
 const LAYER_TOGGLE_KEY = "arx.smartChart.layerToggles.v1";
 
 function loadLayerToggles(): Record<SmartLayerGroup, boolean> {
   const base: Record<SmartLayerGroup, boolean> = {
-    structure: false,
-    signal_zones: false,
-    targets: false,
-    execution_cost: false,
+    structure: true,
+    signal_zones: true,
+    targets: true,
+    execution_cost: true,
     trade_health: true,
     news: true,
   };
@@ -1573,7 +1586,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     }
     smartLayerLinesRef.current = [];
 
-    const add = (price: number | null | undefined, color: string, title: string, dashed: boolean) => {
+    const add = (price: number | null | undefined, color: string, title: string, dashed: boolean, reading?: { tag: string; to?: number }) => {
       if (price == null || !Number.isFinite(price) || price <= 0) return;
       smartLayerLinesRef.current.push(
         series.createPriceLine({
@@ -1582,6 +1595,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
           lineWidth: 1,
           lineStyle: dashed ? LineStyle.Dashed : LineStyle.Solid,
           axisLabelVisible: false,
+          ...(reading ? { levelReading: reading } : {}),
           title,
         }),
       );
@@ -1591,15 +1605,15 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       if (l.reserved) continue; // reserved slots: no live value to draw yet
       if (l.group === "news") continue; // news is time-based → drawn as markers
       if (!layerToggles[l.group as SmartLayerGroup]) continue;
-      const advisory = readingGroups.some(g => g.id === l.group);
-      const title = advisory ? "" : l.label;
-      const color = l.group === "structure" ? "rgba(148,163,184,0.42)" : smartLayerColor(l.severity);
-      const dashed = advisory || l.kind === "zone";
-      if (l.kind === "zone") {
-        add(l.priceFrom, color, title, dashed);
-        add(l.priceTo, color, title, dashed);
+      const color = smartLayerColor(l.severity);
+      if (readingGroups.some(g => g.id === l.group)) {
+        if (l.kind === "line") add(l.price, color, "", false, { tag: readingTag(l) });
+        if (l.kind === "zone" && l.priceFrom != null && l.priceTo != null) add(l.priceFrom, color, "", false, { tag: readingTag(l), to: l.priceTo });
       } else if (l.kind === "line") {
-        add(l.price, color, title, dashed);
+        add(l.price, color, l.label, false);
+      } else if (l.kind === "zone") {
+        add(l.priceFrom, color, l.label, true);
+        add(l.priceTo, color, l.label, true);
       }
     }
 
@@ -2331,7 +2345,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
               return rows.length > 0 && <section key={group.id} className="mb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-1">
                   <strong>{group.label}</strong>
-                  <label className="inline-flex items-center gap-1.5"><input type="checkbox" aria-label={`Show ${group.label.toLowerCase()} guides`} checked={layerToggles[group.id]} onChange={() => toggleLayer(group.id)} /> Show guides</label>
+                  <label className="inline-flex items-center gap-1.5"><input type="checkbox" aria-label={`Show ${group.label.toLowerCase()} tags`} checked={layerToggles[group.id]} onChange={() => toggleLayer(group.id)} /> Show on chart</label>
                 </div>
                 <ul>{rows.map(level => <li key={level.id} className="flex items-baseline justify-between gap-3 py-1">
                   <span>{level.label}</span><span className="shrink-0 font-mono tabular-nums">{level.kind === "zone" ? `${fmt(level.priceFrom!)} – ${fmt(level.priceTo!)}` : fmt(level.price!)}</span>
