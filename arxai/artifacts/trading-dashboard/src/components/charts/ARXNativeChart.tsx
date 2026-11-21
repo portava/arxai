@@ -683,13 +683,21 @@ export function ARXNativeChart({
     }),
     [scenarioGhostPaths, chartStepSec],
   );
+  const favoredBreak = forecastRead?.symbol === resolvedSymbol && forecastRead.timeframe === timeframe
+    ? forecastRead.favoredBreak : null;
   const visibleScenarioPaths = useMemo(
     () => scenarioPathsOnThisChart.filter((path) => {
       if (path.faded && !showOriginalForecast) return false;
       const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
       return layer ? layers[layer] : false;
+    }).map(path => {
+      const up = path.id === "BULL" || path.id === "UP_FIRST";
+      const down = path.id === "BEAR" || path.id === "DOWN_FIRST";
+      if (path.faded || !favoredBreak || (!up && !down)) return path;
+      const favored = favoredBreak === "up" ? up : down;
+      return { ...path, lineWidth: favored ? 4 : 1 };
     }),
-    [scenarioPathsOnThisChart, layers, showOriginalForecast],
+    [scenarioPathsOnThisChart, layers, showOriginalForecast, favoredBreak],
   );
   const layerAvailability = useMemo(() => {
     const counts: Partial<Record<ChartLayerId, number>> = {
@@ -2263,6 +2271,7 @@ export function ARXNativeChart({
         <section aria-label="Chart forecast" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border px-3 py-2">
           <ForecastDirectionSummary read={forecastRead} />
           <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-muted-foreground">
+            {favoredBreak && visibleScenarioPaths.some(p => p.lineWidth === 4) && <span>Thick line shows the favored first break</span>}
             {visibleScenarioPaths.some(p => !p.faded && p.id === "BULL") && visibleScenarioPaths.some(p => !p.faded && p.id === "BEAR") &&
               <span title="The model aims to include the middle 50% of ending prices. Actual coverage is measured in Forecast.">Shading shows the projected range</span>}
             {scenarioPathsOnThisChart.some(p => p.faded) &&

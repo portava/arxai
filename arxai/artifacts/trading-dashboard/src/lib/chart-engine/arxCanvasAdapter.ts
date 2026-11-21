@@ -887,7 +887,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     for (const { path, points } of lines) {
       const series = chart.addSeries(LineSeries, {
         color: path.color,
-        lineWidth: 2,
+        lineWidth: path.lineWidth ?? 2,
         lastValueVisible: false,
         priceLineVisible: false,
         title: "Forecast path",

@@ -72,6 +72,7 @@ export interface ForecastDirectionRead {
   weights: Triple;
   verdict: string;
   leadPoints: number;
+  favoredBreak: "up" | "down" | null;
   basis: string;
 }
 
@@ -87,6 +88,7 @@ export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionR
   const tied = (100 * weights[first]!).toFixed(1) === (100 * weights[second]!).toFixed(1);
   return { symbol: f.origin.symbol, timeframe: window.timeframe, window: window.label, asOf: f.asOf,
     endsAt: f.asOf + window.bars * window.stepMs, weights, leadPoints,
+    favoredBreak: tied || first === 2 ? null : first === 0 ? "up" : "down",
     verdict: tied ? "No clear favorite" : outcomes[first]!,
     basis: f.calibration?.applied ? "Calibrated probabilities" : f.mode === "BASELINE" ? "Historical-frequency baseline" : "Model probabilities" };
 }

@@ -86,15 +86,16 @@ it("forecast paths are three line series from the issue price, the highest one c
   const before = realSeries.setData.mock.calls.length;
   const shifted = (b: ChartEngineCandle, d: number) => ({ ...b, high: b.high + d, low: b.low + d, close: b.close + d });
   adapter.setGhostPaths([
-    { id: "BULL", color: "#0a0", label: "Bull", candles: [shifted(bar(180), 0.2), shifted(bar(240), 0.4)] },
+    { id: "BULL", lineWidth: 4, color: "#0a0", label: "Bull", candles: [shifted(bar(180), 0.2), shifted(bar(240), 0.4)] },
     { id: "MIDDLE", color: "#00a", label: "Middle", candles: [bar(180), bar(240)] },
-    { id: "BEAR", color: "#a00", label: "Bear", candles: [shifted(bar(180), -0.2), shifted(bar(240), -0.4)] },
+    { id: "BEAR", lineWidth: 1, color: "#a00", label: "Bear", candles: [shifted(bar(180), -0.2), shifted(bar(240), -0.4)] },
   ]);
   expect(chart.addSeries).toHaveBeenCalledTimes(5); // closed, forming, three forecast paths
   const calls = chart.addSeries.mock.calls.slice(2);
   expect(calls.every((call: unknown[]) => (call[0] as { __kind: string }).__kind === "LineSeries")).toBe(true);
   const opts = calls.map((call: unknown[]) => call[1] as Record<string, unknown>);
   expect(opts.map(o => o.endLabel)).toEqual(["Bull", "Middle", "Bear"]);
+  expect(opts.map(o => o.lineWidth)).toEqual([4, 2, 1]);
   expect(opts.map(o => o.forecastPath)).toEqual([true, true, true]);
   const bullData = chart.addSeries.mock.results[2].value.setData.mock.calls[0][0];
   const bearData = chart.addSeries.mock.results[4].value.setData.mock.calls[0][0];

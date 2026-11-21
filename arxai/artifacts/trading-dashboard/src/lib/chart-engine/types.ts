@@ -29,6 +29,7 @@ import type { ChartTimeZone } from "./chartTimeZone";
 export type ChartEngineId = "arx-canvas";
 
 export interface ChartGhostPath {
+  lineWidth?: number;
   id: string;
   color: string;
   candles: ChartEngineCandle[];

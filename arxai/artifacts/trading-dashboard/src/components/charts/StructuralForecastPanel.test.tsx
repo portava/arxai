@@ -165,10 +165,14 @@ describe("chart directional weights", () => {
   } as Parameters<typeof forecastDirectionRead>[0]);
   it("shows the saved probabilities, direction and baseline for the selected horizon", () => {
     const direction = read([0.455365, 0.5446349, 0.0000001])!;
+    expect(direction.favoredBreak).toBe("down");
     render(<ForecastDirectionSummary read={direction} />);
     expect(screen.getByTestId("forecast-direction").textContent).toMatch(/Bearish break favored.*Up first 45.5%.*Down first 54.5%.*No break <0.1%.*8.9 pt lead.*Historical-frequency baseline/);
   });
   it("can favor neither, show a displayed tie, or withhold malformed weights", () => {
+    expect(read([.6,.2,.2])?.favoredBreak).toBe("up");
+    expect(read([.2,.2,.6])?.favoredBreak).toBeNull();
+    expect(read([.5,.5,0])?.favoredBreak).toBeNull();
     expect(read([.2,.2,.6])?.verdict).toBe("No break favored");
     expect(read([.48002,.47998,.04])?.verdict).toBe("No clear favorite");
     expect(read([.9,.9,0])).toBeNull();
