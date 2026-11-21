@@ -35,7 +35,7 @@ import {
 import {
   MISSION_AGENT_TEAM,
   agentProposesOn,
-  reviewProposals,
+  assessRiskObjection,
   computeEdgeScore,
   rewardToRiskScore,
   routeOpportunities,
@@ -184,10 +184,12 @@ export function opportunityToProposal(
   const direction = actionable ? mapDirection(opp.recommendedAction) : "NONE";
   const waitReason = opp.finalRead?.headline ?? "Waiting for a final Scanner read.";
   const confidence = liveAndSelectable ? Math.max(0, Math.min(100, opp.confidenceScore)) : 0;
-  const expectedR =
-    direction !== "NONE" && Number.isFinite(opp.riskRewardRatio) && opp.riskRewardRatio > 0
-      ? opp.riskRewardRatio
-      : null;
+  const entry = direction === "BUY" ? opp.bidAsk?.ask ?? opp.entry : opp.bidAsk?.bid ?? opp.entry;
+  const sign = direction === "BUY" ? 1 : -1;
+  const risk = sign * (entry - opp.stopLoss);
+  const reward = sign * (opp.takeProfit - entry);
+  const expectedR = direction !== "NONE" && risk > 0 && reward > 0 && Number.isFinite(reward / risk)
+    ? reward / risk : null;
   const warnings: string[] = [];
   if (!liveAndSelectable) {
     warnings.push(
@@ -209,7 +211,7 @@ export function opportunityToProposal(
     confidence,
     urgency: mapUrgency(confidence),
     entryPlan: {
-      entryPrice: direction !== "NONE" ? opp.entry : null,
+      entryPrice: direction !== "NONE" ? entry : null,
       entryZoneLow: null,
       entryZoneHigh: null,
     },
@@ -264,15 +266,17 @@ function mapEdgeFeedStatus(dataSource: ScannerOpportunity["dataSource"]): EdgeFe
  * Compose a scanner opportunity onto the pure Edge Engine input. Components come
  * straight from scanner truth (no re-derivation); honest caps come from the feed
  * status. Spread/timing stay `unknown` unless the scanner positively reports a
- * bad regime — we never fabricate a worse OR better honesty state than observed.
+ * bad regime. Measured same-timeframe tradeability contributes to the score.
  */
-function opportunityToEdgeInput(opp: ScannerOpportunity, direction: ProposalDirection): EdgeInput {
+export function opportunityToEdgeInput(opp: ScannerOpportunity, proposal: AgentProposal): EdgeInput {
+  const timing = opp.timingContext?.timeframe === opp.timeframe ? opp.timingContext : undefined;
   return {
-    direction,
+    direction: proposal.direction,
     components: {
       directionConviction: Number.isFinite(opp.confidenceScore) ? opp.confidenceScore : null,
       entryQuality: Number.isFinite(opp.entrySniperScore) ? opp.entrySniperScore : null,
-      rewardToRisk: rewardToRiskScore(opp.riskRewardRatio),
+      rewardToRisk: rewardToRiskScore(proposal.riskPlan.expectedR),
+      timingQuality: timing && timing.dataQualityLabel !== "basic_timing_estimate" ? timing.tradeabilityScore : null,
     },
     honesty: {
       feedStatus: mapEdgeFeedStatus(opp.dataSource),
@@ -325,7 +329,8 @@ export async function runMissionScan(args: {
   const proposers = MISSION_AGENT_TEAM.filter((a) => a.kind === "proposer");
 
   let liveFeedConnected = false;
-  const drafts: AgentProposal[] = [];
+  const reviewed: AgentProposal[] = [];
+  const edgeByProposalId = new Map<string, EdgeScore>();
   // Keep the scanner read behind each kept proposal so the Edge Engine can be
   // composed over scanner truth (no re-derivation) after the debate resolves.
   const oppByProposalId = new Map<string, ScannerOpportunity>();
@@ -343,7 +348,7 @@ export async function runMissionScan(args: {
     if (eligible.length === 0) continue;
 
     // Scout each eligible symbol; keep the single best read for this agent.
-    let best: { opp: ScannerOpportunity; proposal: AgentProposal } | null = null;
+    let best: { opp: ScannerOpportunity; proposal: AgentProposal; edge: EdgeScore } | null = null;
     for (const sym of eligible) {
       const opp = observations.get(sym);
       if (!opp) continue;
@@ -353,23 +358,26 @@ export async function runMissionScan(args: {
         `${missionId}:${agent.agentKey}:${scanRunTs}`,
         opp,
       );
-      if (
-        best === null ||
-        (candidate.direction !== "NONE" && best.proposal.direction === "NONE") ||
-        ((candidate.direction === "NONE") === (best.proposal.direction === "NONE") &&
-          candidate.confidence > best.proposal.confidence)
-      ) {
-        best = { opp, proposal: candidate };
+      const edge = computeEdgeScore(opportunityToEdgeInput(opp, candidate));
+      candidate.riskObjection = candidate.direction !== "NONE" && candidate.riskPlan.expectedR == null
+        ? "The current entry is outside the stop and target."
+        : assessRiskObjection(candidate);
+      candidate.status = candidate.direction === "NONE" ? "context_only" : candidate.riskObjection ? "vetoed" : "proposed";
+      candidate.rejectionReason = candidate.riskObjection;
+      const eligible = edge.actionable && candidate.status === "proposed";
+      const bestEligible = best?.edge.actionable && best.proposal.status === "proposed";
+      if (!best || (eligible !== bestEligible ? eligible :
+        edge.finalEdgeScore > best.edge.finalEdgeScore ||
+        (edge.finalEdgeScore === best.edge.finalEdgeScore && candidate.confidence > best.proposal.confidence))) {
+        best = { opp, proposal: candidate, edge };
       }
     }
     if (best) {
-      drafts.push(best.proposal);
+      reviewed.push(best.proposal);
       oppByProposalId.set(best.proposal.proposalId, best.opp);
+      edgeByProposalId.set(best.proposal.proposalId, best.edge);
     }
   }
-
-  // Pure Risk review + Execution Judge selection (selection only — no execution).
-  const { proposals: reviewed, selection } = reviewProposals(drafts);
 
   // ── Mission context for the router + impact (scoped read; honest math). ────
   const missionRows = await db
@@ -398,24 +406,12 @@ export async function runMissionScan(args: {
   // ── Edge Engine + position sizing per reviewed proposal (advisory). ───────
   // Edge can only LOWER standing (honest caps), never raise a setup over a
   // safety block; position sizing is a FIXED-FRACTION risk (never martingale).
-  const edgeByProposalId = new Map<string, EdgeScore>();
   const sizedRiskByProposalId = new Map<string, number | null>();
-  const candidates: RouterCandidate[] = [];
+  // Specialists reading the same instrument, timeframe and side share one
+  // market observation. Keep every proposal for attribution, rank the setup once.
+  const candidates = new Map<string, RouterCandidate>();
 
   for (const p of reviewed) {
-    const opp = oppByProposalId.get(p.proposalId);
-    const edge: EdgeScore = opp
-      ? computeEdgeScore(opportunityToEdgeInput(opp, p.direction))
-      : computeEdgeScore({
-          direction: p.direction,
-          components: {
-            directionConviction: p.confidence,
-            rewardToRisk: rewardToRiskScore(p.riskPlan.expectedR),
-          },
-          honesty: { feedStatus: "awaiting", spread: "unknown", timing: "unknown" },
-        });
-    edgeByProposalId.set(p.proposalId, edge);
-
     // Position sizing only when we have a real entry + protective stop.
     const entry = p.entryPlan.entryPrice;
     const stopLoss = p.riskPlan.stopLoss;
@@ -441,13 +437,16 @@ export async function runMissionScan(args: {
       riskAmount != null && expectedR != null && Number.isFinite(expectedR)
         ? Math.round(riskAmount * expectedR * 100) / 100
         : null;
-    candidates.push({
+    if (p.status === "vetoed") continue;
+    const key = [p.symbol, p.timeframe, p.direction].join("|");
+    if (candidates.has(key)) continue;
+    candidates.set(key, {
       proposalId: p.proposalId,
       agentKey: p.agentKey,
       symbol: p.symbol,
       timeframe: p.timeframe,
       direction: p.direction,
-      edge,
+      edge: edgeByProposalId.get(p.proposalId)!,
       expectedR,
       estimatedProfitContribution,
       riskAmount,
@@ -455,14 +454,22 @@ export async function runMissionScan(args: {
   }
 
   // ── Risk-adjusted opportunity queue (NOT raw confidence). "wait" if no A/B. ─
-  const queue: OpportunityQueue = routeOpportunities(candidates, {
+  const queue: OpportunityQueue = routeOpportunities([...candidates.values()], {
     remainingProfit: missionMath?.remainingProfit ?? 0,
     requiredDailyProfit: missionMath?.requiredDailyProfit ?? 0,
   });
 
   // ── Mission-impact preview for the selected best proposal (estimate only). ─
   let missionImpact: MissionImpact | null = null;
-  const selectedId = selection.selectedProposalId;
+  const selectedId = queue.best?.candidate.proposalId ?? null;
+  const chosen = reviewed.find(p => p.proposalId === selectedId);
+  const judgeReason = chosen ? "Highest-ranked eligible setup after timing, reward-to-risk and risk review."
+    : "No setup passed both risk review and the Mission edge threshold.";
+  if (chosen) {
+    chosen.status = "selected";
+    chosen.judgeDecision = "best";
+    chosen.selectionReason = judgeReason;
+  }
   if (selectedId && missionRow) {
     const selectedProposal = reviewed.find((p) => p.proposalId === selectedId) ?? null;
     const selRisk = sizedRiskByProposalId.get(selectedId) ?? null;
@@ -552,9 +559,9 @@ export async function runMissionScan(args: {
 
   return {
     proposals: persisted,
-    selectedProposalId: selection.selectedProposalId,
-    judgeDecision: selection.decision,
-    judgeReason: selection.reason,
+    selectedProposalId: selectedId,
+    judgeDecision: chosen ? "best" : "no_trade",
+    judgeReason,
     liveFeedConnected,
     symbolsScanned: symbols.length,
     queue,

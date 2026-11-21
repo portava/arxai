@@ -319,6 +319,8 @@ export interface ScannerOpportunity {
   rulesFailed: string[];
   /** Rules that could not be checked (e.g. spread_acceptable with no observed spread). */
   rulesUnchecked?: string[];
+  /** Observed two-sided quote from the same bound feed as the analysis candles. */
+  bidAsk?: { bid: number; ask: number };
   driftTrigger?: ReturnType<typeof driftPullbackTrigger>;
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
@@ -969,6 +971,14 @@ export function computeFinalRead(
       label = timing.entryPermission === "WAIT_NEWS" ? "WAIT_FOR_CONFIRMATION" : "AVOID_FOR_NOW";
       reasons.push(timing.actionReason);
       confirmations.push(timing.actionReason);
+    } else if (entryConfirmed && opp.bidAsk && (buy
+      ? opp.bidAsk.bid <= (followThrough ?? trigger?.level ?? -Infinity)
+      : opp.bidAsk.ask >= (followThrough ?? trigger?.level ?? Infinity))) {
+      label = "WAIT_FOR_CONFIRMATION";
+      const level = priceText(followThrough ?? trigger?.level ?? undefined);
+      const instruction = `The last close reclaimed ${level}, but the current ${buy ? "bid" : "ask"} no longer holds it. Recheck when the ${buy ? "bid moves above" : "ask moves below"} ${level}.`;
+      reasons.push(instruction);
+      confirmations.push(instruction);
     } else if (structure || entryConfirmed || (aligned && timed)) {
       reasons.push(structure ? "Chart structure confirms the entry direction." : timed ? "Entry timing and pressure agree with the trend."
         : followThrough !== undefined ? `Two ${opp.timeframe} closes held beyond ${priceText(followThrough)} and the second extended the breakout with the confirmed chart pattern.`
@@ -1659,6 +1669,7 @@ async function analyzeViaRouter(
    *  from "unknown" and is reported as null, never as a zero-cost spread).
    *  Feeds opportunityScore's spreadCondition factor — never riskScore. */
   quoteSpreadPrice: number | null;
+  bidAsk?: ScannerOpportunity["bidAsk"];
   quoteUsable: boolean;
   /** How the quote binds to these bars (LAST_ONLY = fresh price, no spread).
    *  Reason input only — quoteUsable stays false for LAST_ONLY. */
@@ -1709,6 +1720,7 @@ async function analyzeViaRouter(
       regimeCandles: prepared.openClosed,
       primaryProvider: cr.primaryProvider ?? null,
       quoteSpreadPrice: usableQuote?.spread ?? null,
+      bidAsk: usableQuote && qr.quote?.bid != null && qr.quote.ask != null ? { bid: qr.quote.bid, ask: qr.quote.ask } : undefined,
       quoteUsable: usableQuote !== null,
       quoteBinding: binding.binding,
       sourceIdentity: scannerSourceIdentity(cr),
@@ -2015,6 +2027,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
       setupType: setupTypeFor(a, mayShowBias),
+      bidAsk: routed?.bidAsk,
       driftTrigger: driftPullbackTrigger(routed?.regimeCandles ?? [], displayAction),
       score: displayConfidenceScore, confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,

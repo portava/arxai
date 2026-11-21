@@ -156,3 +156,17 @@ test("an aligned confirmed pattern can use one follow-through bar while an unrel
   assert.equal(computeFinalRead({ ...row, trendlineImpact: { ...row.trendlineImpact!, labelHint: "trap_risk" } }).label, "AVOID_FOR_NOW");
   assert.equal(driftPullbackTrigger([...bars, bars[2]!], "BUY")?.followThroughLevel, undefined);
 });
+
+test("a closed pullback loses its entry when the current exit-side quote crosses back", () => {
+  for (const buy of [true, false]) {
+    const side = buy ? "BUY" : "SELL";
+    const row = mkOpp({ recommendedAction: side, setupType: buy ? "Upward drift" : "Downward drift",
+      regime: { regime: buy ? "TREND_UP" : "TREND_DOWN", substate: null,
+        confidence01: .8, consecutiveConfirmations: 4, reasons: [] },
+      driftTrigger: { side, level: 100, confirmed: true } });
+    const lost = computeFinalRead({ ...row, bidAsk: { bid: 99.99, ask: 100.01 } });
+    assert.equal(lost.label, "WAIT_FOR_CONFIRMATION");
+    assert.match(lost.headline, /no longer holds it/);
+    assert.equal(computeFinalRead({ ...row, bidAsk: buy ? { bid: 101, ask: 102 } : { bid: 98, ask: 99 } }).label, "TRADE_WATCH");
+  }
+});
