@@ -41,6 +41,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("ARX renderer market-data and viewport contract", () => {
+  it("keeps the painted canvas through a same-size option update", () => {
+    const chart = createChart(container, { width: 640, height: 400 });
+    const width = vi.spyOn(HTMLCanvasElement.prototype, "width", "set");
+    const height = vi.spyOn(HTMLCanvasElement.prototype, "height", "set");
+    chart.applyOptions({ width: 640, height: 400 });
+    expect(width).not.toHaveBeenCalled();
+    expect(height).not.toHaveBeenCalled();
+    chart.applyOptions({ width: 800 });
+    expect(width).toHaveBeenCalledTimes(1);
+    expect(height).not.toHaveBeenCalled();
+    chart.remove();
+  });
   it("uses readable adaptive time ticks and rounded linear price labels", () => {
     expect(adaptiveTimeTickCount(320)).toBeGreaterThan(2);
     expect(adaptiveTimeTickCount(1000)).toBeGreaterThan(adaptiveTimeTickCount(320));

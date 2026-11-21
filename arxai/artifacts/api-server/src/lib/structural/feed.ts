@@ -33,7 +33,8 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
     ready: sameSource && known && current.aiUsable && current.quality === "clean",
     // Refusals are stable codes: a free-text chart warning was masked by the
     // route as a generic failure, hiding why the forecast was withheld.
-    reason: !sameSource ? "HISTORY_SOURCE_MISMATCH" : !known ? "UNKNOWN_DATA_PROVENANCE"
+    reason: current.source == null && current.quality === "unavailable" ? "LIVE_CHART_UNAVAILABLE"
+      : !sameSource ? "HISTORY_SOURCE_MISMATCH" : !known ? "UNKNOWN_DATA_PROVENANCE"
       : current.quality !== "clean" ? `LIVE_CHART_${String(current.quality).toUpperCase().replace(/[^A-Z]/g, "_")}`
       : !current.aiUsable ? "LIVE_CHART_NOT_AI_USABLE" : null,
     diagnostics: { historySource: history.source ?? null, historyBars: history.candles.length, chartSource: current.source,

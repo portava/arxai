@@ -800,8 +800,11 @@ export class CanvasChart {
     );
     this.height = Math.max(80, Number(this.chartOptions.height) || 400);
     const dpr = Math.min(3, window.devicePixelRatio || 1);
-    this.canvas.width = Math.round(this.width * dpr);
-    this.canvas.height = Math.round(this.height * dpr);
+    const pixelWidth = Math.round(this.width * dpr);
+    const pixelHeight = Math.round(this.height * dpr);
+    // Assigning either backing dimension erases the current frame, even at the same size.
+    if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth;
+    if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight;
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);

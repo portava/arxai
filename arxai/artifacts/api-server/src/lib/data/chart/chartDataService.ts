@@ -30,6 +30,9 @@ import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 // confirmed recent live tick), with an explicit provider delay retained as a
 // minimum delayed verdict. Recent bar times never erase known source delay.
 
+import { createHash } from "node:crypto";
+import { upsertCandles } from "../candleCache.js";
+import { logger } from "../../logger.js";
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
@@ -382,6 +385,11 @@ async function buildChartFeed(
   } else {
     candles = [];
     truthResult = null;
+  }
+
+  if (includeFormingTip && opts.storedHistoryFallback && limit > FEED_STATUS_PROBE_LIMIT &&
+      result.ok && source === "deriv_public" && !historicalOnly) {
+    await storePublicDisplayBars(symbol, timeframe, candles);
   }
 
   const anomalies = truthResult
@@ -857,6 +865,25 @@ function buildMessage(
     case "unavailable":
     default:
       return `No live feed available for ${displaySymbol}.`;
+  }
+}
+
+// Public finalized bars can back the display through a failed poll. Fingerprint
+// the entire observed window so that corrections also reach the history store.
+const persistedPublicWindows = new Map<string, string>();
+
+async function storePublicDisplayBars(symbol: string, timeframe: ChartTimeframe, candles: NormalizedChartCandle[]) {
+  const bars = candles.filter(c => c.isFinal && c.isComplete && !c.isForming)
+    .map(({ openTime: time, open, high, low, close }) => ({ time, open, high, low, close }));
+  if (!bars.length) return;
+  const key = symbol + "|" + timeframe;
+  const fingerprint = createHash("sha256").update(JSON.stringify(bars)).digest("hex");
+  if (persistedPublicWindows.get(key) === fingerprint) return;
+  try {
+    await upsertCandles(symbol, timeframe, "deriv_public", bars);
+    persistedPublicWindows.set(key, fingerprint);
+  } catch (err) {
+    logger.warn({ err, symbol, timeframe }, "Unable to retain public chart bars for display");
   }
 }
 

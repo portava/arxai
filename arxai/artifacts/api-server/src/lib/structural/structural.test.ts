@@ -52,6 +52,9 @@ test("history adapter retains training depth, current corrections and source iso
   const feed = assembleForecastFeed("V75", history, current, asOf);
   assert.equal(feed.ready, true); assert.equal(feed.bars.length, 5000);
   assert.equal(feed.bars.at(-1)!.high, current.candles.at(-1)!.high);
+  const missingLiveFeed = assembleForecastFeed("V75", history, { ...current, candles: [], source: null, quality: "unavailable", aiUsable: false }, asOf);
+  assert.equal(missingLiveFeed.ready, false);
+  assert.equal(missingLiveFeed.reason, "LIVE_CHART_UNAVAILABLE");
   assert.equal(assembleForecastFeed("V75", history, { ...current, source: "mt5_broker" }, asOf).ready, false);
   assert.equal(assembleForecastFeed("V75", history, { ...current, aiUsable: false }, asOf).ready, false);
 });

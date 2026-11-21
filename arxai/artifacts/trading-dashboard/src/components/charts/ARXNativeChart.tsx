@@ -933,9 +933,13 @@ export function ARXNativeChart({
     updateLegend(inspectedCandleRef.current);
   }, [displayZone, utcClockQualified, chartEpoch, updateLegend]);
 
-  useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => {
-    if (!compactDesktopWorkspace || expanded) return;
+    // Canvas sizing follows the renderer and layout. A change in feed identity
+    // rebinds the data on that renderer without resetting its backing bitmap.
+    if (!compactDesktopWorkspace || expanded) {
+      adapterRef.current?.resize(undefined, effectiveHeight);
+      return;
+    }
     const container = containerRef.current;
     if (!container) return;
     const plot = container.parentElement;
@@ -943,9 +947,21 @@ export function ARXNativeChart({
     const accountStrip = container.closest(".arx-workspace-body")?.querySelector<HTMLElement>(".arx-account-strip");
     let active = true;
     let lastApplied: number | undefined;
+    const applyHeight = (height: number) => {
+      if (height > 0 && height !== lastApplied) {
+        adapterRef.current?.resize(undefined, height);
+        lastApplied = height;
+      }
+    };
     const syncHeight = () => {
       const view = container.ownerDocument.defaultView;
-      if (!active || !container.isConnected || !view || view.innerWidth < 1024) return;
+      if (!active || !container.isConnected || !view) return;
+      if (view.innerWidth < 1024) {
+        plot?.style.removeProperty("--arx-compact-plot-height");
+        plot?.style.removeProperty("--arx-compact-plot-max");
+        applyHeight(effectiveHeight);
+        return;
+      }
       const deskHeight = (main?.clientHeight || view.innerHeight) - (accountStrip?.getBoundingClientRect().height || 0) - 8;
       const ceiling = Math.max(1, Math.floor(Math.min(view.innerHeight * .65, deskHeight)));
       const target = Math.min(Math.max(390, Math.floor(view.innerHeight * .60)), ceiling);
@@ -953,11 +969,7 @@ export function ARXNativeChart({
       // feedback loop. Never use an unbounded observed height as engine input.
       plot?.style.setProperty("--arx-compact-plot-height", `${target}px`);
       plot?.style.setProperty("--arx-compact-plot-max", `${ceiling}px`);
-      const next = Math.min(container.clientHeight, target);
-      if (next > 0 && next !== lastApplied) {
-        adapterRef.current?.resize(undefined, next);
-        lastApplied = next;
-      }
+      applyHeight(Math.min(container.clientHeight, target));
     };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncHeight);
     for (const target of [container, main, accountStrip]) if (target) observer?.observe(target);
@@ -970,7 +982,7 @@ export function ARXNativeChart({
       plot?.style.removeProperty("--arx-compact-plot-height");
       plot?.style.removeProperty("--arx-compact-plot-max");
     };
-  }, [compactDesktopWorkspace, expanded, chartEpoch]);
+  }, [compactDesktopWorkspace, expanded, effectiveHeight, engineGeneration]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceOnlyScale?.(preferences.priceOnlyScale === true); }, [preferences.priceOnlyScale, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
