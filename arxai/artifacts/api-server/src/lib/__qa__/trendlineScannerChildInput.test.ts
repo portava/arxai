@@ -196,3 +196,12 @@ test("a trendline cannot lift a NO_TRADE / simulator read upward", () => {
   assert.equal(r.confidence, "LOW");
   assert.notEqual(r.label, "TRADE_WATCH");
 });
+
+test("a wait headline names the candle interval and observed confirmation level", () => {
+  const read = computeFinalRead(opp({ trendlineImpact: impact({ labelHint: "break_unconfirmed" }), trendlineConfirmationLevel: 105.75 }));
+  assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read.headline, /M5 candle to close beyond the trendline at 105\.75/);
+  const missing = computeFinalRead(opp({ trendlineImpact: impact({ labelHint: "retest_watch" }) }));
+  assert.match(missing.headline, /retest the trendline and hold on a closed M5 candle/);
+  assert.doesNotMatch(missing.headline, /undefined|NaN/);
+});

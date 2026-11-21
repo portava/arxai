@@ -47,7 +47,7 @@ import { EleanorScalpReviewPanel } from "@/components/scanner/EleanorScalpReview
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { useScannerOpportunityClock } from "@/components/scanner/useScannerOpportunityClock";
-import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
+import { canUseScannerOpportunity, isScannerMapFresh } from "@/components/scanner/scannerMapFreshness";
 import { scannerFinalReadReasons, scannerResultActionChip, scannerResultCardClaims, scannerSetupReasonWithheld } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 import {
@@ -79,10 +79,11 @@ type Opp = {
   generatedAt?: string;
   scanGeneratedAt?: string;
   dataStatus?: string;
+  disabledReason?: string | null;
   tradeable?: boolean;
   timingContext?: ScannerTimingContext;
   /** The server's fused final read; the card may only downgrade with it. */
-  finalRead?: { label?: string | null; reasons?: unknown } | null;
+  finalRead?: { label?: string | null; headline?: string; reasons?: unknown } | null;
 };
 
 // Mirrors the server's `MANUAL_SCAN_COOLDOWN_MS` (per-user manual-scan cooldown
@@ -744,7 +745,7 @@ export default function MarketScanner() {
                 <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground">
-                This setup needs a fresh, tradeable market read. Scan again to restore its direction, scores and trade actions.
+                {(!err && isScannerMapFresh(o.scanGeneratedAt, snapshotClock) && isScannerMapFresh(o.generatedAt, snapshotClock) && o.disabledReason) || "This setup needs a fresh, tradeable market read. Scan again to check its direction and entry conditions."}
               </CardContent>
             </Card>
           ) : (() => {
@@ -801,6 +802,12 @@ export default function MarketScanner() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-xs space-y-2">
+                {o.finalRead?.label === "WAIT_FOR_CONFIRMATION" && (
+                  <p data-testid={`scanner-wait-condition-${o.symbol}`}>
+                    <strong>Waiting for confirmation</strong>{" "}
+                    {o.finalRead.headline || scannerFinalReadReasons(o.finalRead)[0] || "The latest scan did not supply a trigger."}
+                  </p>
+                )}
                 {(() => {
                   const c = cohesionMap.get(o.symbol);
                   const mult = c?.confidenceMultiplier ?? 1;
@@ -1106,7 +1113,7 @@ export default function MarketScanner() {
           { id: "focus", label: "Analysis", content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
           { id: "scalp-builder", label: "Scalp", content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
           { id: "health", label: "Health", content: <SectionErrorBoundary section="Trade Health">
-            <ScannerHeaderSummary />
+            <ScannerHeaderSummary waitRows={err ? [] : opps.filter(row => canUseScannerOpportunity(row, snapshotClock) && row.finalRead?.label === "WAIT_FOR_CONFIRMATION")} />
             <PageTabs label="Health reports" tabs={[
               { id: "trade-health", label: "Trade health", content: <TradeHealthPanel chartSymbol={chartSym} /> },
               { id: "data-health", label: "Data health", content: <ScannerDataHealthPanel /> },

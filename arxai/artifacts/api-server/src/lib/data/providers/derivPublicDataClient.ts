@@ -37,7 +37,10 @@ export function normalizePublicTick(raw: unknown, expected: string, now: number)
   const t = record(raw);
   if (!t || t.symbol !== undefined && t.underlying_symbol !== undefined && t.symbol !== t.underlying_symbol) return null;
   if ((t.underlying_symbol ?? t.symbol) !== expected || typeof t.epoch !== "number" || !Number.isSafeInteger(t.epoch) || t.epoch <= 0 || t.epoch * 1000 > now || typeof t.quote !== "number" || !Number.isFinite(t.quote) || t.quote <= 0) return null;
-  return { symbol: expected, epoch: t.epoch, quote: t.quote };
+  const { bid, ask } = t;
+  const sides = typeof bid === "number" && Number.isFinite(bid) && bid > 0 &&
+    typeof ask === "number" && Number.isFinite(ask) && ask >= bid ? { bid, ask } : {};
+  return { symbol: expected, epoch: t.epoch, quote: t.quote, ...sides };
 }
 
 export function normalizePublicCandles(raw: unknown, now: number, granularity?: DerivGranularity): DerivCandle[] {

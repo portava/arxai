@@ -8,7 +8,7 @@
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
 import { prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
-import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
+import { buildChartIntelligenceState, getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
@@ -384,6 +384,7 @@ export interface ScannerOpportunity {
    * closed. Never an execution gate.
    */
   patternImpact?: PatternScannerImpact;
+  patternConfirmationLevel?: number;
   /**
    * TRENDLINE TRUTH (Task #649) — display-only CHILD input. The folded
    * downgrade/within-cap hints from `resolveTrendlineTruth`. When present,
@@ -394,6 +395,7 @@ export interface ScannerOpportunity {
    * detected or the detector failed closed. Never an execution gate.
    */
   trendlineImpact?: TrendlineScannerImpact;
+  trendlineConfirmationLevel?: number;
   /**
    * ONE MARKET-STATE AUTHORITY (R7 step 3) — the hysteresis state machine's
    * regime read for this symbol/timeframe, computed ONLY from real routed
@@ -634,6 +636,9 @@ export function computeFinalRead(
   const hist = opp.historicalContext ?? null;
   const news = opp.newsContext ?? null;
   const reasons: string[] = [];
+  const confirmations: string[] = [];
+  const atLevel = (level?: number) => level != null && Number.isFinite(level) && level > 0
+    ? ` at ${level.toLocaleString("en-US", { maximumSignificantDigits: 9 })}` : "";
   // No win rate exists for same-time bars (see historical-comparison).
   const histScore: number | null = null;
   const newsLevel = news?.riskLevel ?? "none";
@@ -670,6 +675,7 @@ export function computeFinalRead(
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
     if (label === "WAIT_FOR_CONFIRMATION" && newsLevel !== "none") label = "AVOID_FOR_NOW";
     reasons.push("Technicals and news/history are conflicting.");
+    confirmations.push(hist?.alignsWithScanner === false ? "Wait for the historical comparison to agree with the current direction." : "Wait for the news read to agree with the current direction.");
   }
 
   // 3. Weak technical signal → no trade regardless of news.
@@ -683,9 +689,11 @@ export function computeFinalRead(
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
+    confirmations.push("Wait for technical confidence to clear the scanner’s minimum on a new scan.");
   } else if (opp.statusBadge === "WAIT_FOR_CONFIRMATION" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical setup wants confirmation.");
+    confirmations.push(opp.reasonToAvoid || "Wait for the next closed candle to satisfy the outstanding technical rules.");
   }
 
   // 4. Honest uncertainty when feeds are missing.
@@ -838,9 +846,11 @@ export function computeFinalRead(
     } else if (pat.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Chart pattern conflicts with the higher-timeframe read — treat as conditional.");
+      confirmations.push("Wait for the chart pattern and higher-timeframe direction to agree.");
     } else if (pat.labelHint === "forming_setup" || pat.labelHint === "needs_confirmation") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Chart pattern is forming, not confirmed — wait for the trigger.");
+      confirmations.push(`Wait for a closed ${opp.timeframe} candle to confirm the chart pattern${atLevel(opp.patternConfirmationLevel)}.`);
     } else if (pat.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("Chart pattern has limited room to the next level.");
@@ -874,9 +884,11 @@ export function computeFinalRead(
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("A trend shift / structure change just printed — wait for it to settle.");
+      confirmations.push(`Wait for the next ${opp.timeframe} structure read to confirm the new trend after the shift.`);
     } else if (tl.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Trendline conflicts with the higher-timeframe read — treat as conditional.");
+      confirmations.push("Wait for the trendline and higher-timeframe direction to agree.");
     } else if (
       tl.labelHint === "forming_line" ||
       tl.labelHint === "needs_confirmation" ||
@@ -885,6 +897,9 @@ export function computeFinalRead(
     ) {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Trendline break/retest is not confirmed yet — wait for the close-beyond.");
+      confirmations.push(tl.labelHint === "retest_watch"
+        ? `Wait for price to retest the trendline${atLevel(opp.trendlineConfirmationLevel)} and hold on a closed ${opp.timeframe} candle.`
+        : `Wait for a ${opp.timeframe} candle to close beyond the trendline${atLevel(opp.trendlineConfirmationLevel)}.`);
     } else if (tl.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";
       reasons.push("Trendline target has limited room to the next level.");
@@ -895,10 +910,19 @@ export function computeFinalRead(
     reasons.push("Technicals clean and no major news catalyst.");
   }
 
+  if (label === "WAIT_FOR_CONFIRMATION") {
+    if (!liveData || opp.sufficiency?.mayShowConfidence === false) {
+      confirmations.unshift(opp.disabledReason || opp.sufficiency?.humanReason || "Wait for a current quote and closed candles on the same feed.");
+    } else if (opp.chartConfirmed !== true) {
+      confirmations.unshift(`Wait for a verified chart read on ${opp.symbol} ${opp.timeframe}.`);
+    }
+    if (newsUnchecked) confirmations.unshift(NEWS_RISK_UNCHECKED_REASON);
+    if (newsLevel === "high" || newsLevel === "medium") confirmations.unshift("Wait for the elevated news-risk window to clear.");
+  }
   const headline =
     label === "NO_TRADE" ? "No trade right now." :
     label === "AVOID_FOR_NOW" ? "Avoid for now." :
-    label === "WAIT_FOR_CONFIRMATION" ? "Wait for confirmation." :
+    label === "WAIT_FOR_CONFIRMATION" ? (confirmations.length ? [...new Set(confirmations)].slice(0, 2).join(" ") : reasons[0] ?? "Waiting for the next verified market read.") :
     "Watchlist candidate.";
 
   // Simulator-derived reads are analysis-only: the truth cap above already
@@ -1697,7 +1721,21 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       const cached =
         getCachedIntelligenceContext(sym, tf as ChartTimeframe, 300) ??
         getCachedIntelligenceContext(sym, tf as ChartTimeframe, 200);
-      if (cached) {
+      if (a.feedProvider === "deriv_public") {
+        // A directional public-feed scan needs its own chart check, including
+        // markets the user has not opened. Use the same closed bar and gate.
+        const directional = a.recommendedAction === "BUY" || a.recommendedAction === "SELL";
+        if (ds === "LIVE_FEED" && routed?.quoteUsable && directional) {
+          const chart = cached?.state ?? await runWithScannerBudget(() =>
+            buildChartIntelligenceState(sym, tf as ChartTimeframe, 200)).catch(() => null);
+          const last = routed.rawCandles.at(-1);
+          const checked = chart?.latestClosedCandle;
+          chartConfirmed = !!(chart?.aiUsable && chart.gateOutput.scannerConfirmAllowed &&
+            chart.truthState.source === a.feedProvider && last &&
+            checked?.openTime === last.time && checked.open === last.open &&
+            checked.high === last.high && checked.low === last.low && checked.close === last.close);
+        }
+      } else if (cached) {
         chartConfirmed = cached.state.gateOutput.scannerConfirmAllowed;
       }
     }
@@ -1774,6 +1812,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // data). The verdict's downgrade-only `scannerTruthImpact` is folded into
     // computeFinalRead/scannerActionability later; it can never raise a read.
     // Fail-open: the service returns null on any error / insufficient window.
+    let patternConfirmationLevel: number | undefined;
     let patternImpact: ScannerOpportunity["patternImpact"];
     if (routed?.rawCandles && routed.rawCandles.length > 0) {
       const verdict = buildPatternTruthVerdict({
@@ -1793,6 +1832,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         volatilityAtr: null,
       });
       patternImpact = verdict?.scannerTruthImpact;
+      if (chartConfirmed && sufficiency.canShowTradeSetup) patternConfirmationLevel = verdict?.confirmationLevel ?? undefined;
     }
 
     // ── TRENDLINE TRUTH (Task #649) — display-only CHILD input ─────────────────
@@ -1801,6 +1841,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // data). The verdict's downgrade-only `scannerTruthImpact` is folded into
     // computeFinalRead/scannerActionability later; it can never raise a read.
     // Fail-open: the service returns null on any error / insufficient window.
+    let trendlineConfirmationLevel: number | undefined;
     let trendlineImpact: ScannerOpportunity["trendlineImpact"];
     if (routed?.rawCandles && routed.rawCandles.length > 0) {
       const tlVerdict = buildTrendlineTruthVerdict({
@@ -1820,6 +1861,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         volatilityAtr: null,
       });
       trendlineImpact = tlVerdict?.scannerTruthImpact;
+      if (chartConfirmed && sufficiency.canShowTradeSetup) trendlineConfirmationLevel = tlVerdict?.confirmationLevel ?? undefined;
     }
 
     // ── READABILITY CONTRACT (display-only) ────────────────────────────────────
@@ -1870,7 +1912,9 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       regime,
       featureSnapshot,
       patternImpact,
+      patternConfirmationLevel,
       trendlineImpact,
+      trendlineConfirmationLevel,
       ...scannerCalibrationFields(sym, tf, displayAction, displayConfidenceScore),
     };
     if (routed) bindScannerSource(op, routed.sourceIdentity);

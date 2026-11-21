@@ -319,3 +319,11 @@ test("misaligned interior buckets are refused rather than silently repaired", ()
   const full = { epoch: epoch - 600, open: 100, high: 110, low: 90, close: 105 };
   assert.throws(() => normalizePublicCandles([full, { ...full, epoch: epoch - 450 }], epoch * 1000, 300), /INVALID_CANDLE_ALIGNMENT/);
 });
+
+test("public tick retains only observed, coherent bid and ask prices", () => {
+  const base = { symbol: "R_75", epoch: 100, quote: 120 };
+  const read = (sides: Record<string, unknown>) => normalizePublicTick({ ...base, ...sides }, base.symbol, 100_000);
+  assert.deepEqual(read({bid: 119, ask: 121}), {...base, bid: 119, ask: 121});
+  for (const sides of [{bid: 119}, {ask: 121}, {bid: 125, ask: 121}, {bid: NaN, ask: 121}])
+    assert.deepEqual(read(sides), base);
+});

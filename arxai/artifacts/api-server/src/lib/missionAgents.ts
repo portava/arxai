@@ -323,6 +323,8 @@ export async function runMissionScan(args: {
   // Keep the scanner read behind each kept proposal so the Edge Engine can be
   // composed over scanner truth (no re-derivation) after the debate resolves.
   const oppByProposalId = new Map<string, ScannerOpportunity>();
+  // Every specialist judges the same observation of a market in this scan.
+  const observations = new Map<string, ScannerOpportunity | null>();
 
   for (const agent of proposers) {
     const eligible = symbols.filter((sym) => agentProposesOn(agent, sym));
@@ -331,12 +333,10 @@ export async function runMissionScan(args: {
     // Scout each eligible symbol; keep the single best read for this agent.
     let best: { opp: ScannerOpportunity; proposal: AgentProposal } | null = null;
     for (const sym of eligible) {
-      let opp: ScannerOpportunity | null = null;
-      try {
-        opp = await scanSymbolTimeframe(sym, timeframe);
-      } catch {
-        opp = null; // fail-open: a scanner error yields no proposal for this symbol
+      if (!observations.has(sym)) {
+        observations.set(sym, await scanSymbolTimeframe(sym, timeframe).catch(() => null));
       }
+      const opp = observations.get(sym);
       if (!opp) continue;
       if (ACTIONABLE_DATA_SOURCES.has(opp.dataSource) && opp.selectable) liveFeedConnected = true;
       const candidate = opportunityToProposal(
@@ -347,7 +347,8 @@ export async function runMissionScan(args: {
       if (
         best === null ||
         (candidate.direction !== "NONE" && best.proposal.direction === "NONE") ||
-        candidate.confidence > best.proposal.confidence
+        ((candidate.direction === "NONE") === (best.proposal.direction === "NONE") &&
+          candidate.confidence > best.proposal.confidence)
       ) {
         best = { opp, proposal: candidate };
       }

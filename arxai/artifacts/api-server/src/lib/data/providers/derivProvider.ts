@@ -411,7 +411,7 @@ export async function getDerivCandles(
 export interface DerivTickResult {
   ok: boolean;
   reason: string | null;
-  tick: { symbol: string; derivSymbol: string; epoch: number; quote: number } | null;
+  tick: { symbol: string; derivSymbol: string; epoch: number; quote: number; bid?: number; ask?: number } | null;
 }
 
 export async function getDerivTick(symbol: string): Promise<DerivTickResult> {
@@ -422,13 +422,9 @@ export async function getDerivTick(symbol: string): Promise<DerivTickResult> {
   if (!client.configured()) return { ok: false, reason: "DERIV_NOT_CONFIGURED", tick: null };
   client.ensureConnection();
   try {
-    const t = await client.subscribeTicks(map.derivId);
-    if (!t) {
-      const cached = client.getCachedTick(map.derivId);
-      if (!cached) return { ok: false, reason: "NO_TICK_AVAILABLE", tick: null };
-      return { ok: true, reason: null, tick: { symbol, derivSymbol: map.derivId, epoch: cached.epoch, quote: cached.quote } };
-    }
-    return { ok: true, reason: null, tick: { symbol, derivSymbol: map.derivId, epoch: t.epoch, quote: t.quote } };
+    const tick = await client.subscribeTicks(map.derivId) ?? client.getCachedTick(map.derivId);
+    if (!tick) return { ok: false, reason: "NO_TICK_AVAILABLE", tick: null };
+    return { ok: true, reason: null, tick: { ...tick, symbol, derivSymbol: map.derivId } };
   } catch (err) {
     return { ok: false, reason: (err as Error).message.replace(/app_id=[^&\s]+/gi, "app_id=<redacted>"), tick: null };
   }

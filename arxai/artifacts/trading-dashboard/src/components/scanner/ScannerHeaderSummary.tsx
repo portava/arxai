@@ -164,7 +164,10 @@ function candleDiagnostic(c: ScannerTruth["candles"]): string {
 // but no longer rendered here: it describes the scan engine, not this market,
 // and printed "Idle" beside the market's bias. The page shows "Auto-scan
 // on/off" next to the Start/Stop controls instead.
-export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
+export function ScannerHeaderSummary({ waitRows = [] }: {
+  running?: boolean;
+  waitRows?: readonly { symbol: string; timeframe: string; finalRead?: { headline?: string } | null }[];
+} = {}) {
   const [statusDetailsOpen, setStatusDetailsOpen] = useState(false);
   const statusDetailsId = useId();
   const [symbol] = useChartSymbol();
@@ -344,6 +347,7 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const actionDetail = actionReadCapped
     ? sharedRead?.blockedReason || "The chart read withholds a live setup. Re-read after confirmation."
     : actionUi.copy;
+  const selectedWait = waitRows.find(row => bareSymbol(row.symbol) === bare && row.timeframe === coercedTf)?.finalRead?.headline;
   const whyMessage = actionReadCapped ? actionDetail : truth?.consolidated.userMessage ?? "";
   const whyCode = actionReadCapped ? "" : truth?.consolidated.internalReasonCode ?? "";
 
@@ -441,6 +445,11 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
         />
       </div>
 
+      {finalActionWithEleanor === "WAIT_FOR_CONFIRMATION" && (actionReadCapped || selectedWait) && (
+        <p className="text-sm text-txt-secondary" data-testid="scanner-selected-wait-condition">
+          <strong>{bare} {coercedTf}</strong>{" "}{actionReadCapped ? actionDetail : selectedWait}
+        </p>
+      )}
       <div id={`${statusDetailsId}-explanations`} className={cn("space-y-3", !statusDetailsOpen && "hidden md:block")}>
       {/* ONE expandable "Why?" — explains, from the contract's single governing
           userMessage / internalReasonCode, exactly why action is allowed,

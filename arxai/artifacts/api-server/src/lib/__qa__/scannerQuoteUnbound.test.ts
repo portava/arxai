@@ -1,7 +1,7 @@
 // QA — a live feed whose quote carries no bid/ask spread is NOT a delayed feed
 // (levels-withheld-vs-shown cluster, owner's V75 1m Deriv screenshots).
 //
-// Deriv public ticks carry a last price only. scannerQuoteFor requires an
+// Some Deriv public ticks carry a last price only. scannerQuoteFor requires an
 // observed positive spread, so the scanner row was demoted to STALE_FEED with
 // "Waiting for a fresh quote…" and the shared sufficiency verdict said "Live
 // feed is delayed — read uses the last confirmed bars", although the candles

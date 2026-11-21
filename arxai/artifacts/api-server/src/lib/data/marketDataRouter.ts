@@ -506,6 +506,9 @@ async function tryDerivQuote(symbol: string): Promise<QuoteAttempt> {
   const quote: MarketQuote = {
     symbol,
     last: r.tick.quote,
+    ...(r.tick.bid != null && r.tick.ask != null
+      ? { bid: r.tick.bid, ask: r.tick.ask, spread: r.tick.ask - r.tick.bid }
+      : {}),
     timestamp: new Date(r.tick.epoch * 1000).toISOString(),
   };
   return {

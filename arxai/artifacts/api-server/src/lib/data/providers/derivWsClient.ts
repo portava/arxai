@@ -67,6 +67,8 @@ export interface DerivTick {
   symbol: string;
   epoch: number;
   quote: number;
+  bid?: number;
+  ask?: number;
 }
 
 /** Observer notified for every live tick that lands on the socket. */
