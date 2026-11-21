@@ -3,6 +3,7 @@ import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type 
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
 import { analogTrajectories, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
+import { deseasonalisedLevels, fitVolRangeProfile, seasonalBandAt, seasonalVolatilityBand, type VolRangeProfile } from "./volRange.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
 export const MODEL_POLICY = Object.freeze({ stride: 15, purgeMinutes: 60, minTraining: 80,
@@ -25,6 +26,9 @@ export interface StructuralModel {
   dataQuality: { inputBars: number; acceptedEpisodes: number; rejectedWindows: number };
   /** Range engine chosen for this market; absent on older models (volatility, no direction edge). */
   rangeEngine?: RangeEngineChoice;
+  /** Hour-of-week volatility profile for the VOLATILITY range, fitted on training bars only.
+   * Absent on older models and on bar sizes the research did not test (they keep the 120-bar band). */
+  volRange?: VolRangeProfile;
 }
 
 function standardize(head: LinearHead, x: number[]): number[] {
@@ -245,8 +249,22 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   model.confirmationGate = chooseGate(parts.gate, e => baseFor(model, e.features), e => hazardPrediction(model.confirmation, e.features, false), 5, true, confirmationBlend);
   if (model.prebreak) model.prebreakGate = chooseGate(parts.gate.filter(e => e.eligible), confirmationBase,
     e => prebreakCandidate(confirmationBase(e), predictHead(model.prebreak!, e.features) as Triple), 5, true, prebreakBlend);
+  // Hour-of-week volatility profile from bars that closed by trainedThrough only,
+  // so the selection/gate setups below score it out of sample.
+  let fitEnd = 0;
+  while (fitEnd < bars.length && bars[fitEnd]!.closeTime <= trainedThrough) fitEnd++;
+  const volRange = fitVolRangeProfile(bars, fitEnd, model.stepMs);
+  let volBandAt: ((e: Episode) => ReturnType<typeof seasonalVolatilityBand>) | undefined;
+  if (volRange) {
+    model.volRange = volRange;
+    const levels = deseasonalisedLevels(bars, volRange), at = new Map(bars.map((b, i) => [b.closeTime, i]));
+    volBandAt = e => {
+      const i = at.get(e.origin);
+      return i == null ? null : seasonalVolatilityBand(levels[i]!, bars[i]!.openTime, volRange, 60);
+    };
+  }
   // Range engine and direction evidence, from the same not-fitted-on setups.
-  model.rangeEngine = chooseRangeEngine(model, [...parts.selection, ...parts.gate]);
+  model.rangeEngine = chooseRangeEngine(model, [...parts.selection, ...parts.gate], volBandAt);
   // Untouched holdout is diagnostic only. No model/threshold writes below here.
   model.holdout = parts.holdout.map(e => {
     const p = predictMass(model, e.features, e.eligible), y = truth(e, 5);
@@ -278,7 +296,9 @@ export function ghostPaths(model: StructuralModel, history: StructuralBar[], mas
   });
 }
 export function forecastStructural(model: StructuralModel, history: StructuralBar[], origin: DataOrigin, quarantined = false,
-  horizonBars = 60, horizonId?: string): StructuralForecast {
+  horizonBars = 60, horizonId?: string,
+  /** The whole feed the forecast was read from, ending at the same bar as `history`; feeds the hour-of-week range. */
+  volHistory?: readonly StructuralBar[]): StructuralForecast {
   const asOf = history.at(-1)?.closeTime ?? NaN;
   validateBars(history, asOf);
   if (!Number.isInteger(horizonBars) || horizonBars < 1 || horizonBars > 60) throw new Error("INVALID_HORIZON");
@@ -287,13 +307,15 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
     || barStepMs(history) !== stepMs) throw new Error("MODEL_PROVENANCE_OR_TIME_MISMATCH");
   const h = history.slice(-120), features = structuralFeatures(h, asOf);
   const prediction = predictMass(model, features.values, features.eligible, quarantined);
+  const seasonalBand = volHistory?.length && volHistory.at(-1)!.closeTime === asOf ? seasonalBandAt(volHistory, model.volRange, horizonBars) : null;
   return { version: model.version, modelId: model.modelId, asOf, origin, trainedThrough: model.trainedThrough,
     featureVersion: `${model.version}:features-1`, eventDefinitionVersion: `${model.version}:events-1`,
     features: features.values, preBreakEligible: features.eligible, mode: prediction.mode, gateReason: prediction.reason,
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
     horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars),
-    trajectories: analogTrajectories(model, h, features.values, horizonBars), history: h,
+    trajectories: analogTrajectories(model, h, features.values, horizonBars, undefined, seasonalBand), history: h,
     range: { engine: model.rangeEngine?.engine ?? "VOLATILITY", reason: model.rangeEngine?.reason ?? "TOO_FEW_TEST_SETUPS",
+      volatility: seasonalBand ? "HOUR_OF_WEEK" : "RECENT_120_BARS",
       tested: model.rangeEngine?.tested ?? 0, historyInside: model.rangeEngine?.historyInside ?? null, volatilityInside: model.rangeEngine?.volatilityInside ?? null },
     directionEdge: model.rangeEngine?.directionEdge ?? false,
     executionAuthority: "NONE", stepMs, horizonBars, ...(horizonId ? { horizonId } : {}) };

@@ -14,6 +14,8 @@ import { classifyMeasuredRank, type MeasuredRankInput } from "../../ranking/meas
 export type EvidenceSource = "tool" | "user";
 
 export interface EvidenceNumber {
+  /** Research figures cannot substantiate current quotes or trade levels. */
+  researchOnly?: boolean;
   value: number;
   entities?: string[];
   /** Lower-cased key tokens of the leaf, e.g. stopLoss -> ["stop", "loss"]. */
@@ -111,6 +113,7 @@ export function numbersInText(s: string): number[] {
 }
 
 interface Frame {
+  researchOnly?: boolean;
   utcAllowed?: boolean;
   entities?: string[];
   entitySymbols?: string[];
@@ -150,8 +153,8 @@ export function calibrationStampInfo(obj: Record<string, unknown>): StampInfo | 
 }
 
 function stampChildFrame(stamp: StampInfo, key: string, f: Frame): Frame {
-  if (stamp.measured && key === "probability") return { ...f, calibrated: true, calibrationKind: stamp.kind, calibrationN: stamp.n };
-  if (stamp.measured && key === "baseRate") return { ...f, calibrated: true, calibrationKind: "base_rate", calibrationN: stamp.n };
+  if (!f.researchOnly && stamp.measured && key === "probability") return { ...f, calibrated: true, calibrationKind: stamp.kind, calibrationN: stamp.n };
+  if (!f.researchOnly && stamp.measured && key === "baseRate") return { ...f, calibrated: true, calibrationKind: "base_rate", calibrationN: stamp.n };
   return { ...f, calibrated: false, calibrationKind: null, calibrationN: null };
 }
 
@@ -196,7 +199,9 @@ function frameFor(obj: Record<string, unknown>, parent: Frame): Frame {
   // A child with its own identity replaces that part of the ancestor scope.
   const entitySymbols = ownSymbols.length ? ownSymbols : parent.entitySymbols ?? [];
   const entityIds = ownIds.length ? ownIds : parent.entityIds ?? [];
-  return { stale, staleAsOf, calibrated, calibrationKind, calibrationN, utcAllowed,
+  const authority = obj.authority as { evidenceClass?: unknown } | undefined;
+  const researchOnly = parent.researchOnly === true || authority?.evidenceClass === "RESEARCH_ONLY";
+  return { researchOnly, stale, staleAsOf, calibrated: researchOnly ? false : calibrated, calibrationKind, calibrationN, utcAllowed,
     entitySymbols, entityIds, entities: [...entitySymbols, ...entityIds] };
 
 }
@@ -233,7 +238,7 @@ function executionOf(obj: Record<string, unknown>, tool: string, path: string, f
 const SYMBOL_KEYS = /^(symbol|displaySymbol|instrument|market|name|ticker|pair)$/;
 
 export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): EvidenceIndex {
-  const idx: EvidenceIndex = { userText, numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name), marketStates: collectMarketStateFacts(outputs) };
+  const idx: EvidenceIndex = { userText, numbers: [], times: [], strings: [], executions: [], symbols: new Set(), toolNames: outputs.map((o) => o.name), marketStates: collectMarketStateFacts(outputs.filter(o => o.name !== "getCompanyFilingResearch" && (o.result as { authority?: { evidenceClass?: string } } | null)?.authority?.evidenceClass !== "RESEARCH_ONLY")) };
   const seen = new WeakSet<object>();
 
   const walk = (v: unknown, key: string, path: string, tool: string, frame: Frame, depth: number): void => {
@@ -265,7 +270,7 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
     const obj = v as Record<string, unknown>;
     const f = frameFor(obj, frame);
     const exec = executionOf(obj, tool, path, f);
-    if (exec) idx.executions.push(exec);
+    if (exec && !f.researchOnly) idx.executions.push(exec);
     const stamp = calibrationStampInfo(obj);
     const sibling = !stamp && obj.calibration && typeof obj.calibration === "object" ? calibrationStampInfo(obj.calibration as Record<string, unknown>) : null;
     for (const [k, child] of Object.entries(obj)) {
@@ -278,7 +283,7 @@ export function buildEvidenceIndex(outputs: ToolOutput[], userText = ""): Eviden
     }
   };
 
-  for (const o of outputs) walk(o.result, o.name, o.name, o.name, ROOT_FRAME, 0);
+  for (const o of outputs) walk(o.result, o.name, o.name, o.name, o.name === "getCompanyFilingResearch" ? { ...ROOT_FRAME, researchOnly: true, calibrated: false } : ROOT_FRAME, 0);
 
   if (userText) {
     for (const n of numbersInText(userText)) {

@@ -109,7 +109,7 @@ export class StructuralForecastService {
     const observations = samePolicy.flatMap(r => r.scores.filter(s => s.horizon === 5)
       .map(s => ({ asOf: r.forecast.asOf, completedAt: s.observedThrough, brier: s.brier, baselineBrier: s.baselineBrier })));
     const quarantined = performanceBrake(samePolicy.some(r => r.forecast.gateReason === "PERFORMANCE_QUARANTINE"), observations, asOf);
-    const forecast = forecastStructural(model, feed.bars.slice(-120), feed.origin, quarantined, horizon.bars, horizon.id);
+    const forecast = forecastStructural(model, feed.bars.slice(-120), feed.origin, quarantined, horizon.bars, horizon.id, feed.bars);
     // Learn from this window's graded forecasts: calibrate the shown
     // probabilities only when that scored better on forecasts it never saw.
     const graded: GradedObservation[] = existing.filter(r => r.forecast.origin.provider === feed.origin.provider).flatMap(r => {

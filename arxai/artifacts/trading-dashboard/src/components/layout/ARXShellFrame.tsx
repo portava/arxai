@@ -119,26 +119,28 @@ export function ARXShellFrame(props: ARXShellFrameProps) {
   >
     <div className="arx-shell-main-column">
       <header className="arx-shell-header">
-        <Link href={props.brandHref ?? "/"} className="arx-shell-brand" aria-label="ARX workspace home" data-testid="link-shell-brand">
-          <ARXLogoMark size="sm" mode="dark" /><span>ARX</span>
-        </Link>
+        <div className="arx-workspace-rail">
+          <Link href={props.brandHref ?? "/"} className="arx-shell-brand" aria-label="ARX workspace home" data-testid="link-shell-brand">
+            <ARXLogoMark size="sm" mode="dark" /><span>ARX</span>
+          </Link>
+          {props.sectionNavigation}
+          <button
+            type="button"
+            className="arx-shell-all-tools-trigger"
+            onClick={() => props.onAllToolsOpenChange(true)}
+            aria-label="Open all tools"
+            data-testid="button-shell-all-tools"
+          ><LayoutGrid size={17} aria-hidden="true" /><span>All tools</span></button>
+        </div>
         <div className="arx-shell-heading">
           {props.eyebrow && <div className="arx-shell-eyebrow">{props.eyebrow}</div>}
           <h1>{props.title}</h1>
         </div>
-        {props.sectionNavigation}
         {props.layoutMenuContent && <details className="arx-shell-layout-menu">
           <summary aria-label="Open layout menu"><SlidersHorizontal size={15} aria-hidden="true" /><span>Layout</span></summary>
           <div className="arx-shell-layout-popover">{props.layoutMenuContent}</div>
         </details>}
         {props.headerActions && <div className="arx-shell-header-actions">{props.headerActions}</div>}
-        <button
-          type="button"
-          className="arx-shell-all-tools-trigger"
-          onClick={() => props.onAllToolsOpenChange(true)}
-          aria-label="Open all tools"
-          data-testid="button-shell-all-tools"
-        ><LayoutGrid size={17} aria-hidden="true" /><span>All tools</span></button>
         <button
           type="button"
           className="arx-shell-mobile-tools"

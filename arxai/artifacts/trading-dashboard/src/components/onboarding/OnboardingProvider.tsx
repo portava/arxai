@@ -1,3 +1,4 @@
+import { toast } from "@/hooks/use-toast";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -128,6 +129,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const handoffPendingRef = useRef(false);
+  const reviewingAllNotes = useRef(false);
 
   const fetchAnnouncements = useCallback(async (): Promise<Announcement[]> => {
     try {
@@ -139,12 +141,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       return [];
     }
   }, []);
-
-  const showFirstUnack = useCallback((list?: Announcement[]) => {
-    const source = list ?? announcements;
-    const next = source.find(a => a.shouldShow);
-    setActiveAnn(next ?? null);
-  }, [announcements]);
 
   // Bootstrap on first mount
   useEffect(() => {
@@ -165,7 +161,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           setTourOpen(true);
           handoffPendingRef.current = true; // queue announcements after tour closes
         } else {
-          const next = list.find(x => x.shouldShow);
+          const next = list.find(x => x.shouldShow && x.severity === "critical");
           if (next) setActiveAnn(next);
         }
       } catch { /* non-fatal */ }
@@ -181,7 +177,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     handoffPendingRef.current = false;
     (async () => {
       const list = await fetchAnnouncements();
-      const next = list.find(a => a.shouldShow);
+      const next = list.find(a => a.shouldShow && a.severity === "critical");
       if (next) setActiveAnn(next);
     })();
   }, [tourOpen, fetchAnnouncements]);
@@ -190,7 +186,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const showWhatsNew = useCallback(async () => {
     const list = await fetchAnnouncements();
     const next = list.find(a => a.shouldShow);
+    reviewingAllNotes.current = true;
     setActiveAnn(next ?? null);
+    if (!next) toast({ title: "No announcements available" });
   }, [fetchAnnouncements]);
 
   const ctx = useMemo<OnboardingContextValue>(() => ({ showTour, showWhatsNew }), [showTour, showWhatsNew]);
@@ -209,7 +207,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   // ── Announcement modal handlers ───────────────────────────────────────────
   async function advanceAnn() {
-    const remaining = announcements.filter(a => a.shouldShow && a.featureKey !== activeAnn?.featureKey);
+    const remaining = announcements.filter(a => a.shouldShow && a.featureKey !== activeAnn?.featureKey &&
+      (reviewingAllNotes.current || a.severity === "critical"));
     setActiveAnn(remaining[0] ?? null);
   }
   async function gotIt(a: Announcement) {
@@ -232,7 +231,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       });
     } catch { /* */ }
     setAnnouncements(prev => prev.map(x => x.featureKey === a.featureKey ? { ...x, shouldShow: false } : x));
-    advanceAnn();
+    setActiveAnn(null);
   }
   async function dontShowAnn(a: Announcement) {
     try {

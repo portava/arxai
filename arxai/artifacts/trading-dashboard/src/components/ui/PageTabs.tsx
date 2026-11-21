@@ -7,6 +7,8 @@ export type PageTab = {
   label: string;
   icon?: React.ReactNode;
   content: React.ReactNode;
+  /** Preserve live chart subscriptions and draft drawings while viewing another tab. */
+  keepMounted?: boolean;
 };
 
 export interface PageTabsProps {
@@ -14,6 +16,7 @@ export interface PageTabsProps {
   defaultTab?: string;
   storageKey?: string;
   className?: string;
+  label?: string;
   /** Visual style. "default" keeps existing look; "pill" gives an ARX-blue
    *  active tab (used by the redesigned Scanner). */
   variant?: "default" | "pill";
@@ -57,6 +60,7 @@ export function PageTabs(props: PageTabsProps) {
             "inline-flex w-auto min-w-full justify-start gap-1",
             variant === "pill" && "rounded-xl border border-border bg-card p-1",
           )}
+          aria-label={props.label}
           data-testid="page-tabs-list"
         >
           {tabs.map((t) => (
@@ -77,7 +81,7 @@ export function PageTabs(props: PageTabsProps) {
         </TabsList>
       </div>
       {tabs.map((t) => (
-        <TabsContent key={t.id} value={t.id} className="mt-4 focus-visible:outline-none">
+        <TabsContent key={t.id} value={t.id} forceMount={t.keepMounted ? true : undefined} hidden={t.id !== active} className="mt-4 focus-visible:outline-none">
           {t.content}
         </TabsContent>
       ))}

@@ -121,6 +121,7 @@ const TradeCommandRoomPage = lazy(() => import("@/pages/trade-command-room"));
 const AlertsCenterPage = lazy(() => import("@/pages/alerts-center"));
 const SessionPlanPage = lazy(() => import("@/pages/session-plan"));
 const MarketSessionsPage = lazy(() => import("@/pages/market-sessions"));
+const InvestorResearchPage = lazy(() => import("@/pages/investor-research"));
 const NewsRiskPage = lazy(() => import("@/pages/news-risk"));
 const MarketHealthPage = lazy(() => import("@/pages/market-health"));
 const MarketHeatMapPage = lazy(() => import("@/pages/market-heat-map"));
@@ -424,6 +425,7 @@ function Router() {
           <Route path="/alerts-center" component={AlertsCenterPage} />
           <Route path="/session-plan" component={SessionPlanPage} />
           <Route path="/market-sessions" component={MarketSessionsPage} />
+          <Route path="/investor-research" component={InvestorResearchPage} />
           <Route path="/news-risk" component={NewsRiskPage} />
           <Route path="/market-health" component={MarketHealthPage} />
           <Route path="/market-heat-map" component={MarketHeatMapPage} />

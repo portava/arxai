@@ -50,6 +50,7 @@ function Area<T extends RoutePanelLayout>({
               aria-controls={`workspace-${id}`} aria-expanded={controller.mode(id) === "peek"}
               aria-label={`Open ${title}`} title={`Open ${title}`} onClick={() => controller.peek(id)}>
               <Icon size={17} aria-hidden="true"/>
+              {className === "arx-route-panel-area" && <span className="arx-rail-panel-label">{title}</span>}
             </button>)}
           {closed.includes("order") && quickAction}
         </div>

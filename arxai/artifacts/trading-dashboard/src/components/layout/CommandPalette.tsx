@@ -70,6 +70,7 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   { label: "Risk Profile",               href: "/risk-profile", approvedOnly: true },
   { label: "Risk Events",                href: "/risk-events", admin: true },
   { label: "Market Health",              href: "/market-health", admin: true },
+  { label: "Investor Research", href: "/investor-research", approvedOnly: true },
   { label: "News Risk",                  href: "/news-risk", approvedOnly: true },
   { label: "Data Quality",               href: "/data-quality", admin: true },
   { label: "Prop Firm Mode",             href: "/prop-firm-mode", admin: true },
