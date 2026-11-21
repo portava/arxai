@@ -141,3 +141,5 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+  'js-yaml@>=4.0.0 <4.3.2': 4.3.2
+  'typedoc>minimatch': 11.0.1
