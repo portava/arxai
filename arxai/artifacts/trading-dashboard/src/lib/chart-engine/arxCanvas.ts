@@ -233,7 +233,7 @@ export class CanvasSeries<T extends SeriesType> {
   }
 }
 
-interface LevelTag { label: string; price: number; to?: number; top: number; bottom: number; anchor: number; color: string }
+interface LevelTag { label: string; price: number; to?: number; top: number; bottom: number; anchor: number; color: string; touchIndex?: number }
 
 /** Keep the text rows apart while each connector stays at its true price. */
 export function arrangeLevelTags<T extends { anchor: number }>(tags: T[], height: number, spacing = 24) {
@@ -927,7 +927,15 @@ export class CanvasChart {
         const from = this.priceToCoordinate(o.price), to = this.priceToCoordinate(o.levelReading.to ?? o.price);
         if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) continue;
         const top = Math.max(0, Math.min(from, to)), bottom = Math.min(mainHeight, Math.max(from, to));
-        if (top <= bottom) tags.push({ label: o.levelReading.tag, price: o.price, to: o.levelReading.to,
+        if (top > bottom) continue;
+        const touches = o.levelReading.touchTimes as readonly number[] | undefined;
+        let touchIndex: number | undefined;
+        for (let j = (touches?.length ?? 0) - 1; j >= 0; j--) {
+          const time = touches![j]!;
+          const index = this.indexForTime(time);
+          if (this.times[index] === time && index >= this.range.from && index <= this.range.to) { touchIndex = index; break; }
+        }
+        tags.push({ label: o.levelReading.tag, price: o.price, to: o.levelReading.to, touchIndex,
           color: o.color, top, bottom, anchor: (top + bottom) / 2 });
       }
     }
@@ -1335,16 +1343,29 @@ export class CanvasChart {
     }
     if (tags.length) {
       c.save();
-      c.beginPath(); c.rect(w, 0, this.readingWidth, mainHeight); c.clip();
+      c.beginPath(); c.rect(0, 0, w + this.readingWidth, mainHeight); c.clip();
       for (const row of arrangeLevelTags(tags, mainHeight)) {
         const first = row.tags[0]!;
         for (const t of row.tags) {
-          c.strokeStyle = t.color; c.lineWidth = 1; c.setLineDash([]);
+          const observed = t.touchIndex != null;
+          // Reference-only prices sit just beyond the latest visible candle, in
+          // a distinct diamond. A filled dot always sits at a measured bar/time.
+          const reference = Math.min(w - 14, Math.max(10, this.x(this.times.length - 1) + 12));
+          const x = observed ? this.x(t.touchIndex!) : reference;
+          c.strokeStyle = t.color; c.fillStyle = t.color; c.lineWidth = 1;
+          c.globalAlpha = .55; c.setLineDash([3,3]);
+          c.beginPath(); c.moveTo(x + 5, t.anchor); c.lineTo(w + 3, t.anchor); c.stroke();
+          c.setLineDash([]); c.globalAlpha = 1;
+          c.beginPath(); c.moveTo(w + 3, t.anchor); c.lineTo(w + 11, row.y); c.stroke();
           if (t.to != null) {
-            c.beginPath(); c.moveTo(w, t.top); c.lineTo(w + 3, t.top); c.lineTo(w + 3, t.bottom); c.lineTo(w, t.bottom); c.stroke();
+            c.beginPath(); c.moveTo(x + 4, t.top); c.lineTo(x, t.top); c.lineTo(x, t.bottom); c.lineTo(x + 4, t.bottom); c.stroke();
           }
-          c.beginPath(); c.moveTo(w + 3, t.anchor); c.lineTo(w + 6, t.anchor); c.lineTo(w + 11, row.y); c.stroke();
-          c.fillStyle = t.color; c.beginPath(); c.moveTo(w, t.anchor); c.lineTo(w + 5, t.anchor - 3); c.lineTo(w + 5, t.anchor + 3); c.closePath(); c.fill();
+          if (observed) {
+            c.beginPath(); c.arc(x, t.anchor, 2.2, 0, 2 * Math.PI); c.fill();
+            c.beginPath(); c.moveTo(x + 2, t.anchor); c.lineTo(x + 9, t.anchor - 3.5); c.lineTo(x + 9, t.anchor + 3.5); c.closePath(); c.fill();
+          } else {
+            c.beginPath(); c.moveTo(x - 3, t.anchor); c.lineTo(x, t.anchor - 3); c.lineTo(x + 3, t.anchor); c.lineTo(x, t.anchor + 3); c.closePath(); c.stroke();
+          }
         }
         const single = row.tags.length === 1;
         c.fillStyle = text; c.font = "10px Arial, sans-serif";

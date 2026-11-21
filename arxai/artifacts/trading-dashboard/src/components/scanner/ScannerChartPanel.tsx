@@ -1586,7 +1586,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     }
     smartLayerLinesRef.current = [];
 
-    const add = (price: number | null | undefined, color: string, title: string, dashed: boolean, reading?: { tag: string; to?: number }) => {
+    const add = (price: number | null | undefined, color: string, title: string, dashed: boolean, reading?: { tag: string; to?: number; touchTimes?: number[] }) => {
       if (price == null || !Number.isFinite(price) || price <= 0) return;
       smartLayerLinesRef.current.push(
         series.createPriceLine({
@@ -1607,7 +1607,15 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       if (!layerToggles[l.group as SmartLayerGroup]) continue;
       const color = smartLayerColor(l.severity);
       if (readingGroups.some(g => g.id === l.group)) {
-        if (l.kind === "line") add(l.price, color, "", false, { tag: readingTag(l) });
+        if (l.kind === "line" && l.price != null) {
+          const price = l.price;
+          // A structural level can be a cluster of swings. Mark a measured crossing
+          // of the quoted price, without claiming to know the originating pivot.
+          const touchTimes = l.group === "structure" ? originalResponse?.candles
+            .filter(bar => bar.isComplete && !bar.isForming && bar.low <= price && price <= bar.high)
+            .map(bar => Date.parse(bar.openTime) / 1000).filter(Number.isFinite) : undefined;
+          add(price, color, "", false, { tag: readingTag(l), touchTimes });
+        }
         if (l.kind === "zone" && l.priceFrom != null && l.priceTo != null) add(l.priceFrom, color, "", false, { tag: readingTag(l), to: l.priceTo });
       } else if (l.kind === "line") {
         add(l.price, color, l.label, false);
@@ -1626,7 +1634,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
         add(l.price, smartLayerColor(l.severity), l.label, true);
       }
     }
-  }, [smartLayers, tradeHealthOverlays, layerToggles, chartEpoch, chartContext]);
+  }, [smartLayers, tradeHealthOverlays, layerToggles, chartEpoch, chartContext, originalResponse]);
 
   // ── Economic event markers — events are time-based, so they are drawn as
   //    time-positioned markers on the candle series (not price lines). Events
@@ -2339,6 +2347,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
           }}
           chartReadings={readings.length > 0 && <details data-testid="scanner-price-readings" className="border-t border-border px-3 text-xs">
             <summary className="cursor-pointer py-2 font-medium">Chart readings <span className="ml-1 text-muted-foreground">· {readings.length} levels</span></summary>
+            <p className="mb-2 text-muted-foreground">A dot marks the latest visible closed candle whose price range crossed the level. A hollow diamond marks a price reference.</p>
             {overlayDegraded && <p className="mb-2 text-amber-300">Showing the last readings received. The latest refresh failed.</p>}
             {readingGroups.map(group => {
               const rows = readings.filter(level => level.group === group.id);

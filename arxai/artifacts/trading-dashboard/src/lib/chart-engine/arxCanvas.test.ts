@@ -145,7 +145,8 @@ describe("ARX renderer market-data and viewport contract", () => {
   });
   it("places an advisory label and value outside the price plot and releases the margin when hidden", () => {
     const paints: {t:string;x:number;y:number}[]=[];
-    const target:any={measureText:(t:string)=>({width:t.length*6}),fillText:(t:string,x:number,y:number)=>paints.push({t,x,y})};
+    const dots: {x:number;y:number;r:number}[]=[];
+    const target:any={arc:(x:number,y:number,r:number)=>dots.push({x,y,r}),measureText:(t:string)=>({width:t.length*6}),fillText:(t:string,x:number,y:number)=>paints.push({t,x,y})};
     const ctx=new Proxy(target,{get:(t,k)=>k in t?t[k]:()=>{}});
     vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(ctx);
     const chart=createChart(container,{width:800,height:400});
@@ -153,10 +154,19 @@ describe("ARX renderer market-data and viewport contract", () => {
     series.setData(bars);
     const full=(chart as any).plotWidth();
     const price=bars.at(-1)!.close;
-    const tag=series.createPriceLine({price,levelReading:{tag:"S · retested"},color:"#91a5bc"});
+    const time=bars.at(-1)!.time;
+    const tag=series.createPriceLine({price,levelReading:{tag:"S · retested",touchTimes:[time]},color:"#91a5bc"});
     (chart as any).paint();
     const right=(chart as any).plotWidth();
     expect(right).toBeLessThan(full);
+    const dot=dots.find(d=>d.r===2.2)!;
+    expect(dot.x).toBeCloseTo(chart.timeScale().timeToCoordinate(time)!);
+    expect(dot.y).toBeCloseTo(series.priceToCoordinate(price)!);
+    expect(dot.x).toBeLessThan(right);
+    dots.length=0;
+    tag.applyOptions({levelReading:{tag:"S · retested",touchTimes:[time+1]}});
+    (chart as any).paint();
+    expect(dots.some(d=>d.r===2.2)).toBe(false);
     expect(paints.find(p=>p.t==="Support · retested")!.x).toBeGreaterThan(right);
     series.removePriceLine(tag); (chart as any).paint();
     expect((chart as any).plotWidth()).toBe(full);
