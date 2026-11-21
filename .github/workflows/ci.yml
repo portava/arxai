@@ -66,6 +66,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: arxai/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Verify production launchers, post-merge hooks and deployment checks
+        run: node --test scripts/release/*.test.mjs
       - name: Provision schema (disposable DB)
         run: pnpm --filter @workspace/db run push-force
       - name: Native history and renderer regressions
