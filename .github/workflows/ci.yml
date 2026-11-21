@@ -68,6 +68,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify production launchers, post-merge hooks and deployment checks
         run: node --test scripts/release/*.test.mjs
+      - name: Build the Replit production application
+        run: bash ../scripts/build-arx-replit-production.sh
+      - name: Verify Investor Research dashboard
+        run: pnpm --dir artifacts/trading-dashboard exec vitest run src/pages/investor-research.test.tsx
       - name: Provision schema (disposable DB)
         run: pnpm --filter @workspace/db run push-force
       - name: Native history and renderer regressions
