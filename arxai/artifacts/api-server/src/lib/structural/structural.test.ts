@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline,
+  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -483,4 +483,32 @@ test("a forecast issued while an earlier one of the window is open is saved as a
   };
   assert.deepEqual((await fresh(10 * 60_000)).update, { of: "anchor", anchorAsOf: asOf - 10 * 60_000, barsIntoWindow: 10 });
   assert.equal((await fresh(60 * 60_000)).update, undefined);
+});
+
+test("on M15 the volatility range is the hour-of-week band fitted on training bars; M1 keeps the 120-bar band", () => {
+  // M1: the bar size was not measured (docs/STRUCTURAL_VOL_RANGE_RESULTS.md), so no profile.
+  const m1 = model();
+  assert.equal(m1.volRange, undefined);
+  assert.equal(forecastStructural(m1, bars.slice(-120), origin, false, 60, undefined, bars).range?.volatility, "RECENT_120_BARS");
+  const m15 = fixture(5000, 900_000), m15Origin = { ...origin, symbol: "EURUSD" };
+  const fittedM15 = fitStructuralModel(m15, m15Origin);
+  const profile = fittedM15.volRange!;
+  assert.ok(profile, "M15 model carries a profile");
+  assert.equal(profile.stepMs, 900_000);
+  assert.equal(profile.halfLifeBars, 96);
+  assert.ok(profile.fittedThrough <= fittedM15.trainedThrough, "profile fitted on training bars only");
+  const f = forecastStructural(fittedM15, m15.slice(-120), m15Origin, false, 48, "12h", m15);
+  assert.equal(f.range?.volatility, "HOUR_OF_WEEK");
+  if (f.range?.engine === "VOLATILITY") {
+    const band = seasonalBandAt(m15, profile, 48)!;
+    close(f.trajectories!.find(t => t.kind === "BULL")!.endChange, band.bull[47]!);
+    close(f.trajectories!.find(t => t.kind === "BEAR")!.endChange, band.bear[47]!);
+  }
+  // Without the feed (or a feed ending at another bar) it falls back to the 120-bar band.
+  assert.equal(forecastStructural(fittedM15, m15.slice(-120), m15Origin, false, 48).range?.volatility, "RECENT_120_BARS");
+  assert.equal(forecastStructural(fittedM15, m15.slice(-120), m15Origin, false, 48, undefined, m15.slice(0, -1)).range?.volatility, "RECENT_120_BARS");
+  // Symmetric in logs whichever band is drawn: no direction.
+  const vol = analogTrajectories(fittedM15, m15.slice(-120), f.features, 48, "VOLATILITY", seasonalBandAt(m15, profile, 48));
+  close(vol[0]!.endChange, seasonalBandAt(m15, profile, 48)!.bull[47]!);
+  close((1 + vol[0]!.endChange) * (1 + vol[2]!.endChange), 1);
 });

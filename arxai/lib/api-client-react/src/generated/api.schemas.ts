@@ -10042,11 +10042,29 @@ export type NewsIntelligencePackUpcomingEvent = {
   minutesUntil: number;
 } | null;
 
+export type NewsIntelligencePackRecentHeadlinesItemTimeBasis =
+  (typeof NewsIntelligencePackRecentHeadlinesItemTimeBasis)[keyof typeof NewsIntelligencePackRecentHeadlinesItemTimeBasis];
+
+export const NewsIntelligencePackRecentHeadlinesItemTimeBasis = {
+  publication: "publication",
+  provider_first_seen: "provider_first_seen",
+} as const;
+
+export type NewsIntelligencePackRecentHeadlinesItemVerification =
+  (typeof NewsIntelligencePackRecentHeadlinesItemVerification)[keyof typeof NewsIntelligencePackRecentHeadlinesItemVerification];
+
+export const NewsIntelligencePackRecentHeadlinesItemVerification = {
+  headline_only: "headline_only",
+} as const;
+
 export type NewsIntelligencePackRecentHeadlinesItem = {
   headline: string;
   source: string;
   url: string | null;
   publishedAt: string;
+  observedAt?: string;
+  timeBasis?: NewsIntelligencePackRecentHeadlinesItemTimeBasis;
+  verification?: NewsIntelligencePackRecentHeadlinesItemVerification;
 };
 
 export type NewsIntelligencePackDataSourcesHeadlines = {

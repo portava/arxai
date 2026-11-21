@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:structural-vol-range-research": "tsx ./src/structuralVolRangeResearchTest.ts",
     "hello": "tsx ./src/hello.ts",
     "ss:smoke": "tsx ./src/ss-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

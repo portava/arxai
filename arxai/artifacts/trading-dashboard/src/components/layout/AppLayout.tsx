@@ -172,6 +172,7 @@ const buildNavGroups = (name: string): NavGroup[] => [
     approvedOnly: true,
     items: [
       { href: "/live-chart",        label: "Live Market Chart", icon: Activity },
+      { href: "/investor-research", label: "Investor Research", icon: Search },
       { href: "/watchlists",        label: "Watchlist",         icon: Eye },
       // Manual Ticket + News Risk back onto requireAdmin-only mutations
       // (oms.ts order routes, marketDataLayer.ts news-risk event CRUD).

@@ -8,6 +8,7 @@
 //     unavailable — we never fabricate headlines or events.
 //   - 60s in-memory cache per symbol to respect provider rate limits.
 
+import { normalizeHeadlineEvidence, type HeadlineEvidence } from "./headlineEvidence.js";
 import { getMarketProvider } from "../assistant/marketProvider.js";
 import type { NewsItem } from "../assistant/marketProvider.js";
 import type { EconomicEvent } from "./calendar/economicEvents.js";
@@ -24,12 +25,7 @@ import {
 export type NewsRiskLevel = "none" | "low" | "medium" | "high" | "critical";
 export type NewsBias = "bullish" | "bearish" | "mixed" | "unclear";
 
-export interface NewsHeadline {
-  headline: string;
-  source: string;
-  url: string | null;
-  publishedAt: string;
-}
+export type NewsHeadline = HeadlineEvidence;
 
 export interface UpcomingEventSummary {
   title: string;
@@ -75,23 +71,6 @@ export interface NewsIntelligencePack {
 const CACHE = new Map<string, { at: number; pack: NewsIntelligencePack }>();
 const CACHE_TTL_MS = 60 * 1000;
 
-const BULL_WORDS = ["surge", "rally", "soar", "jump", "beat", "rise", "gain", "strong", "bullish", "hawkish", "upside"];
-const BEAR_WORDS = ["plunge", "fall", "drop", "miss", "weak", "bearish", "dovish", "decline", "slump", "tumble", "downside", "crash"];
-
-function deriveBiasFromHeadlines(items: NewsHeadline[]): NewsBias {
-  if (items.length === 0) return "unclear";
-  let bull = 0, bear = 0;
-  for (const h of items.slice(0, 8)) {
-    const t = h.headline.toLowerCase();
-    if (BULL_WORDS.some((w) => t.includes(w))) bull++;
-    if (BEAR_WORDS.some((w) => t.includes(w))) bear++;
-  }
-  if (bull === 0 && bear === 0) return "unclear";
-  if (bull > 0 && bear === 0) return "bullish";
-  if (bear > 0 && bull === 0) return "bearish";
-  return "mixed";
-}
-
 function mapRiskLevel(r: NewsRisk): NewsRiskLevel {
   if (r.blockTrading) return "critical";
   return r.riskLevel;
@@ -129,7 +108,7 @@ function summarizeWarning(
     const when = upcoming.minutesUntil >= 0
       ? `in ${upcoming.minutesUntil}m`
       : `${Math.abs(upcoming.minutesUntil)}m ago`;
-    return `${upcoming.title} (${upcoming.currency}) ${when} — ${riskLevel} news risk on ${symbol}. Bias from headlines: ${bias}.`;
+    return `${upcoming.title} (${upcoming.currency}) ${when} — ${riskLevel} news risk on ${symbol}. Headlines alone do not establish direction.`;
   }
   if (riskLevel === "none") {
     return `No major scheduled news for ${symbol} in the current window.`;
@@ -204,12 +183,7 @@ export async function getNewsIntelligence(
   // surface its payload — emit empty headlines and count=0 regardless of
   // what bytes came back. Prevents stale/synthetic items leaking through.
   const recentHeadlines: NewsHeadline[] = headlineFetch.connected
-    ? headlineFetch.items.map((i) => ({
-        headline: i.headline,
-        source: i.source,
-        url: i.url || null,
-        publishedAt: i.publishedAt,
-      }))
+    ? normalizeHeadlineEvidence(headlineFetch.items, Date.now())
     : [];
 
   // Economic calendar — the SINGLE real provider seam (getEconomicCalendar) is
@@ -283,7 +257,8 @@ export async function getNewsIntelligence(
   }
 
   const timing = deriveTiming(newsRisk);
-  const bias = deriveBiasFromHeadlines(recentHeadlines);
+  // Headline wording alone does not establish instrument direction.
+  const bias: NewsBias = "unclear";
   const recommendation = deriveRecommendation(riskLevel, timing);
   // What was actually checked. A calendar that is not configured is not a
   // FAILED check (calendarCheckFailed stays false, so scanner gating is
@@ -337,7 +312,7 @@ export async function getNewsIntelligence(
       },
     },
     safetyNote:
-      "Decision support only. Do not invent headlines or events beyond what is listed here. If a feed is marked unavailable, say so honestly.",
+      "Decision support only. Headlines are unverified leads, not directional predictions. Read the linked story or primary filing before asserting its claims. First-seen timestamps are not publication times. Do not invent headlines or events beyond what is listed here. If a feed is marked unavailable, say so honestly.",
   };
 
   CACHE.set(symbol, { at: Date.now(), pack });

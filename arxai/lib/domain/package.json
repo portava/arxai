@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./investor-research": "./src/investor-research/index.ts",
     "./trade": "./src/trade/index.ts",
     "./trade-health": "./src/trade-health/index.ts",
     "./market": "./src/market/index.ts",
