@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
+import { favoredScenario, scoreForecastRoute, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -26,9 +26,10 @@ export function trajectoryLabel(t: Trajectory, p: Triple | undefined, directionE
     + (p ? ` · ${up ? "up" : "down"}-break first ${pct(p[up ? 0 : 1])}` : "");
 }
 /** The short label drawn where a path ends on the chart, e.g. "Bull +0.10% · range top". */
-export function trajectoryChartLabel(t: Trajectory, directionEdge = false): string {
+export function trajectoryChartLabel(t: Trajectory, directionEdge = false, weights?: Triple): string {
   if (t.kind === "MIDDLE") return `Middle ${signed(t.endChange)} · median`;
   const up = t.kind === "BULL";
+  if (weights) return `${up ? "Up" : "Down"} first ${formatWeight(weights[up ? 0 : 1])} · range ${up ? "top" : "bottom"}`;
   return `${pathNames[t.kind]} ${signed(t.endChange)} · ${directionEdge ? `${pct(t.share)} ${up ? "higher" : "lower"}` : `range ${up ? "top" : "bottom"}`}`;
 }
 /** Which engine drew the range on this market, why, and whether up/down has a tested edge. */
@@ -44,7 +45,7 @@ export function rangeSentence(f: StructuralForecast): string | null {
       : `Range engine for this market: volatility — sized from ${r.volatility === "HOUR_OF_WEEK" ? "how much this market usually moves at these hours of the week and how active it has been today" : "recent price swings"}, because the history range did not score reliably better here.`;
   const direction = f.directionEdge
     ? " Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown."
-    : " Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.";
+    : " The analogs have no verified edge for whether the window ends higher or lower. First-break odds are scored separately.";
   return engine + evidence + direction;
 }
 /** What the forecast learned from earlier graded forecasts of this window. */
@@ -61,6 +62,7 @@ const outcomeNames: Record<Scenario, string> = { UP_FIRST: "broke up first", DOW
 function gradeLine(g: ForecastGrade, outcome: Scenario): string {
   return `${outcomeNames[outcome]}, gave it ${pct(g.probabilityOfOutcome)} · ended ${signed(g.actualEndChange)}`
     + (g.nearestPath ? ` · nearest ${pathNames[g.nearestPath].toLowerCase()} path` : "")
+    + (g.routeScore ? ` · route error ${g.routeScore.mae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts vs flat ${g.routeScore.flatMae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts over ${g.routeScore.matched} closes` : "")
     + (g.insideRange == null ? "" : g.insideRange ? " · inside bull–bear range" : " · outside bull–bear range");
 }
 export interface ForecastDirectionRead {
@@ -74,6 +76,11 @@ export interface ForecastDirectionRead {
   leadPoints: number;
   favoredBreak: "up" | "down" | null;
   basis: string;
+  provider?: string;
+  savedFallback?: boolean;
+  route?: ForecastRoute;
+  view?: "routes" | "range";
+  favoriteScenario?: Scenario | null;
 }
 
 export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionRead | null {
@@ -85,28 +92,45 @@ export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionR
   const first = ranked[0]!, second = ranked[1]!;
   const leadPoints = 100 * (weights[first]! - weights[second]!);
   // A tie at the displayed precision must not be presented as a distinct lead.
-  const tied = (100 * weights[first]!).toFixed(1) === (100 * weights[second]!).toFixed(1);
+  const favorite = favoredScenario(weights);
+  const tied = favorite === null;
   return { symbol: f.origin.symbol, timeframe: window.timeframe, window: window.label, asOf: f.asOf,
     endsAt: f.asOf + window.bars * window.stepMs, weights, leadPoints,
+    favoriteScenario: favorite, provider: f.origin.provider,
     favoredBreak: tied || first === 2 ? null : first === 0 ? "up" : "down",
     verdict: tied ? "No clear favorite" : outcomes[first]!,
     basis: f.calibration?.applied ? "Calibrated probabilities" : f.mode === "BASELINE" ? "Historical-frequency baseline" : "Model probabilities" };
 }
 
+const formatWeight = (p: number) => p > 0 && p < 0.0005 ? "<0.1%" : `${(100 * p).toFixed(1)}%`;
+
 export function ForecastDirectionSummary({ read }: { read: ForecastDirectionRead }) {
-  const scale = (p: number) => p > 0 && p < 0.0005 ? "<0.1%" : `${(100*p).toFixed(1)}%`;
   const ended = Date.now() >= read.endsAt;
   return <div aria-label="Forecast directional weights" data-testid="forecast-direction" className="min-w-0 space-y-0.5 text-xs">
     <div className="flex flex-wrap items-baseline gap-x-2">
-      <strong>{read.verdict}</strong><span>{read.window} · {read.symbol} · {ended ? "Ended" : "Through"} {new Date(read.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+      <strong>{read.verdict}</strong>{read.savedFallback && <span>Saved forecast · live update unavailable</span>}<span>{read.window} · {read.symbol} · {ended ? "Ended" : "Through"} {new Date(read.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
     </div>
     <div className="flex flex-wrap items-baseline gap-x-3">
-      <span>Up first <b>{scale(read.weights[0])}</b></span>
-      <span>Down first <b>{scale(read.weights[1])}</b></span>
-      <span>No break <b>{scale(read.weights[2])}</b></span>
+      <span>Up first <b>{formatWeight(read.weights[0])}</b></span>
+      <span>Down first <b>{formatWeight(read.weights[1])}</b></span>
+      <span>No break <b>{formatWeight(read.weights[2])}</b></span>
       <span className="text-muted-foreground">{read.verdict === "No clear favorite" ? "" : `${read.leadPoints.toFixed(1)} pt lead · `}{read.basis}</span>
     </div>
   </div>;
+}
+
+/** Pair only finalized provider candles at the forecast's exact timestamps. */
+export function routeProgress(route: ForecastRoute, actual: readonly { openTime: string; closeTime: string; close: number; isComplete: boolean; isForming: boolean; source: string }[], provider: string, now: number) {
+  const closes = actual.filter(c => c.source === provider && c.isComplete && !c.isForming && Date.parse(c.closeTime) <= now)
+    .map(c => ({ openTime: Date.parse(c.openTime), closeTime: Date.parse(c.closeTime), close: c.close }));
+  const score = scoreForecastRoute(route, closes);
+  return { matched: score?.matched ?? 0, mae: score?.mae ?? null, flatMae: score?.flatMae ?? null,
+    next: route.candles.find(c => c.closeTime > now) };
+}
+
+const routeNames: Record<Scenario, string> = { UP_FIRST: "Up-break route", DOWN_FIRST: "Down-break route", NEITHER: "No-break route" };
+function routePath(route: ForecastRoute, weights?: Triple, faded = false): ForecastDrawPath {
+  return { id: route.scenario, scenario: route.scenario, label: faded ? "" : weights ? `${labels[route.scenario]} ${formatWeight(weights[allScenarios.indexOf(route.scenario)]!)}` : routeNames[route.scenario], candles: route.candles, faded };
 }
 
 const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -125,6 +149,7 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const preset = forecastHorizon(horizonId) ?? forecastHorizon(DEFAULT_FORECAST_HORIZON)!;
   const rowHorizonId = (r: Row) => r.forecast.horizonId ?? DEFAULT_FORECAST_HORIZON;
   const [cohort, setCohort] = useState("all");
+  const [view, setView] = useState<"routes" | "range">("routes");
   const [auto, setAuto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,22 +164,31 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
     const current = row && (row.forecast.horizonId ?? DEFAULT_FORECAST_HORIZON) === horizonId ? row : null;
     if (!current || current.forecast.origin.symbol !== canonicalSymbol) { onPaths([]); return; }
     const f = current.forecast;
-    const original = f.update ? [...history, row].find(r => r?.id === f.update!.of)?.forecast.trajectories ?? [] : [];
+    const weights = f.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
+    const originalForecast = f.update ? history.find(r => r.id === f.update!.of)?.forecast : undefined;
+    if (f.routes && view === "routes") {
+      onPaths([...(originalForecast?.routes ?? []).filter(r => selected.includes(r.scenario)).map(r => routePath(r, undefined, true)),
+        ...f.routes.filter(r => selected.includes(r.scenario)).map(r => routePath(r, weights))]);
+      return;
+    }
+    const original = originalForecast?.trajectories ?? [];
     onPaths(f.trajectories?.length
       ? [...original.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: "", candles: t.candles, faded: true })),
-        ...f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryChartLabel(t, f.directionEdge), candles: t.candles }))]
+        ...f.trajectories.filter(t => selected.includes(t.kind)).map(t => ({ id: t.kind, label: trajectoryChartLabel(t, f.directionEdge, weights), candles: t.candles }))]
       : f.paths.filter(path => selected.includes(path.scenario)).map(path => ({ id: path.scenario, scenario: path.scenario,
         label: `${labels[path.scenario]} ${pct(path.probability)}`, candles: path.candles })));
-  }, [row, history, canonicalSymbol, selected, onPaths, horizonId]);
+  }, [row, history, canonicalSymbol, selected, onPaths, horizonId, view, preset.minutes]);
 
   const shown = row && rowHorizonId(row) === preset.id && row.forecast.origin.symbol === canonicalSymbol ? row : null;
   useEffect(() => {
-    onDirectionRead?.(shown ? forecastDirectionRead(shown.forecast) : null);
-  }, [shown, onDirectionRead]);
+    const read = shown && forecastDirectionRead(shown.forecast);
+    onDirectionRead?.(read ? { ...read, savedFallback: Boolean(error), route: shown?.forecast.routes?.find(r => r.scenario === read.favoriteScenario), view: shown?.forecast.routes && view === "routes" ? "routes" : "range" } : null);
+  }, [shown, onDirectionRead, error, view]);
 
   const generate = useCallback(async (historyOnly = false, showOnChart = false) => {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setBusy(true); setError(null);
+    let latest: Row | undefined;
     try {
       // Resolve existing predictions separately, then issue/save the next one.
       const historyResponse = await fetch(`${basePath}/api/me/structural/forecasts?symbol=${encodeURIComponent(symbol)}`, { credentials: "include", signal: controller.signal });
@@ -163,11 +197,9 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         if (!controller.signal.aborted) {
           const saved: Row[] = memory.forecasts ?? [];
           setHistory(saved);
-          if (historyOnly) {
-            const latest = saved.filter(r => rowHorizonId(r) === preset.id && r.forecast.origin.symbol === canonicalSymbol)
+          latest = saved.filter(r => rowHorizonId(r) === preset.id && r.forecast.origin.symbol === canonicalSymbol)
               .sort((a,b) => b.issuedAt - a.issuedAt)[0];
-            setRow(latest ?? null);
-          }
+          if (historyOnly) setRow(latest ?? null);
         }
       } else if (historyOnly) throw new Error("prediction memory unavailable");
       if (historyOnly) return;
@@ -185,7 +217,13 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         if (showOnChart && chartTimeframe && chartTimeframe !== preset.timeframe) onShowOnTimeframe?.(preset.timeframe);
       }
     } catch (e) {
-      if (!controller.signal.aborted) setError(e instanceof Error ? e.message.replaceAll("_", " ") : "forecast unavailable");
+      if (!controller.signal.aborted) {
+        setError(e instanceof Error ? e.message.replaceAll("_", " ") : "forecast unavailable");
+        if (latest && !historyOnly) {
+          setRow(latest);
+          if (showOnChart && chartTimeframe !== preset.timeframe) onShowOnTimeframe?.(preset.timeframe);
+        }
+      }
     } finally { if (!controller.signal.aborted) setBusy(false); }
   }, [symbol, preset, canonicalSymbol, chartTimeframe, onShowOnTimeframe]);
 
@@ -223,16 +261,25 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void generate(true)}>Refresh saved forecasts</Button>
       <label className="flex items-center gap-1"><input type="checkbox" aria-label="Dynamic forecast" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(false, true); }} /> Dynamic: re-forecast each {preset.timeframe} bar</label>
     </div>
-    {error && <p role="alert" className="mt-2 text-amber-300">Forecast unavailable: {error}. Saved forecasts remain unchanged.</p>}
+    {error && <p role="alert" className="mt-2 text-amber-300">Live update unavailable. {error}.{shown && " Showing the saved forecast below."}</p>}
     {shown && shown.forecast.origin.symbol === canonicalSymbol && <>
       {shown.forecast.update && <p data-testid="forecast-update" className="mt-2 text-sky-200">
-        Updated {shown.forecast.update.barsIntoWindow} {preset.timeframe} bar{shown.forecast.update.barsIntoWindow === 1 ? "" : "s"} into the forecast issued {new Date(shown.forecast.update.anchorAsOf).toLocaleTimeString()}; that original is drawn as a faint dashed outline.
+        Updated {shown.forecast.update.barsIntoWindow} {preset.timeframe} bar{shown.forecast.update.barsIntoWindow === 1 ? "" : "s"} into the forecast issued {new Date(shown.forecast.update.anchorAsOf).toLocaleTimeString()}; the faint dashed outline shows the original when its paths are available.
         Updates are graded separately and are not used to learn, because they repeat the open forecast with less time left.</p>}
       <p className="mt-2 text-zinc-400">Saved {new Date(shown.issuedAt).toLocaleString()} · Data through {new Date(shown.forecast.asOf).toLocaleString()} · {preset.timeframe} bars · {shown.forecast.mode.replaceAll("_", " ").toLowerCase()} · {shown.forecast.origin.provider}</p>
       <div aria-label="Selected horizon probabilities" className="my-2 flex flex-wrap gap-4"><span>Outcomes within {preset.label}:</span>
         {allScenarios.map((scenario, i) => <span key={scenario}>{labels[scenario]}: <strong>{((probability?.[i] ?? 0) * 100).toFixed(1)}%</strong></span>)}
       </div>
-      {shown.forecast.trajectories?.length ? <div aria-label="Projected paths" className="my-2 flex flex-wrap gap-4"><span>{preset.label} paths ({preset.timeframe} candles):</span>
+      {shown.forecast.routes && <label className="mt-2 inline-flex items-center gap-2">Chart view
+        <select aria-label="Forecast chart view" className="rounded bg-zinc-900 p-1" value={view} onChange={e => setView(e.target.value === "range" ? "range" : "routes")}>
+          <option value="routes">Candle-by-candle routes</option><option value="range">Price range</option>
+        </select></label>}
+      {shown.forecast.routes && view === "routes" ? <div aria-label="Forecast routes" className="my-2 flex flex-wrap gap-3">
+        {shown.forecast.routes.map(r => <label key={r.scenario} className="flex items-center gap-1"><input type="checkbox"
+          disabled={!r.candles.length} checked={Boolean(r.candles.length && selected.includes(r.scenario))}
+          onChange={e => setSelected(e.target.checked ? [...selected, r.scenario] : selected.filter(s => s !== r.scenario))} />
+          {routeNames[r.scenario]} · {r.matches} matches{!r.candles.length && " · too few for a route"}
+        </label>)}</div> : shown.forecast.trajectories?.length ? <div aria-label="Projected paths" className="my-2 flex flex-wrap gap-4"><span>{preset.label} paths ({preset.timeframe} candles):</span>
         {shown.forecast.trajectories.map(t => <label key={t.kind} className="flex items-center gap-2">
           <input type="checkbox" checked={selected.includes(t.kind)}
             onChange={e => setSelected(e.target.checked ? [...selected, t.kind] : selected.filter(s => s !== t.kind))} />
@@ -247,7 +294,9 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         The {preset.label} paths are {preset.timeframe} candles and are not drawn on this {chartTimeframe} chart.
         {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
       </p>}
-      <p className="text-amber-200">{shown.forecast.trajectories?.length
+      <p className="text-amber-200">{shown.forecast.routes && view === "routes"
+        ? "Each point estimates a candle close from similar historical setups with the specified first break. The issued route stays fixed as actual candles arrive."
+        : shown.forecast.trajectories?.length
         ? `The paths are not price predictions: the shaded range from bull to bear is a nominal 50% endpoint interval; actual coverage can differ (see measured coverage below), and the middle line is the median of the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market, rescaled to the current price. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
         : "Ghost paths are illustrative scenarios, not price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move."}</p>
       {rangeSentence(shown.forecast) && <p data-testid="forecast-range-engine" className="mt-1 text-zinc-300">{rangeSentence(shown.forecast)}</p>}

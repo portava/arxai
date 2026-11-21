@@ -113,6 +113,14 @@ export interface ForecastGrade {
   insideRange: boolean | null;
   /** Mean absolute error of the middle path's closes, as a fraction of price. */
   middlePathError: number | null;
+  /** Per-close errors in instrument price points on the favored route and the unchanged-price benchmark. */
+  routeScore?: { scenario: Scenario; matched: number; mae: number; flatMae: number };
+}
+/** A per-candle median price estimate conditional on the first break in this window. */
+export interface ForecastRoute {
+  scenario: Scenario;
+  matches: number;
+  candles: StructuralBar[];
 }
 export interface StructuralForecast {
   version: string; asOf: number; origin: DataOrigin; modelId: string;
@@ -136,6 +144,8 @@ export interface StructuralForecast {
   horizonId?: string;
   /** Bull / middle / bear projected paths; absent on forecasts saved before them. */
   trajectories?: Trajectory[];
+  /** Saved at issue time. Each route uses only completed historical matches. Older forecasts contain ranges only. */
+  routes?: ForecastRoute[];
   /** Calibration applied to this window's probabilities, if any was learned. */
   calibration?: CalibrationRecord;
   /** Present when this forecast updates one whose window was still open. */

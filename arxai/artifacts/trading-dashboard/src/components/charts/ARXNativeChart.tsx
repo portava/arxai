@@ -12,7 +12,7 @@ import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-en
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLayersMenu } from "./ChartLayersMenu";
-import { StructuralForecastPanel, ForecastDirectionSummary, type ForecastDrawPath, type ForecastDirectionRead } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, ForecastDirectionSummary, routeProgress, type ForecastDrawPath, type ForecastDirectionRead } from "./StructuralForecastPanel";
 import {
   allLayers,
   overlayLayer,
@@ -1131,6 +1131,9 @@ export function ARXNativeChart({
   );
 
   const historySource = data?.feedStatus?.source ?? null;
+  const routeRead = forecastRead?.view === "routes" && forecastRead.symbol === resolvedSymbol && forecastRead.timeframe === timeframe ? forecastRead : null;
+  const routeStats = routeRead?.route?.candles.length && routeRead.provider === historySource && historySource
+    ? routeProgress(routeRead.route, candles, historySource, Date.now()) : null;
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
   //    chart. The adapter reconciles the current visible range, so the forming last
@@ -2270,6 +2273,14 @@ export function ARXNativeChart({
       {forecastRead?.symbol === resolvedSymbol && forecastRead.timeframe === timeframe && (
         <section aria-label="Chart forecast" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border px-3 py-2">
           <ForecastDirectionSummary read={forecastRead} />
+          {routeRead && <div data-testid="forecast-route-progress" className="min-w-0 text-xs">
+            {routeStats ? <>
+              {routeStats.next && <span>Favored route · estimated close {formatInstrumentPrice(routeStats.next.close, pricePrecision)} at {new Date(routeStats.next.closeTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. </span>}
+              {routeStats.mae !== null && routeStats.flatMae !== null
+                ? <span>{routeStats.matched} matched closes · mean error {formatInstrumentPrice(routeStats.mae, pricePrecision)} pts · flat-price error {formatInstrumentPrice(routeStats.flatMae, pricePrecision)} pts</span>
+                : <span>Scoring begins with the first matching closed candle.</span>}
+            </> : routeRead.favoriteScenario && !routeRead.route?.candles.length ? "Too few historical matches to estimate the favored route." : null}
+          </div>}
           <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-muted-foreground">
             {favoredBreak && visibleScenarioPaths.some(p => p.lineWidth === 4) && <span>Thick line shows the favored first break</span>}
             {visibleScenarioPaths.some(p => !p.faded && p.id === "BULL") && visibleScenarioPaths.some(p => !p.faded && p.id === "BEAR") &&

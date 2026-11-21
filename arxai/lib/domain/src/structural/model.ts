@@ -2,7 +2,7 @@ import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type 
   type StructuralEvent, type DataOrigin, type StructuralForecast, type GhostPath } from "./contracts.js";
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
-import { analogTrajectories, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
+import { analogTrajectories, historicalNeighbors, forecastRoutes, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
 import { deseasonalisedLevels, fitVolRangeProfile, seasonalBandAt, seasonalVolatilityBand, type VolRangeProfile } from "./volRange.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
@@ -308,12 +308,14 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
   const h = history.slice(-120), features = structuralFeatures(h, asOf);
   const prediction = predictMass(model, features.values, features.eligible, quarantined);
   const seasonalBand = volHistory?.length && volHistory.at(-1)!.closeTime === asOf ? seasonalBandAt(volHistory, model.volRange, horizonBars) : null;
+  const neighbors = historicalNeighbors(model, features.values, horizonBars, asOf);
   return { version: model.version, modelId: model.modelId, asOf, origin, trainedThrough: model.trainedThrough,
     featureVersion: `${model.version}:features-1`, eventDefinitionVersion: `${model.version}:events-1`,
     features: features.values, preBreakEligible: features.eligible, mode: prediction.mode, gateReason: prediction.reason,
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
     horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars),
-    trajectories: analogTrajectories(model, h, features.values, horizonBars, undefined, seasonalBand), history: h,
+    trajectories: analogTrajectories(model, h, features.values, horizonBars, undefined, seasonalBand, neighbors), history: h,
+    routes: forecastRoutes(neighbors, h.at(-1)!, horizonBars, stepMs),
     range: { engine: model.rangeEngine?.engine ?? "VOLATILITY", reason: model.rangeEngine?.reason ?? "TOO_FEW_TEST_SETUPS",
       volatility: seasonalBand ? "HOUR_OF_WEEK" : "RECENT_120_BARS",
       tested: model.rangeEngine?.tested ?? 0, historyInside: model.rangeEngine?.historyInside ?? null, volatilityInside: model.rangeEngine?.volatilityInside ?? null },

@@ -1,5 +1,5 @@
 import { STRUCTURAL_VERSION, type CalibrationRecord, type ForecastGrade, type StructuralBar, type StructuralForecast,
-  type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
+  scenarioOf, type ForecastRoute, type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
 import { brier } from "./math.js";
 import { lowerMeanGain, type Episode, type StructuralModel } from "./model.js";
 
@@ -72,19 +72,7 @@ export function volatilityBand(history: readonly StructuralBar[], horizonBars: n
   return { bull: edge(1), bear: edge(-1) };
 }
 
-/**
- * Projected paths from the most similar past setups. Similarity is distance in
- * the model's own structural features, standardized over the training set. Only
- * episodes whose whole future closed before the forecast are eligible, so no
- * path can contain anything that happened after it was issued.
- */
-export function analogTrajectories(model: StructuralModel, history: readonly StructuralBar[], features: readonly number[], horizonBars = 60,
-  engine: RangeEngine = model.rangeEngine?.engine ?? "VOLATILITY",
-  /** The hour-of-week band (volRange.ts) when the model has one; otherwise the 120-bar band. */
-  seasonalBand: VolBand | null = null): Trajectory[] {
-  const last = history.at(-1);
-  if (!last) return [];
-  const asOf = last.closeTime, start = last.close, step = model.stepMs ?? 60_000;
+export function historicalNeighbors(model: StructuralModel, features: readonly number[], horizonBars: number, asOf: number): Episode[] {
   const eligible = model.training.filter(e => e.future.length >= horizonBars
     && e.future.at(-1)!.closeTime <= model.trainedThrough && e.future.at(-1)!.closeTime < asOf
     && e.features.length === features.length && e.features.every(Number.isFinite));
@@ -95,7 +83,45 @@ export function analogTrajectories(model: StructuralModel, history: readonly Str
   const distance = (x: readonly number[]) => Math.sqrt(x.reduce((s, v, k) => s + ((v - features[k]!) / scale[k]!) ** 2, 0));
   const nearest = eligible.map(e => ({ e, d: distance(e.features) })).sort((a, b) => a.d - b.d);
   const k = Math.min(nearest.length, Math.max(30, Math.round(nearest.length * .25)));
-  const used = nearest.slice(0, k).map(({ e }) => e);
+  return nearest.slice(0, k).map(({ e }) => e);
+}
+
+/** Estimate each future close from the median relative close of similar episodes
+ * with the same first-break outcome. All neighbors have finished before issuance. */
+export function forecastRoutes(neighbors: readonly Episode[], anchor: StructuralBar, horizonBars: number, step: number): ForecastRoute[] {
+  return (["UP_FIRST", "DOWN_FIRST", "NEITHER"] as const).map(scenario => {
+    const matches = neighbors.filter(e => scenarioOf(e.event && e.event.time <= e.origin + horizonBars * step ? e.event : null) === scenario);
+    const candles: StructuralBar[] = [];
+    // One or two episodes would just trace individual historical examples.
+    if (matches.length >= 3) {
+      for (let j = 0; j < horizonBars; j++) {
+        const ratios = matches.map(e => e.future[j]!.close / e.history.at(-1)!.close).sort((a, b) => a - b);
+        const mid = Math.floor(ratios.length / 2);
+        const ratio = ratios.length % 2 ? ratios[mid]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
+        const close = anchor.close * ratio, open = candles.at(-1)?.close ?? anchor.close;
+        candles.push({ openTime: anchor.closeTime + j * step, closeTime: anchor.closeTime + (j + 1) * step,
+          open, close, high: Math.max(open, close), low: Math.min(open, close), isFinal: false });
+      }
+    }
+    return { scenario, matches: matches.length, candles };
+  });
+}
+
+/**
+ * Projected paths from the most similar past setups. Similarity is distance in
+ * the model's own structural features, standardized over the training set. Only
+ * episodes whose whole future closed before the forecast are eligible, so no
+ * path can contain anything that happened after it was issued.
+ */
+export function analogTrajectories(model: StructuralModel, history: readonly StructuralBar[], features: readonly number[], horizonBars = 60,
+  engine: RangeEngine = model.rangeEngine?.engine ?? "VOLATILITY",
+  /** The hour-of-week band (volRange.ts) when the model has one; otherwise the 120-bar band. */
+  seasonalBand: VolBand | null = null, neighbors?: readonly Episode[]): Trajectory[] {
+  const last = history.at(-1);
+  if (!last) return [];
+  const asOf = last.closeTime, start = last.close, step = model.stepMs ?? 60_000;
+  const used = neighbors ?? historicalNeighbors(model, features, horizonBars, asOf);
+  if (!used.length) return [];
   const n = used.length, sourceEnd = Math.max(...used.map(e => e.future.at(-1)!.closeTime));
   // Each analog as change from its own start, bar by bar.
   const rel = used.map(e => e.future.slice(0, horizonBars).map(b => b.close / e.history.at(-1)!.close - 1));
@@ -153,6 +179,27 @@ export function skillOverBaseline(shownBrier: number, baselineBrier: number): nu
   return Math.max(-1, 1 - shownBrier / baselineBrier);
 }
 
+/** Select a favorite using the same tenth-of-a-percent precision displayed on the chart. */
+export function favoredScenario(weights: Triple) {
+  const scenarios = ["UP_FIRST", "DOWN_FIRST", "NEITHER"] as const;
+  const ranked = scenarios.map((scenario, i) => ({ scenario, weight: weights[i]! })).sort((a, b) => b.weight - a.weight);
+  return (ranked[0]!.weight * 100).toFixed(1) === (ranked[1]!.weight * 100).toFixed(1) ? null : ranked[0]!.scenario;
+}
+
+export function scoreForecastRoute(route: ForecastRoute, actual: readonly Pick<StructuralBar, "openTime" | "closeTime" | "close">[]) {
+  const observations = new Map(actual.map(b => [b.openTime, b]));
+  const anchor = route.candles[0]?.open;
+  let matched = 0, error = 0, flatError = 0;
+  for (const p of route.candles) {
+    const bar = observations.get(p.openTime);
+    if (anchor === undefined || !bar || bar.closeTime !== p.closeTime || !Number.isFinite(bar.close)) continue;
+    matched++;
+    error += Math.abs(p.close - bar.close);
+    flatError += Math.abs(anchor - bar.close);
+  }
+  return matched ? { scenario: route.scenario, matched, mae: error / matched, flatMae: flatError / matched } : null;
+}
+
 /** Judge a finished forecast against the bars of its whole window. */
 export function gradeForecast(f: StructuralForecast, windowBars: readonly StructuralBar[], shown: Triple, outcome: number, baseline: Triple): ForecastGrade {
   const start = f.history.at(-1)!.close, end = windowBars.at(-1)!.close;
@@ -161,7 +208,9 @@ export function gradeForecast(f: StructuralForecast, windowBars: readonly Struct
   const nearest = paths.length ? paths.reduce((a, b) => Math.abs(b.endChange - actualEndChange) < Math.abs(a.endChange - actualEndChange) ? b : a) : null;
   const bull = paths.find(p => p.kind === "BULL"), bear = paths.find(p => p.kind === "BEAR"), middle = paths.find(p => p.kind === "MIDDLE");
   const n = middle ? Math.min(middle.candles.length, windowBars.length) : 0;
-  return { gradeVersion: `${STRUCTURAL_VERSION}:grade-2`, letter: letter(skill), skill, skillVsUniform: 1 - shownBrier / UNIFORM_BRIER, probabilityOfOutcome: shown[outcome]!,
+  const route = f.routes?.find(r => r.scenario === favoredScenario(shown));
+  const routeScore = route && scoreForecastRoute(route, windowBars);
+  return { ...(routeScore ? { routeScore } : {}), gradeVersion: `${STRUCTURAL_VERSION}:grade-2`, letter: letter(skill), skill, skillVsUniform: 1 - shownBrier / UNIFORM_BRIER, probabilityOfOutcome: shown[outcome]!,
     actualEndChange, nearestPath: nearest?.kind ?? null,
     insideRange: bull && bear ? actualEndChange >= bear.endChange && actualEndChange <= bull.endChange : null,
     middlePathError: n ? Array.from({ length: n }, (_, j) => Math.abs(middle!.candles[j]!.close - windowBars[j]!.close) / start).reduce((s, x) => s + x, 0) / n : null };

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
+  fitWindowCount, MIN_FIT_WINDOWS, favoredScenario, forecastRoutes, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -514,4 +514,30 @@ test("on M15 the volatility range is the hour-of-week band fitted on training ba
   const vol = analogTrajectories(fittedM15, m15.slice(-120), f.features, 48, "VOLATILITY", seasonalBandAt(m15, profile, 48));
   close(vol[0]!.endChange, seasonalBandAt(m15, profile, 48)!.bull[47]!);
   close((1 + vol[0]!.endChange) * (1 + vol[2]!.endChange), 1);
+});
+
+test("route estimates condition each future close on the first break within the issued horizon", () => {
+  const anchor = bars[119]!;
+  const episode = (first: number, second: number, eventBar: number) => ({
+    origin: anchor.closeTime, history: [anchor], features: [], eligible: true, step: 60_000,
+    future: [first, second].map((ratio, i) => ({ ...bars[120 + i]!, close: anchor.close * ratio })),
+    event: { ...model().training.find(e => e.event)!.event!, cause: "BOS_UP", time: anchor.closeTime + eventBar * 60_000 } as const,
+  });
+  const examples = [episode(1.01, .98, 1), episode(1.03, 1.02, 2), episode(1.02, 1.01, 1), episode(2, 3, 3)];
+  const [up, down, neither] = forecastRoutes(examples, anchor, 2, 60_000);
+  assert.equal(up!.matches, 3);
+  close(up!.candles[0]!.close, anchor.close * 1.02);
+  close(up!.candles[1]!.close, anchor.close * 1.01);
+  assert.equal(up!.candles[0]!.openTime, anchor.closeTime);
+  assert.equal(up!.candles[1]!.closeTime, anchor.closeTime + 120_000);
+  assert.equal(neither!.matches, 1);
+  assert.deepEqual(neither!.candles, []);
+  assert.equal(down!.matches, 0);
+  assert.equal(favoredScenario([.455, .545, 0]), "DOWN_FIRST");
+  assert.equal(favoredScenario([.5001, .4999, 0]), null);
+  const projected = up!.candles[1]!;
+  const score = scoreForecastRoute(up!, [{ ...projected, close: anchor.close * 1.015 }, { ...up!.candles[0]!, closeTime: 0 }])!;
+  assert.equal(score.matched, 1);
+  close(score.mae, anchor.close * .005);
+  close(score.flatMae, anchor.close * .015);
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StructuralForecastPanel, forecastDirectionRead, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, forecastDirectionRead, routeProgress, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
 
 const row = { id: "saved-1", issuedAt: 1800000000000, scores: [], forecast: {
   asOf: 1800000000000, origin: { symbol: "V75", provider: "deriv" }, mode: "BASELINE", version: "arx-v6.7-implementation-1",
@@ -80,11 +80,11 @@ describe("ARX structural forecast controls", () => {
     const labels = onPaths.mock.lastCall![0].map((p: { label: string }) => p.label);
     // Short labels on the chart; the full sentence stays in the panel's path list.
     // No tested direction edge on this market: the "x% higher" share is not shown.
-    expect(labels).toEqual(["Bull +1.20% · range top", "Middle +0.10% · median", "Bear −0.90% · range bottom"]);
+    expect(labels).toEqual(["Up first 50.0% · range top", "Middle +0.10% · median", "Down first 30.0% · range bottom"]);
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bull +1.20% · top of the range · up-break first 50%");
     expect(screen.getByLabelText("Projected paths").textContent).toContain("Bear −0.90% · bottom of the range · down-break first 30%");
     expect(screen.getByLabelText("Projected paths").textContent).not.toMatch(/ended higher|ended lower/);
-    expect(screen.getByTestId("forecast-range-engine").textContent).toBe("Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here. On 88 setups the model did not learn from, the history range held 48% of outcomes and the volatility range 51% (ideal 50%). Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.");
+    expect(screen.getByTestId("forecast-range-engine").textContent).toBe("Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here. On 88 setups the model did not learn from, the history range held 48% of outcomes and the volatility range 51% (ideal 50%). The analogs have no verified edge for whether the window ends higher or lower. First-break odds are scored separately.");
     // The explanation matches what is drawn and what was learned (audit 2026-11-15).
     expect(screen.getByText(/The paths are not price predictions: .*shaded range from bull to bear is a nominal 50% endpoint interval; actual coverage can differ.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
     expect(screen.queryByText(/Ghost candles/)).toBeNull();
@@ -126,6 +126,28 @@ describe("ARX structural forecast controls", () => {
       .toEqual(["BULL:faded", "MIDDLE:faded", "BEAR:faded", "BULL", "MIDDLE", "BEAR"]));
     expect(screen.getByTestId("forecast-grade-cohorts").textContent).toBe("Fresh forecasts: 1, average skill 0.60 · Updates mid-window: 1, average skill 0.30 (less time left, so not comparable)");
     expect(screen.getByTestId("forecast-grades").textContent).toMatch(/update \+40 bars/);
+  });
+  it("renders saved per-close routes and the actual break weights when a live update fails", async () => {
+    const onPaths = vi.fn(), onShow = vi.fn(), onRead = vi.fn();
+    const candles = row.forecast.paths[0]!.candles;
+    const saved = { ...row, forecast: { ...row.forecast, horizons: [{ bars: 60, minutes: 60, probabilities: [.455, .545, 0] }],
+      routes: [{ scenario: "UP_FIRST", matches: 12, candles }, { scenario: "DOWN_FIRST", matches: 17, candles }, { scenario: "NEITHER", matches: 1, candles: [] }] } };
+    const other = { ...saved, id: "other", issuedAt: saved.issuedAt + 4000, forecast: { ...saved.forecast, horizonId: "1w" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [other, saved] })).mockResolvedValueOnce(response({ saved: false, reason: "LIVE_CHART_UNAVAILABLE" }, false)));
+    render(<StructuralForecastPanel symbol="V75" onPaths={onPaths} onDirectionRead={onRead} chartTimeframe="M15" onShowOnTimeframe={onShow} />);
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 1 hour ahead" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Showing the saved forecast/);
+    expect(onShow).toHaveBeenCalledWith("M1");
+    await waitFor(() => expect(onRead.mock.lastCall?.[0]).toMatchObject({ savedFallback: true, favoriteScenario: "DOWN_FIRST", view: "routes" }));
+    expect(onPaths.mock.lastCall?.[0].map((p: {label: string}) => p.label)).toEqual(["Bullish first 45.5%", "Bearish first 54.5%", "Neither confirmed 0.0%"]);
+    expect((screen.getByLabelText(/No-break route .*too few for a route/) as HTMLInputElement).disabled).toBe(true);
+  });
+  it("scores only completed same-source candles against the frozen route", () => {
+    const b = row.forecast.paths[0]!.candles[0]!;
+    const bar = { openTime: new Date(b.openTime).toISOString(), closeTime: new Date(b.closeTime).toISOString(), close: 101, isComplete: true, isForming: false, source: "deriv" };
+    const route = { scenario: "DOWN_FIRST" as const, matches: 20, candles: [b] };
+    expect(routeProgress(route, [bar], "deriv", b.closeTime - 1)).toMatchObject({ matched: 0, next: b });
+    expect(routeProgress(route, [bar, { ...bar, close: 200, source: "elsewhere" }, { ...bar, close: 300, isForming: true }], "deriv", b.closeTime)).toMatchObject({ matched: 1, mae: .5, flatMae: 1 });
   });
   it("never claims an unsaved forecast was issued", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: false, reason: "FORECAST_UNAVAILABLE" }, false)));
