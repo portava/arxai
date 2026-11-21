@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -15,8 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useLogin } from "@/hooks/useCurrentUser";
 import { useForgotPassword } from "@workspace/api-client-react";
 import { normalizeProductRole, productRoleHomePath } from "@/lib/productRole";
-import LoginShowcase from "@/components/login/LoginShowcase";
-import { useAssistantName } from "@/lib/assistant-name";
+import "./login.css";
 import { beginInviteRegistration } from "@/lib/inviteCodeHandoff";
 import { readReturnTo } from "@/lib/authReturnTo";
 import {
@@ -50,7 +49,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function LoginPage() {
   const [, navigate] = useLocation();
   const login = useLogin();
-  const { name } = useAssistantName();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -201,56 +199,10 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-[#050914] text-white overflow-x-hidden">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-        {/* ───────── Left: animated showcase ───────── */}
-        <section className="relative hidden lg:flex flex-col justify-between p-10 xl:p-12 border-r border-white/10">
-          {/* ambient gradients */}
-          <div
-            aria-hidden
-            className="absolute inset-0 bg-[radial-gradient(circle_at_60%_25%,rgba(40,123,255,0.22),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(126,58,242,0.18),transparent_38%)]"
-          />
-          <div
-            aria-hidden
-            className="absolute inset-0 opacity-30 bg-[linear-gradient(rgba(59,130,246,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.08)_1px,transparent_1px)] bg-[size:48px_48px]"
-          />
-
-          {/* Brand header */}
-          <div className="relative z-10">
-            <div className="text-4xl font-black tracking-tight">
-              ARX <span className="text-blue-400">AI</span>
-            </div>
-            <p className="mt-3 text-xs tracking-[0.28em] text-blue-200">
-              ANALYZE. RISK. eXECUTE.
-            </p>
-          </div>
-
-          {/* Animated 3-slide showcase */}
-          <LoginShowcase />
-
-          <p className="relative z-10 text-xs text-slate-500">
-            Trading involves risk. ARX AI is built to support disciplined
-            decisions, not guarantee results.
-          </p>
-        </section>
-
-        {/* ───────── Right: sign-in card ───────── */}
-        <section className="flex items-center justify-center p-4 sm:p-8 lg:p-12">
-          <div className="w-full max-w-xl rounded-[2rem] border border-blue-300/30 bg-white/[0.035] p-6 sm:p-8 lg:p-10 shadow-[0_0_70px_rgba(37,99,235,0.18)] backdrop-blur-xl">
-            <div className="text-center">
-              <div className="text-4xl sm:text-5xl font-black tracking-tight">
-                ARX <span className="text-blue-400">AI</span>
-              </div>
-              <p className="mt-2 text-[11px] tracking-[0.28em] text-blue-200">
-                ANALYZE. RISK. eXECUTE.
-              </p>
-              <h2 className="mt-7 text-2xl sm:text-3xl font-black">
-                Welcome back
-              </h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Sign in to continue to your ARX AI account.
-              </p>
-            </div>
+    <main className="arx-sign-in">
+      <section className="arx-sign-in-card" aria-labelledby="sign-in-title">
+        <div className="arx-sign-in-brand">ARX</div>
+        <h1 id="sign-in-title">Sign in</h1>
 
             <form
               onSubmit={onSubmit}
@@ -266,7 +218,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Mail
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                   />
                   <Input
                     id="email"
@@ -282,7 +234,7 @@ export default function LoginPage() {
                     onBlur={(e) => {
                       if (e.target.value) validateEmail(e.target.value);
                     }}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
                     aria-invalid={!!emailError}
                     aria-describedby={emailError ? "email-error" : undefined}
                     data-testid="input-email"
@@ -291,7 +243,7 @@ export default function LoginPage() {
                 {emailError && (
                   <p
                     id="email-error"
-                    className="text-xs text-red-300"
+                    className="text-xs text-destructive"
                     data-testid="text-email-error"
                   >
                     {emailError}
@@ -307,7 +259,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Lock
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                   />
                   <Input
                     id="password"
@@ -317,7 +269,7 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-12 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 pr-12 h-12 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
                     data-testid="input-password"
                   />
                   <button
@@ -327,7 +279,7 @@ export default function LoginPage() {
                       showPassword ? "Hide password" : "Show password"
                     }
                     aria-pressed={showPassword}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/40"
                     data-testid="button-toggle-password"
                   >
                     {showPassword ? (
@@ -341,12 +293,12 @@ export default function LoginPage() {
 
               {/* Remember + forgot */}
               <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
+                <label className="flex items-center gap-2 text-muted-foreground cursor-pointer select-none">
                   <Checkbox
                     id="remember"
                     checked={remember}
                     onCheckedChange={(v) => setRemember(v === true)}
-                    className="border-white/30 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                    className="border-input data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                     data-testid="checkbox-remember"
                   />
                   <span>Remember me</span>
@@ -358,7 +310,7 @@ export default function LoginPage() {
                     setForgotEmail(email.trim());
                     setForgotOpen(true);
                   }}
-                  className="text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500/40 rounded"
+                  className="text-primary hover:text-primary underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
                   data-testid="button-forgot-password"
                 >
                   Forgot password?
@@ -369,7 +321,7 @@ export default function LoginPage() {
               {formError && (
                 <div
                   role="alert"
-                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-destructive"
                 >
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span data-testid="text-login-error">{formError}</span>
@@ -380,7 +332,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={login.isPending}
-                className="w-full h-12 text-base font-bold bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/20 disabled:opacity-70"
+                className="w-full h-12 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-70"
                 data-testid="button-submit-login"
               >
                 {login.isPending ? (
@@ -394,10 +346,10 @@ export default function LoginPage() {
             </form>
 
             {/* OR divider */}
-            <div className="my-6 flex items-center gap-4 text-xs uppercase tracking-wider text-slate-500">
-              <div className="h-px flex-1 bg-white/10" />
+            <div className="my-6 flex items-center gap-4 text-xs uppercase tracking-wider text-muted-foreground">
+              <div className="h-px flex-1 bg-secondary" />
               OR
-              <div className="h-px flex-1 bg-white/10" />
+              <div className="h-px flex-1 bg-secondary" />
             </div>
 
             {/* Invite + Request */}
@@ -406,7 +358,7 @@ export default function LoginPage() {
                 type="button"
                 variant="outline"
                 onClick={() => setInviteOpen(true)}
-                className="h-12 border-white/15 bg-transparent text-white hover:bg-white/5 hover:text-white"
+                className="h-12 border-input bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
                 data-testid="button-use-invite-code"
               >
                 <Key className="h-4 w-4 mr-2" />
@@ -416,7 +368,7 @@ export default function LoginPage() {
                 type="button"
                 variant="outline"
                 onClick={() => setRequestOpen(true)}
-                className="h-12 border-white/15 bg-transparent text-white hover:bg-white/5 hover:text-white"
+                className="h-12 border-input bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
                 data-testid="button-request-access"
               >
                 <UserPlus className="h-4 w-4 mr-2" />
@@ -424,30 +376,10 @@ export default function LoginPage() {
               </Button>
             </div>
 
-            {/* Eleanor note */}
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-300">
-              <span className="font-bold text-blue-300">{name}</span> helps
-              analyze markets, risk, and execution — but{" "}
-              <span className="font-bold text-blue-300">final control</span>{" "}
-              stays protected by your permissions.
-            </div>
-
-            {/* Footer */}
-            <p className="mt-6 text-center text-xs text-slate-500">
-              Your data is encrypted. Your permissions protect everything.
-            </p>
-            <p className="mt-1 text-center text-sm">
-              <span className="text-blue-400 font-semibold">Secure.</span>{" "}
-              <span className="text-slate-300">Private.</span>{" "}
-              <span className="text-slate-400">Yours.</span>
-            </p>
-            <p className="mt-6 text-center text-xs text-slate-500">
-              ARX AI is invite-only. Use your invite code, or request access
-              and an operator will review your account.
-            </p>
-          </div>
-        </section>
-      </div>
+        <p className="mt-6 text-sm text-muted-foreground">
+          ARX is invite-only. An operator reviews each access request.
+        </p>
+      </section>
 
       {/* ───────── Forgot password modal ───────── */}
       <Dialog
@@ -457,10 +389,10 @@ export default function LoginPage() {
           if (!open) resetForgot();
         }}
       >
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="arx-sign-in-dialog">
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-muted-foreground">
               Enter the email address on your account and we'll send a link to
               reset your password.
             </DialogDescription>
@@ -468,7 +400,7 @@ export default function LoginPage() {
 
           {forgotDone ? (
             <div
-              className="flex items-start gap-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100"
+              className="flex items-start gap-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-success"
               data-testid="forgot-password-success"
             >
               <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
@@ -494,7 +426,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Mail
                     aria-hidden
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                   />
                   <Input
                     id="forgot-email"
@@ -503,7 +435,7 @@ export default function LoginPage() {
                     placeholder="you@example.com"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    className="pl-10 h-12 bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                    className="pl-10 h-12 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
                     data-testid="input-forgot-email"
                   />
                 </div>
@@ -512,7 +444,7 @@ export default function LoginPage() {
               {forgotError && (
                 <div
                   role="alert"
-                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                  className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-destructive"
                 >
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span data-testid="text-forgot-error">{forgotError}</span>
@@ -524,14 +456,14 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   onClick={() => setForgotOpen(false)}
-                  className="border-white/15 bg-transparent text-white hover:bg-white/5 hover:text-white"
+                  className="border-input bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   disabled={forgot.isPending || !forgotEmail.trim()}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
                   data-testid="button-submit-forgot"
                 >
                   {forgot.isPending ? "Sending…" : "Send reset link"}
@@ -544,10 +476,10 @@ export default function LoginPage() {
 
       {/* ───────── Invite code modal ───────── */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="arx-sign-in-dialog">
           <DialogHeader>
             <DialogTitle>Use an invite code</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-muted-foreground">
               Paste the invite code you received. We’ll take you to the
               registration page to finish setting up your account.
             </DialogDescription>
@@ -561,7 +493,7 @@ export default function LoginPage() {
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
               placeholder="e.g. ARX-XXXX-XXXX"
-              className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+              className="bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
               autoComplete="off"
               data-testid="input-invite-code"
             />
@@ -571,7 +503,7 @@ export default function LoginPage() {
               type="button"
               variant="outline"
               onClick={() => setInviteOpen(false)}
-              className="border-white/15 bg-transparent text-white hover:bg-white/5 hover:text-white"
+              className="border-input bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
             >
               Cancel
             </Button>
@@ -579,7 +511,7 @@ export default function LoginPage() {
               type="button"
               onClick={openInviteFromCode}
               disabled={!inviteCode.trim()}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               data-testid="button-continue-invite"
             >
               Continue
@@ -596,10 +528,10 @@ export default function LoginPage() {
           if (!open) resetRequestAccess();
         }}
       >
-        <DialogContent className="bg-[#0a1428] border-blue-400/20 text-white">
+        <DialogContent className="arx-sign-in-dialog">
           <DialogHeader>
             <DialogTitle>Request access</DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-muted-foreground">
               ARX AI is invite-only. Tell us how to reach you and an operator
               will review your request.
             </DialogDescription>
@@ -607,7 +539,7 @@ export default function LoginPage() {
 
           {reqDone ? (
             <div
-              className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100"
+              className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-success"
               data-testid="request-access-success"
             >
               Thanks — your request has been received. If you’re a fit, an
@@ -617,7 +549,7 @@ export default function LoginPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="req-email" className="text-sm">
-                  Email <span className="text-red-400">*</span>
+                  Email <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="req-email"
@@ -625,28 +557,28 @@ export default function LoginPage() {
                   value={reqEmail}
                   onChange={(e) => setReqEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
                   autoComplete="email"
                   data-testid="input-request-email"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="req-name" className="text-sm">
-                  Name <span className="text-slate-500">(optional)</span>
+                  Name <span className="text-muted-foreground">(optional)</span>
                 </Label>
                 <Input
                   id="req-name"
                   value={reqName}
                   onChange={(e) => setReqName(e.target.value)}
                   placeholder="Your name"
-                  className="bg-black/25 border-white/15 text-white placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:ring-blue-500/20"
+                  className="bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
                   autoComplete="name"
                   data-testid="input-request-name"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="req-note" className="text-sm">
-                  Note <span className="text-slate-500">(optional)</span>
+                  Note <span className="text-muted-foreground">(optional)</span>
                 </Label>
                 <textarea
                   id="req-note"
@@ -655,12 +587,12 @@ export default function LoginPage() {
                   placeholder="A short note about your trading background."
                   rows={3}
                   maxLength={1000}
-                  className="w-full rounded-md bg-black/25 border border-white/15 text-white placeholder:text-slate-500 px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/20"
+                  className="w-full rounded-md bg-background border border-input text-foreground placeholder:text-muted-foreground px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
                   data-testid="input-request-note"
                 />
               </div>
               {reqError && (
-                <p className="text-sm text-red-400" data-testid="request-access-error">
+                <p className="text-sm text-destructive" data-testid="request-access-error">
                   {reqError}
                 </p>
               )}
@@ -672,7 +604,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 onClick={() => setRequestOpen(false)}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
                 data-testid="button-request-done"
               >
                 Done
@@ -683,7 +615,7 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   onClick={() => setRequestOpen(false)}
-                  className="border-white/15 bg-transparent text-white hover:bg-white/5 hover:text-white"
+                  className="border-input bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
                 >
                   Cancel
                 </Button>
@@ -691,7 +623,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => void submitRequestAccess()}
                   disabled={reqSubmitting || !reqEmail.trim()}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
                   data-testid="button-submit-request"
                 >
                   {reqSubmitting ? "Submitting…" : "Submit request"}
