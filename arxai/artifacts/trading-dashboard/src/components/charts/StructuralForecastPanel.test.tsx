@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StructuralForecastPanel, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, forecastDirectionRead, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
 
 const row = { id: "saved-1", issuedAt: 1800000000000, scores: [], forecast: {
   asOf: 1800000000000, origin: { symbol: "V75", provider: "deriv" }, mode: "BASELINE", version: "arx-v6.7-implementation-1",
@@ -155,5 +155,22 @@ describe("ARX structural forecast controls", () => {
     view.rerender(<StructuralForecastPanel symbol="V50" onPaths={onPaths} />);
     await waitFor(() => expect(onPaths.mock.lastCall?.[0]).toEqual([]));
     expect(screen.queryByText("50.0%")).toBeNull();
+  });
+});
+
+
+describe("chart directional weights", () => {
+  const read = (p: [number, number, number]) => forecastDirectionRead({
+    ...row.forecast, horizonId: "1h", horizons: [{ minutes: 60, bars: 60, probabilities: p }],
+  } as Parameters<typeof forecastDirectionRead>[0]);
+  it("shows the saved probabilities, direction and baseline for the selected horizon", () => {
+    const direction = read([0.455365, 0.5446349, 0.0000001])!;
+    render(<ForecastDirectionSummary read={direction} />);
+    expect(screen.getByTestId("forecast-direction").textContent).toMatch(/Bearish break favored.*Up first 45.5%.*Down first 54.5%.*No break <0.1%.*8.9 pt lead.*Historical-frequency baseline/);
+  });
+  it("can favor neither, show a displayed tie, or withhold malformed weights", () => {
+    expect(read([.2,.2,.6])?.verdict).toBe("No break favored");
+    expect(read([.48002,.47998,.04])?.verdict).toBe("No clear favorite");
+    expect(read([.9,.9,0])).toBeNull();
   });
 });

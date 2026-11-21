@@ -63,9 +63,53 @@ function gradeLine(g: ForecastGrade, outcome: Scenario): string {
     + (g.nearestPath ? ` · nearest ${pathNames[g.nearestPath].toLowerCase()} path` : "")
     + (g.insideRange == null ? "" : g.insideRange ? " · inside bull–bear range" : " · outside bull–bear range");
 }
+export interface ForecastDirectionRead {
+  symbol: string;
+  timeframe: string;
+  window: string;
+  asOf: number;
+  endsAt: number;
+  weights: Triple;
+  verdict: string;
+  leadPoints: number;
+  basis: string;
+}
+
+export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionRead | null {
+  const window = forecastHorizon(f.horizonId ?? DEFAULT_FORECAST_HORIZON);
+  const weights = window && f.horizons.find(h => h.bars === window.bars)?.probabilities;
+  if (!window || !weights || weights.length !== 3 || weights.some(p => !Number.isFinite(p) || p < 0 || p > 1) || Math.abs(weights.reduce((sum, p) => sum + p, 0) - 1) > 0.00001) return null;
+  const outcomes = ["Bullish break favored", "Bearish break favored", "No break favored"];
+  const ranked = [0, 1, 2].sort((a, b) => weights[b]! - weights[a]!);
+  const first = ranked[0]!, second = ranked[1]!;
+  const leadPoints = 100 * (weights[first]! - weights[second]!);
+  // A tie at the displayed precision must not be presented as a distinct lead.
+  const tied = (100 * weights[first]!).toFixed(1) === (100 * weights[second]!).toFixed(1);
+  return { symbol: f.origin.symbol, timeframe: window.timeframe, window: window.label, asOf: f.asOf,
+    endsAt: f.asOf + window.bars * window.stepMs, weights, leadPoints,
+    verdict: tied ? "No clear favorite" : outcomes[first]!,
+    basis: f.calibration?.applied ? "Calibrated probabilities" : f.mode === "BASELINE" ? "Historical-frequency baseline" : "Model probabilities" };
+}
+
+export function ForecastDirectionSummary({ read }: { read: ForecastDirectionRead }) {
+  const scale = (p: number) => p > 0 && p < 0.0005 ? "<0.1%" : `${(100*p).toFixed(1)}%`;
+  const ended = Date.now() >= read.endsAt;
+  return <div aria-label="Forecast directional weights" data-testid="forecast-direction" className="min-w-0 space-y-0.5 text-xs">
+    <div className="flex flex-wrap items-baseline gap-x-2">
+      <strong>{read.verdict}</strong><span>{read.window} · {read.symbol} · {ended ? "Ended" : "Through"} {new Date(read.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+    </div>
+    <div className="flex flex-wrap items-baseline gap-x-3">
+      <span>Up first <b>{scale(read.weights[0])}</b></span>
+      <span>Down first <b>{scale(read.weights[1])}</b></span>
+      <span>No break <b>{scale(read.weights[2])}</b></span>
+      <span className="text-muted-foreground">{read.verdict === "No clear favorite" ? "" : `${read.leadPoints.toFixed(1)} pt lead · `}{read.basis}</span>
+    </div>
+  </div>;
+}
+
 const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
-export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, onSelectedScenariosChange, chartTimeframe, onShowOnTimeframe }: { symbol: string; onPaths(paths: ForecastDrawPath[]): void; selectedScenarios?:Array<Scenario | TrajectoryKind>; onSelectedScenariosChange?:(next:Array<Scenario | TrajectoryKind>)=>void;
+export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, selectedScenarios, onSelectedScenariosChange, chartTimeframe, onShowOnTimeframe }: { symbol: string; onPaths(paths: ForecastDrawPath[]): void; onDirectionRead?(read: ForecastDirectionRead | null): void; selectedScenarios?:Array<Scenario | TrajectoryKind>; onSelectedScenariosChange?:(next:Array<Scenario | TrajectoryKind>)=>void;
   /** The chart's candle length; paths are drawn only on a chart of their own length. */
   chartTimeframe?: string; onShowOnTimeframe?:(timeframe: string)=>void }) {
   const canonicalSymbol = resolveArxMarket(symbol)?.canonicalSymbol ?? symbol;
@@ -100,6 +144,11 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
       : f.paths.filter(path => selected.includes(path.scenario)).map(path => ({ id: path.scenario, scenario: path.scenario,
         label: `${labels[path.scenario]} ${pct(path.probability)}`, candles: path.candles })));
   }, [row, history, canonicalSymbol, selected, onPaths, horizonId]);
+
+  const shown = row && rowHorizonId(row) === preset.id && row.forecast.origin.symbol === canonicalSymbol ? row : null;
+  useEffect(() => {
+    onDirectionRead?.(shown ? forecastDirectionRead(shown.forecast) : null);
+  }, [shown, onDirectionRead]);
 
   const generate = useCallback(async (historyOnly = false, showOnChart = false) => {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
@@ -145,7 +194,6 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     return () => clearInterval(timer);
   }, [auto, busy, generate, preset.stepMs]);
 
-  const shown = row && rowHorizonId(row) === preset.id ? row : null;
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
   const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))

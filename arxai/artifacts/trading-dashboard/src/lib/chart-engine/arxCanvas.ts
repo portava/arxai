@@ -1179,14 +1179,20 @@ export class CanvasChart {
       }
       c.restore();
     }
-    // Path labels sit where each path ends, pushed apart so they never overlap.
-    let floor = Number.NEGATIVE_INFINITY;
-    for (const l of forecastLabels.sort((a, b) => a.y - b.y)) {
-      const y = Math.max(l.y, floor + 14);
-      floor = y;
-      const width = c.measureText(l.text).width;
-      c.fillStyle = l.color;
-      c.fillText(l.text, Math.max(3, Math.min(w - width - 4, l.x + 6)), y);
+    // Reserve space for the labels in the price pane and mask the line behind each word.
+    const labels = forecastLabels.sort((a, b) => a.y - b.y);
+    let previousY = -8;
+    for (const [i, label] of labels.entries()) {
+      const lastY = paneHeight(0) - 9 - (labels.length - 1 - i) * 17;
+      const y = Math.max(9, Math.min(lastY, Math.max(label.y, previousY + 17)));
+      const width = Math.min(w - 12, c.measureText(label.text).width);
+      if (width <= 0) continue;
+      const x = Math.max(5, Math.min(w - width - 6, label.x + 7));
+      c.fillStyle = background;
+      c.fillRect(x - 3, y - 7, width + 6, 14);
+      c.fillStyle = label.color;
+      c.fillText(label.text, x, y, width);
+      previousY = y;
     }
     const drawAnnotation =(d: ChartDrawing, preview = false) => {
       const x1 = this.drawingX(d.start.time),

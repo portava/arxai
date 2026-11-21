@@ -22,6 +22,7 @@
 // read "unknown", and no news/spread/liquidity BLOCK is ever fabricated. Session
 // is derived deterministically from the latest CLOSED bar's own timestamp (not a
 // wall-clock read), and synthetic 24/7 instruments report `synthetic_continuous`.
+import { chartLevelProximity } from "./chartIntelligence.js";
 import {
   resolvePivotTruth,
   computeClassicPivots,
@@ -242,22 +243,7 @@ export function buildMarketIntelligenceSnapshot(
     // ── Proximity / structure facts derived from the level engine ─────────────
     const nS = levels.nearestSupport;
     const nR = levels.nearestResistance;
-    const NEAR_PCT = 0.25;
-    const supportNear = nS?.distancePct != null && Math.abs(nS.distancePct) <= NEAR_PCT;
-    const resistanceNear = nR?.distancePct != null && Math.abs(nR.distancePct) <= NEAR_PCT;
-    const atKeyLevel =
-      Boolean(supportNear) ||
-      Boolean(resistanceNear) ||
-      fast.nearRecentHigh ||
-      fast.nearRecentLow;
-
-    let distanceToSrAtr: number | null = null;
-    if (lastClose != null && atr != null && atr > 0) {
-      const dists: number[] = [];
-      if (nS?.price != null) dists.push(Math.abs(lastClose - nS.price));
-      if (nR?.price != null) dists.push(Math.abs(lastClose - nR.price));
-      if (dists.length) distanceToSrAtr = Math.min(...dists) / atr;
-    }
+    const { atKeyLevel, distanceToSrAtr } = chartLevelProximity(state);
 
     const syntheticAsset = String(state.assetClass).toLowerCase().includes("synth");
 

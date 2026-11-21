@@ -126,6 +126,8 @@ export interface PatternContext {
   distanceToSrAtr: number | null;
   /** True when momentum agrees with the pattern bias. */
   momentumAligned: boolean;
+  /** Observed burst direction, when supplied by the chart. */
+  momentumDirection?: PatternBias;
   /** ATR used for geometry normalization (null if unknown). */
   volatilityAtr: number | null;
 }
@@ -355,6 +357,8 @@ export function resolvePatternTruth(
     const canSupport =
       !contextOnly &&
       context.momentumAligned &&
+      (context.momentumDirection === undefined ||
+        (context.momentumDirection !== "neutral" && context.momentumDirection === dominant.bias)) &&
       !conflictsWithTrend &&
       !limitedRoom &&
       !display.chartReadConfidenceLow;

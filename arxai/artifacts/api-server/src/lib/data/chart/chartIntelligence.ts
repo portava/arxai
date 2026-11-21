@@ -371,6 +371,18 @@ export function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats 
   };
 }
 
+/** Proximity to observed chart levels, shared by chart and scanner structure reads. */
+export function chartLevelProximity(state: ChartIntelligenceState) {
+  const { nearestSupport, nearestResistance } = state.marketUnderstanding.levels;
+  const levels = [nearestSupport, nearestResistance];
+  const atKeyLevel = state.fastFlags.nearRecentHigh || state.fastFlags.nearRecentLow ||
+    levels.some(level => level?.distancePct != null && Math.abs(level.distancePct) <= 0.25);
+  const { lastClose, atr } = state.candleStats;
+  const distances = levels.flatMap(level => lastClose != null && level?.price != null ? [Math.abs(lastClose - level.price)] : []);
+  const distanceToSrAtr = atr != null && atr > 0 && distances.length ? Math.min(...distances) / atr : null;
+  return { atKeyLevel, distanceToSrAtr };
+}
+
 function computeFastFlags(
   closed: NormalizedChartCandle[],
   stats: ChartCandleStats,

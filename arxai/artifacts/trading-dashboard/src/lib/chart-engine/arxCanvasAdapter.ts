@@ -882,9 +882,8 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
     }
     const lines = paths.filter((p) => !p.faded).slice(0, 3).map((path) => ({ path, points: forecastLinePoints(path.candles) }))
       .filter((l) => l.points.length > 1);
-    const endOf = (l: (typeof lines)[number]) => l.points.at(-1)!.value;
-    const top = lines.length > 1 ? lines.reduce((a, b) => (endOf(b) > endOf(a) ? b : a)) : null;
-    const bottom = lines.length > 1 ? lines.reduce((a, b) => (endOf(b) < endOf(a) ? b : a)) : null;
+    const top = lines.find(l => l.path.id === "BULL");
+    const bottom = lines.find(l => l.path.id === "BEAR");
     for (const { path, points } of lines) {
       const series = chart.addSeries(LineSeries, {
         color: path.color,
@@ -894,7 +893,7 @@ export class ArxCanvasAdapter implements ChartEngineAdapter {
         title: "Forecast path",
         forecastPath: true,
         endLabel: path.label ?? "",
-        ...(top && bottom && path === top.path && bottom !== top
+        ...(top && bottom && path === top.path
           ? { bandLower: bottom.points, bandColor: "#a88cff" } : {}),
       });
       series.setData(points);

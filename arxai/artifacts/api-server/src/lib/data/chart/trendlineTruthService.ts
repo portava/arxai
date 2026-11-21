@@ -48,6 +48,8 @@ export interface TrendlineTruthServiceInput {
   trend: TrendlineBias;
   /** True when momentum agrees with the trendline bias. */
   momentumAligned: boolean;
+  /** When observed, the burst must agree with the actual dominant trendline. */
+  momentumDirection?: TrendlineBias;
   /** True when price is at/into a meaningful S/R level. */
   nearSupportResistance: boolean;
   /** Distance to nearest blocking S/R in ATR units (null when unknown). */
@@ -91,6 +93,7 @@ export function buildTrendlineTruthVerdict(
       nearSupportResistance: input.nearSupportResistance,
       distanceToSrAtr: input.distanceToSrAtr,
       momentumAligned: input.momentumAligned,
+      momentumDirection: input.momentumDirection,
       volatilityAtr: input.volatilityAtr,
     };
     const display: TrendlineDisplayContext = {

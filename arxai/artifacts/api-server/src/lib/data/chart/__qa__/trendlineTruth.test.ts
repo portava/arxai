@@ -495,3 +495,12 @@ test("library: change + pattern-change catalogs are well-formed and unique", () 
     "trend-shift transitions must be catalogued",
   );
 });
+
+test("the confirmed trendline uses the observed momentum direction", () => {
+  const formation = tl({ status: "confirmed", bias: "bullish" });
+  const read = (direction: "bullish" | "bearish" | "neutral") => resolveTrendlineTruth([formation],
+    ctx({ trend: "bullish", momentumAligned: true, momentumDirection: direction, nearSupportResistance: false }), disp()).scannerTruthImpact;
+  assert.equal(read("bullish").labelHint, "supportive");
+  assert.equal(read("bearish").labelHint, "needs_confirmation");
+  assert.equal(read("neutral").labelHint, "needs_confirmation");
+});

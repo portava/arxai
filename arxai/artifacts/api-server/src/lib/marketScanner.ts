@@ -8,7 +8,8 @@
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
 import { prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
-import { buildChartIntelligenceState, getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
+import { seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
+import { buildChartIntelligenceState, getCachedIntelligenceContext, chartLevelProximity, type ChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
@@ -385,7 +386,7 @@ export interface ScannerOpportunity {
    */
   patternImpact?: PatternScannerImpact;
   patternConfirmationLevel?: number;
-  patternTrigger?: { name: string; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null };
+  patternTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null };
   /**
    * TRENDLINE TRUTH (Task #649) — display-only CHILD input. The folded
    * downgrade/within-cap hints from `resolveTrendlineTruth`. When present,
@@ -397,7 +398,7 @@ export interface ScannerOpportunity {
    */
   trendlineImpact?: TrendlineScannerImpact;
   trendlineConfirmationLevel?: number;
-  trendlineTrigger?: { name: string; bias: "bullish" | "bearish" | "neutral"; side: "bullish" | "bearish" | "neutral"; reclaimed: boolean };
+  trendlineTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; side: "bullish" | "bearish" | "neutral"; reclaimed: boolean };
   /**
    * ONE MARKET-STATE AUTHORITY (R7 step 3) — the hysteresis state machine's
    * regime read for this symbol/timeframe, computed ONLY from real routed
@@ -642,6 +643,11 @@ export function computeFinalRead(
   const priceText = (level?: number) => level != null && Number.isFinite(level) && level > 0
     ? level.toLocaleString("en-US", { maximumSignificantDigits: 9 }) : "";
   const atLevel = (level?: number) => priceText(level) ? ` at ${priceText(level)}` : "";
+  const momentumTrigger = (name: string, bias: "bullish" | "bearish" | "neutral") => {
+    if (bias === "neutral") return `${name} has no directional bias. Look for a new directional setup at the next ${opp.timeframe} close.`;
+    const side = bias === "bullish" ? "higher" : "lower";
+    return `${name} is confirmed. Watch for a ${opp.timeframe} candle that closes ${side} than the previous close with a range above 1.5× the 20-bar average.`;
+  };
   // No win rate exists for same-time bars (see historical-comparison).
   const histScore: number | null = null;
   const newsLevel = news?.riskLevel ?? "none";
@@ -858,10 +864,12 @@ export function computeFinalRead(
         : "Wait for the chart pattern and measured trend on this timeframe to agree.");
     } else if (pat.labelHint === "forming_setup" || pat.labelHint === "needs_confirmation") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
-      reasons.push("Chart pattern is forming, not confirmed — wait for the trigger.");
       const setup = opp.patternTrigger;
       const level = priceText(opp.patternConfirmationLevel);
-      if (level && setup && setup.bias !== "neutral") {
+      reasons.push(setup?.confirmed ? "The chart pattern is confirmed and directional momentum is pending." : "Chart pattern is forming, not confirmed — wait for the trigger.");
+      if (setup?.confirmed) {
+        confirmations.push(momentumTrigger(setup.name, setup.bias));
+      } else if (level && setup && setup.bias !== "neutral") {
         const side = setup.bias === "bullish" ? "above" : "below";
         const invalid = atLevel(setup.invalidation ?? undefined);
         confirmations.push(`Watch ${setup.name} for a ${opp.timeframe} close ${side} ${level}.${invalid ? ` Invalidation${invalid}.` : ""}`);
@@ -919,7 +927,9 @@ export function computeFinalRead(
       const observed = opp.trendlineTrigger;
       const observedSide = observed?.side === "bullish" ? "above" : observed?.side === "bearish" ? "below" : null;
       const hold = observedSide && line ? `hold ${observedSide} ${priceText(opp.trendlineConfirmationLevel)}` : "hold";
-      const trigger = observed?.reclaimed
+      const trigger = observed?.confirmed && tl.labelHint === "needs_confirmation"
+        ? momentumTrigger(observed.name, observed.bias)
+        : observed?.reclaimed
         ? `${observed.name} was reclaimed${line}. The previous breakout failed.`
         : tl.labelHint === "forming_line"
         ? `Watch for a third touch of the trendline${line}. Recheck at the ${opp.timeframe} close.`
@@ -1583,6 +1593,7 @@ async function analyzeViaRouter(
    *  Reason input only — quoteUsable stays false for LAST_ONLY. */
   quoteBinding: ScannerQuoteBinding;
   sourceIdentity: string;
+  attribution: ReturnType<typeof seriesAttributionFrom>;
 } | null> {
   try {
     // Bounded fan-out: route the candle + quote lookups through the SHARED
@@ -1630,6 +1641,7 @@ async function analyzeViaRouter(
       quoteUsable: usableQuote !== null,
       quoteBinding: binding.binding,
       sourceIdentity: scannerSourceIdentity(cr),
+      attribution: seriesAttributionFrom(cr.provenance),
     };
   } catch { return null; }
 }
@@ -1748,27 +1760,31 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // scannerConfirmAllowed is true for this symbol/timeframe. Fail-safe:
     // absent cache → false (never fabricate confirmation on unverified data).
     let chartConfirmed = false;
+    let structureChart: ChartIntelligenceState | null = null;
     {
       const cached =
         getCachedIntelligenceContext(sym, tf as ChartTimeframe, 300) ??
         getCachedIntelligenceContext(sym, tf as ChartTimeframe, 200);
-      if (a.feedProvider === "deriv_public") {
-        // A directional public-feed scan needs its own chart check, including
-        // markets the user has not opened. Use the same closed bar and gate.
-        const directional = a.recommendedAction === "BUY" || a.recommendedAction === "SELL";
-        if (ds === "LIVE_FEED" && routed?.quoteUsable && directional) {
-          const chart = cached?.state ?? await runWithScannerBudget(() =>
-            buildChartIntelligenceState(sym, tf as ChartTimeframe, 200)).catch(() => null);
-          const last = routed.rawCandles.at(-1);
-          const checked = chart?.latestClosedCandle;
-          chartConfirmed = !!(chart?.aiUsable && chart.gateOutput.scannerConfirmAllowed &&
-            chart.truthState.source === a.feedProvider && last &&
-            checked?.openTime === last.time && checked.open === last.open &&
-            checked.high === last.high && checked.low === last.low && checked.close === last.close);
-        }
-      } else if (cached) {
-        chartConfirmed = cached.state.gateOutput.scannerConfirmAllowed;
+      const publicFeed = a.feedProvider === "deriv_public";
+      const directional = a.recommendedAction === "BUY" || a.recommendedAction === "SELL";
+      let chart = cached?.state ?? null;
+      if (publicFeed && ds === "LIVE_FEED" && routed?.quoteUsable && directional && !chart) {
+        chart = await runWithScannerBudget(() => buildChartIntelligenceState(sym, tf as ChartTimeframe, 200)).catch(() => null);
       }
+      const last = routed?.rawCandles.at(-1);
+      const checked = chart?.latestClosedCandle;
+      const sameClosedBar = !!(chart?.aiUsable && chart.truthState.source === a.feedProvider && checked && last &&
+        checked.openTime === last.time && checked.open === last.open && checked.high === last.high &&
+        checked.low === last.low && checked.close === last.close);
+      chartConfirmed = !!chart?.gateOutput.scannerConfirmAllowed &&
+        (!publicFeed || (ds === "LIVE_FEED" && routed?.quoteUsable === true && directional && sameClosedBar));
+      const writer = routed?.attribution;
+      const cachedWriter = cached?.seriesAttribution;
+      const sameWriter = writer && cachedWriter && writer.providerId === cachedWriter.providerId &&
+        writer.subProviderId === cachedWriter.subProviderId && writer.bridgeConnectionId === cachedWriter.bridgeConnectionId &&
+        writer.userId === cachedWriter.userId && writer.environment === cachedWriter.environment &&
+        writer.brokerSymbol === cachedWriter.brokerSymbol;
+      if (chartConfirmed && sameClosedBar && (publicFeed || sameWriter)) structureChart = chart;
     }
 
     // Task #412 — availability truth derived from the resolved data source.
@@ -1843,6 +1859,17 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // data). The verdict's downgrade-only `scannerTruthImpact` is folded into
     // computeFinalRead/scannerActionability later; it can never raise a read.
     // Fail-open: the service returns null on any error / insufficient window.
+    const movement = structureChart?.candleStats?.direction;
+    const momentumDirection: "bullish" | "bearish" | "neutral" = movement === "up" ? "bullish" : movement === "down" ? "bearish" : "neutral";
+    const proximity = structureChart?.marketUnderstanding?.levels && structureChart.fastFlags
+      ? chartLevelProximity(structureChart) : null;
+    const structureContext = {
+      momentumAligned: structureChart?.fastFlags?.momentumBurst === true,
+      momentumDirection,
+      nearSupportResistance: proximity?.atKeyLevel ?? false,
+      distanceToSrAtr: proximity?.distanceToSrAtr ?? null,
+      volatilityAtr: structureChart?.candleStats?.atr ?? null,
+    };
     let patternTrigger: ScannerOpportunity["patternTrigger"];
     let patternConfirmationLevel: number | undefined;
     let patternImpact: ScannerOpportunity["patternImpact"];
@@ -1858,15 +1885,12 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         sufficiencyAllowsSetup: sufficiency.canShowTradeSetup === true,
         chartReadConfidenceLow: false,
         trend: a.marketBias === "bullish" || a.marketBias === "bearish" ? a.marketBias : "neutral",
-        momentumAligned: false,
-        nearSupportResistance: false,
-        distanceToSrAtr: null,
-        volatilityAtr: null,
+        ...structureContext,
       });
       patternImpact = verdict?.scannerTruthImpact;
       if (chartConfirmed && sufficiency.canShowTradeSetup && verdict?.dominantPattern) {
         patternConfirmationLevel = verdict.confirmationLevel ?? undefined;
-        patternTrigger = { name: verdict.dominantPattern.name, bias: verdict.bias, invalidation: verdict.invalidationLevel };
+        patternTrigger = { name: verdict.dominantPattern.name, confirmed: verdict.status === "confirmed", bias: verdict.bias, invalidation: verdict.invalidationLevel };
       }
     }
 
@@ -1891,15 +1915,12 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         sufficiencyAllowsSetup: sufficiency.canShowTradeSetup === true,
         chartReadConfidenceLow: false,
         trend: a.marketBias === "bullish" || a.marketBias === "bearish" ? a.marketBias : "neutral",
-        momentumAligned: false,
-        nearSupportResistance: false,
-        distanceToSrAtr: null,
-        volatilityAtr: null,
+        ...structureContext,
       });
       trendlineImpact = tlVerdict?.scannerTruthImpact;
       if (chartConfirmed && sufficiency.canShowTradeSetup && tlVerdict?.dominantTrendline) {
         trendlineConfirmationLevel = tlVerdict.confirmationLevel ?? undefined;
-        trendlineTrigger = { name: tlVerdict.dominantTrendline.name, bias: tlVerdict.dominantTrendline.bias, side: tlVerdict.trendlineChange.bias, reclaimed: tlVerdict.status === "reclaimed" };
+        trendlineTrigger = { name: tlVerdict.dominantTrendline.name, confirmed: tlVerdict.status === "confirmed", bias: tlVerdict.dominantTrendline.bias, side: tlVerdict.trendlineChange.bias, reclaimed: tlVerdict.status === "reclaimed" };
       }
     }
 

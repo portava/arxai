@@ -633,3 +633,12 @@ test("coverage: breakout_retest emits on a tested-resistance break + retest", ()
     "two clustered resistance swings, a break and a retest must emit breakout_retest_up",
   );
 });
+
+test("the confirmed pattern uses the observed momentum direction", () => {
+  const formation = pat({ status: "confirmed", bias: "bullish" });
+  const read = (direction: "bullish" | "bearish" | "neutral") => resolvePatternTruth([formation],
+    ctx({ trend: "bullish", momentumAligned: true, momentumDirection: direction, nearSupportResistance: false }), disp()).scannerTruthImpact;
+  assert.equal(read("bullish").labelHint, "supportive");
+  assert.equal(read("bearish").labelHint, "needs_confirmation");
+  assert.equal(read("neutral").labelHint, "needs_confirmation");
+});

@@ -215,3 +215,10 @@ test("only a confirmed live direction names the entry, stop and target", () => {
   const stale = computeFinalRead(opp({ ...READABLE, dataSource: "STALE_FEED" }));
   assert.doesNotMatch(stale.headline, /Reference entry/);
 });
+
+test("a confirmed line awaiting momentum gives the actual directional test", () => {
+  const read = computeFinalRead(opp({ ...READABLE, trendlineImpact: impact({ labelHint: "needs_confirmation" }),
+    trendlineTrigger: { name: "Ascending Support", bias: "bullish", side: "neutral", confirmed: true, reclaimed: false } }));
+  assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read.headline, /closes higher than the previous close with a range above 1.5× the 20-bar average/);
+});

@@ -12,7 +12,7 @@ import { executeStudyRequest, registerChartStudyAssistant } from "@/lib/chart-en
 import { registerChartResearchAssistant, answerChartResearchFollowup, type ChartResearchExplanation } from "@/lib/chart-research/chartResearchAssistant";
 import { CandleCloseCountdown } from "./CandleCloseCountdown";
 import { ChartLayersMenu } from "./ChartLayersMenu";
-import { StructuralForecastPanel, type ForecastDrawPath } from "./StructuralForecastPanel";
+import { StructuralForecastPanel, ForecastDirectionSummary, type ForecastDrawPath, type ForecastDirectionRead } from "./StructuralForecastPanel";
 import {
   allLayers,
   overlayLayer,
@@ -364,6 +364,8 @@ export function ARXNativeChart({
   const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
   const [preferencesSaved, setPreferencesSaved] = useState(true);
   const [layers, setLayers] = useState<ChartLayerVisibility>(() => allLayers(true));
+  const [forecastRead, setForecastRead] = useState<ForecastDirectionRead | null>(null);
+  const [showOriginalForecast, setShowOriginalForecast] = useState(true);
   const [scenarioGhostPaths, setScenarioGhostPaths] = useState<ChartGhostPath[]>([]);
   const [renderVerdict, setRenderVerdict] = useState<RenderVerdict | null>(null);
   const scaleMode = preferences.scale;
@@ -683,10 +685,11 @@ export function ARXNativeChart({
   );
   const visibleScenarioPaths = useMemo(
     () => scenarioPathsOnThisChart.filter((path) => {
+      if (path.faded && !showOriginalForecast) return false;
       const layer = SCENARIO_LAYERS[path.id as keyof typeof SCENARIO_LAYERS];
       return layer ? layers[layer] : false;
     }),
-    [scenarioPathsOnThisChart, layers],
+    [scenarioPathsOnThisChart, layers, showOriginalForecast],
   );
   const layerAvailability = useMemo(() => {
     const counts: Partial<Record<ChartLayerId, number>> = {
@@ -1724,7 +1727,7 @@ export function ARXNativeChart({
           {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
           <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
         </Button>);
-  const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full flex-nowrap overflow-x-auto py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
+  const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full min-w-0 flex-wrap py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
             {hasCandles && (
               <span className={`mr-1 text-[10px] text-zinc-500 ${compactDesktopWorkspace ? "shrink-0 whitespace-nowrap" : ""}`} data-testid="arx-native-timezone" title={timeAxisTitle}>
                 {timeAxisLabel}
@@ -1955,7 +1958,7 @@ export function ARXNativeChart({
     {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
     </div>
     <div className={sectionClass("forecast")} data-testid="arx-details-section-forecast">
-    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${resolvedSymbol}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} chartTimeframe={timeframe} onShowOnTimeframe={showForecastTimeframe} /></div>
+    <div id="arx-structural-forecast" data-testid="arx-structural-forecast"><StructuralForecastPanel key={`structural:${resolvedSymbol}`} symbol={resolvedSymbol} onPaths={acceptScenarioPaths} onDirectionRead={setForecastRead} chartTimeframe={timeframe} onShowOnTimeframe={showForecastTimeframe} /></div>
     </div>
     <div className={sectionClass("read")} data-testid="arx-details-section-read">
       <div id="arx-smart-chart-read" data-testid="arx-smart-chart-read"><SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.analysisCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} /></div>
@@ -2112,7 +2115,7 @@ export function ARXNativeChart({
       {compactQuickTools}
       {replayError && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{replayError}</p>}
       {tradeVolumeSelected && hasCandles && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{hasQualifiedTradeVolume ? "Trade volume and VWAP use qualified provider-reported trade units on original closed bars, not tick counts or proven shares. Only loaded observations are covered; missing, zero or partial volume stays blank and holds later cumulative VWAP. Saved anchors stay bound to their original series." : "Trade volume / VWAP unavailable: no qualified positive traded quantities for these loaded candles. Tick counts and missing or zero volume are not substituted."}</p>}
-      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles: no qualified per-bar tick counts were supplied. Tick volume is not traded size; missing counts stay blank.</p>}
+      {tickVolumeSelected && hasCandles && !hasQualifiedTickVolume && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">Tick volume unavailable for these loaded candles.</p>}
       {!supportedTimeframe && <p className={compactDesktopWorkspace ? "px-2 pb-1 text-xs text-amber-300" : "px-3 pb-2 text-xs text-amber-300"} role="status">{chartIntervalLimitation(timeframe) ?? "This chart interval is unsupported."}</p>}
 
       {/* This is a presentation of the existing owners, not another verdict.
@@ -2256,6 +2259,17 @@ export function ARXNativeChart({
         </details>
       </section>
 
+      {forecastRead?.symbol === resolvedSymbol && forecastRead.timeframe === timeframe && (
+        <section aria-label="Chart forecast" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border px-3 py-2">
+          <ForecastDirectionSummary read={forecastRead} />
+          <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-muted-foreground">
+            {visibleScenarioPaths.some(p => !p.faded && p.id === "BULL") && visibleScenarioPaths.some(p => !p.faded && p.id === "BEAR") &&
+              <span title="The model aims to include the middle 50% of ending prices. Actual coverage is measured in Forecast.">Shading shows the projected range</span>}
+            {scenarioPathsOnThisChart.some(p => p.faded) &&
+              <label className="inline-flex items-center gap-1"><input type="checkbox" checked={showOriginalForecast} onChange={e => setShowOriginalForecast(e.target.checked)} /> Show dashed original forecast</label>}
+          </div>
+        </section>
+      )}
       <CardContent key="plot" className={compactWorkspace ? "arx-native-plot relative p-0" : "relative p-0"}>
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
