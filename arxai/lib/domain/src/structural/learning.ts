@@ -1,4 +1,4 @@
-import { STRUCTURAL_VERSION, type CalibrationRecord, type ForecastGrade, type StructuralBar, type StructuralForecast,
+import { STRUCTURAL_VERSION, type CalibrationRecord, type ForecastGrade, type PriceEstimate, type StructuralBar, type StructuralForecast,
   scenarioOf, type ForecastRoute, type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
 import { brier } from "./math.js";
 import { lowerMeanGain, type Episode, type StructuralModel } from "./model.js";
@@ -86,25 +86,55 @@ export function historicalNeighbors(model: StructuralModel, features: readonly n
   return nearest.slice(0, k).map(({ e }) => e);
 }
 
-/** Estimate each future close from the median relative close of similar episodes
- * with the same first-break outcome. All neighbors have finished before issuance. */
+function relativeMedians(matches: readonly Episode[], bars: number): number[] {
+  return Array.from({ length: bars }, (_, j) => {
+    const ratios = matches.map(e => e.future[j]!.close / e.history.at(-1)!.close).sort((a, b) => a - b);
+    const mid = Math.floor(ratios.length / 2);
+    return ratios.length % 2 ? ratios[mid]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
+  });
+}
+function projectedCloses(ratios: number[], anchor: StructuralBar, step: number): StructuralBar[] {
+  return ratios.map((r, i) => {
+    const close = anchor.close * r, open = anchor.close * (ratios[i - 1] ?? 1);
+    return { openTime: anchor.closeTime + i * step, closeTime: anchor.closeTime + (i + 1) * step,
+      open, close, high: Math.max(open, close), low: Math.min(open, close), isFinal: false };
+  });
+}
+
+/** Estimate closes conditional on a specified first-break outcome. */
 export function forecastRoutes(neighbors: readonly Episode[], anchor: StructuralBar, horizonBars: number, step: number): ForecastRoute[] {
   return (["UP_FIRST", "DOWN_FIRST", "NEITHER"] as const).map(scenario => {
     const matches = neighbors.filter(e => scenarioOf(e.event && e.event.time <= e.origin + horizonBars * step ? e.event : null) === scenario);
-    const candles: StructuralBar[] = [];
-    // One or two episodes would just trace individual historical examples.
-    if (matches.length >= 3) {
-      for (let j = 0; j < horizonBars; j++) {
-        const ratios = matches.map(e => e.future[j]!.close / e.history.at(-1)!.close).sort((a, b) => a - b);
-        const mid = Math.floor(ratios.length / 2);
-        const ratio = ratios.length % 2 ? ratios[mid]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
-        const close = anchor.close * ratio, open = candles.at(-1)?.close ?? anchor.close;
-        candles.push({ openTime: anchor.closeTime + j * step, closeTime: anchor.closeTime + (j + 1) * step,
-          open, close, high: Math.max(open, close), low: Math.min(open, close), isFinal: false });
-      }
-    }
-    return { scenario, matches: matches.length, candles };
+    return { scenario, matches: matches.length, candles: matches.length >= 3 ? projectedCloses(relativeMedians(matches, horizonBars), anchor, step) : [] };
   });
+}
+
+type PriceGate = Pick<PriceEstimate, "method" | "tested">;
+
+/** Test the unconditional close estimate against carrying the last close forward.
+ * Each gain is one full, disjoint window with equal weight, in relative price units. */
+export function choosePriceEstimate(model: StructuralModel, tests: readonly Episode[], bars: number, minimum: number): PriceGate {
+  let nextStart = -Infinity;
+  const gains: number[] = [];
+  for (const e of tests) {
+    if (e.origin < nextStart || e.future.length < bars) continue;
+    const neighbors = historicalNeighbors(model, e.features, bars, e.origin);
+    if (neighbors.length < 3) continue;
+    const ratios = relativeMedians(neighbors, bars);
+    const start = e.history.at(-1)!.close;
+    const gainsPerClose = ratios.map((ratio, j) => {
+      const actual = e.future[j]!.close / start;
+      return Math.abs(1 - actual) - Math.abs(ratio - actual);
+    });
+    gains.push(gainsPerClose.reduce((sum, gain) => sum + gain, 0) / bars);
+    nextStart = e.future[bars - 1]!.closeTime;
+  }
+  return { method: gains.length >= minimum && lowerMeanGain(gains) > 0 ? "ANALOG_MEDIAN" : "FLAT", tested: gains.length };
+}
+export function estimatePrice(gate: PriceGate | undefined, neighbors: readonly Episode[], anchor: StructuralBar, bars: number, step: number): PriceEstimate {
+  const useAnalogs = gate?.method === "ANALOG_MEDIAN" && neighbors.length >= 3;
+  const ratios = useAnalogs ? relativeMedians(neighbors, bars) : Array<number>(bars).fill(1);
+  return { method: useAnalogs ? "ANALOG_MEDIAN" : "FLAT", tested: gate?.tested ?? 0, candles: projectedCloses(ratios, anchor, step) };
 }
 
 /**
@@ -186,7 +216,7 @@ export function favoredScenario(weights: Triple) {
   return (ranked[0]!.weight * 100).toFixed(1) === (ranked[1]!.weight * 100).toFixed(1) ? null : ranked[0]!.scenario;
 }
 
-export function scoreForecastRoute(route: ForecastRoute, actual: readonly Pick<StructuralBar, "openTime" | "closeTime" | "close">[]) {
+export function scoreClosePath(route: Pick<ForecastRoute, "candles">, actual: readonly Pick<StructuralBar, "openTime" | "closeTime" | "close">[]) {
   const observations = new Map(actual.map(b => [b.openTime, b]));
   const anchor = route.candles[0]?.open;
   let matched = 0, error = 0, flatError = 0;
@@ -197,7 +227,12 @@ export function scoreForecastRoute(route: ForecastRoute, actual: readonly Pick<S
     error += Math.abs(p.close - bar.close);
     flatError += Math.abs(anchor - bar.close);
   }
-  return matched ? { scenario: route.scenario, matched, mae: error / matched, flatMae: flatError / matched } : null;
+  return matched ? { matched, mae: error / matched, flatMae: flatError / matched } : null;
+}
+
+export function scoreForecastRoute(route: ForecastRoute, actual: Parameters<typeof scoreClosePath>[1]) {
+  const score = scoreClosePath(route, actual);
+  return score ? { ...score, scenario: route.scenario } : null;
 }
 
 /** Judge a finished forecast against the bars of its whole window. */
@@ -210,7 +245,8 @@ export function gradeForecast(f: StructuralForecast, windowBars: readonly Struct
   const n = middle ? Math.min(middle.candles.length, windowBars.length) : 0;
   const route = f.routes?.find(r => r.scenario === favoredScenario(shown));
   const routeScore = route && scoreForecastRoute(route, windowBars);
-  return { ...(routeScore ? { routeScore } : {}), gradeVersion: `${STRUCTURAL_VERSION}:grade-2`, letter: letter(skill), skill, skillVsUniform: 1 - shownBrier / UNIFORM_BRIER, probabilityOfOutcome: shown[outcome]!,
+  const price = f.priceEstimate && scoreClosePath(f.priceEstimate, windowBars);
+  return { ...(price && f.priceEstimate ? { priceScore: { ...price, method: f.priceEstimate.method } } : {}), ...(routeScore ? { routeScore } : {}), gradeVersion: `${STRUCTURAL_VERSION}:grade-2`, letter: letter(skill), skill, skillVsUniform: 1 - shownBrier / UNIFORM_BRIER, probabilityOfOutcome: shown[outcome]!,
     actualEndChange, nearestPath: nearest?.kind ?? null,
     insideRange: bull && bear ? actualEndChange >= bear.endChange && actualEndChange <= bull.endChange : null,
     middlePathError: n ? Array.from({ length: n }, (_, j) => Math.abs(middle!.candles[j]!.close - windowBars[j]!.close) / start).reduce((s, x) => s + x, 0) / n : null };

@@ -1,8 +1,8 @@
-import { CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type Triple, type StructuralBar,
+import { FORECAST_HORIZONS, CAUSES, STRUCTURAL_VERSION, scenarioIndex, scenarioOf, type Mass, type Triple, type StructuralBar,
   type StructuralEvent, type DataOrigin, type StructuralForecast, type GhostPath } from "./contracts.js";
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
-import { analogTrajectories, historicalNeighbors, forecastRoutes, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
+import { analogTrajectories, historicalNeighbors, forecastRoutes, choosePriceEstimate, estimatePrice, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
 import { deseasonalisedLevels, fitVolRangeProfile, seasonalBandAt, seasonalVolatilityBand, type VolRangeProfile } from "./volRange.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
@@ -26,6 +26,7 @@ export interface StructuralModel {
   dataQuality: { inputBars: number; acceptedEpisodes: number; rejectedWindows: number };
   /** Range engine chosen for this market; absent on older models (volatility, no direction edge). */
   rangeEngine?: RangeEngineChoice;
+  priceGates?: Record<number, ReturnType<typeof choosePriceEstimate>>;
   /** Hour-of-week volatility profile for the VOLATILITY range, fitted on training bars only.
    * Absent on older models and on bar sizes the research did not test (they keep the 120-bar band). */
   volRange?: VolRangeProfile;
@@ -265,6 +266,9 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   }
   // Range engine and direction evidence, from the same not-fitted-on setups.
   model.rangeEngine = chooseRangeEngine(model, [...parts.selection, ...parts.gate], volBandAt);
+  const priceWindows = new Set(FORECAST_HORIZONS.filter(h => h.stepMs === model.stepMs).map(h => h.bars));
+  model.priceGates = Object.fromEntries([...priceWindows].map(n => [n,
+    choosePriceEstimate(model, [...parts.selection, ...parts.gate], n, MODEL_POLICY.minGate)]));
   // Untouched holdout is diagnostic only. No model/threshold writes below here.
   model.holdout = parts.holdout.map(e => {
     const p = predictMass(model, e.features, e.eligible), y = truth(e, 5);
@@ -315,6 +319,7 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,
     horizons: horizonsFromMass(prediction.mass, stepMs, [horizonBars]), paths: ghostPaths(model, h, prediction.mass, horizonBars),
     trajectories: analogTrajectories(model, h, features.values, horizonBars, undefined, seasonalBand, neighbors), history: h,
+    priceEstimate: estimatePrice(quarantined ? undefined : model.priceGates?.[horizonBars], neighbors, h.at(-1)!, horizonBars, stepMs),
     routes: forecastRoutes(neighbors, h.at(-1)!, horizonBars, stepMs),
     range: { engine: model.rangeEngine?.engine ?? "VOLATILITY", reason: model.rangeEngine?.reason ?? "TOO_FEW_TEST_SETUPS",
       volatility: seasonalBand ? "HOUR_OF_WEEK" : "RECENT_120_BARS",

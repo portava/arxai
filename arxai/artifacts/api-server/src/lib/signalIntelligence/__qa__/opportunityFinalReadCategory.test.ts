@@ -18,7 +18,7 @@ import {
   compareBestVsSelected,
 } from "@workspace/domain/signal-intelligence";
 import { toInput } from "../opportunityMapService.js";
-import { computeFinalRead, type ScannerOpportunity } from "../../marketScanner.js";
+import { driftPullbackTrigger, computeFinalRead, type ScannerOpportunity } from "../../marketScanner.js";
 
 function mkOpp(overrides: Partial<ScannerOpportunity>): ScannerOpportunity {
   const base = {
@@ -113,4 +113,20 @@ test("domain: a row with an unknown final read (null) is not Ready now", () => {
     { isLate: false } as Parameters<typeof toInput>[1]);
   const result = categorizeOpportunities([{ ...base, finalReadLabel: null }]);
   assert.notEqual(result.rows[0]!.category, "READY_NOW");
+});
+
+test("a drift watch needs an aligned entry trigger and a spent pullback cannot fire twice", () => {
+  const pullback = { open: 102, high: 103, low: 99, close: 100 };
+  const reclaim = { open: 100, high: 105, low: 100, close: 104 };
+  const row = mkOpp({ setupType: "Upward drift", regime: { regime: "TREND_UP", substate: null,
+    confidence01: .8, consecutiveConfirmations: 4, reasons: [] } });
+  const read = (bars: typeof reclaim[]) => computeFinalRead({ ...row, driftTrigger: driftPullbackTrigger(bars, "BUY") });
+  assert.equal(read([pullback]).label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read([pullback]).headline, /above the pullback high at 103/);
+  assert.equal(read([pullback, reclaim]).label, "TRADE_WATCH");
+  assert.equal(read([pullback, reclaim, { ...reclaim, close: 105 }]).label, "WAIT_FOR_CONFIRMATION");
+  assert.equal(computeFinalRead({ ...row, regime: { ...row.regime!, regime: "RANGE" },
+    driftTrigger: driftPullbackTrigger([pullback, reclaim], "BUY") }).label, "WAIT_FOR_CONFIRMATION");
+  assert.deepEqual(driftPullbackTrigger([reclaim, { ...pullback, close: 99 }], "SELL"),
+    { side: "SELL", level: 100, confirmed: true });
 });

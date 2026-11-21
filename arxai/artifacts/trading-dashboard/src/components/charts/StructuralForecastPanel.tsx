@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { favoredScenario, scoreForecastRoute, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
+import { favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -62,7 +62,8 @@ const outcomeNames: Record<Scenario, string> = { UP_FIRST: "broke up first", DOW
 function gradeLine(g: ForecastGrade, outcome: Scenario): string {
   return `${outcomeNames[outcome]}, gave it ${pct(g.probabilityOfOutcome)} · ended ${signed(g.actualEndChange)}`
     + (g.nearestPath ? ` · nearest ${pathNames[g.nearestPath].toLowerCase()} path` : "")
-    + (g.routeScore ? ` · route error ${g.routeScore.mae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts vs flat ${g.routeScore.flatMae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts over ${g.routeScore.matched} closes` : "")
+    + (g.priceScore ? ` · price estimate error ${g.priceScore.mae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts vs flat ${g.priceScore.flatMae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts over ${g.priceScore.matched} closes` : "")
+    + (g.routeScore ? ` · favored scenario error ${g.routeScore.mae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts vs flat ${g.routeScore.flatMae.toLocaleString(undefined, { maximumSignificantDigits: 4 })} pts over ${g.routeScore.matched} closes` : "")
     + (g.insideRange == null ? "" : g.insideRange ? " · inside bull–bear range" : " · outside bull–bear range");
 }
 export interface ForecastDirectionRead {
@@ -79,7 +80,8 @@ export interface ForecastDirectionRead {
   provider?: string;
   savedFallback?: boolean;
   route?: ForecastRoute;
-  view?: "routes" | "range";
+  priceEstimate?: StructuralForecast["priceEstimate"];
+  view?: "estimate" | "routes" | "range";
   favoriteScenario?: Scenario | null;
 }
 
@@ -127,10 +129,10 @@ export function ForecastDirectionSummary({ read }: { read: ForecastDirectionRead
 }
 
 /** Pair only finalized provider candles at the forecast's exact timestamps. */
-export function routeProgress(route: ForecastRoute, actual: readonly { openTime: string; closeTime: string; close: number; isComplete: boolean; isForming: boolean; source: string }[], provider: string, now: number) {
+export function routeProgress(route: Pick<ForecastRoute, "candles">, actual: readonly { openTime: string; closeTime: string; close: number; isComplete: boolean; isForming: boolean; source: string }[], provider: string, now: number) {
   const closes = actual.filter(c => c.source === provider && c.isComplete && !c.isForming && Date.parse(c.closeTime) <= now)
     .map(c => ({ openTime: Date.parse(c.openTime), closeTime: Date.parse(c.closeTime), close: c.close }));
-  const score = scoreForecastRoute(route, closes);
+  const score = scoreClosePath(route, closes);
   return { matched: score?.matched ?? 0, mae: score?.mae ?? null, flatMae: score?.flatMae ?? null,
     next: route.candles.find(c => c.closeTime > now) };
 }
@@ -156,7 +158,8 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const preset = forecastHorizon(horizonId) ?? forecastHorizon(DEFAULT_FORECAST_HORIZON)!;
   const rowHorizonId = (r: Row) => r.forecast.horizonId ?? DEFAULT_FORECAST_HORIZON;
   const [cohort, setCohort] = useState("all");
-  const [view, setView] = useState<"routes" | "range">("routes");
+  const [preferredView, setView] = useState<"estimate" | "routes" | "range">("estimate");
+  const view = preferredView === "estimate" && !row?.forecast.priceEstimate ? "routes" : preferredView;
   const [auto, setAuto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +176,10 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
     const f = current.forecast;
     const weights = f.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
     const originalForecast = f.update ? history.find(r => r.id === f.update!.of)?.forecast : undefined;
+    if (f.priceEstimate && view === "estimate") {
+      onPaths([{ id: "MIDDLE", label: f.priceEstimate.method === "FLAT" ? "Last-close estimate" : "Estimated close", candles: f.priceEstimate.candles }]);
+      return;
+    }
     if (f.routes && view === "routes") {
       onPaths([...(originalForecast?.routes ?? []).filter(r => selected.includes(r.scenario)).map(r => routePath(r, undefined, true)),
         ...f.routes.filter(r => selected.includes(r.scenario)).map(r => routePath(r, weights))]);
@@ -189,7 +196,7 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const shown = row && rowHorizonId(row) === preset.id && row.forecast.origin.symbol === canonicalSymbol ? row : null;
   useEffect(() => {
     const read = shown && forecastDirectionRead(shown.forecast);
-    onDirectionRead?.(read ? { ...read, savedFallback: Boolean(error), route: shown?.forecast.routes?.find(r => r.scenario === read.favoriteScenario), view: shown?.forecast.routes && view === "routes" ? "routes" : "range" } : null);
+    onDirectionRead?.(read ? { ...read, savedFallback: Boolean(error), route: shown?.forecast.routes?.find(r => r.scenario === read.favoriteScenario), priceEstimate: shown?.forecast.priceEstimate, view: shown?.forecast.routes ? view : "range" } : null);
   }, [shown, onDirectionRead, error, view]);
 
   const generate = useCallback(async (historyOnly = false, showOnChart = false) => {
@@ -278,10 +285,11 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         {allScenarios.map((scenario, i) => <span key={scenario}>{labels[scenario]}: <strong>{((probability?.[i] ?? 0) * 100).toFixed(1)}%</strong></span>)}
       </div>
       {shown.forecast.routes && <label className="mt-2 inline-flex items-center gap-2">Chart view
-        <select aria-label="Forecast chart view" className="rounded bg-zinc-900 p-1" value={view} onChange={e => setView(e.target.value === "range" ? "range" : "routes")}>
-          <option value="routes">Candle-by-candle routes</option><option value="range">Price range</option>
+        <select aria-label="Forecast chart view" className="rounded bg-zinc-900 p-1" value={view} onChange={e => setView(e.target.value === "estimate" ? "estimate" : e.target.value === "range" ? "range" : "routes")}>
+          {shown.forecast.priceEstimate && <option value="estimate">Estimated closes</option>}
+          <option value="routes">Conditional break routes</option><option value="range">Price range</option>
         </select></label>}
-      {shown.forecast.routes && view === "routes" ? <div aria-label="Forecast routes" className="my-2 flex flex-wrap gap-3">
+      {view === "estimate" ? null : shown.forecast.routes && view === "routes" ? <div aria-label="Forecast routes" className="my-2 flex flex-wrap gap-3">
         {shown.forecast.routes.map(r => <label key={r.scenario} className="flex items-center gap-1"><input type="checkbox"
           disabled={!r.candles.length} checked={Boolean(r.candles.length && selected.includes(r.scenario))}
           onChange={e => setSelected(e.target.checked ? [...selected, r.scenario] : selected.filter(s => s !== r.scenario))} />
@@ -301,7 +309,11 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         The {preset.label} paths are {preset.timeframe} candles and are not drawn on this {chartTimeframe} chart.
         {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
       </p>}
-      <p className="text-amber-200">{shown.forecast.routes && view === "routes"
+      <p className="text-amber-200">{view === "estimate" && shown.forecast.priceEstimate
+        ? shown.forecast.priceEstimate.method === "FLAT"
+          ? `Using the last close. Prior testing has not established a more accurate price path for this window.`
+          : `Each point is the median close across similar historical setups, including all break outcomes. The estimate passed the flat-price comparison on ${shown.forecast.priceEstimate.tested} independent windows.`
+        : shown.forecast.routes && view === "routes"
         ? "Each point estimates a candle close from similar historical setups with the specified first break. The issued route stays fixed as actual candles arrive."
         : shown.forecast.trajectories?.length
         ? `The paths are not price predictions: the shaded range from bull to bear is a nominal 50% endpoint interval; actual coverage can differ (see measured coverage below), and the middle line is the median of the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market, rescaled to the current price. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`

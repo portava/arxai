@@ -114,12 +114,18 @@ export interface ForecastGrade {
   /** Mean absolute error of the middle path's closes, as a fraction of price. */
   middlePathError: number | null;
   /** Per-close errors in instrument price points on the favored route and the unchanged-price benchmark. */
+  priceScore?: { method: PriceEstimate["method"]; matched: number; mae: number; flatMae: number };
   routeScore?: { scenario: Scenario; matched: number; mae: number; flatMae: number };
 }
 /** A per-candle median price estimate conditional on the first break in this window. */
 export interface ForecastRoute {
   scenario: Scenario;
   matches: number;
+  candles: StructuralBar[];
+}
+export interface PriceEstimate {
+  method: "FLAT" | "ANALOG_MEDIAN";
+  tested: number;
   candles: StructuralBar[];
 }
 export interface StructuralForecast {
@@ -146,6 +152,7 @@ export interface StructuralForecast {
   trajectories?: Trajectory[];
   /** Saved at issue time. Each route uses only completed historical matches. Older forecasts contain ranges only. */
   routes?: ForecastRoute[];
+  priceEstimate?: PriceEstimate;
   /** Calibration applied to this window's probabilities, if any was learned. */
   calibration?: CalibrationRecord;
   /** Present when this forecast updates one whose window was still open. */

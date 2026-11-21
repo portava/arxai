@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, favoredScenario, forecastRoutes, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
+  fitWindowCount, MIN_FIT_WINDOWS, favoredScenario, forecastRoutes, estimatePrice, scoreClosePath, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
 import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
@@ -524,6 +524,13 @@ test("route estimates condition each future close on the first break within the 
     event: { ...model().training.find(e => e.event)!.event!, cause: "BOS_UP", time: anchor.closeTime + eventBar * 60_000 } as const,
   });
   const examples = [episode(1.01, .98, 1), episode(1.03, 1.02, 2), episode(1.02, 1.01, 1), episode(2, 3, 3)];
+  const point = estimatePrice({ method: "ANALOG_MEDIAN", tested: 50 }, examples, anchor, 2, 60_000);
+  close(point.candles[0]!.close, anchor.close * 1.025);
+  const fallback = estimatePrice(undefined, examples, anchor, 2, 60_000);
+  const flat = scoreClosePath(fallback, examples[0]!.future)!;
+  assert.equal(fallback.method, "FLAT");
+  assert.equal(flat.matched, 2);
+  assert.equal(flat.mae, flat.flatMae);
   const [up, down, neither] = forecastRoutes(examples, anchor, 2, 60_000);
   assert.equal(up!.matches, 3);
   close(up!.candles[0]!.close, anchor.close * 1.02);

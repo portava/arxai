@@ -1134,9 +1134,10 @@ export function ARXNativeChart({
   );
 
   const historySource = data?.feedStatus?.source ?? null;
-  const routeRead = forecastRead?.view === "routes" && forecastRead.symbol === resolvedSymbol && forecastRead.timeframe === timeframe ? forecastRead : null;
-  const routeStats = routeRead?.route?.candles.length && routeRead.provider === historySource && historySource
-    ? routeProgress(routeRead.route, candles, historySource, Date.now()) : null;
+  const routeRead = (forecastRead?.view === "routes" || forecastRead?.view === "estimate") && forecastRead.symbol === resolvedSymbol && forecastRead.timeframe === timeframe ? forecastRead : null;
+  const scoredPath = routeRead?.view === "estimate" ? routeRead.priceEstimate : routeRead?.route;
+  const routeStats = scoredPath?.candles.length && routeRead?.provider === historySource && historySource
+    ? routeProgress(scoredPath, candles, historySource, Date.now()) : null;
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
   //    chart. The adapter reconciles the current visible range, so the forming last
@@ -2284,7 +2285,7 @@ export function ARXNativeChart({
           <ForecastDirectionSummary read={forecastRead} />
           {routeRead && <div data-testid="forecast-route-progress" className="min-w-0 text-xs">
             {routeStats ? <>
-              {routeStats.next && <span>Favored route · estimated close {formatInstrumentPrice(routeStats.next.close, pricePrecision)} at {new Date(routeStats.next.closeTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. </span>}
+              {routeStats.next && <span>{routeRead.view === "estimate" ? "Estimated close" : "Close if the favored break occurs"} {formatInstrumentPrice(routeStats.next.close, pricePrecision)} at {new Date(routeStats.next.closeTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. </span>}
               {routeStats.mae !== null && routeStats.flatMae !== null
                 ? <span>{routeStats.matched} matched closes · mean error {formatInstrumentPrice(routeStats.mae, pricePrecision)} pts · flat-price error {formatInstrumentPrice(routeStats.flatMae, pricePrecision)} pts</span>
                 : <span>Scoring begins with the first matching closed candle.</span>}

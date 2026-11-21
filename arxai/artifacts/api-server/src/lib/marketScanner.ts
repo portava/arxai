@@ -319,6 +319,7 @@ export interface ScannerOpportunity {
   rulesFailed: string[];
   /** Rules that could not be checked (e.g. spread_acceptable with no observed spread). */
   rulesUnchecked?: string[];
+  driftTrigger?: ReturnType<typeof driftPullbackTrigger>;
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
   entry: number; stopLoss: number; takeProfit: number;
@@ -945,6 +946,34 @@ export function computeFinalRead(
     }
   }
 
+  const side = opp.recommendedAction;
+  const drift = side === "BUY" ? "Upward drift" : "Downward drift";
+  if (label === "TRADE_WATCH" && (side === "BUY" || side === "SELL") && opp.setupType === drift) {
+    const buy = side === "BUY", trend = buy ? "TREND_UP" : "TREND_DOWN";
+    const bias = buy ? "bullish" : "bearish", timing = opp.timingContext;
+    const structure = (pat?.labelHint === "supportive" && opp.patternTrigger?.confirmed && opp.patternTrigger.bias === bias)
+      || (tl?.labelHint === "supportive" && opp.trendlineTrigger?.bias === bias);
+    const trigger = opp.driftTrigger?.side === side ? opp.driftTrigger : undefined;
+    const aligned = opp.regime?.regime === trend;
+    const timed = timing?.timeframe === opp.timeframe && timing.entryPermission === "GO" && timing.pressureBias === side;
+    if (timing?.timeframe === opp.timeframe && ["NO_TRADE", "STAND_DOWN", "WAIT_NEWS"].includes(timing.entryPermission)) {
+      label = timing.entryPermission === "WAIT_NEWS" ? "WAIT_FOR_CONFIRMATION" : "AVOID_FOR_NOW";
+      reasons.push(timing.actionReason);
+      confirmations.push(timing.actionReason);
+    } else if (structure || (aligned && (trigger?.confirmed || timed))) {
+      reasons.push(structure ? "Chart structure confirms the entry direction." : timed ? "Entry timing and pressure agree with the trend."
+        : `The ${opp.timeframe} pullback closed back through ${priceText(trigger?.level ?? undefined)} with the trend.`);
+    } else {
+      label = "WAIT_FOR_CONFIRMATION";
+      const level = priceText(trigger?.level ?? undefined);
+      const instruction = !aligned ? `Skip this drift entry while the ${opp.timeframe} regime is ${opp.regime?.regime ?? "unavailable"}. Recheck when it confirms a ${buy ? "rising" : "falling"} trend.`
+        : level ? `Watch for a ${opp.timeframe} close ${buy ? "above" : "below"} the pullback ${buy ? "high" : "low"} at ${level}.`
+        : `Watch for a ${buy ? "down" : "up"} ${opp.timeframe} candle, then a close ${buy ? "above its high" : "below its low"}.`;
+      reasons.push(instruction);
+      confirmations.push(instruction);
+    }
+  }
+
   if (reasons.length === 0) {
     reasons.push("Technicals clean and no major news catalyst.");
   }
@@ -1455,6 +1484,29 @@ export async function decorateOpportunitiesWithHistory(
   });
 }
 
+/** A closed countertrend candle defines the pullback. Its extreme is the
+ * trigger until a newer countertrend candle forms or the close breaks it.
+ * Only the first close through the level confirms an entry. */
+export function driftPullbackTrigger(
+  bars: readonly { open: number; high: number; low: number; close: number }[],
+  side: ScannerOpportunity["recommendedAction"],
+) {
+  if (side !== "BUY" && side !== "SELL") return undefined;
+  const buy = side === "BUY";
+  let level: number | null = null, confirmed = false;
+  for (const bar of bars) {
+    confirmed = false;
+    if (buy ? bar.close < bar.open : bar.close > bar.open) {
+      level = buy ? bar.high : bar.low;
+    } else if (level !== null && (buy ? bar.close > level : bar.close < level)) {
+      confirmed = true;
+      // A spent trigger must not fire again without a new pullback.
+      if (bar !== bars.at(-1)) level = null;
+    }
+  }
+  return { side, level, confirmed };
+}
+
 /**
  * Plain name for what the analysis actually measured. The analyser has no
  * range, pullback, retest or continuation detector: its bias is the sign of the
@@ -1944,6 +1996,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
       setupType: setupTypeFor(a, mayShowBias),
+      driftTrigger: driftPullbackTrigger(routed?.regimeCandles ?? [], displayAction),
       score: displayConfidenceScore, confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,
