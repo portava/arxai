@@ -68,6 +68,7 @@ import {
   type ArxMarketCategory,
   type MarketDataSufficiencyVerdict,
   type PatternScannerImpact,
+  type PatternChange,
   type TrendlineScannerImpact,
 } from "@workspace/domain/market";
 
@@ -403,6 +404,7 @@ export interface ScannerOpportunity {
    */
   trendlineImpact?: TrendlineScannerImpact;
   trendlineConfirmationLevel?: number;
+  trendlineTransition?: Pick<PatternChange, "reason" | "to">;
   trendlineTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; side: "bullish" | "bearish" | "neutral"; reclaimed: boolean };
   /**
    * ONE MARKET-STATE AUTHORITY (R7 step 3) — the hysteresis state machine's
@@ -928,8 +930,17 @@ export function computeFinalRead(
     } else if (tl.labelHint === "trend_changed") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
-      reasons.push("A trend shift / structure change just printed — wait for it to settle.");
-      confirmations.push(`Wait for the next ${opp.timeframe} structure read to confirm the new trend after the shift.`);
+      const change = opp.trendlineTransition;
+      reasons.push(change?.reason || "The chart shows a structure change.");
+      const pivot = priceText(opp.trendlineConfirmationLevel);
+      if (change?.reason && pivot) {
+        const side = change.to === "uptrend" ? "above" : change.to === "downtrend" ? "below" : null;
+        const check = side ? `Check whether the next ${opp.timeframe} candle closes ${side} the trendline`
+          : `Check which side of the trendline the next ${opp.timeframe} candle closes on`;
+        confirmations.push(`${change.reason} ${check}. Current trendline level ${pivot}.`);
+      } else {
+        confirmations.push(`${change?.reason || "The chart shows a structure change."} Recheck the swing highs and lows after the next ${opp.timeframe} close.`);
+      }
     } else if (tl.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Trendline conflicts with the measured trend on this timeframe — treat as conditional.");
@@ -1998,6 +2009,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // Fail-open: the service returns null on any error / insufficient window.
     let trendlineTrigger: ScannerOpportunity["trendlineTrigger"];
     let trendlineConfirmationLevel: number | undefined;
+    let trendlineTransition: ScannerOpportunity["trendlineTransition"];
     let trendlineImpact: ScannerOpportunity["trendlineImpact"];
     if (routed?.rawCandles && routed.rawCandles.length > 0) {
       const tlVerdict = buildTrendlineTruthVerdict({
@@ -2016,6 +2028,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       trendlineImpact = tlVerdict?.scannerTruthImpact;
       if (chartConfirmed && sufficiency.canShowTradeSetup && tlVerdict?.dominantTrendline) {
         trendlineConfirmationLevel = tlVerdict.confirmationLevel ?? undefined;
+        if (tlVerdict.patternChange.kind !== "none") {
+          const { reason, to } = tlVerdict.patternChange;
+          trendlineTransition = { reason, to };
+        }
         trendlineTrigger = { name: tlVerdict.dominantTrendline.name, confirmed: tlVerdict.status === "confirmed", bias: tlVerdict.dominantTrendline.bias, side: tlVerdict.trendlineChange.bias, reclaimed: tlVerdict.status === "reclaimed" };
       }
     }
@@ -2076,7 +2092,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       patternImpact,
       patternConfirmationLevel, patternTrigger,
       trendlineImpact,
-      trendlineConfirmationLevel, trendlineTrigger,
+      trendlineConfirmationLevel, trendlineTrigger, trendlineTransition,
       ...scannerCalibrationFields(sym, tf, displayAction, displayConfidenceScore),
     };
     if (routed) bindScannerSource(op, routed.sourceIdentity);

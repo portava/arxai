@@ -222,3 +222,16 @@ test("a confirmed line awaiting momentum gives the actual directional test", () 
   assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
   assert.match(read.headline, /closes higher than the previous close with a range above 1.5× the 20-bar average/);
 });
+
+test("a structure transition explains the actual level and candle to recheck", () => {
+  const read = computeFinalRead(opp({
+    ...READABLE, trendlineImpact: impact({ labelHint: "trend_changed" }),
+    trendlineTransition: { reason: "Support broke and highs are rolling over.", to: "downtrend" },
+    trendlineConfirmationLevel: 1.09567,
+  }));
+  assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read.headline, /Support broke/);
+  assert.match(read.headline, /M5 candle closes below the trendline/);
+  assert.match(read.headline, /1\.09567/);
+  assert.doesNotMatch(read.headline, /just printed/);
+});
