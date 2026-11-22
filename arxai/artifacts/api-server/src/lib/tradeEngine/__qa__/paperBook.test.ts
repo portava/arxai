@@ -388,3 +388,16 @@ test("concurrent profitable stop fills settle the linked paper execution and ord
   const [execution] = await db.select().from(paperExecutionsTable).where(eq(paperExecutionsTable.decisionId, decisionId));
   assert.equal(execution?.status, "PAPER_CLOSED_WIN");
 });
+
+test("a failed decision receipt rolls back its paper order and placement event", async () => {
+  const account = await freshAccount(u.a);
+  const decisionId = 8980109;
+  const execution = { userId: u.a, executionId: "qa-paper-atomic-open", decisionId, symbol: SYMBOL, action: "BUY", status: "PAPER_OPENED" };
+  await db.insert(paperExecutionsTable).values({ ...execution, executionId: "qa-paper-existing-receipt", status: "PAPER_REJECTED" });
+  await assert.rejects(fill(u.a, account, { decisionId, execution }), error =>
+    (error as { cause?: { constraint?: string } }).cause?.constraint === "paper_executions_decision_uniq");
+  const orders = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, account));
+  const placements = await db.select().from(paperTradeEventsTable).where(eq(paperTradeEventsTable.userId, u.a));
+  assert.equal(orders.length, 0);
+  assert.equal(placements.length, 0);
+});

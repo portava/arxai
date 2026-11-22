@@ -182,3 +182,18 @@ test("a signal cannot open with its stop already crossed by the executable exit 
   const orders = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct));
   assert.ok(orders.every(order => order.status !== "OPEN"));
 });
+
+test("concurrent retries of a paper decision return one order and one receipt", async () => {
+  const account = await resetPaper();
+  const id = nextDecisionId();
+  seedRouterTick();
+  const issue = () => executePaperFromDecision(decision(), id, { ownerUserId: userId, paperAccountId: account, origin: "automation" });
+  const [first, second] = await Promise.all([issue(), issue()]);
+  assert.equal(first.status, "PAPER_OPENED", first.rejection_reason ?? "");
+  assert.equal(second.execution_id, first.execution_id);
+  assert.equal(second.trade_id, first.trade_id);
+  const orders = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, account));
+  assert.deepEqual(orders.map(order => order.id), [first.trade_id]);
+  const receipts = await db.select().from(paperExecutionsTable).where(eq(paperExecutionsTable.decisionId, id));
+  assert.deepEqual(receipts.map(receipt => receipt.orderId), [first.trade_id]);
+});

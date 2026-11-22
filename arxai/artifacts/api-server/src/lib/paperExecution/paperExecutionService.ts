@@ -35,7 +35,7 @@ import { currentQuote } from "../tradeEngine/marketQuote.js";
 import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
 import { loadEffectiveLimits, paperInstrumentModel, type InstrumentModel } from "../riskGovernor/enforce.js";
-import { fillPaperTrade, voidPaperTrade } from "../tradeEngine/pipeline.js";
+import { fillPaperTrade } from "../tradeEngine/pipeline.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
@@ -82,6 +82,13 @@ async function getActivePaperAccount(ownerUserId: number | null, explicitId?: nu
     .where(and(owner, explicitId != null ? eq(paperAccountsTable.id, explicitId) : eq(paperAccountsTable.isActive, 1)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+async function existingDecisionExecution(decisionId: number, userId: number | null) {
+  const owner = userId == null ? isNull(paperExecutionsTable.userId) : eq(paperExecutionsTable.userId, userId);
+  const [receipt] = await db.select().from(paperExecutionsTable)
+    .where(and(eq(paperExecutionsTable.decisionId, decisionId), owner)).limit(1);
+  return receipt;
 }
 
 /**
@@ -183,10 +190,8 @@ export async function executePaperFromDecision(
 
   // ── Idempotency: short-circuit if a paper execution already exists for this decision ──
   if (decisionId != null) {
-    const dup = await db.select().from(paperExecutionsTable)
-      .where(eq(paperExecutionsTable.decisionId, decisionId)).limit(1);
-    if (dup[0]) {
-      const e = dup[0];
+    const e = await existingDecisionExecution(decisionId, opts.ownerUserId ?? null);
+    if (e) {
       log.info({ existingExecutionId: e.executionId, existingOrderId: e.orderId },
         "Build EE: idempotent replay — returning existing paper execution");
       await logExec({
@@ -311,31 +316,6 @@ export async function executePaperFromDecision(
   //    paper_orders row — both inside the PAPER venue. Orders inherit the
   //    account owner so the owner-scoped paper sandbox, analytics and
   //    debriefs see them.
-  const booked = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, {
-    userId: acct.userId, paperAccountId: acct.id,
-    symbol, side: dir, lots: positionSize, fillPrice,
-    stopLoss, takeProfit,
-    decisionId: decisionId ?? null,
-    strategyId: "build_ee_paper_execution",
-    origin: opts.origin ?? "manual",
-    governedEntryPrice: null,
-    quote: { bid: exec.bid, ask: exec.ask, at: exec.at, source: exec.source },
-    auditContext: { caller: "paper_execution", executionId, decisionId },
-    placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
-  });
-  if (!booked.ok) {
-    const risk = booked.risk;
-    log.warn({ blockedBy: risk.blockedBy, auditEventId: risk.auditEventId }, "Build EE: paper trade BLOCKED by pre-trade Risk Governor");
-    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
-      executionId, decisionId, symbol, action, decision,
-      reason: `RISK_GOVERNOR_BLOCK[${risk.blockedBy.join(",") || "audit_unavailable"}]: ${risk.primaryReason ?? "blocked"}`,
-      warnings: [...eligibility.warnings, ...risk.rules.filter((r) => r.outcome === "BLOCK").map((r) => `${r.rule}: ${r.reason}`)],
-      mdSnapshot: snapshot,
-    });
-  }
-  const order = booked.order;
-
-  // ── Insert paper_executions (idempotency mapping + audit) ──
   const decisionSnapshot = sanitizeDecisionForJson(decision);
   const marketDataSnapshot = {
     source: snapshot.source, provider: snapshot.provider,
@@ -353,11 +333,20 @@ export async function executePaperFromDecision(
     slippageApplied: slippage, spreadApplied: spread,
     sizing,
   };
-  let execRow;
-  try {
-    const ins = await db.insert(paperExecutionsTable).values({
+  const booked = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, {
+    userId: acct.userId, paperAccountId: acct.id,
+    symbol, side: dir, lots: positionSize, fillPrice,
+    stopLoss, takeProfit,
+    decisionId: decisionId ?? null,
+    strategyId: "build_ee_paper_execution",
+    origin: opts.origin ?? "manual",
+    governedEntryPrice: null,
+    quote: { bid: exec.bid, ask: exec.ask, at: exec.at, source: exec.source },
+    auditContext: { caller: "paper_execution", executionId, decisionId },
+    placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
+    execution: {
       userId: acct.userId,
-      executionId, decisionId: decisionId!, orderId: order.id,
+      executionId, decisionId: decisionId!,
       symbol, action, status: "PAPER_OPENED",
       fillType, executionMode: "PAPER",
       entryPriceRequested: snapshot.mid,
@@ -374,20 +363,26 @@ export async function executePaperFromDecision(
       marketDataSnapshot,
       decisionSnapshot,
       executionSnapshot,
-    }).returning();
-    execRow = ins[0]!;
-  } catch (err) {
-    // Race-condition idempotency — another caller inserted concurrently.
-    log.warn({ err: String(err) }, "Build EE: paper_executions insert collision, returning existing row");
-    const racy = (await db.select().from(paperExecutionsTable)
-      .where(eq(paperExecutionsTable.decisionId, decisionId!)).limit(1))[0];
-    if (racy) {
-      // Roll back our just-created paper_orders row to keep the system clean.
-      await voidPaperTrade(order.id);
-      return materializeResult(racy, true);
-    }
-    throw err;
+    },
+  }).catch(async (error: unknown) => {
+    // The transaction has rolled back. A competing committed result is authoritative.
+    const receipt = await existingDecisionExecution(decisionId!, acct.userId);
+    if (receipt) return { replay: receipt };
+    throw error;
+  });
+  if ("replay" in booked) return materializeResult(booked.replay, true);
+  if (!booked.ok) {
+    const risk = booked.risk;
+    log.warn({ blockedBy: risk.blockedBy, auditEventId: risk.auditEventId }, "Build EE: paper trade BLOCKED by pre-trade Risk Governor");
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `RISK_GOVERNOR_BLOCK[${risk.blockedBy.join(",") || "audit_unavailable"}]: ${risk.primaryReason ?? "blocked"}`,
+      warnings: [...eligibility.warnings, ...risk.rules.filter((r) => r.outcome === "BLOCK").map((r) => `${r.rule}: ${r.reason}`)],
+      mdSnapshot: snapshot,
+    });
   }
+  if (!booked.execution) throw new Error("Missing paper execution receipt");
+  const order = booked.order;
 
   await logExec({
     executionId, decisionId, orderId: order.id, symbol, action,
@@ -398,7 +393,7 @@ export async function executePaperFromDecision(
 
   log.info({ orderId: order.id, fillPrice, positionSize }, "Build EE: paper trade opened");
 
-  return materializeResult(execRow, false);
+  return materializeResult(booked.execution, false);
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -465,10 +460,9 @@ async function persistRejection(args: {
       row = ins[0]!;
     } catch (err) {
       // If unique violation on decisionId, fetch existing.
-      const existing = (await db.select().from(paperExecutionsTable)
-        .where(eq(paperExecutionsTable.decisionId, args.decisionId)).limit(1))[0];
-      if (existing) row = existing;
-      else log.warn({ err: String(err) }, "Build EE: rejection persist failed (non-fatal)");
+      const existing = await existingDecisionExecution(args.decisionId, args.ownerUserId);
+      if (existing) return materializeResult(existing, true);
+      log.warn({ err: String(err) }, "Build EE: rejection persist failed (non-fatal)");
     }
   }
 

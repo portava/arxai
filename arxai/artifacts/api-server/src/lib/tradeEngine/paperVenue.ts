@@ -74,6 +74,9 @@ export type PaperRefusal =
 
 export type PaperResult = { ok: true; order: PaperOrderRow | null; replayed?: boolean } | PaperRefusal;
 
+type PaperExecutionInsert = Omit<typeof paperExecutionsTable.$inferInsert, "orderId">;
+type BookedPaperOrder = { ok: true; order: PaperOrderRow; execution?: typeof paperExecutionsTable.$inferSelect; replayed?: boolean };
+
 export interface PaperOpenArgs {
   userId: number;
   paperAccountId: number;
@@ -433,8 +436,8 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
  * the shared row lock, so a committed mode change cannot be missed at booking.
  */
 async function bookPaperOrder(values: typeof paperOrdersTable.$inferInsert, risk: EnforceResult,
-  message: string | null, extra: Record<string, unknown> = {},
-): Promise<{ ok: true; order: PaperOrderRow; replayed?: boolean } | PaperFillBlocked> {
+  message: string | null, extra: Record<string, unknown> = {}, execution?: PaperExecutionInsert,
+): Promise<BookedPaperOrder | PaperFillBlocked> {
   if (!risk.allowed || risk.auditEventId == null) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
   return db.transaction(async tx => {
     await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
@@ -457,6 +460,10 @@ async function bookPaperOrder(values: typeof paperOrdersTable.$inferInsert, risk
       if (!prior) throw new Error("paper order insert returned no row");
       return { ok: true, order: prior, replayed: true };
     }
+    // The unique decision receipt and its order must appear together, including on retries.
+    const [receipt] = execution
+      ? await tx.insert(paperExecutionsTable).values({ ...execution, orderId: order.id }).returning()
+      : [];
     if (message != null) await tx.insert(paperTradeEventsTable).values({ userId: order.userId, paperOrderId: order.id, eventType: "PLACED", message });
     const linkedDecisionId = `risk:${risk.auditEventId}`;
     const payload = { ...extra, userId: order.userId, orderId: order.id, linkedTradeId: String(order.id), linkedDecisionId,
@@ -467,7 +474,7 @@ async function bookPaperOrder(values: typeof paperOrdersTable.$inferInsert, risk
       operationalMode: posture.operationalMode, globalState: posture.globalState, generatedAtIso: new Date().toISOString() });
     await appendAuditInTransaction(tx, { eventType: "PAPER_ORDER_PLACED", source: "SYSTEM", severity: "INFO",
       systemMode: posture.operationalMode, globalState: posture.globalState, payload });
-    return { ok: true, order };
+    return { ok: true, order, ...(receipt && { execution: receipt }) };
   });
 }
 
@@ -664,6 +671,7 @@ export interface PaperFillOpenArgs {
   auditContext: Record<string, unknown>;
   /** The PLACED event message; null writes no event (the QA fixture never did). */
   placedMessage: string | null;
+  execution?: PaperExecutionInsert;
 }
 
 /**
@@ -673,7 +681,7 @@ export interface PaperFillOpenArgs {
  * allows. The governor's result is returned either way so callers keep
  * their own refusal envelopes.
  */
-export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; order: PaperOrderRow; risk: EnforceResult } | PaperFillBlocked> {
+export async function openPaperFill(a: PaperFillOpenArgs): Promise<(BookedPaperOrder & { risk: EnforceResult }) | PaperFillBlocked> {
   const risk = await enforcePreTradeRisk({
     userId: a.userId, venue: "PAPER", origin: a.origin, action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
@@ -697,9 +705,9 @@ export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; o
     status: "OPEN",
     decisionId: a.decisionId,
     strategyId: a.strategyId,
-  }, risk, a.placedMessage, { caller: a.auditContext.caller ?? null });
+  }, risk, a.placedMessage, { caller: a.auditContext.caller ?? null }, a.execution);
   if (!booked.ok) return booked;
-  return { ok: true, order: booked.order, risk };
+  return { ...booked, risk };
 }
 
 /**
