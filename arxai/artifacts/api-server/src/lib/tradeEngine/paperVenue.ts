@@ -38,7 +38,7 @@ import { paperEntryPolicyReason } from "../safety/entryPolicy.js";
 import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import {
   getMockPrice, isMarketPricedPaperOrder, MARKET_PRICED_SIMULATED_OPEN, crossedPaperLevel,
-  paperExitQuote,
+  paperExitQuote, validPaperOpenBracket,
 } from "./paperMark.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
@@ -485,10 +485,10 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   const marketPx = q ? (a.side === "BUY" ? q.ask : q.bid) : getMockPrice(a.symbol, nowMs);
   // A quoted open is always a market fill at the quote, never at a caller price.
   const px = q ? marketPx : a.entryPrice ?? marketPx;
-  // Validate SL/TP geometry to refuse malformed paper orders.
-  const slOk = a.side === "BUY" ? a.stopLoss < px   : a.stopLoss > px;
-  const tpOk = a.side === "BUY" ? a.takeProfit > px : a.takeProfit < px;
-  if (!slOk || !tpOk) return { ok: false, reason: "INVALID_SLTP_GEOMETRY", entryPrice: px };
+  const exitPx = q ? paperExitQuote(a.side, q) : px;
+  if (!validPaperOpenBracket(a.side, a.stopLoss, a.takeProfit, px, exitPx)) {
+    return { ok: false, reason: "INVALID_SLTP_GEOMETRY", entryPrice: px };
+  }
   // Pre-trade Risk Governor: the same rules a live order faces, priced
   // against the paper simulator's market.
   const risk = await enforcePreTradeRisk({

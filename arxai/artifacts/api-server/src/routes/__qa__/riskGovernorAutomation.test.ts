@@ -172,3 +172,13 @@ test("C demo automated: a daily-loss breach rejects the automated trade with the
   assert.ok(details.blockedBy.includes("daily_loss_limit"));
   assert.equal(details.intent.origin, "automation");
 });
+
+test("a signal cannot open with its stop already crossed by the executable exit quote", async () => {
+  const acct = await resetPaper();
+  seedRouterTick();
+  const signal = { ...decision(), stopLoss: (QUOTE.bid + QUOTE.ask) / 2 };
+  const res = await executePaperFromDecision(signal, nextDecisionId(), { ownerUserId: userId, paperAccountId: acct, origin: "automation" });
+  assert.match(res.rejection_reason ?? "", /executable exit/);
+  const orders = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct));
+  assert.ok(orders.every(order => order.status !== "OPEN"));
+});

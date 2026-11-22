@@ -64,3 +64,11 @@ export function crossedPaperLevel(
 export function paperExitQuote(direction: string, q: { bid: number; ask: number }): number {
   return direction === "BUY" ? q.bid : q.ask;
 }
+
+/** An opening bracket must allow the fill and the price at which it could already exit. */
+export function validPaperOpenBracket(
+  side: "BUY" | "SELL", stop: number, target: number, fill: number, exit: number,
+): boolean {
+  return side === "BUY" ? stop < Math.min(fill, exit) && target > Math.max(fill, exit)
+    : target < Math.min(fill, exit) && stop > Math.max(fill, exit);
+}

@@ -79,7 +79,7 @@ mock.module("../../autoDebriefService.js", {
   namedExports: { runAutoDebrief: async () => ({ status: "skipped" }) },
 });
 
-const { markToMarket, closePaperOrder, modifyPaperOrder } = await import("../paperVenue.js");
+const { markToMarket, closePaperOrder, modifyPaperOrder, openPaperOrder } = await import("../paperVenue.js");
 const { runPaperMonitor, closePaperManually } = await import("../../paperExecution/paperExecutionMonitor.js");
 
 const ACCOUNT: Row = { id: 9, userId: 4, accountName: "Practice", startingBalance: 10_000, currentBalance: 10_000, equity: 10_000, marginUsed: 0, isActive: 1 };
@@ -212,4 +212,19 @@ test("a paper bracket cannot be moved past an observed exit or without a market 
   quoteAvailable = false;
   assert.deepEqual(await modifyPaperOrder(request), { ok: false, reason: "NO_VALID_PRICE_SOURCE" });
   assert.equal(sets.length, 0);
+});
+
+test("quoted entries refuse stops at or inside the spread on either side", async () => {
+  selectRows = table => table === "paper_accounts" ? [ACCOUNT] : [];
+  const current = { ...quote, at: new Date(), source: "REAL:qa" };
+  for (const side of ["BUY", "SELL"] as const) {
+    const exit = side === "BUY" ? current.bid : current.ask;
+    for (const stopLoss of [exit, (current.bid + current.ask) / 2]) {
+      const result = await openPaperOrder({ userId: 4, paperAccountId: 9, side, symbol: "EURUSD",
+        entryPrice: null, stopLoss, takeProfit: side === "BUY" ? 1.2 : 1, quote: current,
+        orderType: "MARKET", lots: .01, strategyId: null, tradePlanId: null, decisionId: null, caller: "QA" });
+      assert.equal(result.ok ? null : result.reason, "INVALID_SLTP_GEOMETRY");
+    }
+  }
+  assert.equal(inserts.length, 0);
 });

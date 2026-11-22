@@ -24,6 +24,7 @@ import {
   paperExecutionLogsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
+import { paperExitQuote, validPaperOpenBracket } from "../tradeEngine/paperMark.js";
 import { readOpenPaperOrders, readPaperCloses } from "../tradeEngine/paperBookReader.js";
 import { paperRiskShortfall, resolvePaperContract } from "./paperPnl.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -267,13 +268,11 @@ export async function executePaperFromDecision(
   const stopLoss = decision.stopLoss as number;
   const takeProfit = decision.takeProfit as number;
 
-  // Validate SL/TP geometry against the *filled* price (existing rule).
-  const slOk = action === "BUY" ? stopLoss < fillPrice : stopLoss > fillPrice;
-  const tpOk = action === "BUY" ? takeProfit > fillPrice : takeProfit < fillPrice;
-  if (!slOk || !tpOk) {
+  const exitPrice = paperExitQuote(dir, exec);
+  if (!validPaperOpenBracket(dir, stopLoss, takeProfit, fillPrice, exitPrice)) {
     return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
       executionId, decisionId, symbol, action, decision,
-      reason: `SL/TP geometry invalid for filled price ${fillPrice}: SL=${stopLoss} TP=${takeProfit}`,
+      reason: `SL/TP geometry invalid for fill ${fillPrice} and executable exit ${exitPrice}: SL=${stopLoss} TP=${takeProfit}`,
       warnings: eligibility.warnings, mdSnapshot: snapshot,
     });
   }
@@ -294,7 +293,7 @@ export async function executePaperFromDecision(
   const limits = await loadEffectiveLimits(acct.userId);
   const { sizing, instrument, riskEquity, valuePerUnitPerLot } = await sizePaperExecution({
     userId: acct.userId, accountId: acct.id, accountEquity: acct.equity, symbol,
-    fillPrice, stopLoss, quote: { bid: snapshot.bid, ask: snapshot.ask }, limits,
+    fillPrice, stopLoss, quote: exec, limits,
   });
   const positionSize = sizing.capped_position_size;
   log.info({ sizing, valuePerUnitPerLot, pricing: instrument.source, riskEquity }, "Build EE: position sizing computed");
