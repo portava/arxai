@@ -42,10 +42,10 @@ export function getMockPrice(symbol: string, atMs: number): number {
 }
 
 /**
- * The stop or target a simulator-priced order's mark crossed, which
- * markToMarket settles it at (the order's own level), else null.
+ * The protective level crossed by this mark, or null if both are still open.
+ * The simulator settles at the level. Market-priced orders use the executable quote.
  */
-export function simulatorExitLevel(
+export function crossedPaperLevel(
   o: { direction: string; stopLoss: number; takeProfit?: number | null },
   px: number,
 ): { level: number; hit: "SL" | "TP" } | null {

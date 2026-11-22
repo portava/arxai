@@ -148,7 +148,7 @@ export async function runPaperMonitor(opts?: {
     // stop/target hit is real even when the amount cannot be sized; then the
     // ledger's NOT NULL profit_loss holds 0 and the event says it was not sized.
     const committed = await settlePaperTrade({
-      order, status, exitPrice, pnl: r.amount ?? 0,
+      order, status, triggerLevel: hit === "SL" ? order.stopLoss : order.takeProfit, exitPrice, pnl: r.amount ?? 0,
       eventMessage: r.amount != null
         ? `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${r.amount.toFixed(2)}`
         : `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L not sized: ${r.unavailableReason}. The 0 stored for this order is a placeholder, not a result.`,

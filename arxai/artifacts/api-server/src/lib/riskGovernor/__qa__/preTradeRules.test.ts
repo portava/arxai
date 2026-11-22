@@ -548,3 +548,16 @@ test('paper Safety Core policy fails closed on unknown states and only permits e
     assert.match(paperEntryPolicyReason({ ...healthy, globalState })!, /PAPER_STATE_BLOCK/);
   for (const changed of [{ readable: false }, { present: false }, { engaged: true }]) assert.ok(paperEntryPolicyReason({ ...healthy, ...changed }));
 });
+
+test("PAPER modification validates brackets on the liquidation side of the spread", () => {
+  for (const side of ["BUY", "SELL"] as const) {
+    const buy = side === "BUY";
+    const intent = baseIntent({ venue: "PAPER", action: "MODIFY", side,
+      position: { entryPrice: buy ? 1.09 : 1.11, stopLoss: buy ? 1.08 : 1.12 },
+      stopLoss: buy ? 1.095 : 1.105, takeProfit: 1.10005 });
+    const result = evaluatePreTradeRisk(intent, baseCtx());
+    assert.equal(result.rules.find(r => r.rule === "invalid_price_quantity")?.outcome, "PASS");
+    const crossed = evaluatePreTradeRisk({ ...intent, stopLoss: 1.10005, takeProfit: null }, baseCtx());
+    assert.ok(crossed.blockedBy.includes("invalid_price_quantity"));
+  }
+});

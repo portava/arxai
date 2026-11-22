@@ -24,7 +24,7 @@
 // floating P&L the account stores, so it is never above the stored (booked)
 // figure either.
 
-import { getMockPrice, isMarketPricedPaperOrder, PAPER_SIMULATOR_PRICE_SOURCE, simulatorExitLevel } from "../tradeEngine/paperMark.js";
+import { getMockPrice, isMarketPricedPaperOrder, PAPER_SIMULATOR_PRICE_SOURCE, crossedPaperLevel } from "../tradeEngine/paperMark.js";
 import type { ResolvedContractSize } from "../mt5/contractSize.js";
 import { paperLedgerModelPnl, paperModelRealized, paperRiskShortfall, type PaperCloseFigures } from "./paperRiskCount.js";
 import { resolvePaperContract, sizePaperOrderPnl } from "./paperPnl.js";
@@ -77,7 +77,7 @@ function markOf(o: PaperOpenFigures, now: Date, quote: PaperMarkQuote | null): n
     return px != null && Number.isFinite(px) && px > 0 ? px : null;
   }
   const px = getMockPrice(o.symbol, now.getTime());
-  return simulatorExitLevel(o, px)?.level ?? px;
+  return crossedPaperLevel(o, px)?.level ?? px;
 }
 
 /** Value every open position at the lower of its sized and its ×100 figure (see the header). */

@@ -380,6 +380,8 @@ test("concurrent profitable stop fills settle the linked paper execution and ord
     symbol: SYMBOL, status: "PAPER_OPENED", action: "BUY",
   });
   const fill = { order: order!, status: "CLOSED_SL" as const, exitPrice: 103, pnl: 3, eventMessage: "QA trailing stop" };
+  const staleStop = await settlePaperOrder({ ...fill, triggerLevel: order!.stopLoss - 1 });
+  assert.equal(staleStop, false, "a replaced stop cannot settle an order");
   const results = await Promise.all([settlePaperOrder(fill), settlePaperOrder(fill)]);
   assert.deepEqual(results.sort(), [false, true]);
   assert.equal((await events(order!.id)).length, 1);

@@ -55,7 +55,11 @@ function paperRefused(res: import("express").Response, r: Extract<TradeResult, {
     case "PAPER_ACCOUNT_NOT_FOUND": return fail(res, 404, "Paper account not found");
     case "PAPER_ORDER_NOT_FOUND": return fail(res, 404, "Not found");
     case "PAPER_ORDER_NOT_OPEN": return fail(res, 409, "Order not open");
+    case "PAPER_ORDER_CHANGED": return fail(res, 409, "The paper order changed. Refresh it before editing its stop or target.");
+    case "PAPER_EXIT_ALREADY_REACHED": return fail(res, 409, "The paper position reached its existing stop or target and closed before the change.");
+    case "NO_VALID_PRICE_SOURCE": return fail(res, 503, "A current market quote is unavailable for this paper order.");
     case "INVALID_SLTP_GEOMETRY":
+      if (r.intent === "MODIFY") return fail(res, 400, "For a long, put the stop below the current bid and the target above it. For a short, put the stop above the current ask and the target below it.");
       return fail(res, 400, "Invalid SL/TP geometry for direction",
         r.detail?.entryPrice !== undefined ? { entryPrice: r.detail.entryPrice } : undefined);
     case "RISK_GOVERNOR_BLOCK":

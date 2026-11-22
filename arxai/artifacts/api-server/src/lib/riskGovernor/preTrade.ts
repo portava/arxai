@@ -814,8 +814,10 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   const sl = intent.stopLoss ?? null;
   const tp = intent.takeProfit ?? null;
   const q = ctx.quote;
+  const paperModification = intent.venue === "PAPER" && intent.action === "MODIFY";
+  const useAsk = paperModification ? intent.side === "SELL" : intent.side === "BUY";
   const quoteRef = q && intent.side
-    ? (intent.side === "BUY" ? q.ask : q.bid)
+    ? (useAsk ? q.ask : q.bid)
     : null;
   const validQuoteRef = quoteRef != null && Number.isFinite(quoteRef) && quoteRef > 0 ? quoteRef : null;
   const ref = intent.entryPrice != null && Number.isFinite(intent.entryPrice) && intent.entryPrice > 0

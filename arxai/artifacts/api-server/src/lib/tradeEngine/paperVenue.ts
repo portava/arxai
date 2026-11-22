@@ -37,7 +37,7 @@ import { appendAuditInTransaction, type AuditTransaction } from "../auditVault.j
 import { paperEntryPolicyReason } from "../safety/entryPolicy.js";
 import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import {
-  getMockPrice, isMarketPricedPaperOrder, MARKET_PRICED_SIMULATED_OPEN, simulatorExitLevel,
+  getMockPrice, isMarketPricedPaperOrder, MARKET_PRICED_SIMULATED_OPEN, crossedPaperLevel,
   paperExitQuote,
 } from "./paperMark.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
@@ -68,6 +68,7 @@ export type PaperRefusal =
   | { ok: false; reason: "PAPER_ACCOUNT_NOT_FOUND" }
   | { ok: false; reason: "PAPER_ORDER_NOT_FOUND" }
   | { ok: false; reason: "PAPER_ORDER_NOT_OPEN" }
+  | { ok: false; reason: "PAPER_ORDER_CHANGED" | "PAPER_EXIT_ALREADY_REACHED" }
   | { ok: false; reason: "INVALID_SLTP_GEOMETRY"; entryPrice?: number }
   | { ok: false; reason: "RISK_GOVERNOR_BLOCK"; primaryReason: string | null; blockedBy: string[]; auditEventId: number | null };
 
@@ -359,17 +360,18 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
     // uses Build DD market data). Mark-to-market must NOT auto-close them
     // with mock prices — refresh unrealized P&L only from a real quote.
     const eeOwned = isMarketPriced(o);
-    const exit = eeOwned ? null : simulatorExitLevel(o, px);
+    const exit = eeOwned ? null : crossedPaperLevel(o, px);
     const hit: "TP" | "SL" | null = exit?.hit ?? null;
     if (exit && hit) {
       const exitPx = exit.level;
       const r = await sized(o, exitPx);
       const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
-      await settlePaperOrder({
-        order: o, status, exitPrice: exitPx, pnl: r.amount ?? 0,
+      const settled = await settlePaperOrder({
+        order: o, status, triggerLevel: exit.level, exitPrice: exitPx, pnl: r.amount ?? 0,
         eventMessage: o.userId == null ? null
           : `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)} on the simulator's synthetic price (not a market quote), ${r.amount != null ? `P&L ${r.amount.toFixed(2)}` : notSizedText(r)}`,
       });
+      if (!settled) return null; // A concurrent close or bracket change invalidated this account snapshot.
       // (BB) Closed-loop auto-debrief on SL/TP close. Best-effort, idempotent.
       runAutoDebrief(o.id, { triggeredBy: "mark_to_market" })
         .catch(() => { /* non-fatal: never break mark-to-market */ });
@@ -524,6 +526,13 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   return { ok: true, order };
 }
 
+async function currentOrderQuote(order: PaperOrderRow): ReturnType<typeof currentQuote> {
+  if (isMarketPriced(order)) return currentQuote(order.symbol);
+  const at = new Date();
+  const price = getMockPrice(order.symbol, at.getTime());
+  return { ok: true, bid: price, ask: price, at, source: "paper_simulator_price" };
+}
+
 /** Move the stop and/or target of an open paper order (an omitted field keeps its value). */
 export async function modifyPaperOrder(a: {
   userId: number; orderId: number; stopLoss?: number | null; takeProfit?: number | null; caller: string;
@@ -536,13 +545,28 @@ export async function modifyPaperOrder(a: {
     takeProfit: a.takeProfit ?? cur.takeProfit,
     updatedAt: new Date(),
   };
-  const slOk = cur.direction === "BUY" ? next.stopLoss < cur.entryPrice   : next.stopLoss > cur.entryPrice;
-  const tpOk = cur.direction === "BUY" ? next.takeProfit > cur.entryPrice : next.takeProfit < cur.entryPrice;
-  if (!slOk || !tpOk) return { ok: false, reason: "INVALID_SLTP_GEOMETRY" };
-  // Position Guardian: a stop may be tightened freely, but widening it is
-  // checked against the trader's per-trade loss limit.
-  const nowMs = Date.now();
-  const marketPx = getMockPrice(cur.symbol, nowMs);
+  const quote = await currentOrderQuote(cur);
+  if (!quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
+  const exitPx = paperExitQuote(cur.direction, quote);
+  const crossed = crossedPaperLevel(cur, exitPx);
+  if (crossed) {
+    const fill = isMarketPriced(cur) ? exitPx : crossed.level;
+    const sized = await sizePaperOrderPnl(cur, fill);
+    const resultText = sized.amount != null ? `P&L ${sized.amount.toFixed(2)}` : notSizedText(sized);
+    const settled = await settlePaperOrder({
+      order: cur, status: crossed.hit === "SL" ? "CLOSED_SL" : "CLOSED_TP",
+      triggerLevel: crossed.level, exitPrice: fill, pnl: sized.amount ?? 0,
+      eventMessage: `${SIMULATED_TAG} ${crossed.hit} reached before bracket change at ${fill} (${quote.source}), ${resultText}`,
+    });
+    if (!settled) return { ok: false, reason: "PAPER_ORDER_CHANGED" };
+    await markToMarket(cur.paperAccountId);
+    runAutoDebrief(cur.id, { triggeredBy: "mark_to_market" }).catch(() => {});
+    return { ok: false, reason: "PAPER_EXIT_ALREADY_REACHED" };
+  }
+  const validBracket = cur.direction === "BUY"
+    ? next.stopLoss < exitPx && exitPx < next.takeProfit
+    : next.takeProfit < exitPx && exitPx < next.stopLoss;
+  if (!validBracket) return { ok: false, reason: "INVALID_SLTP_GEOMETRY" };
   const risk = await enforcePreTradeRisk({
     userId: a.userId, venue: "PAPER", origin: "manual", action: "MODIFY",
     symbol: cur.symbol, side: cur.direction as "BUY" | "SELL", lots: cur.lotSize,
@@ -550,17 +574,21 @@ export async function modifyPaperOrder(a: {
     position: { entryPrice: cur.entryPrice, stopLoss: cur.stopLoss },
   }, {
     paperAccountId: cur.paperAccountId,
-    facts: { quote: { bid: marketPx, ask: marketPx, at: new Date(nowMs), source: "paper_simulator_price" } },
+    facts: { quote },
     auditContext: { caller: a.caller, orderId: a.orderId },
   });
   if (!risk.allowed) return governorRefusal(risk);
   const updated = await db.transaction(async tx => {
     const [order] = await tx.update(paperOrdersTable).set(next)
-      .where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
+      .where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"),
+        eq(paperOrdersTable.stopLoss, cur.stopLoss), eq(paperOrdersTable.takeProfit, cur.takeProfit))).returning();
     if (order) await recordPaperOutcome(tx, order, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`, risk.auditEventId);
     return order;
   });
-  if (!updated) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
+  if (!updated) {
+    const latest = await ownPaperOrder(a.orderId, a.userId);
+    return { ok: false, reason: latest?.status === "OPEN" ? "PAPER_ORDER_CHANGED" : "PAPER_ORDER_NOT_OPEN" };
+  }
   await markToMarket(cur.paperAccountId);
   return { ok: true, order: await ownPaperOrder(a.orderId, a.userId) };
 }
@@ -570,19 +598,18 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
   const cur = await ownPaperOrder(a.orderId, a.userId);
   if (!cur) return { ok: false, reason: "PAPER_ORDER_NOT_FOUND" };
   if (cur.status !== "OPEN") return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
-  const realPriced = isMarketPriced(cur);
-  const quote = realPriced ? await currentQuote(cur.symbol) : null;
-  if (quote && !quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
-  const exitPx = quote?.ok ? paperExitQuote(cur.direction, quote) : getMockPrice(cur.symbol, Date.now());
-  const priceSource = quote?.ok ? quote.source : "paper_simulator_price";
+  const quote = await currentOrderQuote(cur);
+  if (!quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
+  const exitPx = paperExitQuote(cur.direction, quote);
+  const priceSource = quote.source;
   const risk = await enforcePreTradeRisk({
     userId: a.userId, venue: "PAPER", origin: "manual", action: "CLOSE",
     symbol: cur.symbol, side: cur.direction as "BUY" | "SELL", lots: cur.lotSize,
     intentRef: `paper_close:${a.orderId}`,
   }, {
     paperAccountId: cur.paperAccountId,
-    facts: { quote: { bid: exitPx, ask: exitPx, at: quote?.ok ? quote.at : new Date(), source: priceSource } },
-    auditContext: { caller: a.caller, orderId: a.orderId, priceSource, quoteAt: quote?.ok ? quote.at.toISOString() : null },
+    facts: { quote },
+    auditContext: { caller: a.caller, orderId: a.orderId, priceSource, quoteAt: isMarketPriced(cur) ? quote.at.toISOString() : null },
   });
   if (!risk.allowed) return governorRefusal(risk);
   const r = await sizePaperOrderPnl(cur, exitPx);
@@ -722,6 +749,7 @@ export async function closePaperFill(a: {
 export async function settlePaperOrder(a: {
   order: Pick<PaperOrderRow, "id" | "userId">;
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
+  triggerLevel?: number;
   exitPrice: number; pnl: number; eventMessage: string | null;
 }): Promise<boolean> {
   return db.transaction(async tx => {
@@ -729,6 +757,8 @@ export async function settlePaperOrder(a: {
       status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
       profitLoss: a.pnl, updatedAt: new Date(),
     }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"),
+      a.triggerLevel !== undefined && a.status === "CLOSED_SL" ? eq(paperOrdersTable.stopLoss, a.triggerLevel) : undefined,
+      a.triggerLevel !== undefined && a.status === "CLOSED_TP" ? eq(paperOrdersTable.takeProfit, a.triggerLevel) : undefined,
       a.order.userId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, a.order.userId))).returning();
     if (!order) return false;
     await recordPaperOutcome(tx, order, a.status, a.eventMessage);

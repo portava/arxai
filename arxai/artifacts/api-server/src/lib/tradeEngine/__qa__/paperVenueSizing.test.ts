@@ -60,10 +60,11 @@ const fakeDb = {
 };
 mock.module("@workspace/db", { namedExports: { ...realDb, db: fakeDb } });
 
+let quoteAvailable = true;
 let quote = { bid: 1.09, ask: 1.0902 };
 mock.module("../marketQuote.js", {
   namedExports: {
-    currentQuote: async () => ({ ok: true, ...quote, at: new Date(), source: "REAL:qa" }),
+    currentQuote: async () => quoteAvailable ? { ok: true, ...quote, at: new Date(), source: "REAL:qa" } : { ok: false, reasons: ["No quote"] },
   },
 });
 mock.module("../../marketData/marketDataService.js", {
@@ -78,7 +79,7 @@ mock.module("../../autoDebriefService.js", {
   namedExports: { runAutoDebrief: async () => ({ status: "skipped" }) },
 });
 
-const { markToMarket, closePaperOrder } = await import("../paperVenue.js");
+const { markToMarket, closePaperOrder, modifyPaperOrder } = await import("../paperVenue.js");
 const { runPaperMonitor, closePaperManually } = await import("../../paperExecution/paperExecutionMonitor.js");
 
 const ACCOUNT: Row = { id: 9, userId: 4, accountName: "Practice", startingBalance: 10_000, currentBalance: 10_000, equity: 10_000, marginUsed: 0, isActive: 1 };
@@ -102,7 +103,7 @@ const orderSet = () => sets.find((s) => s.table === "paper_orders")!.values;
 const lastEvent = () => inserts.filter((i) => i.table === "paper_trade_events").at(-1)!.values;
 
 beforeEach(() => {
-  counts.clear(); inserts.length = 0; sets.length = 0; quote = { bid: 1.09, ask: 1.0902 };
+  quoteAvailable = true; counts.clear(); inserts.length = 0; sets.length = 0; quote = { bid: 1.09, ask: 1.0902 };
   selectRows = () => [];
 });
 
@@ -184,4 +185,31 @@ test("a simulator SL hit in markToMarket books the contract-size amount", async 
   assert.equal(set["status"], "CLOSED_SL");
   const expected = Number(((1e9 - (1e9 + 1)) * 1 * 100_000).toFixed(2));
   assert.equal(set["profitLoss"], expected, "sized at the FX standard lot, not × 100");
+});
+
+test("market-priced paper stops can lock in a gain on either side", async () => {
+  for (const side of ["BUY", "SELL"]) {
+    const entryPrice = side === "BUY" ? 1.08 : 1.10;
+    const row = side === "BUY" ? eeOrder() : eeOrder({ direction: side, entryPrice, stopLoss: 1.11, takeProfit: 1.07 });
+    selectRows = table => table === "paper_orders" ? [row] : table === "paper_accounts" ? [ACCOUNT] : [];
+    const modify = (stopLoss: number) => modifyPaperOrder({ userId: 4, orderId: 71, stopLoss, caller: "QA" });
+    assert.equal((await modify(entryPrice)).ok, true);
+    const locked = side === "BUY" ? 1.085 : 1.095;
+    assert.equal((await modify(locked)).ok, true);
+    assert.ok(sets.some(s => s.table === "paper_orders" && s.values.stopLoss === locked));
+    const crossed = await modify((quote.bid + quote.ask) / 2);
+    assert.deepEqual(crossed, { ok: false, reason: "INVALID_SLTP_GEOMETRY" });
+  }
+});
+
+test("a paper bracket cannot be moved past an observed exit or without a market quote", async () => {
+  selectRows = table => table === "paper_orders" ? [eeOrder({stopLoss: quote.bid + 0.0001})] : [];
+  const request = { userId: 4, orderId: 71, stopLoss: 1.07, caller: "QA" };
+  assert.deepEqual(await modifyPaperOrder(request), { ok: false, reason: "PAPER_EXIT_ALREADY_REACHED" });
+  assert.equal(orderSet().status, "CLOSED_SL");
+  assert.equal(orderSet().exitPrice, quote.bid);
+  sets.length = 0;
+  quoteAvailable = false;
+  assert.deepEqual(await modifyPaperOrder(request), { ok: false, reason: "NO_VALID_PRICE_SOURCE" });
+  assert.equal(sets.length, 0);
 });
