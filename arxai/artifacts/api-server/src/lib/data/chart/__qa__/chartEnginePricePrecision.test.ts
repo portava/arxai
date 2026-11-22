@@ -15,6 +15,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { pickDominantTrendline } from "@workspace/domain/market";
 import type { NormalizedChartCandle } from "../candleNormalization.js";
 import { computeSetupLifecycle } from "../engines/setupLifecycle.js";
 import { computeDecisionReasoning } from "../engines/decisionReasoning.js";
@@ -184,4 +185,18 @@ test("an explicit precision wins over the symbol profile (chart truth result)", 
   const whole = all(detectTrendlines(candles, { priceDecimals: 0 }));
   assert.ok(whole.length > 0);
   for (const v of whole) assert.equal(decimalsIn(v), 0, `explicit 0 dp: ${whole.join(", ")}`);
+});
+
+test("pattern-change levels use the selected trendline when both support and resistance qualify", () => {
+  const bars = Array.from({ length: 60 }, (_, i) => {
+    const close = 100 - 0.12 * i + 0.1 * Math.max(0, i - 35) + Math.sin(i * 1.1);
+    return bar("X", i, close - 0.05, close + 0.2, close - 0.22, close);
+  });
+  const result = detectTrendlines(bars);
+  const dominant = pickDominantTrendline(result.trendlines);
+  assert.equal(result.trendlines[0]?.id, "horizontal_support");
+  assert.equal(dominant?.id, "horizontal_resistance");
+  assert.equal(result.patternChange.kind, "trend_to_range");
+  assert.equal(result.patternChange.confirmationLevel, dominant?.levels.confirmation);
+  assert.equal(result.patternChange.invalidationLevel, dominant?.levels.invalidation);
 });

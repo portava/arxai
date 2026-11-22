@@ -151,7 +151,7 @@ export function detectTrendlines(
 
   const dominant = pickDominantTrendline(trendlines);
   const trendlineChange = dominant ? buildTrendlineChange(dominant) : NONE_CHANGE;
-  const patternChange = buildPatternChange(ctx, trendlines, lowSwings, highSwings);
+  const patternChange = buildPatternChange(ctx, dominant, lowSwings, highSwings);
 
   return {
     trendlines,
@@ -480,11 +480,10 @@ function buildTrendlineChange(dominant: ActiveTrendline): TrendlineChange {
  */
 function buildPatternChange(
   ctx: EngineContext,
-  trendlines: ActiveTrendline[],
+  dominant: ActiveTrendline | null,
   lowSwings: Swing[],
   highSwings: Swing[],
 ): PatternChange {
-  const dominant = trendlines[0];
   if (!dominant) return NONE_PATTERN_CHANGE;
 
   const lowerHighs = isDescending(takeLast(highSwings, 2));
