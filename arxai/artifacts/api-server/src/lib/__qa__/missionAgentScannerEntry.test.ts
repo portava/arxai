@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { opportunityToEdgeInput, opportunityToProposal } from "../missionAgents.js";
+import { measureScannerEntryRoom } from "../scannerEntryRoom.js";
+import type { ChartLevel } from "../data/chart/engines/marketUnderstandingTypes.js";
 import type { ScannerOpportunity } from "../marketScanner.js";
 
 test("Profit Mission only publishes entry levels for a live, reviewed directional setup", () => {
@@ -35,5 +37,31 @@ test("Mission uses executable-side risk and the measured timing quality of this 
     assert.ok(Math.abs(p.riskPlan.expectedR! - 1.5) < 1e-8);
     assert.equal(opportunityToEdgeInput(opp, p).components.timingQuality, 25);
     assert.equal(opportunityToEdgeInput({ ...opp, timingContext: { ...opp.timingContext!, timeframe: "H1" } }, p).components.timingQuality, null);
+  }
+});
+
+test("Mission takes profit at the first defended level ahead of the entry", () => {
+  for (const buy of [true,false]) {
+    const side=buy ? "BUY" : "SELL";
+    const quote={ bid:99, ask:101 };
+    const stop=buy ? 98 : 102;
+    const nominal=buy ? 107 : 93;
+    const kind=buy ? "resistance" : "support";
+    const defended=buy ? 105 : 95;
+    const levels=[{kind,price:buy?104:96,personality:"invalidated"},{kind,price:defended,personality:"defended"},
+      {kind,price:buy?98:102,personality:"defended"}] as ChartLevel[];
+    const room=measureScannerEntryRoom(side, quote, stop, nominal, levels)!;
+    assert.equal(room.target,defended);
+    assert.equal(room.rewardToRisk,4/3);
+    const opp={timeframe:"M1",dataSource:"LIVE_FEED",selectable:true,tradeable:true,
+      recommendedAction:side,entry:100,bidAsk:quote,entryRoom:room,stopLoss:stop,takeProfit:nominal,
+      finalRead:{label:"TRADE_WATCH",analysisOnly:false}} as ScannerOpportunity;
+    const p=opportunityToProposal("TREND","p",opp);
+    assert.equal(p.riskPlan.takeProfit,defended);
+    assert.equal(p.riskPlan.expectedR,4/3);
+    assert.equal(p.riskPlan.stopLoss,stop);
+    assert.match(p.reason,/defended/);
+    assert.equal(measureScannerEntryRoom(side, undefined, stop, nominal, levels),undefined);
+    assert.equal(measureScannerEntryRoom(side, quote, stop, nominal, [])!.target,nominal);
   }
 });

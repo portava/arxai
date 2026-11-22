@@ -170,3 +170,13 @@ test("a closed pullback loses its entry when the current exit-side quote crosses
     assert.equal(computeFinalRead({ ...row, bidAsk: buy ? { bid: 101, ask: 102 } : { bid: 98, ask: 99 } }).label, "TRADE_WATCH");
   }
 });
+
+test("a confirmed Scanner entry with less than one risk unit of room quotes the pullback price", () => {
+  const row=mkOpp({recommendedAction:"BUY", chartConfirmed:true, stopLoss:97, takeProfit:106,
+    entryRoom:{entry:101,target:103,defendedLevel:103,rewardToRisk:.5,oneRiskEntry:100}});
+  const r=computeFinalRead(row);
+  assert.equal(r.label,"WAIT_FOR_CONFIRMATION");
+  assert.match(r.headline,/0.50R.*resistance at 103.*ask at or below 100/);
+  assert.equal(computeFinalRead({...row,entryRoom:{...row.entryRoom!,rewardToRisk:1}}).label,"TRADE_WATCH");
+  assert.notEqual(computeFinalRead({...row,chartConfirmed:false}).label,"TRADE_WATCH");
+});

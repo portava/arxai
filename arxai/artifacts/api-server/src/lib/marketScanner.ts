@@ -1,3 +1,4 @@
+import { measureScannerEntryRoom, type ScannerEntryRoom } from "./scannerEntryRoom.js";
 // Market Scanner + Opportunity Scorer + Session Plan + Decision Stream.
 //
 // SAFETY: Read-side market intelligence with advisory audit traces.
@@ -321,6 +322,7 @@ export interface ScannerOpportunity {
   rulesUnchecked?: string[];
   /** Observed two-sided quote from the same bound feed as the analysis candles. */
   bidAsk?: { bid: number; ask: number };
+  entryRoom?: ScannerEntryRoom;
   driftTrigger?: ReturnType<typeof driftPullbackTrigger>;
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
@@ -994,6 +996,17 @@ export function computeFinalRead(
     }
   }
 
+  const room = opp.entryRoom;
+  if (label === "TRADE_WATCH" && room && room.rewardToRisk < 1) {
+    label = "WAIT_FOR_CONFIRMATION";
+    const limit = room.defendedLevel === null ? "the target" : buy ? "defended resistance" : "defended support";
+    const instruction = room.rewardToRisk <= 0
+      ? `The live quote has reached a plan boundary. Recheck after a new ${opp.timeframe} setup forms.`
+      : `Only ${room.rewardToRisk.toFixed(2)}R to ${limit} at ${priceText(room.target)}. Recheck on a pullback to an ${buy ? "ask at or below" : "entry bid at or above"} ${priceText(room.oneRiskEntry)} while the stop at ${priceText(opp.stopLoss)} holds.`;
+    reasons.push(instruction);
+    confirmations.unshift(instruction);
+  }
+
   if (reasons.length === 0) {
     reasons.push("Technicals clean and no major news catalyst.");
   }
@@ -1012,7 +1025,7 @@ export function computeFinalRead(
     label === "AVOID_FOR_NOW" ? `Skip this setup. ${reasons.at(-1)}` :
     label === "WAIT_FOR_CONFIRMATION" ? (confirmations.length ? [...new Set(confirmations)].slice(0, 2).join(" ") : reasons[0] ?? "Waiting for the next verified market read.") :
     opp.selectable && opp.tradeable && (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && opp.entry > 0 && opp.stopLoss > 0 && opp.takeProfit > 0
-      ? `Review the ${opp.recommendedAction} setup on ${opp.symbol} ${opp.timeframe}. Reference entry${atLevel(opp.entry)}, stop${atLevel(opp.stopLoss)}, target${atLevel(opp.takeProfit)}.`
+      ? `Review the ${opp.recommendedAction} setup on ${opp.symbol} ${opp.timeframe}. Reference entry${atLevel(opp.entry)}, stop${atLevel(opp.stopLoss)}, target${atLevel(opp.takeProfit)}.${room ? ` Available room ${room.rewardToRisk.toFixed(2)}R${room.defendedLevel === null ? "" : ` to defended ${buy ? "resistance" : "support"} at ${priceText(room.defendedLevel)}`}.` : ""}`
       : "Watchlist candidate.";
 
   // Simulator-derived reads are analysis-only: the truth cap above already
@@ -2028,6 +2041,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       recommendedAction: displayAction,
       setupType: setupTypeFor(a, mayShowBias),
       bidAsk: routed?.bidAsk,
+      entryRoom: sufficiency.canShowTradeSetup && chartConfirmed
+        ? measureScannerEntryRoom(displayAction, routed?.bidAsk, a.stopLoss, a.takeProfit,
+          structureChart?.marketUnderstanding?.levels?.levels ?? [])
+        : undefined,
       driftTrigger: driftPullbackTrigger(routed?.regimeCandles ?? [], displayAction),
       score: displayConfidenceScore, confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,

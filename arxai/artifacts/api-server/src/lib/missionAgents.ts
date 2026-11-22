@@ -187,7 +187,8 @@ export function opportunityToProposal(
   const entry = direction === "BUY" ? opp.bidAsk?.ask ?? opp.entry : opp.bidAsk?.bid ?? opp.entry;
   const sign = direction === "BUY" ? 1 : -1;
   const risk = sign * (entry - opp.stopLoss);
-  const reward = sign * (opp.takeProfit - entry);
+  const target = opp.entryRoom?.target ?? opp.takeProfit;
+  const reward = sign * (target - entry);
   const expectedR = direction !== "NONE" && risk > 0 && reward > 0 && Number.isFinite(reward / risk)
     ? reward / risk : null;
   const warnings: string[] = [];
@@ -217,12 +218,16 @@ export function opportunityToProposal(
     },
     riskPlan: {
       stopLoss: direction !== "NONE" ? opp.stopLoss : null,
-      takeProfit: direction !== "NONE" ? opp.takeProfit : null,
+      takeProfit: direction !== "NONE" ? target : null,
       riskAmount: null,
       expectedR,
     },
     reason: liveAndSelectable
-      ? actionable ? opp.reasonForTrade || "Setup scouted from live feed." : waitReason
+      ? actionable
+        ? opp.entryRoom?.defendedLevel != null
+          ? `Take profit at defended ${direction === "BUY" ? "resistance" : "support"} at ${target}. Room from the executable entry is ${expectedR?.toFixed(2)}R.`
+          : opp.reasonForTrade || "Setup scouted from live feed."
+        : waitReason
       : `Awaiting a confirmed live feed for ${opp.symbol}.`,
     invalidationLevel: null,
     warnings,
@@ -233,6 +238,8 @@ export function opportunityToProposal(
       confidenceScore: opp.confidenceScore,
       riskRewardRatio: opp.riskRewardRatio,
       recommendedAction: opp.recommendedAction,
+      scannerTarget: opp.takeProfit,
+      defendedLevel: opp.entryRoom?.defendedLevel ?? null,
       finalRead: opp.finalRead?.label ?? null,
     },
     status: "proposed",
