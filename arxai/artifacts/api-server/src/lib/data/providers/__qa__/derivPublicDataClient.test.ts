@@ -327,3 +327,35 @@ test("public tick retains only observed, coherent bid and ask prices", () => {
   for (const sides of [{bid: 119}, {ask: 121}, {bid: 125, ask: 121}, {bid: NaN, ask: 121}])
     assert.deepEqual(read(sides), base);
 });
+
+test("a slightly early first quote retains its subscription and becomes visible only at the venue epoch", async t => {
+  const f = fixture({ reply: (socket, request) => {
+    if (!request.ticks) return false;
+    socket.respond(request, { tick: { symbol: request.ticks, epoch: epoch + 1, quote: 124, bid: 123, ask: 125 }, subscription: { id: "first" } });
+    return true;
+  } });
+  t.after(() => f.client.stop());
+  const seen: number[] = [];
+  f.client.onTick(tick => seen.push(tick.epoch));
+  f.setNow((epoch + 1) * 1000 - 80);
+  assert.equal(await f.client.subscribeTicks("R_75"), null);
+  assert.deepEqual(f.client.getSubscribedSymbols(), ["R_75"]);
+  f.setNow((epoch + 1) * 1000 - 1);
+  assert.equal(f.client.getCachedTick("R_75"), null);
+  assert.equal(f.client.hasRecentTick(), false);
+  assert.deepEqual(seen, []);
+  f.setNow((epoch + 1) * 1000);
+  assert.equal(f.client.getCachedTick("R_75")?.bid, 123);
+  assert.equal(f.client.getCachedTick("R_75")?.ask, 125);
+  assert.deepEqual(seen, [epoch + 1]);
+});
+
+test("forgetting a stream discards its pending quote", async t => {
+  const f = fixture();
+  t.after(() => f.client.stop());
+  await f.client.subscribeTicks("R_75");
+  f.sockets[0]!.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: epoch+1, quote: 250 }, subscription: { id: "sub-R_75" } }));
+  await f.client.unsubscribeTicks("R_75");
+  f.setNow((epoch+1)*1000);
+  assert.equal(f.client.getCachedTick("R_75"), null);
+});

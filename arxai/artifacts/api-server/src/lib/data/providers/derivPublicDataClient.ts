@@ -62,6 +62,10 @@ export function normalizePublicCandles(raw: unknown, now: number, granularity?: 
   return candles;
 }
 
+// Deriv stamps whole seconds. A tick can reach this host just before that
+// second starts. It can be staged, but cannot enter the chart or feed earlier.
+const TICK_CLOCK_LEAD_MS = 1000;
+
 interface Options {
   enabled?: () => boolean;
   now?: () => number;
@@ -87,6 +91,7 @@ export class DerivPublicDataClient {
   private opening: Promise<void> | null = null;
   private pending = new Map<number, Pending>();
   private ticks = new Map<string, DerivTick>();
+  private staged = new Map<string, { tick: DerivTick; timer: ReturnType<typeof setTimeout> }>();
   private listeners = new Set<DerivTickListener>();
   private desired = new Set<string>();
   private subscriptions = new Map<string, string>();
@@ -142,7 +147,12 @@ export class DerivPublicDataClient {
   getActiveSymbolsError() { return this.discoveryError; }
   hasSymbolHistory(symbol: string) { return this.isConnected() && this.historySymbols.has(symbol); }
   getLastCandleAt() { return this.lastCandle === null ? null : new Date(this.lastCandle * 1000).toISOString(); }
-  getCachedTickByDerivId(symbol: string) { return this.isConnected() && this.isSymbolAvailable(symbol) ? this.ticks.get(symbol) ?? null : null; }
+  getCachedTickByDerivId(symbol: string): DerivTick | null {
+    if (!this.isConnected() || !this.isSymbolAvailable(symbol)) return null;
+    this.releaseStaged(symbol);
+    const tick = this.ticks.get(symbol);
+    return tick && tick.epoch * 1000 <= this.now() ? tick : null;
+  }
   getCachedTick(symbol: string) { return this.getCachedTickByDerivId(symbol); }
   getLastTickAt() { const epoch = this.lastTickEpoch(); return epoch === null ? null : new Date(epoch * 1000).toISOString(); }
   getLastTickAgeMs() { const epoch = this.lastTickEpoch(); return epoch === null ? null : this.now() - epoch * 1000; }
@@ -168,6 +178,7 @@ export class DerivPublicDataClient {
         clearTimeout(timeout);
         this.connected = false; this.connectedAt = null; this.opening = null;
         this.disconnect = null; this.ws = null;
+        for (const symbol of this.staged.keys()) this.clearStaged(symbol);
         this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.subscriptions.clear();
         this.subscriptionPromises.clear(); this.candlePromises.clear(); this.candleCache.clear(); this.lastCandle = null; this.historySymbols.clear();
         if (this.pingTimer) clearInterval(this.pingTimer);
@@ -253,11 +264,38 @@ export class DerivPublicDataClient {
     // Ignore unsolicited, late-forgotten, previous-session and mismatched streams.
     if (typeof symbol === "string" && typeof sub === "string" && this.subscriptions.get(symbol) === sub && this.desired.has(symbol)) this.acceptTick(tick, symbol);
   }
+  private clearStaged(symbol: string) {
+    const pending = this.staged.get(symbol);
+    if (pending) clearTimeout(pending.timer);
+    this.staged.delete(symbol);
+  }
+  private releaseStaged(symbol: string) {
+    const pending = this.staged.get(symbol);
+    if (!pending || pending.tick.epoch * 1000 > this.now()) return;
+    this.clearStaged(symbol);
+    if (this.subscriptions.has(symbol) && this.desired.has(symbol) && this.isSymbolAvailable(symbol)) {
+      this.publishTick(pending.tick);
+    }
+  }
   private acceptTick(raw: unknown, symbol: string): DerivTick | null {
     if (!this.isSymbolAvailable(symbol)) return null;
-    const tick = normalizePublicTick(raw, symbol, this.now());
+    const now = this.now();
+    const tick = normalizePublicTick(raw, symbol, now + TICK_CLOCK_LEAD_MS);
+    this.releaseStaged(symbol);
+    if (!tick) return this.getCachedTick(symbol);
+    const delay = tick.epoch * 1000 - now;
+    if (delay <= 0) return this.publishTick(tick);
+    if (!this.staged.has(symbol)) {
+      const timer = setTimeout(() => this.releaseStaged(symbol), delay);
+      timer.unref?.();
+      this.staged.set(symbol, { tick, timer });
+    }
+    return this.getCachedTick(symbol);
+  }
+  private publishTick(tick: DerivTick): DerivTick | null {
+    const symbol = tick.symbol;
     const prior = this.ticks.get(symbol);
-    if (!tick || prior && (tick.epoch < prior.epoch || tick.epoch === prior.epoch && tick.quote !== prior.quote)) return prior ?? null;
+    if (prior && (tick.epoch < prior.epoch || tick.epoch === prior.epoch && tick.quote !== prior.quote)) return prior ?? null;
     if (prior?.epoch === tick.epoch) return prior;
     this.ticks.set(symbol, tick);
     for (const listener of this.listeners) { try { listener(tick); } catch { /* observers do not own transport */ } }
@@ -308,7 +346,7 @@ export class DerivPublicDataClient {
       const id = record(msg.subscription)?.id;
       if (typeof id !== "string" || !id) throw ERROR("DERIV_PUBLIC_INVALID_SUBSCRIPTION");
       if (version !== (this.intentVersions.get(symbol) ?? 0) || !this.desired.has(symbol)) { await this.request({ forget: id }); return null; }
-      if (!normalizePublicTick(msg.tick, symbol, this.now())) { await this.request({ forget: id }); throw ERROR("DERIV_PUBLIC_INVALID_TICK"); }
+      if (!normalizePublicTick(msg.tick, symbol, this.now() + TICK_CLOCK_LEAD_MS)) { await this.request({ forget: id }); throw ERROR("DERIV_PUBLIC_INVALID_TICK"); }
       this.subscriptions.set(symbol, id);
       return this.acceptTick(msg.tick, symbol);
     })();
@@ -318,7 +356,7 @@ export class DerivPublicDataClient {
   async unsubscribeTicks(symbol: string) {
     if (!this.known.some(s => s.derivId === symbol)) return { ok: false, forgot: false, reason: "DERIV_PUBLIC_UNKNOWN_SYMBOL" };
     this.intentVersions.set(symbol, (this.intentVersions.get(symbol) ?? 0) + 1);
-    this.desired.delete(symbol); this.ticks.delete(symbol);
+    this.clearStaged(symbol); this.desired.delete(symbol); this.ticks.delete(symbol);
     const id = this.subscriptions.get(symbol); this.subscriptions.delete(symbol);
     if (!id) return { ok: true, forgot: false, reason: "not_subscribed" };
     try { const result = await this.request({ forget: id }); return { ok: true, forgot: result.forget === 1 || result.forget === true }; }
