@@ -1,3 +1,4 @@
+import { PlanPayoff } from "@/components/PlanPayoff";
 import { TickingTime } from "@/components/ui/TickingTime";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -391,8 +392,8 @@ export function SelectedMarketPanel() {
                           <dd className="font-mono">{formatInstrumentPrice(l.stop, levelPrecision)}</dd></div>
                         <div className="flex justify-between"><dt className="text-txt-muted">Possible target</dt>
                           <dd className="font-mono">{formatInstrumentPrice(l.target, levelPrecision)}</dd></div>
-                        <div className="flex justify-between"><dt className="text-txt-muted">Risk : reward</dt>
-                          <dd className="font-mono">1 : {l.riskReward}</dd></div>
+                        <div className="flex justify-between"><dt className="text-txt-muted">Target / risk</dt>
+                          <dd><PlanPayoff entry={(l.entryLow + l.entryHigh) / 2} stop={l.stop} target={l.target} direction={ok.highlights.bias} zoneMidpoint /></dd></div>
                       </dl>
                     );
                   }

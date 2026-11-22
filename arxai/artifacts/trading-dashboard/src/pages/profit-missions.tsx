@@ -7,6 +7,7 @@
 // proposals are analysis artifacts; there is NO draft, approval-to-execute, or
 // order placement anywhere on this page. Every figure is a labelled estimate or
 // an honest empty state.
+import { PlanPayoff } from "@/components/PlanPayoff";
 import { useMemo, useState, type ReactElement, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -1638,8 +1639,8 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
           </div>
         </div>
         <div>
-          <span className="text-muted-foreground">Expected R</span>
-          <div>{draft.expectedR != null ? draft.expectedR.toFixed(2) : "—"}</div>
+          <span className="text-muted-foreground">Target / risk</span>
+          <PlanPayoff entry={draft.entryPrice} stop={draft.stopLoss} target={draft.takeProfit} direction={draft.direction} />
         </div>
       </div>
       {draft.reason && <p className="mt-2 text-xs text-muted-foreground">{draft.reason}</p>}

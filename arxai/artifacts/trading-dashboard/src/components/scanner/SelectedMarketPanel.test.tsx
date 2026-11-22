@@ -565,7 +565,9 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
     render(<SelectedMarketPanel />);
     expect(screen.getByTestId("badge-selected-bias").textContent).toBe("BUY");
-    expect(screen.getByTestId("selected-market-levels")).toBeTruthy();
+    const levels = screen.getByTestId("selected-market-levels");
+    expect(levels.textContent).toContain("2.03R");
+    expect(levels.textContent).toContain("33.0% before fees and slippage");
   });
 
   it("an unchecked calendar never reads as a quiet day", () => {
