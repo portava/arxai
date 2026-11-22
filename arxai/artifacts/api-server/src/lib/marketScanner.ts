@@ -647,6 +647,14 @@ export function computeFinalRead(
   const news = opp.newsContext ?? null;
   const reasons: string[] = [];
   const confirmations: string[] = [];
+  function noteChartContext(source: string) {
+    const noDirectionalSetup = opp.feedProvider === "deriv_public" && opp.dataSource === "LIVE_FEED" &&
+      opp.tradeable && opp.bidAsk && opp.recommendedAction !== "BUY" && opp.recommendedAction !== "SELL";
+    const reason = noDirectionalSetup
+      ? `Scanner has no BUY or SELL setup to confirm from this ${opp.timeframe} close.`
+      : `${source} is context only — the feed is not live-confirmed.`;
+    if (!reasons.includes(reason)) reasons.push(reason);
+  }
   const priceText = (level?: number) => level != null && Number.isFinite(level) && level > 0
     ? level.toLocaleString("en-US", { maximumSignificantDigits: 9 }) : "";
   const atLevel = (level?: number) => priceText(level) ? ` at ${priceText(level)}` : "";
@@ -875,7 +883,7 @@ export function computeFinalRead(
     } else if (pat.contextOnly) {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
-      reasons.push("Chart pattern is context only — the feed is not live-confirmed.");
+      noteChartContext("Chart pattern");
     } else if (pat.labelHint === "mixed_conditional") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       reasons.push("Chart pattern conflicts with the measured trend on this timeframe — treat as conditional.");
@@ -926,7 +934,7 @@ export function computeFinalRead(
     } else if (tl.contextOnly || tl.labelHint === "context_only") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
-      reasons.push("Trendline is context only — the feed is not live-confirmed.");
+      noteChartContext("Trendline");
     } else if (tl.labelHint === "trend_changed") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";

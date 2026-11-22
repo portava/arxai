@@ -178,3 +178,14 @@ test("a pattern cannot lift a NO_TRADE read (e.g. unselectable/untradeable) upwa
   assert.equal(r.confidence, "LOW");
   assert.notEqual(r.label, "TRADE_WATCH");
 });
+
+test("a neutral setup on a quoted public feed reports the missing direction", () => {
+  const row = opp({ ...READABLE, timeframe: "M1", recommendedAction: "WAIT", chartConfirmed: false,
+    feedProvider: "deriv_public", bidAsk: { bid: 1.1, ask: 1.1002 },
+    patternImpact: impact({ labelHint: "context_only", contextOnly: true }) });
+  const read = computeFinalRead(row);
+  assert.ok(read.reasons.includes("Scanner has no BUY or SELL setup to confirm from this M1 close."));
+  assert.ok(!read.reasons.some(r => r.includes("feed is not live-confirmed")));
+  assert.notEqual(read.label, "TRADE_WATCH");
+  assert.ok(computeFinalRead({ ...row, bidAsk: undefined }).reasons.some(r => r.includes("context only")));
+});
