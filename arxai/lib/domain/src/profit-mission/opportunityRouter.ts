@@ -164,3 +164,14 @@ export function routeOpportunities(
     bestAlternativeForgone: round1(Math.max(0, secondScore)),
   };
 }
+
+/** Describe the actual Scanner choices that reached Mission's final review. */
+export function describeMissionSelection(result: OpportunityQueue): string {
+  if (!result.best) return "No setup passed both risk review and the Mission edge threshold.";
+  const { direction, symbol, timeframe } = result.best.candidate;
+  const setup = `${direction} ${symbol} (${timeframe})`;
+  const count = result.queue.filter(row => row.actionable).length;
+  return count === 1
+    ? `Mission accepted ${setup}, the only eligible Scanner setup in its queue.`
+    : `Mission selected ${setup} from ${count} eligible Scanner setups in its queue.`;
+}

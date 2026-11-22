@@ -31,6 +31,7 @@ import {
   isActionableTier,
   rewardToRiskScore,
   routeOpportunities,
+  describeMissionSelection,
   resolveDraftAction,
   isDraftExpired,
   resolveEffectiveDraftStatus,
@@ -152,6 +153,19 @@ function candidate(id: string, edgeValue: number, opts: Partial<RouterCandidate>
     ...opts,
   };
 }
+
+test("Mission explains when Scanner supplied its only eligible choice", () => {
+  const context = { remainingProfit: 300, requiredDailyProfit: 43 };
+  const weak = candidate("weak", 40);
+  const best = candidate("best", 90, { direction: "SELL", symbol: "V75", timeframe: "M1" });
+  const other = candidate("other", 65);
+
+  assert.match(describeMissionSelection(routeOpportunities([weak], context)), /No setup passed/);
+  assert.equal(describeMissionSelection(routeOpportunities([weak, best], context)),
+    "Mission accepted SELL V75 (M1), the only eligible Scanner setup in its queue.");
+  assert.equal(describeMissionSelection(routeOpportunities([weak, other, best], context)),
+    "Mission selected SELL V75 (M1) from 2 eligible Scanner setups in its queue.");
+});
 
 test("router ranks the strongest actionable best — never the first weak one (#20)", () => {
   // Order is intentionally weak-first; the router must still surface the A setup.

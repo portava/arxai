@@ -39,6 +39,7 @@ import {
   computeEdgeScore,
   rewardToRiskScore,
   routeOpportunities,
+  describeMissionSelection,
   computeMissionImpact,
   computeMissionMath,
   type AgentProposal,
@@ -470,8 +471,7 @@ export async function runMissionScan(args: {
   let missionImpact: MissionImpact | null = null;
   const selectedId = queue.best?.candidate.proposalId ?? null;
   const chosen = reviewed.find(p => p.proposalId === selectedId);
-  const judgeReason = chosen ? "Highest-ranked eligible setup after timing, reward-to-risk and risk review."
-    : "No setup passed both risk review and the Mission edge threshold.";
+  const judgeReason = describeMissionSelection(queue);
   if (chosen) {
     chosen.status = "selected";
     chosen.judgeDecision = "best";
