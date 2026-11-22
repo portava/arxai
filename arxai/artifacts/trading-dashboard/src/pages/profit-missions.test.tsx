@@ -140,7 +140,10 @@ describe("Profit Mission planner (Phase 1 two-step)", () => {
     expect(screen.getByTestId("alert-planning-projection").textContent).toMatch(
       /planning projections based on your inputs, not backtested/i,
     );
-    expect(screen.getByTestId("text-probability-caption").textContent).toMatch(/29% of the requested profit to starting capital/i);
+    const targetShare = screen.getByTestId("metric-target-hit").textContent;
+    expect(screen.getByTestId("text-probability-caption").textContent).toContain(
+      `Partial goal adds ${targetShare} of the requested profit to starting capital.`,
+    );
 
     // With no historical sample, scenario labels must read as planning
     // projections — never the vague "(est.)" historical-estimate wording.
