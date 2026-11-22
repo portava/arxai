@@ -100,6 +100,7 @@ export async function runPaperMonitor(opts?: {
     if (!forced && !isMarketPricedPaperOrder(order)) continue;
     summary.scanned++;
     let currentPrice: number;
+    let triggerObservedAt: Date | undefined;
     let mdSource = "FALLBACK";
     let mdQuality = "GOOD";
     try {
@@ -114,6 +115,12 @@ export async function runPaperMonitor(opts?: {
           summary.warnings.push(`order=${order.id}: no current execution price (${q.reasons.join("; ").slice(0, 160)})`);
           continue;
         }
+        if (q.at < order.openedAt || q.at < order.updatedAt) {
+          summary.stillOpen++;
+          summary.warnings.push(`order=${order.id}: awaiting a quote observed since the current bracket took effect`);
+          continue;
+        }
+        triggerObservedAt = q.at;
         currentPrice = paperExitQuote(order.direction, q);
         mdSource = q.source;
         mdQuality = "CURRENT";
@@ -148,7 +155,7 @@ export async function runPaperMonitor(opts?: {
     // stop/target hit is real even when the amount cannot be sized; then the
     // ledger's NOT NULL profit_loss holds 0 and the event says it was not sized.
     const committed = await settlePaperTrade({
-      order, status, triggerLevel: hit === "SL" ? order.stopLoss : order.takeProfit, exitPrice, pnl: r.amount ?? 0,
+      order, status, triggerObservedAt, triggerLevel: hit === "SL" ? order.stopLoss : order.takeProfit, exitPrice, pnl: r.amount ?? 0,
       eventMessage: r.amount != null
         ? `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${r.amount.toFixed(2)}`
         : `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L not sized: ${r.unavailableReason}. The 0 stored for this order is a placeholder, not a result.`,

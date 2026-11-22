@@ -12,12 +12,13 @@ mock.method(database.pool, "query", () => { throw new Error("Unexpected database
 mock.method(database.pool, "connect", () => { throw new Error("Unexpected database access"); });
 
 type Order = {
-  id: number; userId: number | null; decisionId: number | null; symbol: string; direction: string;
+  openedAt: Date; updatedAt: Date; id: number; userId: number | null; decisionId: number | null; symbol: string; direction: string;
   strategyId: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string;
 };
 let orders: Order[] = [];
 let specs: Array<{ contractSize: number | null; profitCurrency: string | null }> = [];
-const settled: Array<{ pnl: number; eventMessage: string }> = [];
+const settled: Array<{ pnl: number; eventMessage: string; triggerObservedAt?: Date }> = [];
+let observedAt = new Date();
 
 function rows<T>(value: T[]) {
   const p = Promise.resolve(value) as Promise<T[]> & { limit: () => Promise<T[]> };
@@ -37,7 +38,7 @@ let bid = 1.09, ask = 1.091, accepted = true, debriefs = 0, quoteReads = 0;
 mock.module("../../tradeEngine/marketQuote.js", {
   namedExports: { currentQuote: async () => {
     quoteReads++;
-    return { ok: true, bid, ask, source: "fixture", at: new Date() };
+    return { ok: true, bid, ask, source: "fixture", at: observedAt };
   } },
 });
 mock.module("../../autoDebriefService.js", {
@@ -54,12 +55,12 @@ const { runPaperMonitor } = await import("../paperExecutionMonitor.js");
 
 function order(over: Partial<Order>): Order {
   return {
-    id: 1, userId: 7, decisionId: null, symbol: "EURUSD", direction: "BUY",
+    openedAt: new Date(0), updatedAt: new Date(0), id: 1, userId: 7, decisionId: null, symbol: "EURUSD", direction: "BUY",
     strategyId: "build_ee_paper_execution", lotSize: 1, entryPrice: 1.085, stopLoss: 1.08, takeProfit: 1.1, status: "OPEN", ...over,
   };
 }
 
-beforeEach(() => { orders = []; specs = []; settled.length = 0; accepted = true; debriefs = 0; quoteReads = 0; });
+beforeEach(() => { observedAt = new Date(); orders = []; specs = []; settled.length = 0; accepted = true; debriefs = 0; quoteReads = 0; });
 
 test("EURUSD 1.00 lot, +100 pips reads 1,000 unrealized, not 1.00", async () => {
   orders = [order({})];
@@ -121,6 +122,19 @@ test("gapped stops use bid for a long and ask for a short", async () => {
   const summary = await runPaperMonitor();
   assert.deepEqual(summary.closures.map(c => c.exitPrice), [bid, ask]);
   assert.deepEqual(summary.closures.map(c => c.hit), ["SL", "SL"]);
+});
+
+test("the market monitor waits for a crossing observed on the current bracket", async () => {
+  const revisedAt = new Date(observedAt.getTime() + 1);
+  orders = [order({ updatedAt: revisedAt })];
+  bid = 1.079; ask = 1.080;
+  const before = await runPaperMonitor();
+  assert.equal(before.stillOpen, 1);
+  assert.equal(settled.length, 0);
+  assert.match(before.warnings[0]!, /current bracket/);
+  observedAt = revisedAt;
+  assert.equal((await runPaperMonitor()).closed, 1);
+  assert.equal(settled[0]?.triggerObservedAt, observedAt);
 });
 
 test("a concurrent settlement gets just one debrief and closure report", async () => {

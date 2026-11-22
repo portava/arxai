@@ -88,7 +88,7 @@ function eeOrder(over: Row = {}): Row {
     id: 71, userId: 4, paperAccountId: 9, decisionId: null, symbol: "EURUSD", direction: "BUY",
     orderType: "MARKET", lotSize: 1, entryPrice: 1.08, stopLoss: 1.07, takeProfit: 1.1,
     status: "OPEN", strategyId: "build_ee_paper_execution", tradePlanId: null, clientRequestKey: null,
-    openedAt: new Date(), closedAt: null, exitPrice: null, profitLoss: 0, ...over,
+    openedAt: new Date(0), updatedAt: new Date(0), closedAt: null, exitPrice: null, profitLoss: 0, ...over,
   };
 }
 /** paper_orders reads: markToMarket reads open orders first, then the whole account. */
@@ -211,6 +211,14 @@ test("a paper bracket cannot be moved past an observed exit or without a market 
   sets.length = 0;
   quoteAvailable = false;
   assert.deepEqual(await modifyPaperOrder(request), { ok: false, reason: "NO_VALID_PRICE_SOURCE" });
+  assert.equal(sets.length, 0);
+});
+
+test("editing a bracket waits for a quote observed after the last edit", async () => {
+  const row = eeOrder({ stopLoss: quote.bid + 0.0001, updatedAt: new Date(Date.now() + 30_000) });
+  selectRows = table => table === "paper_orders" ? [row] : [];
+  assert.deepEqual(await modifyPaperOrder({ userId: 4, orderId: 71, stopLoss: 1.07, caller: "QA" }),
+    { ok: false, reason: "NO_VALID_PRICE_SOURCE" });
   assert.equal(sets.length, 0);
 });
 

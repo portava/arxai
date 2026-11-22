@@ -382,7 +382,16 @@ test("concurrent profitable stop fills settle the linked paper execution and ord
   const fill = { order: order!, status: "CLOSED_SL" as const, exitPrice: 103, pnl: 3, eventMessage: "QA trailing stop" };
   const staleStop = await settlePaperOrder({ ...fill, triggerLevel: order!.stopLoss - 1 });
   assert.equal(staleStop, false, "a replaced stop cannot settle an order");
-  const results = await Promise.all([settlePaperOrder(fill), settlePaperOrder(fill)]);
+  const beforeOpen = new Date(order!.openedAt.getTime() - 1000);
+  assert.equal(await settlePaperOrder({ ...fill, triggerLevel: order!.stopLoss, triggerObservedAt: beforeOpen }), false,
+    "a prior quote cannot hit a newly opened position");
+  const revisedAt = new Date(order!.openedAt.getTime() + 20_000);
+  await db.update(paperOrdersTable).set({ updatedAt: revisedAt }).where(eq(paperOrdersTable.id, order!.id));
+  const activeFill = { ...fill, triggerLevel: order!.stopLoss, triggerObservedAt: revisedAt };
+  assert.equal(await settlePaperOrder({ ...activeFill, triggerObservedAt: new Date(revisedAt.getTime() - 1) }), false,
+    "an unchanged stop value cannot revive a quote from before this bracket revision");
+  assert.equal((await events(order!.id)).length, 0);
+  const results = await Promise.all([settlePaperOrder(activeFill), settlePaperOrder(activeFill)]);
   assert.deepEqual(results.sort(), [false, true]);
   assert.equal((await events(order!.id)).length, 1);
   const [execution] = await db.select().from(paperExecutionsTable).where(eq(paperExecutionsTable.decisionId, decisionId));

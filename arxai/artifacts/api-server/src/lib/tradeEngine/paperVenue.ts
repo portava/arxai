@@ -32,7 +32,7 @@
 import {
   db, paperAccountsTable, paperOrdersTable, paperExecutionsTable, paperTradeEventsTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, sql } from "drizzle-orm";
 import { appendAuditInTransaction, type AuditTransaction } from "../auditVault.js";
 import { paperEntryPolicyReason } from "../safety/entryPolicy.js";
 import { readPaperEntryPosture } from "../safety/platformSwitches.js";
@@ -550,10 +550,11 @@ export async function modifyPaperOrder(a: {
   const next = {
     stopLoss: a.stopLoss ?? cur.stopLoss,
     takeProfit: a.takeProfit ?? cur.takeProfit,
-    updatedAt: new Date(),
   };
   const quote = await currentOrderQuote(cur);
-  if (!quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
+  if (!quote.ok || (isMarketPriced(cur) && (quote.at < cur.openedAt || quote.at < cur.updatedAt))) {
+    return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
+  }
   const exitPx = paperExitQuote(cur.direction, quote);
   const crossed = crossedPaperLevel(cur, exitPx);
   if (crossed) {
@@ -562,7 +563,7 @@ export async function modifyPaperOrder(a: {
     const resultText = sized.amount != null ? `P&L ${sized.amount.toFixed(2)}` : notSizedText(sized);
     const settled = await settlePaperOrder({
       order: cur, status: crossed.hit === "SL" ? "CLOSED_SL" : "CLOSED_TP",
-      triggerLevel: crossed.level, exitPrice: fill, pnl: sized.amount ?? 0,
+      triggerLevel: crossed.level, triggerObservedAt: isMarketPriced(cur) ? quote.at : undefined, exitPrice: fill, pnl: sized.amount ?? 0,
       eventMessage: `${SIMULATED_TAG} ${crossed.hit} reached before bracket change at ${fill} (${quote.source}), ${resultText}`,
     });
     if (!settled) return { ok: false, reason: "PAPER_ORDER_CHANGED" };
@@ -586,7 +587,7 @@ export async function modifyPaperOrder(a: {
   });
   if (!risk.allowed) return governorRefusal(risk);
   const updated = await db.transaction(async tx => {
-    const [order] = await tx.update(paperOrdersTable).set(next)
+    const [order] = await tx.update(paperOrdersTable).set({ ...next, updatedAt: sql`clock_timestamp() AT TIME ZONE 'UTC'` })
       .where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"),
         eq(paperOrdersTable.stopLoss, cur.stopLoss), eq(paperOrdersTable.takeProfit, cur.takeProfit))).returning();
     if (order) await recordPaperOutcome(tx, order, "UPDATED", `${SIMULATED_TAG} SL→${next.stopLoss} TP→${next.takeProfit}`, risk.auditEventId);
@@ -758,6 +759,8 @@ export async function settlePaperOrder(a: {
   order: Pick<PaperOrderRow, "id" | "userId">;
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
   triggerLevel?: number;
+  /** Source time of the executable market quote that crossed the bracket. */
+  triggerObservedAt?: Date;
   exitPrice: number; pnl: number; eventMessage: string | null;
 }): Promise<boolean> {
   return db.transaction(async tx => {
@@ -765,6 +768,8 @@ export async function settlePaperOrder(a: {
       status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
       profitLoss: a.pnl, updatedAt: new Date(),
     }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"),
+      a.triggerObservedAt ? lte(paperOrdersTable.openedAt, a.triggerObservedAt) : undefined,
+      a.triggerObservedAt ? lte(paperOrdersTable.updatedAt, a.triggerObservedAt) : undefined,
       a.triggerLevel !== undefined && a.status === "CLOSED_SL" ? eq(paperOrdersTable.stopLoss, a.triggerLevel) : undefined,
       a.triggerLevel !== undefined && a.status === "CLOSED_TP" ? eq(paperOrdersTable.takeProfit, a.triggerLevel) : undefined,
       a.order.userId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, a.order.userId))).returning();
