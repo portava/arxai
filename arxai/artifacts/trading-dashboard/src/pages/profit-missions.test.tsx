@@ -140,15 +140,15 @@ describe("Profit Mission planner (Phase 1 two-step)", () => {
     expect(screen.getByTestId("alert-planning-projection").textContent).toMatch(
       /planning projections based on your inputs, not backtested/i,
     );
-    expect(screen.getByTestId("text-probability-caption").textContent).toMatch(/not backtested/i);
+    expect(screen.getByTestId("text-probability-caption").textContent).toMatch(/29% of the requested profit to starting capital/i);
 
     // With no historical sample, scenario labels must read as planning
     // projections — never the vague "(est.)" historical-estimate wording.
     const probabilityCard = screen.getByTestId("card-probability");
     expect(probabilityCard.textContent).not.toMatch(/\(est\.\)/);
-    expect(probabilityCard.textContent).toMatch(/best \(planning projection\)/i);
-    expect(probabilityCard.textContent).toMatch(/expected \(planning projection\)/i);
-    expect(probabilityCard.textContent).toMatch(/worst \(planning projection\)/i);
+    expect(probabilityCard.textContent).toMatch(/at target \(planning projection\)/i);
+    expect(probabilityCard.textContent).toMatch(/partial goal \(planning projection\)/i);
+    expect(probabilityCard.textContent).toMatch(/drawdown scenario \(planning projection\)/i);
 
     // The primary action is a labelled draft — never an execution affordance.
     expect(screen.getByTestId("button-create-mission").textContent).toMatch(/save unrealistic draft/i);

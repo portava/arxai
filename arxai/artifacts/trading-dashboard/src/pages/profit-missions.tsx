@@ -685,9 +685,9 @@ function ProbabilityPanel({ p }: { p: MissionProbabilityScore }) {
           <Metric label={`Falls short${suffix}`} value={pct(p.failureProbability, 0)} />
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Scenario label="Best" v={p.projections.best} projectionOnly={projectionOnly} />
-          <Scenario label="Expected" v={p.projections.expected} projectionOnly={projectionOnly} />
-          <Scenario label="Worst" v={p.projections.worst} projectionOnly={projectionOnly} />
+          <Scenario label="At target" v={p.projections.best} projectionOnly={projectionOnly} />
+          <Scenario label="Partial goal" v={p.projections.expected} projectionOnly={projectionOnly} />
+          <Scenario label="Drawdown scenario" v={p.projections.worst} projectionOnly={projectionOnly} />
         </div>
         {p.sampleSizeWarnings.length > 0 && (
           <ul className="space-y-1 text-xs text-muted-foreground" data-testid="list-sample-warnings">
@@ -697,7 +697,7 @@ function ProbabilityPanel({ p }: { p: MissionProbabilityScore }) {
           </ul>
         )}
         <p className="text-xs text-muted-foreground" data-testid="text-probability-caption">
-          Projected values · Planning-only · Not backtested · Not a promise of profit.
+          Partial goal adds {pct(p.targetHitProbability, 0)} of the requested profit to starting capital. The drawdown scenario uses the selected risk profile.
         </p>
         <p className="text-xs text-muted-foreground">{p.disclaimer}</p>
       </CardContent>
