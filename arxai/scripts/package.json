@@ -243,6 +243,7 @@
     "test:validation-real-data": "tsx ./src/realDataValidationTest.ts",
     "test:validation-intraday": "tsx ./src/intradayValidationTest.ts",
     "test:validation-evidence-db": "tsx ./src/validationEvidenceDbTest.ts",
+    "research:first-break-frequency": "tsx ./src/research/firstBreakFrequencyResearch.ts",
     "research:real-data-validation": "tsx ./src/research/runRealDataValidation.ts",
     "research:fetch-intraday-fixture": "tsx ./src/research/fetchIntradayHistoryFixture.ts",
     "research:fetch-real-history-fixture": "tsx ./src/research/fetchRealHistoryFixture.ts",
