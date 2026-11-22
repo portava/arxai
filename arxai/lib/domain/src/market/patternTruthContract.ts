@@ -106,6 +106,8 @@ export interface DetectedPattern {
   quality: PatternQuality;
   levels: PatternLevels;
   keyPoints: DetectedPatternKeyPoint[];
+  /** For breakout/retest patterns, the first subsequent touch and its directional price threshold. */
+  retest?: { touched: boolean; touchThreshold: number };
   /** Measurable conditions that were satisfied (for explanation + audit). */
   rationale: string[];
   /** Known ways this pattern fails (surfaced as honest warnings). */

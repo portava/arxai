@@ -189,3 +189,19 @@ test("a neutral setup on a quoted public feed reports the missing direction", ()
   assert.notEqual(read.label, "TRADE_WATCH");
   assert.ok(computeFinalRead({ ...row, bidAsk: undefined }).reasons.some(r => r.includes("context only")));
 });
+
+test("a broken level calls for the missing retest or hold on each side", () => {
+  for (const bias of ["bullish", "bearish"] as const) {
+    const bullish = bias === "bullish";
+    const retest = { touched: false, touchThreshold: bullish ? 101.25 : 100.75 };
+    const setup = { name: "Break and retest", confirmed: false, bias, invalidation: bullish ? 100 : 102, retest };
+    const row = opp({ ...READABLE, timeframe: "M1", recommendedAction: bullish ? "BUY" : "SELL",
+      patternImpact: impact({ labelHint: "forming_setup" }), patternTrigger: setup, patternConfirmationLevel: 101 });
+    const waiting = computeFinalRead(row);
+    assert.equal(waiting.label, "WAIT_FOR_CONFIRMATION");
+    assert.match(waiting.headline, bullish ? /already broke 101.*low at or below 101.25.*close above 101/ : /already broke 101.*high at or above 100.75.*close below 101/);
+    const hold = computeFinalRead({ ...row, patternTrigger: { ...setup, retest: { ...retest, touched: true } } });
+    assert.equal(hold.label, waiting.label);
+    assert.match(hold.headline, bullish ? /101 was retested.*close back above 101/ : /101 was retested.*close back below 101/);
+  }
+});

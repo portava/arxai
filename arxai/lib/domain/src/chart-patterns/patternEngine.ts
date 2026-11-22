@@ -732,15 +732,19 @@ function breakoutRetestFor(args: {
   const buffer = 0.3 * atrVal;
 
   // After the break, did price pull back to RETEST the level (within ~0.5 ATR)?
-  let retested = false;
+  let retestIndex: number | null = null;
   for (let i = breakIdx + 1; i < closed.length; i++) {
     const c = closed[i]!;
     const touchedLevel = breakAbove
       ? atMost(c.low - level, 0.5 * atrVal)
       : atMost(level - c.high, 0.5 * atrVal);
-    if (touchedLevel) retested = true;
+    if (touchedLevel) {
+      retestIndex = i;
+      break;
+    }
   }
 
+  const retested = retestIndex !== null;
   const holding = breakAbove ? last.close > level : last.close < level;
   const failed = breakAbove ? !atMost(level - last.close, buffer) : !atMost(last.close - level, buffer);
 
@@ -772,9 +776,14 @@ function breakoutRetestFor(args: {
     confidence: clamp(score),
     quality: qualityFromScore(score),
     levels: { confirmation, invalidation, targets: [target] },
+    retest: { touched: retested, touchThreshold: r(level + (breakAbove ? 0.5 : -0.5) * atrVal, decimals) },
     keyPoints: [
       { index: breakIdx, price: confirmation, role: "broken_level" },
-      { index: closed.length - 1, price: r(last.close, decimals), role: "retest" },
+      ...(retestIndex === null ? [] : [{
+        index: retestIndex,
+        price: r(breakAbove ? closed[retestIndex]!.low : closed[retestIndex]!.high, decimals),
+        role: "retest",
+      }]),
     ],
     rationale: [
       `Tested ${breakAbove ? "resistance" : "support"} (${touches} touches) broke and ${

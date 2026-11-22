@@ -69,6 +69,7 @@ import {
   type MarketDataSufficiencyVerdict,
   type PatternScannerImpact,
   type PatternChange,
+  type DetectedPattern,
   type TrendlineScannerImpact,
 } from "@workspace/domain/market";
 
@@ -392,7 +393,7 @@ export interface ScannerOpportunity {
    */
   patternImpact?: PatternScannerImpact;
   patternConfirmationLevel?: number;
-  patternTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null };
+  patternTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null; retest?: DetectedPattern["retest"] };
   /**
    * TRENDLINE TRUTH (Task #649) — display-only CHILD input. The folded
    * downgrade/within-cap hints from `resolveTrendlineTruth`. When present,
@@ -900,7 +901,16 @@ export function computeFinalRead(
       } else if (level && setup && setup.bias !== "neutral") {
         const side = setup.bias === "bullish" ? "above" : "below";
         const invalid = atLevel(setup.invalidation ?? undefined);
-        confirmations.push(`Watch ${setup.name} for a ${opp.timeframe} close ${side} ${level}.${invalid ? ` Invalidation${invalid}.` : ""}`);
+        const touch = priceText(setup.retest?.touchThreshold);
+        const invalidation = invalid ? ` Invalidation${invalid}.` : "";
+        if (setup.retest?.touched) {
+          confirmations.push(`${level} was retested. Watch for a ${opp.timeframe} close back ${side} ${level}.${invalidation}`);
+        } else if (setup.retest && touch) {
+          const test = setup.bias === "bullish" ? `a low at or below ${touch}` : `a high at or above ${touch}`;
+          confirmations.push(`Price already broke ${level}. Watch for ${test} on the retest, then a ${opp.timeframe} close ${side} ${level}.${invalidation}`);
+        } else {
+          confirmations.push(`Watch ${setup.name} for a ${opp.timeframe} close ${side} ${level}.${invalidation}`);
+        }
       } else {
         confirmations.push(`Wait for a closed ${opp.timeframe} candle to confirm ${setup?.name ?? "the chart pattern"}${atLevel(opp.patternConfirmationLevel)}.`);
       }
@@ -2005,7 +2015,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       patternImpact = verdict?.scannerTruthImpact;
       if (chartConfirmed && sufficiency.canShowTradeSetup && verdict?.dominantPattern) {
         patternConfirmationLevel = verdict.confirmationLevel ?? undefined;
-        patternTrigger = { name: verdict.dominantPattern.name, confirmed: verdict.status === "confirmed", bias: verdict.bias, invalidation: verdict.invalidationLevel };
+        patternTrigger = { name: verdict.dominantPattern.name, confirmed: verdict.status === "confirmed", bias: verdict.bias, invalidation: verdict.invalidationLevel, retest: verdict.dominantPattern.retest };
       }
     }
 

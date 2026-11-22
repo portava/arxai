@@ -642,3 +642,21 @@ test("the confirmed pattern uses the observed momentum direction", () => {
   assert.equal(read("bearish").labelHint, "needs_confirmation");
   assert.equal(read("neutral").labelHint, "needs_confirmation");
 });
+
+test("breakout retest anchors use the first actual touch on both sides", () => {
+  for (const downward of [false, true]) {
+    const rows = breakoutRetestFixture().map(b => downward
+      ? { o: 200 - b.o, h: 200 - b.l, l: 200 - b.h, c: 200 - b.c } : b);
+    const id = downward ? "breakout_retest_down" : "breakout_retest_up";
+    const read = (window: RawC[]) => detectChartPatterns(mkCandles(window)).patterns.find(p => p.id === id);
+    const before = read(rows.slice(0, -2));
+    assert.ok(before && !before.retest?.touched);
+    assert.ok(!before.keyPoints.some(p => p.role === "retest"));
+    const after = read(rows);
+    assert.ok(after?.retest?.touched);
+    const index = rows.length - 2;
+    assert.deepEqual(after.keyPoints.find(p => p.role === "retest"), {
+      index, price: downward ? rows[index]!.h : rows[index]!.l, role: "retest",
+    });
+  }
+});
