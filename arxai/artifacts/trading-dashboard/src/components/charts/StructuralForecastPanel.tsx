@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
+import { brier, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -85,10 +85,15 @@ export interface ForecastDirectionRead {
   favoriteScenario?: Scenario | null;
 }
 
+function validWeights(weights: Triple | null | undefined): weights is Triple {
+  return !!weights && weights.length === 3 && weights.every(p => Number.isFinite(p) && p >= 0 && p <= 1)
+    && Math.abs(weights.reduce((sum, p) => sum + p, 0) - 1) <= 0.00001;
+}
+
 export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionRead | null {
   const window = forecastHorizon(f.horizonId ?? DEFAULT_FORECAST_HORIZON);
   const weights = window && f.horizons.find(h => h.bars === window.bars)?.probabilities;
-  if (!window || !weights || weights.length !== 3 || weights.some(p => !Number.isFinite(p) || p < 0 || p > 1) || Math.abs(weights.reduce((sum, p) => sum + p, 0) - 1) > 0.00001) return null;
+  if (!window || !validWeights(weights)) return null;
   const outcomes = ["Bullish break favored", "Bearish break favored", "No break favored"];
   const ranked = [0, 1, 2].sort((a, b) => weights[b]! - weights[a]!);
   const first = ranked[0]!, second = ranked[1]!;
@@ -251,9 +256,16 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
   const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
-    .flatMap(r => uniqueHorizonScores(r.scores, preset.bars).map(score => ({ score,
-      p: r.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities })));
-  const scores = evaluated.map(r => r.score);
+    .flatMap(r => uniqueHorizonScores(r.scores, preset.bars).map(score => {
+      const weights = r.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
+      const valid = validWeights(weights);
+      const favorite = valid ? favoredScenario(weights) : null;
+      const calibrated = valid && r.forecast.calibration?.applied;
+      const outcome = scenarioIndex(score.outcome);
+      return { outcome: score.outcome, favorite, baselineBrier: score.baselineBrier,
+        brier: score.shownBrier ?? (calibrated ? brier(weights, outcome) : score.brier),
+        logLoss: calibrated ? logLoss(weights, outcome) : score.logLoss };
+    }));
   // Each finished forecast's judgement on its whole window, newest first.
   const graded = windowHistory.flatMap(r => { const sc = r.scores.find(x => x.horizon === preset.bars && x.grade);
     return sc?.grade ? [{ id: r.id, issuedAt: r.issuedAt, grade: sc.grade, outcome: sc.outcome, update: r.forecast.update }] : []; }).sort((a, b) => b.issuedAt - a.issuedAt);
@@ -261,10 +273,11 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
     ? `${rows.length}, average skill ${(rows.reduce((s, g) => s + g.grade.skill, 0) / rows.length).toFixed(2)}` : "none yet";
   const rangeCoverage = forecastRangeCoverage(windowHistory, preset.id, Date.now());
   const inRange = graded.filter(g => g.grade.insideRange != null);
-  const directional = evaluated.filter(r => r.p && r.p.indexOf(Math.max(...r.p)) < 2);
-  const correctDirection = directional.filter(r => (r.p!.indexOf(Math.max(...r.p!)) === 0 ? "UP_FIRST" : "DOWN_FIRST") === r.score.outcome).length;
-  const actualDirection = evaluated.filter(r => r.score.outcome !== "NEITHER").length;
-  const average = (key: "brier" | "baselineBrier" | "logLoss") => scores.length ? (scores.reduce((s, r) => s + r[key], 0) / scores.length).toFixed(4) : "—";
+  const directional = evaluated.filter(r => r.favorite === "UP_FIRST" || r.favorite === "DOWN_FIRST");
+  const correctDirection = directional.filter(r => r.favorite === r.outcome).length;
+  const actualDirection = evaluated.filter(r => r.outcome !== "NEITHER").length;
+  const average = (key: "brier" | "baselineBrier" | "logLoss") => evaluated.length
+    ? (evaluated.reduce((sum, r) => sum + r[key], 0) / evaluated.length).toFixed(4) : "—";
   return <section aria-label="Structural forecasts" className="border-t border-zinc-800 px-4 py-3 text-xs">
     <div className="flex flex-wrap items-center gap-3">
       <strong className="text-zinc-100">ARX structural forecast</strong>
@@ -326,7 +339,7 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <label>Scoring <select aria-label="Forecast scoring cohort" className="rounded bg-zinc-900 p-1" value={cohort} onChange={e => setCohort(e.target.value)}>
         <option value="all">All snapshots</option><option value="prebreak">Before first break</option><option value="confirmation">After precursor</option>
       </select></label>
-      <span>{preset.label} resolved: {scores.length}</span><span>Brier: {average("brier")}</span><span>Frequency baseline: {average("baselineBrier")}</span><span>Log loss: {average("logLoss")}</span>
+      <span>{preset.label} resolved: {evaluated.length}</span><span>Brier: {average("brier")}</span><span>Frequency baseline: {average("baselineBrier")}</span><span>Log loss: {average("logLoss")}</span>
       <span>Direction precision: {directional.length ? `${(100 * correctDirection / directional.length).toFixed(1)}% (${directional.length})` : "—"}</span>
       <span>Direction recall: {actualDirection ? `${(100 * correctDirection / actualDirection).toFixed(1)}%` : "—"}</span>
       <span>Saved {preset.label} forecasts: {windowHistory.length + (shown && !windowHistory.some(r => r.id === shown.id) ? 1 : 0)}</span>

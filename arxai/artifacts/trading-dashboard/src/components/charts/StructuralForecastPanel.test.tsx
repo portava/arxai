@@ -168,6 +168,21 @@ describe("ARX structural forecast controls", () => {
     await screen.findByText("50.0%");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it("grades the displayed odds and excludes displayed ties from directional calls", async () => {
+    const saved = (id: string, probabilities: number[], outcome: string, shownBrier?: number) => ({
+      ...row, id, forecast: { ...row.forecast, horizons: [{ bars: 60, minutes: 60, probabilities }],
+        calibration: { applied: true, graded: 40, heldOut: 12, weight: .25, raw: [.6, .2, .2], holdoutGain: .01 } },
+      scores: [{ horizon: 60, outcome, brier: .1, baselineBrier: .4, logLoss: .1, shownBrier }],
+    });
+    const forecasts = [saved("tied", [.49999, .50001, 0], "DOWN_FIRST"), saved("unique", [.2, .6, .2], "DOWN_FIRST", .24)];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ forecasts })));
+    render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh saved forecasts" }));
+    await screen.findByText("Direction precision: 100.0% (1)");
+    expect(screen.getByText("Direction recall: 50.0%")).toBeTruthy();
+    expect(screen.getByText("Brier: 0.3700")).toBeTruthy();
+    expect(screen.getByText("Log loss: 0.6020")).toBeTruthy();
+  });
   it("clears old instrument paths when the symbol changes", async () => {
     const onPaths = vi.fn();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] })).mockResolvedValueOnce(response({ saved: true, ...row })));
