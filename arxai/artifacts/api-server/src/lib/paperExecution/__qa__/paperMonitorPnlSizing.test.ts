@@ -13,7 +13,7 @@ mock.method(database.pool, "connect", () => { throw new Error("Unexpected databa
 
 type Order = {
   id: number; userId: number | null; decisionId: number | null; symbol: string; direction: string;
-  lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string;
+  strategyId: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string;
 };
 let orders: Order[] = [];
 let specs: Array<{ contractSize: number | null; profitCurrency: string | null }> = [];
@@ -33,15 +33,19 @@ const fakeDb = {
   update: () => ({ set: () => ({ where: () => Promise.resolve([]) }) }),
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
-mock.module("../../marketData/marketDataService.js", {
-  namedExports: { getMarketData: async () => { throw new Error("tests force the price"); } },
+let bid = 1.09, ask = 1.091, accepted = true, debriefs = 0, quoteReads = 0;
+mock.module("../../tradeEngine/marketQuote.js", {
+  namedExports: { currentQuote: async () => {
+    quoteReads++;
+    return { ok: true, bid, ask, source: "fixture", at: new Date() };
+  } },
 });
 mock.module("../../autoDebriefService.js", {
-  namedExports: { runAutoDebrief: async () => ({ status: "skipped" }) },
+  namedExports: { runAutoDebrief: async () => { debriefs++; return { status: "skipped" }; } },
 });
 mock.module("../../tradeEngine/pipeline.js", {
   namedExports: {
-    settlePaperTrade: async (a: { pnl: number; eventMessage: string }) => { settled.push(a); },
+    settlePaperTrade: async (a: { pnl: number; eventMessage: string }) => { settled.push(a); return accepted; },
     fillPaperTrade: async () => { throw new Error("not used"); },
   },
 });
@@ -51,11 +55,11 @@ const { runPaperMonitor } = await import("../paperExecutionMonitor.js");
 function order(over: Partial<Order>): Order {
   return {
     id: 1, userId: 7, decisionId: null, symbol: "EURUSD", direction: "BUY",
-    lotSize: 1, entryPrice: 1.085, stopLoss: 1.08, takeProfit: 1.1, status: "OPEN", ...over,
+    strategyId: "build_ee_paper_execution", lotSize: 1, entryPrice: 1.085, stopLoss: 1.08, takeProfit: 1.1, status: "OPEN", ...over,
   };
 }
 
-beforeEach(() => { orders = []; specs = []; settled.length = 0; });
+beforeEach(() => { orders = []; specs = []; settled.length = 0; accepted = true; debriefs = 0; quoteReads = 0; });
 
 test("EURUSD 1.00 lot, +100 pips reads 1,000 unrealized, not 1.00", async () => {
   orders = [order({})];
@@ -100,4 +104,39 @@ test("an SL hit with unknown sizing still closes, says the P&L was not sized, an
   assert.equal(s.closures[0]!.outcome, "LOSS");
   assert.match(settled[0]!.eventMessage, /not sized/i);
   assert.doesNotMatch(settled[0]!.eventMessage, /P&L 0\.00/);
+});
+
+test("a long target crossed only by the midpoint stays open", async () => {
+  orders = [order({})];
+  bid = 1.0999; ask = 1.101;
+  const summary = await runPaperMonitor();
+  assert.equal(summary.stillOpen, 1);
+  assert.equal(summary.updates[0]?.currentPrice, bid);
+  assert.equal(settled.length, 0);
+});
+
+test("gapped stops use bid for a long and ask for a short", async () => {
+  orders = [order({}), order({ direction: "SELL", stopLoss: 1.09, takeProfit: 1.07 })];
+  bid = 1.079; ask = 1.091;
+  const summary = await runPaperMonitor();
+  assert.deepEqual(summary.closures.map(c => c.exitPrice), [bid, ask]);
+  assert.deepEqual(summary.closures.map(c => c.hit), ["SL", "SL"]);
+});
+
+test("a concurrent settlement gets just one debrief and closure report", async () => {
+  orders = [order({})];
+  bid = 1.101; ask = 1.102;
+  const winner = await runPaperMonitor();
+  accepted = false;
+  const other = await runPaperMonitor();
+  assert.equal(winner.closures[0]?.exitPrice, bid);
+  assert.equal(other.closed, 0);
+  assert.equal(debriefs, 1);
+});
+
+test("the market monitor leaves simulator-owned orders to their venue", async () => {
+  orders = [order({ strategyId: "simulator" })];
+  const summary = await runPaperMonitor();
+  assert.equal(summary.scanned, 0);
+  assert.equal(quoteReads, 0);
 });

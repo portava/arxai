@@ -17,8 +17,8 @@
 //     quote the order is being checked with, when it is a market quote for
 //     the same symbol. No other market quote is read here (no network call
 //     from the governor's read path). Without one the position is counted at
-//     its stop: the venue books a stop exit at the stop level, so that is the
-//     most it can lose through its stop. Its symbol is reported so every
+//     its stop as an estimate. A gap can make the eventual fill worse.
+//     Its symbol is reported so every
 //     refusal and note that reads the figure can say so.
 // The floating figure the governor reads is the lower of that total and the
 // floating P&L the account stores, so it is never above the stored (booked)

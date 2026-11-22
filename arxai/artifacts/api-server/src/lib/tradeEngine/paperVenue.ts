@@ -30,7 +30,7 @@
 // check-single-paper-book holds the line.
 
 import {
-  db, paperAccountsTable, paperOrdersTable, paperTradeEventsTable, vaultEventsTable,
+  db, paperAccountsTable, paperOrdersTable, paperExecutionsTable, paperTradeEventsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { appendAuditInTransaction, type AuditTransaction } from "../auditVault.js";
@@ -38,6 +38,7 @@ import { paperEntryPolicyReason } from "../safety/entryPolicy.js";
 import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import {
   getMockPrice, isMarketPricedPaperOrder, MARKET_PRICED_SIMULATED_OPEN, simulatorExitLevel,
+  paperExitQuote,
 } from "./paperMark.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
@@ -105,6 +106,13 @@ export interface PaperOpenArgs {
 async function recordPaperOutcome(tx: AuditTransaction, order: PaperOrderRow, eventType: string, message: string | null, riskId?: number | null,
   extra: Record<string, unknown> = {},
 ) {
+  if (order.decisionId != null && (eventType === "CLOSED_MANUAL" || eventType === "CLOSED_TP" || eventType === "CLOSED_SL")) {
+    const sign = paperMoveSign(order.direction, order.entryPrice, order.exitPrice!);
+    const status = eventType === "CLOSED_MANUAL" ? "PAPER_CLOSED_MANUAL"
+      : sign > 0 ? "PAPER_CLOSED_WIN" : sign < 0 ? "PAPER_CLOSED_LOSS" : "PAPER_CLOSED_BREAK_EVEN";
+    await tx.update(paperExecutionsTable).set({ status, updatedAt: new Date() })
+      .where(and(eq(paperExecutionsTable.orderId, order.id), eq(paperExecutionsTable.decisionId, order.decisionId)));
+  }
   if (message != null) await tx.insert(paperTradeEventsTable).values({ userId: order.userId, paperOrderId: order.id, eventType, message });
   const kind = eventType === "UPDATED" ? "PAPER_ORDER_UPDATED"
     : eventType === "CANCELLED" ? "PAPER_ORDER_CANCELLED" : "PAPER_ORDER_CLOSED";
@@ -261,22 +269,17 @@ export function describePaperValuation(a: { openOrders: number; openPricedBySimu
     : a.openPricedBySimulator === 0 ? "MARKET_QUOTE"
     : a.openPricedBySimulator === a.openOrders ? "SIMULATOR" : "MIXED";
   const parts: string[] = [];
-  // Stops and targets of simulator-priced orders are checked against the
-  // synthetic price here, and also against market data by the paper execution
-  // monitor whenever it runs (paperExecutionMonitor.runPaperMonitor scans every
-  // open order), so either can trigger them. Both book the exit at the order's
-  // own stop or target level, not at the price that triggered it.
-  const settledBy = "Stops and targets are checked against that price, and also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level.";
+  const settledBy = "Simulator stops and targets settle at the crossed level. Market-priced positions close at the observed bid for a long or ask for a short.";
   if (priceSource === "SIMULATOR") {
     parts.push(`${a.openOrders === 1 ? "The open order is" : `All ${a.openOrders} open orders are`} valued at the simulator's synthetic price (generated, not a market quote). ${settledBy}`);
   } else if (priceSource === "MIXED") {
     parts.push(`${a.openPricedBySimulator} of ${a.openOrders} open orders are valued at the simulator's synthetic price (generated, not a market quote), the rest at a current market quote. ${settledBy}`);
   } else if (priceSource === "MARKET_QUOTE") {
-    parts.push(`Open orders are valued at a current market quote.`);
+    parts.push(`Open orders use the observed bid for a long or ask for a short.`);
   }
   if (a.closedSimulatorPriced > 0) {
     const one = a.closedSimulatorPriced === 1;
-    parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. A stop or target exit may have been triggered by the simulator's price or by market data (the paper execution monitor) and is booked at the stop or target level; a trader's close is booked at the simulator's price, and an EE manual close at a market price or the price given with the close request; the order does not record which path closed it.`);
+    parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. Historical orders may have used a different exit price source. The stored exit price determines each recorded result.`);
   }
   parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount, except that a closed trade that won is not added to the balance and an open position in profit is not added to equity. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
   return {
@@ -334,7 +337,7 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
     if (!isMarketPriced(o)) continue;
     const quote = await currentQuote(o.symbol);
     if (!quote.ok) return null;
-    prices.set(o.id, o.direction === "BUY" ? quote.bid : quote.ask);
+    prices.set(o.id, paperExitQuote(o.direction, quote));
   }
   let unrealized = 0;
   let margin = 0;
@@ -570,7 +573,7 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
   const realPriced = isMarketPriced(cur);
   const quote = realPriced ? await currentQuote(cur.symbol) : null;
   if (quote && !quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
-  const exitPx = quote?.ok ? (cur.direction === "BUY" ? quote.bid : quote.ask) : getMockPrice(cur.symbol, Date.now());
+  const exitPx = quote?.ok ? paperExitQuote(cur.direction, quote) : getMockPrice(cur.symbol, Date.now());
   const priceSource = quote?.ok ? quote.source : "paper_simulator_price";
   const risk = await enforcePreTradeRisk({
     userId: a.userId, venue: "PAPER", origin: "manual", action: "CLOSE",
@@ -720,14 +723,16 @@ export async function settlePaperOrder(a: {
   order: Pick<PaperOrderRow, "id" | "userId">;
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
   exitPrice: number; pnl: number; eventMessage: string | null;
-}): Promise<void> {
-  await db.transaction(async tx => {
+}): Promise<boolean> {
+  return db.transaction(async tx => {
     const [order] = await tx.update(paperOrdersTable).set({
       status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
       profitLoss: a.pnl, updatedAt: new Date(),
     }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"),
       a.order.userId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, a.order.userId))).returning();
-    if (order) await recordPaperOutcome(tx, order, a.status, a.eventMessage);
+    if (!order) return false;
+    await recordPaperOutcome(tx, order, a.status, a.eventMessage);
+    return true;
   });
 }
 

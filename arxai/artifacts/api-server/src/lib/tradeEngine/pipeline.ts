@@ -248,7 +248,7 @@ export async function fillPaperTrade(stage: PaperFillStage, args: PaperVenue.Pap
 }
 
 /** The venue's own exit fill of an order the governor already allowed (settlePaperOrder). */
-export async function settlePaperTrade(args: Parameters<typeof PaperVenue.settlePaperOrder>[0]): Promise<void> {
+export async function settlePaperTrade(args: Parameters<typeof PaperVenue.settlePaperOrder>[0]): Promise<boolean> {
   const venue = await import("./paperVenue.js");
   return venue.settlePaperOrder(args);
 }

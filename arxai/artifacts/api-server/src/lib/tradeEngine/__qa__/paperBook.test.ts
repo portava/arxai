@@ -26,6 +26,7 @@ import {
   analyticsSnapshotsTable,
   db,
   paperAccountsTable,
+  paperExecutionsTable,
   paperOrdersTable,
   paperTradeEventsTable,
   safetyCoreTable,
@@ -60,6 +61,7 @@ async function clearBooks(ids: number[]): Promise<void> {
   await db.delete(postTradeDebriefsTable).where(inArray(postTradeDebriefsTable.userId, ids));
   await db.delete(analyticsSnapshotsTable).where(inArray(analyticsSnapshotsTable.userId, ids));
   await db.delete(paperTradeEventsTable).where(inArray(paperTradeEventsTable.userId, ids));
+  await db.delete(paperExecutionsTable).where(inArray(paperExecutionsTable.userId, ids));
   await db.delete(paperOrdersTable).where(inArray(paperOrdersTable.userId, ids));
   await db.delete(paperAccountsTable).where(inArray(paperAccountsTable.userId, ids));
   await db.delete(tradesTable).where(inArray(tradesTable.userId, ids));
@@ -363,4 +365,24 @@ test("competing caller-priced closes and duplicate venue settlements cannot over
   assert.equal(after!.exitPrice, closed!.exitPrice);
   assert.equal(after!.profitLoss, closed!.profitLoss);
   assert.equal((await events(opened.order.id)).filter(e => e.eventType.startsWith("CLOSED")).length, 1);
+});
+
+test("concurrent profitable stop fills settle the linked paper execution and order once", async () => {
+  const paperAccountId = await freshAccount(u.a);
+  const [order] = await db.insert(paperOrdersTable).values({
+    userId: u.a, paperAccountId, symbol: SYMBOL, direction: "BUY", entryPrice: 100,
+    lotSize: 1, stopLoss: 105, takeProfit: 115, strategyId: "build_ee_paper_execution",
+  }).returning();
+  const decisionId = -order!.id;
+  await db.update(paperOrdersTable).set({ decisionId }).where(eq(paperOrdersTable.id, order!.id));
+  await db.insert(paperExecutionsTable).values({
+    userId: u.a, decisionId, orderId: order!.id, executionId: "qa-stop-" + order!.id,
+    symbol: SYMBOL, status: "PAPER_OPENED", action: "BUY",
+  });
+  const fill = { order: order!, status: "CLOSED_SL" as const, exitPrice: 103, pnl: 3, eventMessage: "QA trailing stop" };
+  const results = await Promise.all([settlePaperOrder(fill), settlePaperOrder(fill)]);
+  assert.deepEqual(results.sort(), [false, true]);
+  assert.equal((await events(order!.id)).length, 1);
+  const [execution] = await db.select().from(paperExecutionsTable).where(eq(paperExecutionsTable.decisionId, decisionId));
+  assert.equal(execution?.status, "PAPER_CLOSED_WIN");
 });

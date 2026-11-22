@@ -107,7 +107,7 @@ test("a market-priced open is valued at the quote; a closed simulator order is s
   assert.match(String(v.note), /1 closed order was opened at the simulator's synthetic price, not a market quote/);
 });
 
-test("a simulator-priced order's stop or target may be settled by the paper execution monitor at a market price: the note never says the exit was the simulator's", async () => {
+test("the valuation explains current exit pricing and historical limits", async () => {
   state.orders = [
     OPEN_SIM,
     { ...OPEN_SIM, id: 4, status: "CLOSED_TP", profitLoss: 500, exitPrice: 1.09, closedAt: new Date() },
@@ -115,17 +115,7 @@ test("a simulator-priced order's stop or target may be settled by the paper exec
   state.ordersReads = 0;
   const acc = await markToMarket(5) as unknown as { valuation?: Record<string, unknown> };
   const note = String(acc.valuation!.note);
-  // Was "…and stops and targets are settled against it" and "1 closed order was priced by the
-  // simulator, not the market": runPaperMonitor scans every OPEN order and settles a stop or
-  // target hit at market data, and the order row does not record which settled it.
-  assert.doesNotMatch(note, /settled against it/);
-  assert.doesNotMatch(note, /priced by the simulator, not the market/);
-  // Review pass 3: the monitor detects a hit from market data but books the exit at the
-  // order's own stop or target level (paperExecutionMonitor: exitPrice = stopLoss or
-  // takeProfit), like mark-to-market. Only an EE manual close books a market price.
-  assert.doesNotMatch(note, /settles at a market price/, "the monitor books the order's stop or target level");
-  assert.doesNotMatch(note, /a market price \(the paper execution monitor or an EE manual close\)/);
-  assert.match(note, /also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level\./);
-  assert.match(note, /A stop or target exit may have been triggered by the simulator's price or by market data \(the paper execution monitor\) and is booked at the stop or target level/);
-  assert.match(note, /a trader's close is booked at the simulator's price, and an EE manual close at a market price or the price given with the close request; the order does not record which path closed it\./);
+  assert.match(note, /Simulator stops and targets settle at the crossed level/);
+  assert.match(note, /Market-priced positions close at the observed bid for a long or ask for a short/);
+  assert.match(note, /Historical orders may have used a different exit price source/);
 });

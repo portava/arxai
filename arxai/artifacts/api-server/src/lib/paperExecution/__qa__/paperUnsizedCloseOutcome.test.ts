@@ -67,7 +67,7 @@ mock.module("../../marketData/marketDataService.js", {
 const settled: Array<{ status: string; exitPrice: number; pnl: number }> = [];
 mock.module("../../tradeEngine/pipeline.js", {
   namedExports: {
-    settlePaperTrade: async (a: { status: string; exitPrice: number; pnl: number }) => { settled.push(a); },
+    settlePaperTrade: async (a: { status: string; exitPrice: number; pnl: number }) => { settled.push(a); return true; },
     fillPaperTrade: async () => { throw new Error("not used"); },
   },
 });

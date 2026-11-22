@@ -12,16 +12,15 @@
 // written only by the PAPER venue (lib/tradeEngine/paperVenue.ts): an SL/TP
 // hit is settled there (settlePaperOrder, a venue fill) and a manual close is
 // governed and booked there (closePaperFill), both reached through the Trade
-// Engine (pipeline.ts settlePaperTrade / fillPaperTrade CLOSE). This file keeps
-// paper_executions.
+// Engine (pipeline.ts settlePaperTrade / fillPaperTrade CLOSE). Linked execution status and order outcome commit together in the venue.
 
 import {
   db,
   paperOrdersTable,
-  paperExecutionsTable,
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
+import { getMockPrice, isMarketPricedPaperOrder, paperExitQuote } from "../tradeEngine/paperMark.js";
 import { currentQuote } from "../tradeEngine/marketQuote.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
@@ -95,13 +94,17 @@ export async function runPaperMonitor(opts?: {
     ));
 
   for (const order of openOrders) {
+    const forced = opts?.forcePrice != null && (!opts.forceSymbol || opts.forceSymbol === order.symbol);
+    // The simulator venue marks its own orders. Market-priced orders must
+    // be settled from their executable side of the same real quote feed.
+    if (!forced && !isMarketPricedPaperOrder(order)) continue;
     summary.scanned++;
     let currentPrice: number;
     let mdSource = "FALLBACK";
     let mdQuality = "GOOD";
     try {
-      if (opts?.forcePrice != null && (!opts.forceSymbol || opts.forceSymbol === order.symbol)) {
-        currentPrice = opts.forcePrice;
+      if (forced) {
+        currentPrice = opts!.forcePrice!;
         mdSource = "FORCED";
       } else {
         // One execution price source (audit H4): the router quote the venue
@@ -111,7 +114,7 @@ export async function runPaperMonitor(opts?: {
           summary.warnings.push(`order=${order.id}: no current execution price (${q.reasons.join("; ").slice(0, 160)})`);
           continue;
         }
-        currentPrice = (q.bid + q.ask) / 2;
+        currentPrice = paperExitQuote(order.direction, q);
         mdSource = q.source;
         mdQuality = "CURRENT";
       }
@@ -133,7 +136,9 @@ export async function runPaperMonitor(opts?: {
 
     if (!hit) { summary.stillOpen++; continue; }
 
-    const exitPrice = hit === "SL" ? order.stopLoss : order.takeProfit;
+    // Explicit price-forcing is the existing level-based simulation fixture.
+    // For a real quote, a stop can gap and a target can receive improvement.
+    const exitPrice = forced ? (hit === "SL" ? order.stopLoss : order.takeProfit) : currentPrice;
     const r = paperPnl({ ...sizing, price: exitPrice });
     const sign = paperMoveSign(order.direction, order.entryPrice, exitPrice);
     const outcome = sign > 0 ? "WIN" : sign < 0 ? "LOSS" : "BREAK_EVEN";
@@ -142,25 +147,14 @@ export async function runPaperMonitor(opts?: {
     // Settle the paper order in the PAPER venue (a stop/target fill). The
     // stop/target hit is real even when the amount cannot be sized; then the
     // ledger's NOT NULL profit_loss holds 0 and the event says it was not sized.
-    await settlePaperTrade({
+    const committed = await settlePaperTrade({
       order, status, exitPrice, pnl: r.amount ?? 0,
       eventMessage: r.amount != null
         ? `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${r.amount.toFixed(2)}`
         : `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L not sized: ${r.unavailableReason}. The 0 stored for this order is a placeholder, not a result.`,
     });
 
-    // Sync paper_executions row (if one exists for this decision_id).
-    if (order.decisionId != null) {
-      const eeStatus = hit === "TP" ? "PAPER_CLOSED_WIN"
-                     : (outcome === "LOSS" ? "PAPER_CLOSED_LOSS" : "PAPER_CLOSED_BREAK_EVEN");
-      await db.update(paperExecutionsTable)
-        .set({ status: eeStatus, updatedAt: new Date() })
-        .where(and(
-          eq(paperExecutionsTable.decisionId, order.decisionId),
-          eq(paperExecutionsTable.orderId, order.id),
-        ))
-        .catch((err) => log.warn({ err: String(err) }, "EE monitor: paper_executions sync failed (non-fatal)"));
-    }
+    if (!committed) continue;
 
     // Trigger Build BB.
     let bbStatus: string | undefined;
@@ -198,10 +192,11 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
   if (order.status !== "OPEN") return { ok: false, error: `Order not open (status=${order.status})` };
 
   let exitPrice = opts?.exitPrice;
+  if (exitPrice == null && !isMarketPricedPaperOrder(order)) exitPrice = getMockPrice(order.symbol, Date.now());
   if (exitPrice == null) {
     const q = await currentQuote(order.symbol);
     if (!q.ok) return { ok: false, error: `No current execution price to close at: ${q.reasons.join("; ")}` };
-    exitPrice = (q.bid + q.ask) / 2;
+    exitPrice = paperExitQuote(order.direction, q);
   }
   // Governed (Risk Governor CLOSE, venue PAPER) and booked in the PAPER venue.
   const closed = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {
@@ -220,13 +215,6 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
   }
   // null = the amount could not be sized (the venue stored the 0 placeholder).
   const pnl = closed.pnl;
-
-  if (order.decisionId != null) {
-    await db.update(paperExecutionsTable)
-      .set({ status: "PAPER_CLOSED_MANUAL", updatedAt: new Date() })
-      .where(eq(paperExecutionsTable.decisionId, order.decisionId))
-      .catch(() => {});
-  }
 
   let bb;
   try {

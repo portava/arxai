@@ -59,3 +59,8 @@ export function simulatorExitLevel(
   }
   return null;
 }
+
+/** Price at which the position can be liquidated on this two-sided quote. */
+export function paperExitQuote(direction: string, q: { bid: number; ask: number }): number {
+  return direction === "BUY" ? q.bid : q.ask;
+}
