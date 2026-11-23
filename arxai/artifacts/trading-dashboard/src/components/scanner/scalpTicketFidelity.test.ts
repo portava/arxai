@@ -52,6 +52,10 @@ function scalpResult(overrides: Record<string, unknown> = {}) {
 }
 
 describe("D1 — the computed lot reaches the ticket", () => {
+  it("preserves an absent scalp direction as a wait", () => {
+    expect(scalpResultToSignal(scalpResult({ direction: null })).recommendedAction).toBe("WAIT");
+  });
+
   it("carries suggestedLot into the signal", () => {
     expect(scalpResultToSignal(scalpResult()).suggestedLot).toBe(0.37);
   });

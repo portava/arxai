@@ -20,9 +20,8 @@
 //     belongs to the requesting user (ownMission gate); this service additionally
 //     filters by user_id. No row from one user/mission is ever returned to
 //     another.
-//   - No parallel strategy logic: direction / confidence / entry / SL / TP all
-//     originate from the existing scanner engine; this service never re-derives
-//     them.
+//   - Paper missions scout all allowed markets with the registered trend rule.
+//     Other execution modes retain their Scanner proposal source.
 import { and, desc, eq } from "drizzle-orm";
 import {
   db,

@@ -236,7 +236,7 @@ export function scalpResultToSignal(r: ScalpResult) {
     // "M1", so the journal, attribution and review all recorded a timeframe the
     // setup was never evaluated on (Theme D1).
     timeframe: SCALP_TICKET_TIMEFRAME,
-    recommendedAction: r.direction ?? "BUY",
+    recommendedAction: r.direction ?? "WAIT",
     bias: r.direction ?? "NEUTRAL",
     score: r.qualityScore,
     confidenceScore: r.qualityScore,
@@ -339,10 +339,11 @@ export default function MarketScanner() {
   const [mapScanned, setMapScanned] = useState(false);
   const [tradeTarget, setTradeTarget] = useState<{ opp: Opp; side: "BUY" | "SELL" } | null>(null);
   const snapshotClock = useScannerOpportunityClock(opps, tradeTarget?.opp ?? null);
-  const tradeTargetUsable = !!tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) &&
-    opps.some((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
+  const currentTradeRow = tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) ?
+    opps.find((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
       canUseScannerOpportunity(current, snapshotClock) && current.recommendedAction === tradeTarget.opp.recommendedAction &&
-      current.entry === tradeTarget.opp.entry && current.stopLoss === tradeTarget.opp.stopLoss && current.takeProfit === tradeTarget.opp.takeProfit);
+      current.entry === tradeTarget.opp.entry && current.stopLoss === tradeTarget.opp.stopLoss && current.takeProfit === tradeTarget.opp.takeProfit) : undefined;
+  const tradeTargetUsable = !!currentTradeRow;
   useEffect(() => {
     if (tradeTarget && !tradeTargetUsable) setTradeTarget(null);
   }, [tradeTarget, tradeTargetUsable]);
@@ -646,7 +647,7 @@ export default function MarketScanner() {
 
   // Open the gated trade ticket pre-filled from a scalp result.
   const openScalpTrade = useCallback((r: ScalpResult) => {
-    setScalpTrade({ result: r, side: r.direction === "SELL" ? "SELL" : "BUY" });
+    if (r.direction === "BUY" || r.direction === "SELL") setScalpTrade({ result: r, side: r.direction });
   }, []);
 
   // Load a ranked/built pick onto the shared chart bus (canonicalised).
@@ -1128,29 +1129,29 @@ export default function MarketScanner() {
         ]}
       />
 
-      {tradeTarget && tradeTargetUsable && (
+      {tradeTarget && currentTradeRow && (
         <SectionErrorBoundary section="Trade ticket">
         <ScannerTradeModal
           open={!!tradeTarget}
           onClose={() => setTradeTarget(null)}
           signal={{
-            symbol: tradeTarget.opp.symbol, timeframe: tradeTarget.opp.timeframe,
-            recommendedAction: tradeTarget.opp.recommendedAction, bias: tradeTarget.opp.bias,
-            confidenceScore: tradeTarget.opp.confidenceScore, riskScore: tradeTarget.opp.riskScore,
-            calibration: tradeTarget.opp.calibration ?? null,
-            entrySniperScore: tradeTarget.opp.entrySniperScore,
-            reasonForTrade: tradeTarget.opp.reasonForTrade, reasonToAvoid: tradeTarget.opp.reasonToAvoid,
-            setupType: tradeTarget.opp.setupType,
-            entry: tradeTarget.opp.entry, stopLoss: tradeTarget.opp.stopLoss, takeProfit: tradeTarget.opp.takeProfit,
-            statusBadge: tradeTarget.opp.statusBadge,
+            symbol: currentTradeRow.symbol, timeframe: currentTradeRow.timeframe,
+            recommendedAction: currentTradeRow.recommendedAction, bias: currentTradeRow.bias,
+            confidenceScore: currentTradeRow.confidenceScore, riskScore: currentTradeRow.riskScore,
+            calibration: currentTradeRow.calibration ?? null,
+            entrySniperScore: currentTradeRow.entrySniperScore,
+            reasonForTrade: currentTradeRow.reasonForTrade, reasonToAvoid: currentTradeRow.reasonToAvoid,
+            setupType: currentTradeRow.setupType,
+            entry: currentTradeRow.entry, stopLoss: currentTradeRow.stopLoss, takeProfit: currentTradeRow.takeProfit,
+            statusBadge: currentTradeRow.statusBadge,
           }}
           // The card withheld the raw action under the server's final read
           // ("No trade" / "Avoid for now"); the ticket's Summary shows the
           // same note instead of explaining a buy or sell setup. Display only:
           // the signal above (what an order records) is unchanged.
           setupReasonWithheld={scannerSetupReasonWithheld(
-            scannerResultActionChip(tradeTarget.opp.recommendedAction, tradeTarget.opp.finalRead?.label),
-            tradeTarget.opp.finalRead,
+            scannerResultActionChip(currentTradeRow.recommendedAction, currentTradeRow.finalRead?.label),
+            currentTradeRow.finalRead,
           )}
           defaultSide={tradeTarget.side}
         />

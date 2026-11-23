@@ -252,6 +252,17 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
 describe("legacy scanner result card — the trade ticket under a withheld final read", () => {
   const lastModal = () => modalProps[modalProps.length - 1];
 
+  it("updates the open ticket when the same levels acquire a new final read", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope();
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD")); await settle();
+    rowOverrides = { finalRead: { label: "NO_TRADE", reasons: ["The market closed."] } };
+    globalFeed = envelope();
+    await settle(5100);
+    expect(lastModal().setupReasonWithheld).toEqual({ label: "No trade", reasons: ["The market closed."] });
+  });
+
   for (const button of ["Trade Setup", "BUY", "SELL"] as const) {
     it(`${button} on a NO_TRADE row opens the ticket with the setup reason withheld`, async () => {
       rowOverrides = { finalRead: { label: "NO_TRADE", headline: "No trade", reasons: ["Major event nearby. Volatility may spike."] } };
