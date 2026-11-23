@@ -865,6 +865,7 @@ export function computeFinalRead(
   const matchingPattern = opp.patternTrigger?.confirmed && opp.patternTrigger.bias === bias;
   const retest = trigger?.retestLevel;
   const entryConfirmed = driftSetup && aligned && retest !== undefined;
+  const regimeCondition = `${retest !== undefined ? `The retest at ${priceText(retest)} held. ` : ""}Skip this drift entry while the ${opp.timeframe} regime is ${opp.regime?.regime ?? "unavailable"}. Recheck when it confirms a ${buy ? "rising" : "falling"} trend.`;
   const pat = opp.patternImpact;
   const patternIsSecondary = entryConfirmed && !pat?.contextOnly &&
     (pat?.labelHint === "forming_setup" || (pat?.labelHint === "needs_confirmation" && matchingPattern));
@@ -1017,7 +1018,7 @@ export function computeFinalRead(
     } else {
       label = "WAIT_FOR_CONFIRMATION";
       const level = priceText(trigger?.level ?? undefined);
-      const instruction = !aligned ? `Skip this drift entry while the ${opp.timeframe} regime is ${opp.regime?.regime ?? "unavailable"}. Recheck when it confirms a ${buy ? "rising" : "falling"} trend.`
+      const instruction = !aligned ? regimeCondition
         : level ? `Watch for a ${opp.timeframe} close ${buy ? "above" : "below"} the pullback ${buy ? "high" : "low"} at ${level}.`
         : `Watch for a ${buy ? "down" : "up"} ${opp.timeframe} candle, then a close ${buy ? "above its high" : "below its low"}.`;
       reasons.push(instruction);
@@ -1028,7 +1029,12 @@ export function computeFinalRead(
   if (driftSetup && !entryConfirmed && (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION")) {
     label = "WAIT_FOR_CONFIRMATION";
     const level = trigger?.confirmed ? trigger.level : trigger?.previousBreakLevel;
-    if (level != null) {
+    if (retest !== undefined) {
+      if (!confirmations.includes(regimeCondition)) {
+        confirmations.unshift(regimeCondition);
+        reasons.push(regimeCondition);
+      }
+    } else if (level != null) {
       const instruction = trigger?.confirmed
         ? `Wait for the next closed ${opp.timeframe} candle to touch ${priceText(level)} and close ${buy ? "above" : "below"} it.`
         : `The candle after the break did not hold a retest of ${priceText(level)}. Skip this entry and look for a new pullback.`;

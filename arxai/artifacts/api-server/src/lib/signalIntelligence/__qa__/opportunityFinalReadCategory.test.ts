@@ -159,6 +159,19 @@ test("an aligned confirmed pattern can use one retest bar while an unrelated lin
   assert.equal(driftPullbackTrigger([...bars, bars[2]!], "BUY")?.followThroughLevel, undefined);
 });
 
+test("a held retest in a range names the regime as the outstanding condition", () => {
+  for (const side of ["BUY", "SELL"] as const) {
+    const row = mkOpp({ recommendedAction: side, setupType: side === "BUY" ? "Upward drift" : "Downward drift",
+      regime: { regime: "RANGE", substate: null, confidence01: .8, consecutiveConfirmations: 2, reasons: [] },
+      driftTrigger: { side, confirmed: false, level: null, retestLevel: 100, previousBreakLevel: 100 } });
+    const read = computeFinalRead(row);
+    assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+    assert.match(read.headline, /retest at 100 held/i);
+    assert.match(read.headline, side === "BUY" ? /rising trend/ : /falling trend/);
+    assert.doesNotMatch(read.reasons.join(" "), /did not hold/);
+  }
+});
+
 test("a closed pullback loses its entry when the current exit-side quote crosses back", () => {
   for (const buy of [true, false]) {
     const side = buy ? "BUY" : "SELL";
