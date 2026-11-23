@@ -17,7 +17,7 @@ import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.j
 import { resolveSymbolFeedVerdict } from "./data/symbolFeedVerdict.js";
 import { classifyCandleFreshness } from "./data/freshness.js";
 import type { Candle } from "./data/types.js";
-import { computeTimingRead } from "../brain/timing/marketTimingBrainService.js";
+import { computeTimingRead, type ScannerTimingObservation } from "../brain/timing/marketTimingBrainService.js";
 import {
   computeScannerAdvisory,
   toUserAdvisory,
@@ -289,7 +289,10 @@ export interface ScannerHistoricalContext {
   note: string;
 }
 
+const timingObservation: unique symbol = Symbol("scannerTimingObservation");
+
 export interface ScannerOpportunity {
+  [timingObservation]?: ScannerTimingObservation;
   symbol: string; timeframe: string;
   bias: MarketAnalysis["marketBias"];
   recommendedAction: MarketAnalysis["recommendedAction"];
@@ -1354,27 +1357,24 @@ export async function decorateOpportunitiesWithTimingContext(
   opps: ScannerOpportunity[],
 ): Promise<ScannerOpportunity[]> {
   if (opps.length === 0) return opps;
-  // One read per (symbol, timeframe) on the ROW'S OWN timeframe: an H4 or M1
+  // Share a timing read only across rows from the same observation. An H4 or M1
   // row must never show (or be scored by) an M15 grade / permission. A
   // timeframe the timing brain does not read gets no timing context (honest
   // absence) rather than a read from another timeframe.
-  const keyOf = (o: ScannerOpportunity) => `${o.symbol}|${o.timeframe}`;
-  const uniqueKeys = Array.from(new Set(
-    opps.filter((o) => TIMING_READ_TIMEFRAMES.has(o.timeframe)).map(keyOf),
-  ));
-  const ctxByKey = new Map<string, ScannerTimingContext>();
+  const keyOf = (o: ScannerOpportunity) => o[timingObservation] ?? `${o.symbol}|${o.timeframe}`;
+  const rows = new Map(opps.filter(o => TIMING_READ_TIMEFRAMES.has(o.timeframe)).map(o => [keyOf(o), o]));
+  const ctxByKey = new Map<ScannerTimingObservation | string, ScannerTimingContext>();
 
-  await mapWithConcurrency(uniqueKeys, ENRICHMENT_CONCURRENCY, async (key) => {
-      const sep = key.lastIndexOf("|");
-      const sym = key.slice(0, sep);
-      const timeframe = key.slice(sep + 1);
+  await mapWithConcurrency([...rows], ENRICHMENT_CONCURRENCY, async ([key, row]) => {
+      const { symbol: sym, timeframe } = row;
+      const observation = row[timingObservation];
       try {
-        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe, persistSnapshot: false }));
+        const read = await runWithScannerBudget(() => computeTimingRead({ symbol: sym, timeframe, persistSnapshot: false }, { scannerObservation: observation }));
         // Heat boost: GO=+10, WAIT_FOR_ENTRY=+4, WAIT_NEWS/NO_TRADE=−6, STAND_DOWN=−10
         const permBoost: Record<string, number> = {
           GO: 10, WAIT_FOR_ENTRY: 4, WAIT_NEWS: -6, NO_TRADE: -6, STAND_DOWN: -10,
         };
-        const heatBoost = Math.max(-10, Math.min(10, permBoost[read.entryPermission] ?? 0));
+        const heatBoost = observation && !read.marketEvidence ? 0 : permBoost[read.entryPermission] ?? 0;
         ctxByKey.set(key, {
           heatScore: read.heatScore,
           tradeabilityScore: read.tradeabilityScore,
@@ -1791,6 +1791,7 @@ async function analyzeViaRouter(
    *  Reason input only — quoteUsable stays false for LAST_ONLY. */
   quoteBinding: ScannerQuoteBinding;
   sourceIdentity: string;
+  timingObservation: ScannerTimingObservation;
   attribution: ReturnType<typeof seriesAttributionFrom>;
 } | null> {
   try {
@@ -1828,6 +1829,7 @@ async function analyzeViaRouter(
       sym, tf, candles, quote, "LIVE_FEED",
       cr.primaryProvider ?? undefined,
     );
+    const sourceIdentity = scannerSourceIdentity(cr);
     return {
       analysis,
       trailingIntervals,
@@ -1839,7 +1841,8 @@ async function analyzeViaRouter(
       bidAsk: usableQuote && qr.quote?.bid != null && qr.quote.ask != null ? { bid: qr.quote.bid, ask: qr.quote.ask } : undefined,
       quoteUsable: usableQuote !== null,
       quoteBinding: binding.binding,
-      sourceIdentity: scannerSourceIdentity(cr),
+      sourceIdentity,
+      timingObservation: { observedAt: now, sourceIdentity, lastClosed: prepared.openClosed.at(-1)!, quote: qr },
       attribution: seriesAttributionFrom(cr.provenance),
     };
   } catch { return null; }
@@ -2182,7 +2185,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       trendlineConfirmationLevel, trendlineTrigger, trendlineTransition,
       ...scannerCalibrationFields(sym, tf, displayAction, displayConfidenceScore),
     };
-    if (routed) bindScannerSource(op, routed.sourceIdentity);
+    if (routed) {
+      bindScannerSource(op, routed.sourceIdentity);
+      op[timingObservation] = routed.timingObservation;
+    }
     // Agent Ecosystem advisory (Phase 0). Bounded, advisory-only re-weighting by
     // the responsible agents' trust + lifecycle health. Fail-open: any error
     // leaves the base opportunity score untouched — advisory must never break or

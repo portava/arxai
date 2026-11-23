@@ -232,3 +232,42 @@ test("missing calendar keeps data quality partial even with a bid/ask quote",asy
  assert.equal(read.dataQuality.hasQuoteData,true);assert.equal(read.dataQuality.hasNewsData,false);
  assert.equal(read.dataQuality.label,"partial");
 });
+
+test("Scanner timing keeps the observed quote and closed candle across the next market close", async () => {
+  const boundary = Date.UTC(2026, 10, 23, 18);
+  const observedAt = boundary - 1200;
+  const {result, quote, evidence} = marketFixture({timeframe: "M1", now: observedAt, forming: true});
+  const lastClosed = result.candles.at(-2)!;
+  const scannerObservation = { observedAt, quote, lastClosed, sourceIdentity: evidence.sourceIdentity };
+  let quoteReads = 0;
+  const deps = baseDeps({
+    scannerObservation,
+    routeCandlesFn: async () => result,
+    routeQuoteFn: async () => { quoteReads++; return quoteEmpty; },
+  });
+  const req = {symbol: "EURUSD", timeframe: "M1", persistSnapshot: false};
+  mock.timers.enable({apis: ["Date"], now: observedAt});
+  try {
+    const before = await computeTimingRead(req, deps);
+    assert.ok(before.marketEvidence && before.dataQuality.hasQuoteData);
+    mock.timers.setTime(boundary + 2200);
+    const after = await computeTimingRead(req, deps);
+    assert.equal(after.marketEvidence?.lastClosedCandleAt, before.marketEvidence.lastClosedCandleAt);
+    assert.equal(after.entryPermission, before.entryPermission);
+    assert.equal(quoteReads, 0);
+    const changedBar = {...lastClosed, high: lastClosed.high + 0.0001};
+    for (const incompatible of [
+      {...scannerObservation, sourceIdentity: "another source"},
+      {...scannerObservation, lastClosed: changedBar},
+      {...scannerObservation, observedAt: boundary - 40_000},
+    ]) {
+      const mismatch = await computeTimingRead(req, {...deps, scannerObservation: incompatible});
+      assert.equal(mismatch.marketEvidence, null);
+      assert.equal(mismatch.entryPermission, "STAND_DOWN");
+      assert.match(mismatch.actionReason, /same feed and closed M1 candle/);
+      assert.equal(mismatch.dataQuality.hasQuoteData, false);
+    }
+  } finally {
+    mock.timers.reset();
+  }
+});

@@ -18,7 +18,8 @@ import { computeTradeability } from "./tradeabilityEngine.js";
 import { computeTrapAndRoom } from "./trapRoomEngine.js";
 import { computeBroadFlow } from "./broadFlowEngine.js";
 import { computeNewsHeat } from "./newsHeatEngine.js";
-import { prepareMarketRead, matchedMarketQuote, matchedMarketQuoteBinding } from "../../lib/truth/marketReadEvidence.js";
+import { COMPONENT_BUILD_TTL_MS, prepareMarketRead, matchedMarketQuote, matchedMarketQuoteBinding } from "../../lib/truth/marketReadEvidence.js";
+import type { Candle } from "../../lib/data/types.js";
 import { db } from "@workspace/db";
 import { heatSnapshots } from "@workspace/db/schema";
 
@@ -29,13 +30,16 @@ export interface TimingBrainRequest {
   persistSnapshot?: boolean;
 }
 
-/**
- * Optional dependency injection for testing. Production callers pass nothing and
- * get the real classifier, market-data router, news/broad-flow engines, and DB
- * snapshot persistence. Tests inject deterministic stand-ins so the composed
- * read never depends on a live feed, the wall clock, or the database.
- */
+/** Scanner captures the quote and the normalized closed bar in the same base scan. */
+export interface ScannerTimingObservation {
+  observedAt: number;
+  sourceIdentity: string;
+  lastClosed: Candle;
+  quote: Awaited<ReturnType<typeof routeQuote>>;
+}
+
 export interface TimingBrainDeps {
+  scannerObservation?: ScannerTimingObservation;
   classifyFn?: typeof classifySymbol;
   routeCandlesFn?: typeof routeCandles;
   routeQuoteFn?: typeof routeQuote;
@@ -50,6 +54,7 @@ export async function computeTimingRead(
 ): Promise<MarketTimingRead> {
   const classify = deps.classifyFn ?? classifySymbol;
   const routeCandlesFn = deps.routeCandlesFn ?? routeCandles;
+  const observation = deps.scannerObservation;
   const routeQuoteFn = deps.routeQuoteFn ?? routeQuote;
   const computeNewsHeatFn = deps.computeNewsHeatFn ?? computeNewsHeat;
   const computeBroadFlowFn = deps.computeBroadFlowFn ?? computeBroadFlow;
@@ -69,24 +74,32 @@ export async function computeTimingRead(
   // writer, so it can only pair with the bridge that produced these candles.
   const [candleResult] = await Promise.allSettled([routeCandlesFn(symbol, timeframe, 80)]);
   const [quoteResult] = await Promise.allSettled([
-    routeQuoteFn(symbol, quotePinForSeries(candleResult.status === "fulfilled" ? candleResult.value : null)),
+    observation ? Promise.resolve(observation.quote) : routeQuoteFn(symbol, quotePinForSeries(candleResult.status === "fulfilled" ? candleResult.value : null)),
   ]);
 
-  const observedAt = Date.now();
+  const reviewedAt = Date.now();
+  const observedAt = observation?.observedAt ?? reviewedAt;
   const candleRead = candleResult.status === "fulfilled"
     ? prepareMarketRead(candleResult.value, symbol, timeframe, observedAt) : null;
   // A newly calculated response cannot make old candles current. Closed-market
   // bars remain available at the chart; the timing vote waits for current data.
-  const currentRead = candleRead && candleRead.trailingIntervals != null && candleRead.trailingIntervals <= 1 ? candleRead : null;
+  // An enrichment can finish across a candle close or a provider switch.
+  // A wider lookback must still end on the bar the Scanner actually observed.
+  const last = candleRead?.openClosed.at(-1);
+  const sameObservation = !observation || (observedAt <= reviewedAt && reviewedAt - observedAt <= COMPONENT_BUILD_TTL_MS &&
+    candleRead?.evidence.sourceIdentity === observation.sourceIdentity && !!last &&
+    last.time === observation.lastClosed.time && last.open === observation.lastClosed.open &&
+    last.high === observation.lastClosed.high && last.low === observation.lastClosed.low && last.close === observation.lastClosed.close);
+  const currentRead = sameObservation && candleRead && candleRead.trailingIntervals != null && candleRead.trailingIntervals <= 1 ? candleRead : null;
   const candleData = currentRead?.openClosed.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0 })) ?? [];
-  const quoteData = candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
+  const quoteData = sameObservation && candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
     ? matchedMarketQuote(candleResult.value, quoteResult.value, symbol, observedAt) : null;
   const spread = quoteData?.spread ?? null;
   const mid = quoteData?.mid ?? null;
 
   const hasCandleData = candleData.length >= 10;
   const hasQuoteData = quoteData != null;
-  const quoteBinding = candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
+  const quoteBinding = sameObservation && candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
     ? matchedMarketQuoteBinding(candleResult.value, quoteResult.value, symbol, observedAt) : "NONE";
   const hasLivePriceData = quoteBinding !== "NONE";
 
@@ -176,8 +189,9 @@ export async function computeTimingRead(
       )
     : {
         bestAction: "STAND_DOWN" as const,
-        actionReason:
-          `No current candles for ${symbol} (market data unavailable or market closed) — timing was not measured. ` +
+        actionReason: observation && !sameObservation
+          ? `Recheck ${symbol} on the next scan. Entry timing needs the same feed and closed ${timeframe} candle as the setup.`
+          : `No current candles for ${symbol} (market data unavailable or market closed) — timing was not measured. ` +
           "No entry until current market data returns." +
           (newsOverlay.blocksTrade || newsOverlay.phase === "AT_EVENT"
             ? ` A news window is also active${newsOverlay.eventName ? ` (${newsOverlay.eventName})` : ""}.`
