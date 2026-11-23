@@ -377,3 +377,19 @@ test("a clock lead spanning several ticks releases each in venue order only when
   assert.equal(f.client.getCachedTick("R_75")?.epoch, epoch + 4);
   assert.deepEqual(seen, [epoch + 2, epoch + 3, epoch + 4]);
 });
+
+test("a next-minute candle received just before its start preserves the available history", async t => {
+  const bar = { open: 120, high: 122, low: 119, close: 121 };
+  const f = fixture({ reply: (socket, request) => {
+    if (!request.ticks_history) return false;
+    socket.respond(request, { echo_req: request, candles: [epoch - 120, epoch - 60, epoch].map(time => ({ ...bar, epoch: time })) });
+    return true;
+  } });
+  t.after(() => f.client.stop());
+  f.setNow(epoch * 1000 - 758);
+  const result = await f.client.getCandles("R_75", 60, 60);
+  assert.deepEqual(result.map(c => c.epoch), [epoch - 120, epoch - 60]);
+  assert.equal(f.client.getLastCandleAt(), new Date((epoch - 60) * 1000).toISOString());
+  f.setNow(epoch * 1000);
+  assert.equal((await f.client.getCandles("R_75", 60, 60)).at(-1)?.epoch, epoch);
+});

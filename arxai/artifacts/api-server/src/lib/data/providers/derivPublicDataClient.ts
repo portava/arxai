@@ -404,8 +404,13 @@ export class DerivPublicDataClient {
       for (const field of ["style", "granularity", "count", "end"] as const) {
         if (echo && echo[field] !== undefined && echo[field] !== payload[field]) throw ERROR("DERIV_PUBLIC_HISTORY_REQUEST_MISMATCH");
       }
-      const candles = normalizePublicCandles(msg.candles, this.now(), granularity);
-      if (candles.length > payload.count || end !== undefined && candles.some(c => c.epoch > end)) throw ERROR("DERIV_PUBLIC_HISTORY_RANGE_MISMATCH");
+      const receivedAt = this.now();
+      const latestAllowed = end === undefined ? receivedAt + DERIV_PUBLIC_MAX_CLOCK_LEAD_MS : receivedAt;
+      const history = normalizePublicCandles(msg.candles, latestAllowed, granularity);
+      if (history.length > payload.count || end !== undefined && history.some(c => c.epoch > end)) throw ERROR("DERIV_PUBLIC_HISTORY_RANGE_MISMATCH");
+      // A forming bar may already carry the venue's next minute. Keep the
+      // preceding history visible and fetch that bar again once its minute starts.
+      const candles = history.filter(bar => bar.epoch * 1000 <= receivedAt);
       if (candles.length) {
         this.lastCandle = Math.max(this.lastCandle ?? 0, candles[candles.length - 1]!.epoch); this.historySymbols.add(symbol);
         if (end === undefined) {
