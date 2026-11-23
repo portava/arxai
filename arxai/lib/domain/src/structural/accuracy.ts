@@ -1,5 +1,6 @@
 import { scenarioIndex, scenarioOf, type DataOrigin, type StructuralBar, type Triple } from "./contracts.js";
 import { observeStructure, structuralFeatures, validateBars, barStepMs } from "./observer.js";
+import { favoredScenarioIndex } from "./learning.js";
 import { probabilities, brier, logLoss } from "./math.js";
 import { fitStructuralModel, predictMass, lowerMeanGain, fitWindowCount, MIN_FIT_WINDOWS, MODEL_POLICY, type StructuralModel } from "./model.js";
 
@@ -60,11 +61,14 @@ export function walkForwardAccuracy(bars: StructuralBar[], origin: DataOrigin, h
     foldInfo.push({ trainBars: cut, trainedThrough: model.trainedThrough, gate: model.prebreakGate.reason, tested });
   }
   const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
-  const top = (p: Triple) => p.indexOf(Math.max(...p));
   const horizons = horizonBars.map(h => {
     const r = rows.get(h)!;
     const gains = r.map(x => brier(x.baseline, x.outcome) - brier(x.p, x.outcome));
-    const breaks = r.filter(x => x.outcome < 2), leans = r.filter(x => top(x.p) < 2);
+    const breaks = r.filter(x => x.outcome < 2);
+    const leans = r.filter(x => {
+      const favorite = favoredScenarioIndex(x.p);
+      return favorite === 0 || favorite === 1;
+    });
     const modes: Record<string, number> = {};
     for (const x of r) modes[x.mode] = (modes[x.mode] ?? 0) + 1;
     return { horizonBars: h, minutes: h * step / 60_000, forecasts: r.length, folds: foldInfo.filter(f => f.tested > 0).length,
@@ -72,9 +76,9 @@ export function walkForwardAccuracy(bars: StructuralBar[], origin: DataOrigin, h
       brier: mean(r.map(x => brier(x.p, x.outcome))), baselineBrier: mean(r.map(x => brier(x.baseline, x.outcome))),
       uniformBrier: mean(r.map(x => brier([1 / 3, 1 / 3, 1 / 3], x.outcome))), logLoss: mean(r.map(x => logLoss(x.p, x.outcome))),
       gainOverBaseline: mean(gains), gainLowerBound: r.length ? lowerMeanGain(gains) : NaN,
-      topClassHitRate: mean(r.map(x => Number(top(x.p) === x.outcome))), baselineTopClassHitRate: mean(r.map(x => Number(top(x.baseline) === x.outcome))),
+      topClassHitRate: mean(r.map(x => Number(favoredScenarioIndex(x.p) === x.outcome))), baselineTopClassHitRate: mean(r.map(x => Number(favoredScenarioIndex(x.baseline) === x.outcome))),
       breakSideHitRate: breaks.length ? mean(breaks.map(x => Number(x.p[x.outcome]! > x.p[1 - x.outcome]!))) : null, breaks: breaks.length,
-      leanPrecision: leans.length ? mean(leans.map(x => Number(top(x.p) === x.outcome))) : null, leans: leans.length,
+      leanPrecision: leans.length ? mean(leans.map(x => Number(favoredScenarioIndex(x.p) === x.outcome))) : null, leans: leans.length,
       modes } satisfies HorizonAccuracy;
   });
   return { stepMs: step, bars: n, windows: fitWindowCount(bars), folds: foldInfo, horizons };

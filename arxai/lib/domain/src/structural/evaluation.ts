@@ -2,7 +2,7 @@ import { scenarioOf, scenarioIndex, HORIZONS, STRUCTURAL_VERSION, forecastStepMs
 import { validateBars, observeStructure } from "./observer.js";
 import { probabilities, brier, logLoss } from "./math.js";
 import { MODEL_POLICY } from "./model.js";
-import { gradeForecast } from "./learning.js";
+import { favoredScenarioIndex, gradeForecast } from "./learning.js";
 
 /** Forecast must already be durably saved by the application before calling. */
 export function evaluateForecast(f: StructuralForecast, future: StructuralBar[], now: number): ForecastScore[] {
@@ -57,6 +57,6 @@ export function calibrationBins(rows: Array<{ p: Triple; outcome: number }>) {
     const selected = rows.filter(r => Math.min(9, Math.floor(Math.max(...r.p) * 10)) === bin);
     return { lower: bin / 10, upper: (bin + 1) / 10, n: selected.length,
       confidence: selected.length ? selected.reduce((s, r) => s + Math.max(...r.p), 0) / selected.length : null,
-      accuracy: selected.length ? selected.filter(r => r.p.indexOf(Math.max(...r.p)) === r.outcome).length / selected.length : null };
+      accuracy: selected.length ? selected.filter(r => favoredScenarioIndex(r.p) === r.outcome).length / selected.length : null };
   });
 }

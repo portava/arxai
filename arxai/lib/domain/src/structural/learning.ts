@@ -1,5 +1,5 @@
 import { STRUCTURAL_VERSION, type CalibrationRecord, type ForecastGrade, type PriceEstimate, type StructuralBar, type StructuralForecast,
-  scenarioOf, type ForecastRoute, type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
+  scenarioOf, scenarioIndex, type ForecastRoute, type Trajectory, type TrajectoryKind, type Triple } from "./contracts.js";
 import { brier } from "./math.js";
 import { lowerMeanGain, type Episode, type StructuralModel } from "./model.js";
 
@@ -214,6 +214,11 @@ export function favoredScenario(weights: Triple) {
   const scenarios = ["UP_FIRST", "DOWN_FIRST", "NEITHER"] as const;
   const ranked = scenarios.map((scenario, i) => ({ scenario, weight: weights[i]! })).sort((a, b) => b.weight - a.weight);
   return (ranked[0]!.weight * 100).toFixed(1) === (ranked[1]!.weight * 100).toFixed(1) ? null : ranked[0]!.scenario;
+}
+
+export function favoredScenarioIndex(weights: Triple): number | null {
+  const favorite = favoredScenario(weights);
+  return favorite === null ? null : scenarioIndex(favorite);
 }
 
 export function scoreClosePath(route: Pick<ForecastRoute, "candles">, actual: readonly Pick<StructuralBar, "openTime" | "closeTime" | "close">[]) {

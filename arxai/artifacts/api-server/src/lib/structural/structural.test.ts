@@ -321,6 +321,28 @@ test("a requested window reads its own bar length and an unknown window is refus
   assert.equal(seen.at(-1), "M15");
 });
 
+test("accuracy reports give displayed probability ties no directional credit", () => {
+  const rows: Array<{ p: [number, number, number]; outcome: number }> = [
+    { p: [.48, .48, .04], outcome: 0 },
+    { p: [.47998, .48002, .04], outcome: 1 },
+    { p: [.49, .47, .04], outcome: 0 },
+  ];
+  const bin = calibrationBins(rows).find(b => b.n > 0)!;
+  close(bin.accuracy!, 1 / 3);
+
+  const tied = structuredClone(model());
+  tied.availableAt = 0;
+  tied.geometryGate.accepted = tied.confirmationGate.accepted = tied.prebreakGate.accepted = false;
+  // At bar five both sides have the same displayed odds, with a tiny raw up lead.
+  tied.baseline = Array.from({ length: 60 }, (_, i) => i === 4 ? [.48002, 0, .47998, 0] : [0, 0, 0, 0]);
+  const [h] = walkForwardAccuracy(bars, origin, [5], { folds: 1, fit: () => tied }).horizons;
+  assert.ok(h!.forecasts > 0 && h!.outcomes.up > 0);
+  assert.equal(h!.topClassHitRate, 0);
+  assert.equal(h!.baselineTopClassHitRate, 0);
+  assert.equal(h!.leans, 0);
+  assert.equal(h!.leanPrecision, null);
+});
+
 test("walk-forward accuracy fits only on bars before each cutoff and finds no edge in a random walk", () => {
   const walk = fixture(9000), seen: number[] = [];
   const result = walkForwardAccuracy(walk, origin, [5, 15, 60], { folds: 3, fit: (b, o) => { seen.push(b.at(-1)!.closeTime); return fitStructuralModel(b, o); } });

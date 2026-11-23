@@ -206,6 +206,16 @@ describe("chart directional weights", () => {
     render(<ForecastDirectionSummary read={direction} />);
     expect(screen.getByTestId("forecast-direction").textContent).toMatch(/Bearish break favored.*Up first 45.5%.*Down first 54.5%.*No break <0.1%.*8.9 pt lead.*Historical-frequency baseline/);
   });
+  it("identifies a chart adjustment when the final prebreak stage retained its baseline", () => {
+    const receipt = {
+      ...row.forecast, horizonId: "15m", mode: "BASELINE",
+      horizons: [{ bars: 15, probabilities: [.46, .4, .14] }],
+      baselineMass: Array.from({ length: 60 }, (_, i) => i === 4 ? [.3, 0, .45, 0] : [0, 0, 0, 0]),
+    } as unknown as Parameters<typeof forecastDirectionRead>[0];
+    expect(forecastDirectionRead(receipt)?.basis).toBe("Chart-adjusted probabilities");
+    expect(forecastDirectionRead({ ...receipt, horizons: [{ ...receipt.horizons[0]!, probabilities: [.3, .45, .25] }] })?.basis)
+      .toBe("Historical-frequency baseline");
+  });
   it("can favor neither, show a displayed tie, or withhold malformed weights", () => {
     expect(read([.6,.2,.2])?.favoredBreak).toBe("up");
     expect(read([.2,.2,.6])?.favoredBreak).toBeNull();

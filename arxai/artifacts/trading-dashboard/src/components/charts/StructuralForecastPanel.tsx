@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { brier, independentForecasts, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
+import { brier, probabilities, independentForecasts, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -90,6 +90,20 @@ function validWeights(weights: Triple | null | undefined): weights is Triple {
     && Math.abs(weights.reduce((sum, p) => sum + p, 0) - 1) <= 0.00001;
 }
 
+function directionBasis(f: StructuralForecast, bars: number, weights: Triple): string {
+  if (f.calibration?.applied) return "Calibrated probabilities";
+  if (f.baselineMass) {
+    try {
+      const historical = probabilities(f.baselineMass, bars);
+      return weights.some((p, i) => Math.abs(p - historical[i]!) > 1e-10)
+        ? "Chart-adjusted probabilities" : "Historical-frequency baseline";
+    } catch {
+      return "Forecast probabilities";
+    }
+  }
+  return f.mode === "BASELINE" ? "Historical-frequency baseline" : "Model probabilities";
+}
+
 export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionRead | null {
   const window = forecastHorizon(f.horizonId ?? DEFAULT_FORECAST_HORIZON);
   const weights = window && f.horizons.find(h => h.bars === window.bars)?.probabilities;
@@ -106,7 +120,7 @@ export function forecastDirectionRead(f: StructuralForecast): ForecastDirectionR
     favoriteScenario: favorite, provider: f.origin.provider,
     favoredBreak: tied || first === 2 ? null : first === 0 ? "up" : "down",
     verdict: tied ? "No clear favorite" : outcomes[first]!,
-    basis: f.calibration?.applied ? "Calibrated probabilities" : f.mode === "BASELINE" ? "Historical-frequency baseline" : "Model probabilities" };
+    basis: directionBasis(f, window.bars, weights) };
 }
 
 const formatWeight = (p: number) => p > 0 && p < 0.0005 ? "<0.1%" : `${(100 * p).toFixed(1)}%`;
