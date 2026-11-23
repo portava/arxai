@@ -355,7 +355,7 @@ export class DerivPublicDataClient {
       const id = record(msg.subscription)?.id;
       if (typeof id !== "string" || !id) throw ERROR("DERIV_PUBLIC_INVALID_SUBSCRIPTION");
       if (version !== (this.intentVersions.get(symbol) ?? 0) || !this.desired.has(symbol)) { await this.request({ forget: id }); return null; }
-      if (!normalizePublicTick(msg.tick, symbol, this.now() + TICK_CLOCK_LEAD_MS)) { await this.request({ forget: id }); throw ERROR("DERIV_PUBLIC_INVALID_TICK"); }
+      if (!normalizePublicTick(msg.tick, symbol, this.now() + DERIV_PUBLIC_MAX_CLOCK_LEAD_MS)) { await this.request({ forget: id }); throw ERROR("DERIV_PUBLIC_INVALID_TICK"); }
       this.subscriptions.set(symbol, id);
       return this.acceptTick(msg.tick, symbol);
     })();
