@@ -164,3 +164,30 @@ test("Forecast cannot verify a stop or target through a stale executable quote",
   assert.deepEqual(timely.gradeTicket("R_100", plan, 11000, 17000),
     { state: "TARGET", entry: 100.2, exit: 102, observedAt: 17000 });
 });
+
+test("an already verified open Forecast ticket can settle after the entry tick ages out", () => {
+  const h = new PublicPaperBracketHistory();
+  const plan = { action: "BUY" as const, reference: 100, stop: 97, target: 103, reason: "paper" };
+  const observe = (epoch: number, bid = 100) =>
+    h.observe({ symbol: "1HZ75V", epoch, bid, ask: bid + 0.1, quote: bid + 0.05 });
+  for (let epoch = 11; epoch <= 8199; epoch++) observe(epoch);
+  assert.deepEqual(h.gradeTicket("1HZ75V", plan, 10100, 8199000), { state: "OPEN", entry: 100.1 });
+  for (let epoch = 8200; epoch <= 8202; epoch++) observe(epoch);
+  observe(8203, 103);
+  const target = { state: "TARGET", entry: 100.1, exit: 103, observedAt: 8203000 };
+  assert.deepEqual(h.gradeTicket("1HZ75V", plan, 10100, 8203000), target);
+  assert.deepEqual(h.gradeTicket("1HZ75V", plan, 10100, 8203000), target);
+  assert.equal(h.gradeTicket("1HZ75V", plan, 10100, 8202000).state, "OPEN");
+  assert.equal(h.gradeTicket("1HZ75V", { ...plan, stop: 96 }, 10100, 8203000).state, "UNVERIFIED");
+});
+
+test("losing quote coverage after a Forecast checkpoint leaves the order unverified", () => {
+  const h = new PublicPaperBracketHistory();
+  const plan = { action: "SELL" as const, reference: 100, stop: 103, target: 97, reason: "paper" };
+  for (let epoch = 11; epoch <= 8199; epoch++)
+    h.observe({ symbol: "1HZ75V", epoch, bid: 100, ask: 100.1, quote: 100.05 });
+  assert.equal(h.gradeTicket("1HZ75V", plan, 10100, 8199000).state, "OPEN");
+  for (let epoch = 8201; epoch <= 8207; epoch++)
+    h.observe({ symbol: "1HZ75V", epoch, bid: 96, ask: 96.1, quote: 96.05 });
+  assert.deepEqual(h.gradeTicket("1HZ75V", plan, 10100, 8207000), { state: "UNVERIFIED", entry: 100 });
+});

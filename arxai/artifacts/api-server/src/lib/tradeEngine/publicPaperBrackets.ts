@@ -27,6 +27,7 @@ export class PublicPaperBracketHistory {
     string,
     (DerivTick & { receivedAt: number; releasedAt: number })[]
   >();
+  private forecastCheckpoints = new Map<string, { through: number; checkedAt: number; entry: number }>();
   private checked = new Map<number, { key: string; epoch: number }>();
 
   observe(
@@ -55,11 +56,17 @@ export class PublicPaperBracketHistory {
     if (!ticks?.length)
       return now - publishedAt > FORECAST_QUOTE_MAX_AGE_MS ? { state: "UNVERIFIED" } : pending;
     const cadence = symbol.startsWith("1HZ") ? 1000 : 2000;
-    let previous = publishedAt;
-    let entry: number | undefined;
+    // A long-held paper order can outlive the rolling quote buffer. Reuse only
+    // an uninterrupted prefix observed under the same published ticket terms.
+    const key = JSON.stringify([symbol, publishedAt, plan.action, plan.reference, plan.stop, plan.target,
+      plan.entryLimit, plan.breakoutLevel]);
+    const saved = this.forecastCheckpoints.get(key);
+    const checkpoint = saved && saved.checkedAt <= now ? saved : undefined;
+    let previous = checkpoint?.through ?? publishedAt;
+    let entry = checkpoint?.entry;
     for (const tick of ticks) {
       const at = tick.epoch * 1000;
-      if (tick.releasedAt > now) continue;
+      if (tick.releasedAt > now || (checkpoint && at <= checkpoint.through)) continue;
       // The venue stamps whole seconds. A fresh quote from the issuance
       // second may reach ARX after the ticket was published.
       if (at < publishedAt && tick.receivedAt <= publishedAt) continue;
@@ -96,7 +103,14 @@ export class PublicPaperBracketHistory {
         };
     }
     if (now - previous > cadence + FORECAST_QUOTE_MAX_AGE_MS) return { state: "UNVERIFIED", entry };
-    return entry == null ? pending : { state: "OPEN", entry };
+    if (entry == null) return pending;
+    if (!saved || (now >= saved.checkedAt && previous > saved.through)) {
+      this.forecastCheckpoints.delete(key);
+      if (this.forecastCheckpoints.size >= 4096)
+        this.forecastCheckpoints.delete(this.forecastCheckpoints.keys().next().value!);
+      this.forecastCheckpoints.set(key, { through: previous, checkedAt: now, entry });
+    }
+    return { state: "OPEN", entry };
   }
 
   read(order: Bracket, symbol: string, latest: Quote): Reading {
