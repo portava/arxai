@@ -207,3 +207,27 @@ test("a delayed retest can qualify only once within three bars while the broken 
   assert.equal(read(touch,touch),undefined);
   assert.equal(read({ ...away, close:102, low:101 },touch),undefined);
 });
+
+test("an invalid or expired retest is a skipped setup on either side", () => {
+  const pull = { open: 102, high: 103, low: 99, close: 100 };
+  const broken = { open: 100, high: 105, low: 100, close: 104 };
+  const away = { open: 104, high: 106, low: 103.5, close: 105 };
+  const failed = { open: 104, high: 105, low: 101, close: 102 };
+  const mirror = (b: typeof pull) => ({open:200-b.open,high:200-b.low,low:200-b.high,close:200-b.close});
+  for (const side of ["BUY","SELL"] as const) {
+    const buy = side === "BUY";
+    const row = mkOpp({recommendedAction:side, setupType:buy?"Upward drift":"Downward drift", regime:{
+      regime:buy?"TREND_UP":"TREND_DOWN",substate:null,confidence01:.8,consecutiveConfirmations:4,reasons:[]}});
+    const read = (...after: typeof pull[]) => {
+      const bars = [pull,broken,...after];
+      return computeFinalRead({...row,driftTrigger:driftPullbackTrigger(buy?bars:bars.map(mirror),side)});
+    };
+    assert.equal(read(away,away).label, "WAIT_FOR_CONFIRMATION");
+    const invalid = read(away,failed);
+    assert.equal(invalid.label,"NO_TRADE");
+    assert.match(invalid.headline, /retest.*failed/i);
+    const expired = read(away,away,away);
+    assert.equal(expired.label,"NO_TRADE");
+    assert.match(expired.headline, /three.*without a retest/i);
+  }
+});

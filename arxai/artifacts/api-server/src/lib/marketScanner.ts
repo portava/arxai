@@ -1059,6 +1059,12 @@ export function computeFinalRead(
         confirmations.unshift(regimeCondition);
         reasons.push(regimeCondition);
       }
+    } else if (trigger?.closedRetest) {
+      const ended = trigger.closedRetest;
+      const levelText = priceText(ended.level);
+      label = rejectSetup(ended.failed
+        ? `The retest of ${levelText} failed. Look for a new ${opp.timeframe} pullback.`
+        : `Three ${opp.timeframe} candles closed without a retest of ${levelText}. Look for a new pullback.`);
     } else if (level != null) {
       const instruction = trigger?.confirmed || trigger?.pendingRetestLevel != null
         ? `Watch the next three bars from the break for a closed ${opp.timeframe} candle to touch ${priceText(level)} and close ${buy ? "above" : "below"} it.`
@@ -1605,6 +1611,7 @@ export function driftPullbackTrigger(
   let followThroughLevel: number | undefined;
   let retestLevel: number | undefined;
   let previousBreakLevel: number | undefined;
+  let closedRetest: { level: number; failed: boolean } | undefined;
   let pendingRetest: { level: number; expires: number } | undefined;
   let barIndex = 0;
   let previous: (typeof bars)[number] | undefined;
@@ -1612,11 +1619,15 @@ export function driftPullbackTrigger(
     barIndex++;
     previousBreakLevel = reclaimed ?? undefined;
     retestLevel = undefined;
+    closedRetest = undefined;
     if (pendingRetest) {
       const held = buy ? bar.close > pendingRetest.level : bar.close < pendingRetest.level;
       const touched = buy ? bar.low <= pendingRetest.level : bar.high >= pendingRetest.level;
       if (held && touched) retestLevel = pendingRetest.level;
-      if (!held || touched || barIndex >= pendingRetest.expires) pendingRetest = undefined;
+      if (!held || touched || barIndex >= pendingRetest.expires) {
+        if (retestLevel === undefined) closedRetest = { level: pendingRetest.level, failed: !held };
+        pendingRetest = undefined;
+      }
     }
     followThroughLevel = previous && reclaimed !== null &&
       (buy ? bar.close > previous.high : bar.close < previous.low) ? reclaimed : undefined;
@@ -1635,6 +1646,7 @@ export function driftPullbackTrigger(
   }
   return { side, level: reclaimed ?? level, confirmed: reclaimed !== null,
     ...(retestLevel !== undefined ? { retestLevel } : {}),
+    ...(closedRetest && reclaimed === null ? { closedRetest } : {}),
     ...(previousBreakLevel !== undefined ? { previousBreakLevel } : {}),
     ...(pendingRetest && !reclaimed ? { pendingRetestLevel: pendingRetest.level } : {}),
     ...(followThroughLevel !== undefined ? { followThroughLevel } : {}) };
