@@ -12223,6 +12223,9 @@ components:
         entryPrice: { type: number, nullable: true }
         entryZoneLow: { type: number, nullable: true }
         entryZoneHigh: { type: number, nullable: true }
+        confirmationClose:
+          type: number
+          description: Prior candle close that the bid must exceed on a buy or the ask must stay below on a sell at entry.
 
     MissionProposalRiskPlan:
       type: object

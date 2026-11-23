@@ -1,4 +1,4 @@
-import { missionEntryLimit, type AgentProposal } from "@workspace/domain/profit-mission";
+import { missionEntryLimit, missionTrendConfirmationHolds, type AgentProposal } from "@workspace/domain/profit-mission";
 import { runSingleStrategy } from "./backtestStrategyRegistry.js";
 import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import type { ScannerOpportunity } from "./marketScanner.js";
@@ -77,7 +77,6 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
   }
   const buy = signal.direction === "BUY", sign = buy ? 1 : -1;
   const entry = buy ? quote.quote.ask : quote.quote.bid;
-  const liquidation = buy ? quote.quote.bid : quote.quote.ask;
   const room = measureScannerEntryRoom(signal.direction, {bid:quote.quote.bid, ask:quote.quote.ask},
     signal.stopLoss, signal.takeProfit, levels);
   if (!room || room.rewardToRisk <= 0) {
@@ -87,7 +86,7 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     return proposal;
   }
   const previousClose = history.at(-2)!.close;
-  if (sign * (history.at(-1)!.close - previousClose) <= 0 || sign * (liquidation - previousClose) <= 0) {
+  if (sign * (history.at(-1)!.close - previousClose) <= 0 || !missionTrendConfirmationHolds(signal.direction, previousClose, quote.quote.bid, quote.quote.ask)) {
     proposal.reason = "Mission needs a closed candle advancing with its trend and a live exit-side quote still holding the prior close.";
     return proposal;
   }
@@ -96,7 +95,7 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     `${signal.reason} Take profit at defended ${buy ? "resistance" : "support"} at ${room.target}. Room from the executable entry is ${room.rewardToRisk.toFixed(2)}R.`;
   return { ...proposal, status: "proposed", direction: signal.direction, confidence: signal.score,
     urgency: signal.score >= 75 ? "high" : "medium", reason, invalidationLevel: String(signal.stopLoss),
-    entryPlan: { entryPrice: entry, entryZoneHigh: buy ? limit : null, entryZoneLow: buy ? null : limit },
+    entryPlan: { entryPrice: entry, confirmationClose: previousClose, entryZoneHigh: buy ? limit : null, entryZoneLow: buy ? null : limit },
     riskPlan: { stopLoss: signal.stopLoss, takeProfit: room.target, expectedR: room.rewardToRisk, riskAmount: null },
     marketSnapshot: { ...proposal.marketSnapshot,
       ...(room.defendedLevel === null ? {} : { defendedLevel: room.defendedLevel, strategyTarget: signal.takeProfit }),

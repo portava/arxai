@@ -23,6 +23,8 @@ export interface ProposalEntryPlan {
   entryPrice: number | null;
   entryZoneLow: number | null;
   entryZoneHigh: number | null;
+  /** For a trend entry the bid must stay above this close on buys, or the ask below it on sells. */
+  confirmationClose?: number;
 }
 
 export interface ProposalRiskPlan {
@@ -65,6 +67,12 @@ export const DEFAULT_RISK_REVIEW_CONFIG: RiskReviewConfig = {
   minConfidence: 55,
   minExpectedR: 1,
 };
+
+/** An executable trend entry still holds the prior close on the side used to exit. */
+export function missionTrendConfirmationHolds(side: "BUY" | "SELL", close: number, bid: number, ask: number): boolean {
+  if (![close, bid, ask].every(value => Number.isFinite(value) && value > 0) || ask <= bid) return false;
+  return side === "BUY" ? bid > close : ask < close;
+}
 
 /** Worst entry price that still satisfies the Mission reward-to-risk floor. */
 export function missionEntryLimit(stop: number, target: number): number {

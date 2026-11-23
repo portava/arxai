@@ -2191,6 +2191,12 @@ export const ListMissionProposalsResponseItem = zod
       entryPrice: zod.number().nullable(),
       entryZoneLow: zod.number().nullable(),
       entryZoneHigh: zod.number().nullable(),
+      confirmationClose: zod
+        .number()
+        .optional()
+        .describe(
+          "Prior candle close that the bid must exceed on a buy or the ask must stay below on a sell at entry.",
+        ),
     }),
     riskPlan: zod.object({
       stopLoss: zod.number().nullable(),
@@ -2359,6 +2365,12 @@ export const RunMissionScanResponse = zod
             entryPrice: zod.number().nullable(),
             entryZoneLow: zod.number().nullable(),
             entryZoneHigh: zod.number().nullable(),
+            confirmationClose: zod
+              .number()
+              .optional()
+              .describe(
+                "Prior candle close that the bid must exceed on a buy or the ask must stay below on a sell at entry.",
+              ),
           }),
           riskPlan: zod.object({
             stopLoss: zod.number().nullable(),

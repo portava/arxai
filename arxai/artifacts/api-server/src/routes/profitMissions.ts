@@ -526,6 +526,8 @@ function serializeProposal(row: MissionProposalRow) {
       entryPrice: (entry.entryPrice as number | null) ?? null,
       entryZoneLow: (entry.entryZoneLow as number | null) ?? null,
       entryZoneHigh: (entry.entryZoneHigh as number | null) ?? null,
+      ...(typeof entry.confirmationClose === "number" && Number.isFinite(entry.confirmationClose) && entry.confirmationClose > 0
+        ? { confirmationClose: entry.confirmationClose } : {}),
     },
     riskPlan: {
       stopLoss: (risk.stopLoss as number | null) ?? null,

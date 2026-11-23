@@ -3,7 +3,7 @@ import { beforeEach, mock, test } from "node:test";
 import type { ScannerOpportunity } from "../marketScanner.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
-import { assessRiskObjection } from "@workspace/domain/profit-mission";
+import { assessRiskObjection, missionTrendConfirmationHolds } from "@workspace/domain/profit-mission";
 import { bindScannerSource, scannerSourceIdentity } from "../scannerInputIntegrity.js";
 
 const minute = 60_000;
@@ -73,6 +73,7 @@ test("Mission can buy or sell a trend while Scanner waits, using the executable 
     const limit = (p.riskPlan.takeProfit! + p.riskPlan.stopLoss!) / 2;
     assert.ok(Math.abs((sign === 1 ? p.entryPlan.entryZoneHigh : p.entryPlan.entryZoneLow)! - limit) < 1e-10);
     assert.equal(sign === 1 ? p.entryPlan.entryZoneLow : p.entryPlan.entryZoneHigh, null);
+    assert.equal(p.entryPlan.confirmationClose, 1000 + sign * (0.15 * 248 - 0.4));
     assert.equal(p.marketSnapshot?.scannerRead, "WAIT_FOR_CONFIRMATION");
   }
 });
@@ -178,4 +179,14 @@ test("a private chart level needs the same series writer and exact bar as the Mi
   chartOffset = 0.2;
   const stale = await scoutPaperMissionMarket(row, "different-bar");
   assert.equal(stale.riskPlan.takeProfit, other.riskPlan.takeProfit);
+});
+
+test("the fill quote must hold the close on its liquidation side", () => {
+  assert.ok(missionTrendConfirmationHolds("BUY", 100, 100.01, 100.03));
+  assert.ok(missionTrendConfirmationHolds("SELL", 100, 99.96, 99.99));
+  assert.equal(missionTrendConfirmationHolds("BUY", 100, 100, 100.03), false);
+  assert.equal(missionTrendConfirmationHolds("SELL", 100, 99.99, 100.01), false);
+  assert.equal(missionTrendConfirmationHolds("SELL", 100, 99.98, 100), false);
+  assert.equal(missionTrendConfirmationHolds("BUY", 100, 101, 100.9), false);
+  assert.equal(missionTrendConfirmationHolds("BUY", Number.NaN, 101, 101.1), false);
 });

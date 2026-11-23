@@ -1617,6 +1617,8 @@ export interface MissionProposalEntryPlan {
   entryPrice: number | null;
   entryZoneLow: number | null;
   entryZoneHigh: number | null;
+  /** Prior candle close that the bid must exceed on a buy or the ask must stay below on a sell at entry. */
+  confirmationClose?: number;
 }
 
 export interface MissionProposalRiskPlan {
