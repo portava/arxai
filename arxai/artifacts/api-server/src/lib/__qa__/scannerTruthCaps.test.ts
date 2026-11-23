@@ -180,6 +180,16 @@ test("history conflicting with scanner downgrades an otherwise-clean read", () =
   assert.ok(r.reasons.some((x) => /conflict/i.test(x)));
 });
 
+test("a single opposite history observation names the sample and recheck interval", () => {
+  const r = computeFinalRead(opp({
+    recommendedAction: "BUY", timeframe: "M1", newsContext: news(),
+    historicalContext: hist({ bias: "BEARISH", sampleSize: 1, alignsWithScanner: false }),
+  }));
+  assert.match(r.headline, /bearish same-time reading from 1 historical candle pair conflicts with this BUY setup/);
+  assert.match(r.headline, /next M1 close/);
+  assert.ok(r.reasons.every(reason => !/news reading conflicts/i.test(reason)));
+});
+
 // ── Weak technical badges veto regardless of clean feeds ────────────────────
 
 test("REJECTED_BY_RISK badge => NO_TRADE even with clean feeds", () => {

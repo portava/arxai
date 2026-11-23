@@ -12,6 +12,8 @@
 // preference", not a buy/sell signal. The trade ticket UI surfaces this as
 // decision-support, not as a recommendation.
 
+import { candleIntervalMs } from "../market/candleFreshnessRule.js";
+
 export type WindowLabel =
   | "yesterday"
   | "lastWeek"
@@ -136,31 +138,28 @@ export function analyzeHistoricalComparison(args: {
   const sorted = [...args.candles].sort((a, b) => a.timestamp - b.timestamp);
   const targets = buildSameTimeTargets(args.now);
 
+  const interval = candleIntervalMs(args.timeframe);
+  const monthly = ["MN1", "1MO"].includes(args.timeframe.toUpperCase()) || args.timeframe === "1M";
+  function closeTime(open: number): number {
+    if (monthly) {
+      const date = new Date(open);
+      return date.setUTCMonth(date.getUTCMonth() + 1);
+    }
+    return open + (interval ?? NaN);
+  }
+
   const windows: SameTimeWindow[] = targets.map((t) => {
     const hit = findCandleAtOrBefore(sorted, t.targetTime);
-    if (!hit) {
+    const next = hit ? sorted[hit.idx + 1] : undefined;
+    let unavailableReason: string | undefined;
+    if (!hit) unavailableReason = "History does not span back this far";
+    else if (!interval || t.targetTime >= closeTime(hit.candle.timestamp)) unavailableReason = "No observed candle covers the requested time";
+    else if (!next || next.timestamp !== closeTime(hit.candle.timestamp)) unavailableReason = "The following interval has no consecutive candle";
+    else if (closeTime(next.timestamp) > args.now) unavailableReason = "The following candle was still open at the comparison cutoff";
+    if (unavailableReason || !hit || !next) {
       return {
-        label: t.label,
-        targetTime: t.targetTime,
-        candle: null,
-        nextCandle: null,
-        direction: null,
-        changePct: null,
-        available: false,
-        unavailableReason: "History does not span back this far",
-      };
-    }
-    const next = sorted[hit.idx + 1] ?? null;
-    if (!next) {
-      return {
-        label: t.label,
-        targetTime: t.targetTime,
-        candle: hit.candle,
-        nextCandle: null,
-        direction: null,
-        changePct: null,
-        available: false,
-        unavailableReason: "No following candle to measure direction",
+        ...t, candle: hit && t.targetTime < closeTime(hit.candle.timestamp) ? hit.candle : null,
+        nextCandle: null, direction: null, changePct: null, available: false, unavailableReason,
       };
     }
     const { direction, changePct } = classifyDirection(hit.candle, next);

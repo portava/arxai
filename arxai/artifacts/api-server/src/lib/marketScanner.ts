@@ -704,8 +704,18 @@ export function computeFinalRead(
   if (conflict) {
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
     if (label === "WAIT_FOR_CONFIRMATION" && newsLevel !== "none") label = "AVOID_FOR_NOW";
-    reasons.push("Technicals and news/history are conflicting.");
-    confirmations.push(hist?.alignsWithScanner === false ? "Wait for the historical comparison to agree with the current direction." : "Wait for the news read to agree with the current direction.");
+    if (hist?.alignsWithScanner === false) {
+      const sample = Number.isInteger(hist.sampleSize) && hist.sampleSize > 0
+        ? ` from ${hist.sampleSize} historical candle ${hist.sampleSize === 1 ? "pair" : "pairs"}` : "";
+      const bias = hist.bias === "BULLISH" || hist.bias === "BEARISH" ? hist.bias.toLowerCase() : "opposing";
+      const reason = `The ${bias} same-time reading${sample} conflicts with this ${opp.recommendedAction} setup.`;
+      reasons.push(reason);
+      confirmations.push(`${reason} Recheck at the next ${opp.timeframe} close for that conflict to clear.`);
+    }
+    if (news?.alignsWithScanner === false) {
+      reasons.push(`The news reading conflicts with this ${opp.recommendedAction} setup.`);
+      confirmations.push(`Recheck when the news reading no longer opposes the ${opp.recommendedAction} setup.`);
+    }
   }
 
   // 3. Weak technical signal → no trade regardless of news.
