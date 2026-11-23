@@ -18,6 +18,8 @@ type Bracket = {
 type Quote = { bid: number; ask: number; at: Date; source: string };
 type Reading = ({ ok: true } & Quote) | { ok: false; reasons: string[] };
 
+const FORECAST_QUOTE_MAX_AGE_MS = 3000;
+
 // Fixed-frequency public volatility indices used by the paper engines.
 // Keep recording independent of account polling, including ticks with missing sides.
 export class PublicPaperBracketHistory {
@@ -51,7 +53,7 @@ export class PublicPaperBracketHistory {
     if (plan.action === "HOLD") return { state: "SKIPPED" };
     const ticks = this.streams.get(symbol);
     if (!ticks?.length)
-      return now - publishedAt > 3000 ? { state: "UNVERIFIED" } : pending;
+      return now - publishedAt > FORECAST_QUOTE_MAX_AGE_MS ? { state: "UNVERIFIED" } : pending;
     const cadence = symbol.startsWith("1HZ") ? 1000 : 2000;
     let previous = publishedAt;
     let entry: number | undefined;
@@ -64,11 +66,13 @@ export class PublicPaperBracketHistory {
       if (at - previous > cadence || tick.bid == null || tick.ask == null)
         return { state: "UNVERIFIED", entry };
       previous = at;
+      const staleQuote = tick.releasedAt - at > FORECAST_QUOTE_MAX_AGE_MS;
+      if (entry != null && staleQuote) return { state: "UNVERIFIED", entry };
       if (entry == null) {
         if (tick.receivedAt <= publishedAt) continue;
         if (
-          tick.releasedAt - publishedAt > 3000 ||
-          tick.releasedAt - at > 3000 ||
+          tick.releasedAt - publishedAt > FORECAST_QUOTE_MAX_AGE_MS ||
+          staleQuote ||
           !executableForecastPaperOrder(plan, tick.bid, tick.ask)
         )
           return { state: "SKIPPED" };
@@ -91,7 +95,7 @@ export class PublicPaperBracketHistory {
           observedAt: tick.releasedAt,
         };
     }
-    if (now - previous > cadence + 3000) return { state: "UNVERIFIED", entry };
+    if (now - previous > cadence + FORECAST_QUOTE_MAX_AGE_MS) return { state: "UNVERIFIED", entry };
     return entry == null ? pending : { state: "OPEN", entry };
   }
 

@@ -146,3 +146,21 @@ test("Forecast uses the first fresh quote received after issuance within the sam
   });
   assert.equal(history.gradeTicket("R_100", plan, 12052, 16100).state, "SKIPPED");
 });
+
+test("Forecast cannot verify a stop or target through a stale executable quote", () => {
+  const plan = { action: "BUY" as const, reference: 100, stop: 99, target: 102, reason: "breakout" };
+  for (const delayedBid of [98.8, 102.1, 100]) {
+    const h = new PublicPaperBracketHistory();
+    const add = (epoch: number, bid: number, receivedAt: number) =>
+      h.observe({ symbol: "R_100", epoch, bid, ask: bid + 0.2, quote: bid + 0.1 }, receivedAt);
+    add(12, 100, 12050);
+    add(14, delayedBid, 17001);
+    add(16, 102.3, 17002);
+    assert.deepEqual(h.gradeTicket("R_100", plan, 11000, 17500), { state: "UNVERIFIED", entry: 100.2 });
+  }
+  const timely = new PublicPaperBracketHistory();
+  timely.observe({ symbol: "R_100", epoch: 12, bid: 100, ask: 100.2, quote: 100.1 });
+  timely.observe({ symbol: "R_100", epoch: 14, bid: 102, ask: 102.2, quote: 102.1 }, 17000);
+  assert.deepEqual(timely.gradeTicket("R_100", plan, 11000, 17000),
+    { state: "TARGET", entry: 100.2, exit: 102, observedAt: 17000 });
+});
