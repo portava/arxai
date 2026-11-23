@@ -123,12 +123,14 @@ test("a drift watch needs an aligned entry trigger and a spent pullback cannot f
   const read = (bars: typeof reclaim[]) => computeFinalRead({ ...row, driftTrigger: driftPullbackTrigger(bars, "BUY") });
   assert.equal(read([pullback]).label, "WAIT_FOR_CONFIRMATION");
   assert.match(read([pullback]).headline, /above the pullback high at 103/);
-  assert.equal(read([pullback, reclaim]).label, "TRADE_WATCH");
-  assert.equal(read([pullback, reclaim, { ...reclaim, close: 105 }]).label, "WAIT_FOR_CONFIRMATION");
+  assert.equal(read([pullback, reclaim]).label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read([pullback, reclaim]).headline, /touch 103 and close above/);
+  assert.equal(read([pullback, reclaim, { ...reclaim, close: 105 }]).label, "TRADE_WATCH");
+  assert.equal(read([pullback, reclaim, { open: 104, low: 103.5, high: 106, close: 105 }]).label, "WAIT_FOR_CONFIRMATION");
   assert.equal(computeFinalRead({ ...row, regime: { ...row.regime!, regime: "RANGE" },
     driftTrigger: driftPullbackTrigger([pullback, reclaim], "BUY") }).label, "WAIT_FOR_CONFIRMATION");
   const redAbove = { open: 108, high: 109, low: 104, close: 105 };
-  assert.equal(read([pullback, redAbove]).label, "TRADE_WATCH");
+  assert.equal(read([pullback, redAbove]).label, "WAIT_FOR_CONFIRMATION");
   const greenBelow = { open: 96, high: 99, low: 95, close: 98 };
   assert.deepEqual(driftPullbackTrigger([reclaim, greenBelow], "SELL"),
     { side: "SELL", level: 100, confirmed: true });
@@ -136,11 +138,11 @@ test("a drift watch needs an aligned entry trigger and a spent pullback cannot f
     { side: "SELL", level: 100, confirmed: true });
 });
 
-test("an aligned confirmed pattern can use one follow-through bar while an unrelated line forms", () => {
+test("an aligned confirmed pattern can use one retest bar while an unrelated line forms", () => {
   const bars = [
     { open: 102, high: 103, low: 99, close: 100 },
     { open: 100, high: 106, low: 100, close: 105 },
-    { open: 105, high: 108, low: 104, close: 107 },
+    { open: 105, high: 108, low: 103, close: 107 },
   ];
   const row = mkOpp({ setupType: "Upward drift", regime: { regime: "TREND_UP", substate: null,
     confidence01: .8, consecutiveConfirmations: 4, reasons: [] }, driftTrigger: driftPullbackTrigger(bars, "BUY"),
@@ -163,7 +165,7 @@ test("a closed pullback loses its entry when the current exit-side quote crosses
     const row = mkOpp({ recommendedAction: side, setupType: buy ? "Upward drift" : "Downward drift",
       regime: { regime: buy ? "TREND_UP" : "TREND_DOWN", substate: null,
         confidence01: .8, consecutiveConfirmations: 4, reasons: [] },
-      driftTrigger: { side, level: 100, confirmed: true } });
+      driftTrigger: { side, level: 100, confirmed: false, retestLevel: 100 } });
     const lost = computeFinalRead({ ...row, bidAsk: { bid: 99.99, ask: 100.01 } });
     assert.equal(lost.label, "WAIT_FOR_CONFIRMATION");
     assert.match(lost.headline, /no longer holds it/);

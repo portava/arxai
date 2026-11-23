@@ -863,8 +863,8 @@ export function computeFinalRead(
   const timing = opp.timingContext;
   const trigger = opp.driftTrigger?.side === side ? opp.driftTrigger : undefined;
   const matchingPattern = opp.patternTrigger?.confirmed && opp.patternTrigger.bias === bias;
-  const followThrough = matchingPattern ? trigger?.followThroughLevel : undefined;
-  const entryConfirmed = driftSetup && aligned && (trigger?.confirmed === true || followThrough !== undefined);
+  const retest = trigger?.retestLevel;
+  const entryConfirmed = driftSetup && aligned && retest !== undefined;
   const pat = opp.patternImpact;
   const patternIsSecondary = entryConfirmed && !pat?.contextOnly &&
     (pat?.labelHint === "forming_setup" || (pat?.labelHint === "needs_confirmation" && matchingPattern));
@@ -1003,16 +1003,16 @@ export function computeFinalRead(
       reasons.push(timing.actionReason);
       confirmations.push(timing.actionReason);
     } else if (entryConfirmed && opp.bidAsk && (buy
-      ? opp.bidAsk.bid <= (followThrough ?? trigger?.level ?? -Infinity)
-      : opp.bidAsk.ask >= (followThrough ?? trigger?.level ?? Infinity))) {
+      ? opp.bidAsk.bid <= (retest ?? trigger?.level ?? -Infinity)
+      : opp.bidAsk.ask >= (retest ?? trigger?.level ?? Infinity))) {
       label = "WAIT_FOR_CONFIRMATION";
-      const level = priceText(followThrough ?? trigger?.level ?? undefined);
+      const level = priceText(retest ?? trigger?.level ?? undefined);
       const instruction = `The last close reclaimed ${level}, but the current ${buy ? "bid" : "ask"} no longer holds it. Recheck when the ${buy ? "bid moves above" : "ask moves below"} ${level}.`;
       reasons.push(instruction);
       confirmations.push(instruction);
     } else if (structure || entryConfirmed || (aligned && timed)) {
       reasons.push(structure ? "Chart structure confirms the entry direction." : timed ? "Entry timing and pressure agree with the trend."
-        : followThrough !== undefined ? `Two ${opp.timeframe} closes held beyond ${priceText(followThrough)} and the second extended the breakout with the confirmed chart pattern.`
+        : retest !== undefined ? `The next closed ${opp.timeframe} candle retested ${priceText(retest)} and held on the ${buy ? "buy" : "sell"} side.`
         : `The ${opp.timeframe} pullback closed back through ${priceText(trigger?.level ?? undefined)} with the trend.`);
     } else {
       label = "WAIT_FOR_CONFIRMATION";
@@ -1022,6 +1022,18 @@ export function computeFinalRead(
         : `Watch for a ${buy ? "down" : "up"} ${opp.timeframe} candle, then a close ${buy ? "above its high" : "below its low"}.`;
       reasons.push(instruction);
       confirmations.push(instruction);
+    }
+  }
+
+  if (driftSetup && !entryConfirmed && (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION")) {
+    label = "WAIT_FOR_CONFIRMATION";
+    const level = trigger?.confirmed ? trigger.level : trigger?.previousBreakLevel;
+    if (level != null) {
+      const instruction = trigger?.confirmed
+        ? `Wait for the next closed ${opp.timeframe} candle to touch ${priceText(level)} and close ${buy ? "above" : "below"} it.`
+        : `The candle after the break did not hold a retest of ${priceText(level)}. Skip this entry and look for a new pullback.`;
+      confirmations.unshift(instruction);
+      reasons.push(instruction);
     }
   }
 
@@ -1558,8 +1570,14 @@ export function driftPullbackTrigger(
   let level: number | null = null;
   let reclaimed: number | null = null;
   let followThroughLevel: number | undefined;
+  let retestLevel: number | undefined;
+  let previousBreakLevel: number | undefined;
   let previous: (typeof bars)[number] | undefined;
   for (const bar of bars) {
+    previousBreakLevel = reclaimed ?? undefined;
+    retestLevel = reclaimed !== null && (buy
+      ? bar.low <= reclaimed && bar.close > reclaimed
+      : bar.high >= reclaimed && bar.close < reclaimed) ? reclaimed : undefined;
     followThroughLevel = previous && reclaimed !== null &&
       (buy ? bar.close > previous.high : bar.close < previous.low) ? reclaimed : undefined;
     previous = bar;
@@ -1575,6 +1593,8 @@ export function driftPullbackTrigger(
     }
   }
   return { side, level: reclaimed ?? level, confirmed: reclaimed !== null,
+    ...(retestLevel !== undefined ? { retestLevel } : {}),
+    ...(previousBreakLevel !== undefined ? { previousBreakLevel } : {}),
     ...(followThroughLevel !== undefined ? { followThroughLevel } : {}) };
 }
 

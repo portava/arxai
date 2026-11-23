@@ -59,6 +59,7 @@ import { isApprovedArxMarket } from "@workspace/domain/market";
 import { annotateScanProposals, exposureBudgetFrom } from "./missionExecutionQuality.js";
 import { reviewScannerOpportunities } from "./scannerReview.js";
 import { scanSymbolTimeframe, type ScannerOpportunity } from "./marketScanner.js";
+import { scoutPaperMissionMarket } from "./missionMarketSelection.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 
 // Default discovery universe when a mission carries no explicit symbol list.
@@ -278,11 +279,12 @@ function mapEdgeFeedStatus(dataSource: ScannerOpportunity["dataSource"]): EdgeFe
  */
 export function opportunityToEdgeInput(opp: ScannerOpportunity, proposal: AgentProposal): EdgeInput {
   const timing = opp.timingContext?.timeframe === opp.timeframe ? opp.timingContext : undefined;
+  const independent = proposal.marketSnapshot?.selectionModel === "mission_trend_continuation";
   return {
     direction: proposal.direction,
     components: {
-      directionConviction: Number.isFinite(opp.confidenceScore) ? opp.confidenceScore : null,
-      entryQuality: Number.isFinite(opp.entrySniperScore) ? opp.entrySniperScore : null,
+      directionConviction: independent ? proposal.confidence : Number.isFinite(opp.confidenceScore) ? opp.confidenceScore : null,
+      entryQuality: independent ? null : Number.isFinite(opp.entrySniperScore) ? opp.entrySniperScore : null,
       rewardToRisk: rewardToRiskScore(proposal.riskPlan.expectedR),
       timingQuality: timing && timing.dataQualityLabel !== "basic_timing_estimate" ? timing.tradeabilityScore : null,
     },
@@ -351,7 +353,31 @@ export async function runMissionScan(args: {
   }
   const observations = new Map((await reviewScannerOpportunities(raw)).map(row => [row.symbol, row]));
 
-  for (const agent of proposers) {
+  const missionRows = await db
+    .select()
+    .from(profitMissionsTable)
+    .where(and(eq(profitMissionsTable.id, missionId), eq(profitMissionsTable.userId, userId)))
+    .limit(1);
+  const missionRow = missionRows[0] ?? null;
+  const independent = missionRow?.executionMode === "paper";
+  if (independent) {
+    for (const opp of observations.values()) {
+      if (opp.dataSource === "LIVE_FEED" && opp.selectable) liveFeedConnected = true;
+      const proposalId = `${missionId}:TREND:${opp.symbol}:${scanRunTs}`;
+      const proposal = await scoutPaperMissionMarket(opp, proposalId).catch(() => null);
+      if (!proposal) continue;
+      proposal.riskObjection = assessRiskObjection(proposal);
+      if (proposal.riskObjection) {
+        proposal.status = "vetoed";
+        proposal.rejectionReason = proposal.riskObjection;
+      }
+      reviewed.push(proposal);
+      oppByProposalId.set(proposalId, opp);
+      edgeByProposalId.set(proposalId, computeEdgeScore(opportunityToEdgeInput(opp, proposal)));
+    }
+  }
+
+  for (const agent of independent ? [] : proposers) {
     const eligible = symbols.filter((sym) => agentProposesOn(agent, sym));
     if (eligible.length === 0) continue;
 
@@ -388,12 +414,6 @@ export async function runMissionScan(args: {
   }
 
   // ── Mission context for the router + impact (scoped read; honest math). ────
-  const missionRows = await db
-    .select()
-    .from(profitMissionsTable)
-    .where(and(eq(profitMissionsTable.id, missionId), eq(profitMissionsTable.userId, userId)))
-    .limit(1);
-  const missionRow = missionRows[0] ?? null;
   const nowMs = Date.now();
   const missionMath = missionRow
     ? computeMissionMath({
@@ -471,7 +491,7 @@ export async function runMissionScan(args: {
   let missionImpact: MissionImpact | null = null;
   const selectedId = queue.best?.candidate.proposalId ?? null;
   const chosen = reviewed.find(p => p.proposalId === selectedId);
-  const judgeReason = describeMissionSelection(queue);
+  const judgeReason = describeMissionSelection(queue, independent ? "Mission trend" : "Scanner");
   if (chosen) {
     chosen.status = "selected";
     chosen.judgeDecision = "best";
