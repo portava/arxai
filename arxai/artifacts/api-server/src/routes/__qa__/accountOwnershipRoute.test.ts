@@ -380,9 +380,10 @@ test("paper execution: lists, detail, manual close and monitor stay inside the c
   assert.equal((await request(`/paper-execution/trade/${seed.execA}`, c.a)).status, 200);
 
   assert.equal((await send("POST", `/paper-execution/close/${seed.openOrderA}`, c.b, { exitPrice: 1 })).status, 409);
-  // B forces a crash price; only B's own open orders may be touched.
+  // A trader can refresh their own observed quotes. Only operator replays can override prices.
+  assert.equal((await send("POST", "/paper-execution/monitor", c.b, { forcePrice: FAR_SL / 10 })).status, 403);
   const mon = await json<{ monitor: { updates: { paperOrderId: number }[] } }>(
-    await send("POST", "/paper-execution/monitor", c.b, { forcePrice: FAR_SL / 10, forceSymbol: `${MARK}.A` }));
+    await send("POST", "/paper-execution/monitor", c.b, {}));
   assert.ok(!mon.monitor.updates.some((x) => x.paperOrderId === seed.openOrderA));
   const [o] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, seed.openOrderA));
   assert.equal(o!.status, "OPEN");

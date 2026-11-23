@@ -176,12 +176,16 @@ router.get("/paper-execution/trade/:id", async (req, res): Promise<void> => {
 
 // ── POST /paper-execution/monitor ─────────────────────────────────────────
 const MonitorBody = z.object({
-  forcePrice: z.number().optional(),
+  forcePrice: z.number().finite().positive().optional(),
   forceSymbol: z.string().optional(),
 });
 router.post("/paper-execution/monitor", async (req, res): Promise<void> => {
   const parse = MonitorBody.safeParse(req.body ?? {});
   if (!parse.success) { fail(res, 400, "Invalid body", { issues: parse.error.issues }); return; }
+  if (parse.data.forcePrice !== undefined && !canSeeLegacyRows(req.authUser)) {
+    fail(res, 403, "Paper accounts use the observed market price. Price overrides require an operator replay.");
+    return;
+  }
   try {
     const summary = await runPaperMonitor({ ...parse.data, userId: req.authUser!.id });
     ok(res, { monitor: summary });
