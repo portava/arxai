@@ -232,3 +232,13 @@ it("dynamic Forecast keeps its bar timer when the chart redraws", async () => {
     expect(fetch.mock.calls.filter(([,opts])=>opts?.method === "POST")).toHaveLength(2);
   } finally { vi.useRealTimers(); }
 });
+
+it("includes a newly issued paper ticket in the pending count immediately", async () => {
+  const issued = { ...row, paperPublishedAt: row.issuedAt + 1, forecast: { ...row.forecast,
+    paperInstruction: { action:"BUY", reference:100,stop:99,target:101.5,entryLimit:100.25,reason:"test" } } };
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(response({ forecasts:[] })).mockResolvedValueOnce(response({saved:true,...issued})));
+  render(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button",{name:"Forecast 1 hour ahead"}));
+  expect((await screen.findByLabelText("Forecast paper ticket results")).textContent).toContain("1 open or pending");
+  expect(screen.getByLabelText("Independent first-break accuracy").textContent).toContain("1 unresolved");
+});

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { brier, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
+import { brier, independentForecasts, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -260,7 +260,15 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
 
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
-  const paperTickets = windowHistory.filter(r => r.paperPublishedAt != null);
+  const recent = shown && !windowHistory.some(r => r.id === shown.id) ? [shown, ...windowHistory] : windowHistory;
+  const paperTickets = recent.filter(r => r.paperPublishedAt != null);
+  const directionWindows = independentForecasts(recent.map(r => ({row:r,asOf:r.forecast.asOf,update:!!r.forecast.update})),preset.stepMs*preset.bars);
+  const firstBreakGrades = directionWindows.flatMap(({row}) => {
+    const p = row.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
+    const result = uniqueHorizonScores(row.scores, preset.bars)[0];
+    if (!result || !validWeights(p)) return [];
+    return [favoredScenario(p) === result.outcome];
+  });
   const targets = paperTickets.filter(r => r.paperGrade?.state === "TARGET").length;
   const stops = paperTickets.filter(r => r.paperGrade?.state === "STOP").length;
   const skippedOrders = paperTickets.filter(r => r.paperGrade?.state === "SKIPPED").length;
@@ -364,6 +372,9 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <span>Direction recall: {actualDirection ? `${(100 * correctDirection / actualDirection).toFixed(1)}%` : "—"}</span>
       <span>Saved {preset.label} forecasts: {windowHistory.length + (shown && !windowHistory.some(r => r.id === shown.id) ? 1 : 0)}</span>
     </div>}
+    {directionWindows.length > 0 && <p aria-label="Independent first-break accuracy" className="mt-2 text-zinc-300">
+      First-break calls · {firstBreakGrades.length ? `${(100 * firstBreakGrades.filter(Boolean).length / firstBreakGrades.length).toFixed(1)}% correct (${firstBreakGrades.filter(Boolean).length} of ${firstBreakGrades.length} settled)` : "Awaiting a completed window"} · {directionWindows.length - firstBreakGrades.length} unresolved · independent {preset.label} windows, including neither
+    </p>}
     {paperTickets.length > 0 && <p aria-label="Forecast paper ticket results" className="mt-2 text-zinc-300">
       Recent paper tickets · {targets + stops ? `${(100 * targets / (targets + stops)).toFixed(1)}% targets (${targets} of ${targets + stops} settled)` : "Awaiting a verified exit"} · {skippedOrders} skipped · {unverifiedOrders} with incomplete quotes · {paperTickets.length - targets - stops - skippedOrders - unverifiedOrders} open or pending
     </p>}

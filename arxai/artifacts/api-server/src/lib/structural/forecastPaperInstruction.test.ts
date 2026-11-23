@@ -56,6 +56,7 @@ test("odds alone hold and a confirmed directional break fixes the paper bracket"
       forecastPaperInstruction(input, [0.25, 0.15, 0.6]).action,
       "HOLD",
     );
+    assert.equal(forecastPaperInstruction(input, [0.40004, 0.40003, 0.19993]).action, "HOLD");
     input[10]!.isFinal = false;
     assert.equal(
       forecastPaperInstruction(input, [0.5, 0.3, 0.2]).action,

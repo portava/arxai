@@ -1,3 +1,4 @@
+import { favoredScenario } from "./learning.js";
 import type { StructuralBar, Triple } from "./contracts.js";
 
 export type ForecastPaperInstruction =
@@ -37,12 +38,12 @@ export function forecastPaperInstruction(
     )
   )
     return hold("Waiting for 15 consecutive closed candles.");
-  const [up, down, neither] = odds;
-  if (up === down || Math.max(up, down) <= neither)
+  const leader = favoredScenario(odds);
+  if (!leader || leader === "NEITHER")
     return hold("No single direction leads the first-break forecast.");
   const last = recent[14]!,
     prev = recent[13]!,
-    buy = up > down,
+    buy = leader === "UP_FIRST",
     sign = buy ? 1 : -1;
   if (buy ? last.close <= prev.high : last.close >= prev.low)
     return hold(
