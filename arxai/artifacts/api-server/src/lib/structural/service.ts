@@ -1,4 +1,4 @@
-import { forecastPaperInstruction, type ForecastPaperGrade } from "@workspace/domain/structural";
+import { forecastPaperInstruction, settledPaperGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
@@ -162,7 +162,7 @@ export class StructuralForecastService {
         const grade = this.deps.gradePaperTicket?.(row, now);
         if (grade) {
           row.paperGrade = grade;
-          if (["TARGET", "STOP", "SKIPPED"].includes(grade.state)) await this.deps.repository.savePaperGrade?.(userId, row.id, grade);
+          if (settledPaperGrade(grade)) await this.deps.repository.savePaperGrade?.(userId, row.id, grade);
         }
       }
       const step = forecastStepMs(row.forecast);

@@ -110,3 +110,7 @@ export interface ForecastPaperGrade {
   exit?: number;
   observedAt?: number;
 }
+
+export function settledPaperGrade(grade: ForecastPaperGrade): boolean {
+  return grade.state === "TARGET" || grade.state === "STOP" || grade.state === "SKIPPED";
+}

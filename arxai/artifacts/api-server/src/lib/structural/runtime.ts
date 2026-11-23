@@ -1,5 +1,4 @@
-import { publicPaperBrackets } from "../tradeEngine/publicPaperBrackets.js";
-import { resolveDerivSymbol } from "../data/providers/derivProvider.js";
+import { gradePublicForecastOrder } from "./paperGrading.js";
 import { getChartCandles } from "../data/chart/chartDataService.js";
 import { StructuralForecastService } from "./service.js";
 import { fitWindowCount, MIN_FIT_WINDOWS, forecastHorizon, DEFAULT_FORECAST_HORIZON } from "@workspace/domain/structural";
@@ -13,9 +12,8 @@ export const structuralService = new StructuralForecastService({
   repository: structuralRepository,
   fit: fitInWorker,
   gradePaperTicket(row, now) {
-    const symbol = resolveDerivSymbol(row.forecast.origin.symbol);
-    if (row.forecast.origin.provider !== "deriv_public" || !symbol || !/^V(10|25|50|75|100)(_1S)?$/.test(symbol.symbol) || row.paperPublishedAt == null || !row.forecast.paperInstruction) return undefined;
-    return publicPaperBrackets.gradeTicket(symbol.derivId,row.forecast.paperInstruction,row.paperPublishedAt,now);
+    if (row.forecast.origin.provider !== "deriv_public" || row.paperPublishedAt == null || !row.forecast.paperInstruction) return undefined;
+    return gradePublicForecastOrder(row.forecast.origin.symbol, row.forecast.paperInstruction, row.paperPublishedAt, now);
   },
   async readFeed(symbol, requested) {
     const horizon = requested ?? forecastHorizon(DEFAULT_FORECAST_HORIZON)!;

@@ -8,14 +8,31 @@ import { gradeForecast } from "./learning.js";
 export function evaluateForecast(f: StructuralForecast, future: StructuralBar[], now: number): ForecastScore[] {
   // Horizons are counted in bars of the forecast's own length.
   const step = forecastStepMs(f);
-  const eligible = future.filter(b => b.closeTime > f.asOf && b.closeTime <= now && b.isFinal).slice(0, 60);
-  if (!eligible.length) return [];
-  if (eligible[0]!.openTime !== f.asOf) throw new Error("OUTCOME_HISTORY_GAP");
-  validateBars(eligible, now, 1);
-  const observedThrough = eligible.at(-1)!.closeTime;
-  const events = observeStructure([...f.history, ...eligible]).events.filter(e => e.time > f.asOf);
+  const end = Math.min(now, f.asOf + 60 * step);
+  const received = future.filter(b => b.closeTime > f.asOf && b.closeTime <= now && b.openTime < end && b.isFinal);
+  if (!received.length) return [];
   const horizons = [...new Set<number>([...HORIZONS, forecastHorizonBars(f)])].sort((a, b) => a - b);
-  return horizons.filter(h => f.asOf + h * step <= observedThrough).map(horizon => {
+  // A missing later candle withholds only horizons that depend on it. Include
+  // every supplied row starting in the window so duplicate bars cannot earn a grade.
+  let eligible: StructuralBar[] = [];
+  for (const horizon of [...horizons].reverse()) {
+    const finish = f.asOf + horizon * step;
+    if (finish > end) continue;
+    const window = received.filter(b => b.openTime < finish);
+    if (window.length !== horizon || window[0]!.openTime !== f.asOf ||
+        window.at(-1)!.closeTime !== finish || window[0]!.closeTime !== f.asOf + step) continue;
+    try {
+      validateBars(window, finish, 1);
+    } catch (error) {
+      if (horizon === 1) throw error;
+      continue;
+    }
+    eligible = window;
+    break;
+  }
+  if (!eligible.length) throw new Error("OUTCOME_HISTORY_GAP");
+  const events = observeStructure([...f.history, ...eligible]).events.filter(e => e.time > f.asOf);
+  return horizons.filter(h => h <= eligible.length).map(horizon => {
     const event = events.find(e => e.time <= f.asOf + horizon * step) ?? null;
     const outcome = scenarioOf(event), y = scenarioIndex(outcome), p = probabilities(f.mass, horizon);
     // What the user saw for the window may be calibrated; every other horizon is the raw model.

@@ -162,6 +162,16 @@ test("evaluation waits for closed horizons and preserves original issued probabi
   assert.equal(JSON.stringify(f), before);
   assert.throws(() => evaluateForecast(f, future.slice(1), f.asOf + 3_600_000), /GAP/);
 });
+test("a later gap cannot erase earlier fully observed forecast horizons", () => {
+  const f = forecastStructural(model(), bars.slice(4680, 4800), origin);
+  const future = bars.slice(4800, 4860);
+  const now = f.asOf + 60 * 60_000;
+  const expected = evaluateForecast(f, future.slice(0, 15), now);
+  assert.deepEqual(evaluateForecast(f, [...future.slice(0, 15), ...future.slice(16)], now), expected);
+  const duplicate = [...future.slice(0, 15), future[14]!, ...future.slice(15)];
+  assert.deepEqual(evaluateForecast(f, duplicate, now).map(s => s.horizon), [1, 3, 5]);
+  assert.throws(() => evaluateForecast(f, [{ ...future[0]!, closeTime: f.asOf + 300_000 }], now));
+});
 test("brake ignores future/current outcomes and stays quarantined", () => {
   const rows = Array.from({ length: 30 }, (_, i) => ({ asOf: i * 60_000, completedAt: i * 60_000 + 300_000, brier: 1, baselineBrier: .2 }));
   assert.equal(performanceBrake(false, rows, 120_000), false);

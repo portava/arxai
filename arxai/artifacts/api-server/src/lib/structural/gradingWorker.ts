@@ -11,7 +11,7 @@
 // Read-mostly: the only writes are the existing append-only evaluation rows.
 // Fail-soft: one market's error is logged and the cycle moves on.
 
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db, chartDecisionReceiptsTable as receipts, chartDecisionOutcomesTable as outcomes } from "@workspace/db";
 import { logger } from "../logger.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
@@ -35,11 +35,15 @@ export const GRADING_INTERVAL_MS = 5 * 60 * 1000;
 /** Distinct (user, market) pairs with a closed forecast whose window has no grade yet
  * (including windows scored before grades existed). */
 export async function listPendingGrades(now: number): Promise<PendingGrade[]> {
+  const f = sql`${receipts.intelligenceSnapshot} -> 'forecast'`;
+  const windowEnd = sql`coalesce((${f} ->> 'asOf')::double precision +
+    (${f} ->> 'horizonBars')::integer * (${f} ->> 'stepMs')::double precision,
+    extract(epoch from ${receipts.expiresAt}) * 1000)`;
   const rows = await db.selectDistinct({ userId: receipts.userId, symbol: receipts.symbol }).from(receipts)
     .where(and(
       eq(receipts.source, "structural_forecast"),
       gt(receipts.createdAt, new Date(now - GRADING_LOOKBACK_MS)),
-      lt(receipts.expiresAt, new Date(now)),
+      sql`${windowEnd} <= ${now}`,
       sql`not exists (select 1 from ${outcomes} where ${outcomes.receiptRef} = ${receipts.receiptId}
         and ${outcomes.userId} = ${receipts.userId} and ${outcomes.kind} = 'STRUCTURAL_EVALUATION'
         and ${outcomes.evidence} ? 'grade')`,
@@ -81,6 +85,13 @@ export function startStructuralGradingWorker(): void {
     running = true;
     void (async () => {
       try {
+        try {
+          const { gradePublishedPaperOrders } = await import("./paperGrading.js");
+          const paper = await gradePublishedPaperOrders(Date.now(), GRADING_LOOKBACK_MS);
+          if (paper.saved || paper.failed) logger.info(paper, "[structuralGrader] paper orders");
+        } catch (err) {
+          logger.error({ err }, "[structuralGrader] paper order scan failed");
+        }
         const r = await runGradingCycle(deps, Date.now());
         if (r.pending) logger.info(r, "[structuralGrader] cycle");
       } catch (e) {

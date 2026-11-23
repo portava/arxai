@@ -68,3 +68,47 @@ test("pending query lists closed unscored forecasts only, per owner", { skip: !t
     await db.delete(receipts).where(eq(receipts.receiptId, id));
   }
 });
+
+test("a 15-minute direction result becomes due when its own window closes", { skip: !testUrl }, async () => {
+  const { listPendingGrades } = await import("./gradingWorker.js");
+  const { db, chartDecisionReceiptsTable: receipts } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
+  const userId = 150070, id = "direction-window-" + process.pid;
+  const asOf = Date.now() - 16 * 60_000;
+  try {
+    await db.insert(receipts).values({receiptId:id,userId,symbol:"V75",timeframe:"M1",source:"structural_forecast",
+      expiresAt:new Date(asOf+3_600_000),intelligenceSnapshot:{forecast:{asOf,horizonBars:15,stepMs:60_000}}});
+    const due = async (at: number) => (await listPendingGrades(at)).some(r => r.userId === userId);
+    assert.equal(await due(asOf+900_000-1), false);
+    assert.equal(await due(asOf+900_000), true);
+  } finally {
+    await db.delete(receipts).where(eq(receipts.receiptId,id));
+  }
+});
+
+test("paper orders settle before expiry and after a direction grade, without opening history", { skip: !testUrl }, async () => {
+  const { gradePublishedPaperOrders } = await import("./paperGrading.js");
+  const { publicPaperBrackets } = await import("../tradeEngine/publicPaperBrackets.js");
+  const { db, chartDecisionReceiptsTable: receipts, chartDecisionOutcomesTable: outcomes } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
+  const at = Date.UTC(2024,0,1), userId = 150069, id = "paper-worker-" + process.pid;
+  const plan = { action: "BUY", reference: 100, stop: 98, target: 103, reason: "test" };
+  const run = (ms: number) => gradePublishedPaperOrders(at + ms, 60_000);
+  try {
+    await db.insert(receipts).values({ receiptId:id, userId, symbol:"V75", timeframe:"M1", source:"structural_forecast",
+      expiresAt:new Date(at+3_600_000), intelligenceSnapshot:{forecast:{paperInstruction:plan}} });
+    await db.insert(outcomes).values({receiptRef:id,userId,kind:"STRUCTURAL_PAPER_ISSUED",evidence:{at}});
+    publicPaperBrackets.observe({symbol:"R_75",epoch:at/1000+2,bid:100,ask:100.25,quote:100.125});
+    assert.deepEqual(await run(2000), {checked:1,saved:0,failed:0});
+    await db.insert(outcomes).values({receiptRef:id,userId,kind:"STRUCTURAL_EVALUATION",evidence:{grade:{letter:"A"}}});
+    publicPaperBrackets.observe({symbol:"R_75",epoch:at/1000+4,bid:103,ask:103.25,quote:103.125});
+    assert.deepEqual(await run(4000), {checked:1,saved:1,failed:0});
+    assert.deepEqual(await run(6000), {checked:0,saved:0,failed:0});
+    const rows = await db.select().from(outcomes).where(eq(outcomes.receiptRef,id));
+    assert.deepEqual(rows.find(r=>r.kind==="STRUCTURAL_PAPER_RESULT")?.evidence,
+      {state:"TARGET",entry:100.25,exit:103,observedAt:at+4000});
+  } finally {
+    await db.delete(outcomes).where(eq(outcomes.receiptRef,id));
+    await db.delete(receipts).where(eq(receipts.receiptId,id));
+  }
+});
