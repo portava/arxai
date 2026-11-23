@@ -15,7 +15,7 @@ if (testUrl) {
 test("PostgreSQL receipt persistence is immutable, idempotent and user isolated", { skip: !testUrl }, async () => {
   const { structuralRepository: repository } = await import("./repository.js");
   const { db, chartDecisionReceiptsTable: receipts, chartDecisionOutcomesTable: outcomes } = await import("@workspace/db");
-  const { eq } = await import("drizzle-orm");
+  const { eq, sql } = await import("drizzle-orm");
   const userId = 150067, id = `structural-db-test-${Date.now()}`;
   let seed = 123, price = 100;
   const bars: StructuralBar[] = Array.from({ length: 5000 }, (_, i) => {
@@ -29,7 +29,22 @@ test("PostgreSQL receipt persistence is immutable, idempotent and user isolated"
   const row = { id, issuedAt: Date.now(), forecast, scores: [] };
   try {
     row.forecast.paperInstruction = { action: "BUY", reference: 100, stop: 98, target: 103, entryLimit: 100.5, reason: "paper regression" };
-    const issued = await repository.save(userId, row, model);
+    // Interrupt just this ticket's publication in the disposable database.
+    const constraint = sql.identifier("test_paper_publication_" + process.pid);
+    const receiptLiteral = sql.raw("'" + id + "'"); // generated above from Date.now()
+    await db.execute(sql`ALTER TABLE ${outcomes} ADD CONSTRAINT ${constraint}
+      CHECK (kind <> 'STRUCTURAL_PAPER_ISSUED' OR receipt_ref <> ${receiptLiteral}) NOT VALID`);
+    try {
+      await assert.rejects(repository.save(userId, row, model));
+      assert.equal((await db.select({ id: receipts.id }).from(receipts).where(eq(receipts.receiptId, id))).length, 0,
+        "a failed publication must leave the original ticket eligible for a clean retry");
+    } finally {
+      await db.execute(sql`ALTER TABLE ${outcomes} DROP CONSTRAINT ${constraint}`);
+    }
+    const [issued, retried] = await Promise.all([repository.save(userId, row, model), repository.save(userId, row, model)]);
+    assert.equal(retried.paperPublishedAt, issued.paperPublishedAt);
+    const markers = await db.select({ kind: outcomes.kind }).from(outcomes).where(eq(outcomes.receiptRef,id));
+    assert.equal(markers.filter(m => m.kind === "STRUCTURAL_PAPER_ISSUED").length, 1);
     assert.ok(issued.paperPublishedAt && issued.paperPublishedAt >= row.issuedAt);
     const paperGrade = { state: "STOP" as const, entry: 100.2, exit: 97.8, observedAt: issued.paperPublishedAt + 2000 };
     await assert.rejects(repository.savePaperGrade!(userId + 1, id, paperGrade), /FORECAST_NOT_FOUND/);

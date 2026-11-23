@@ -127,3 +127,22 @@ test("a gap, an unmarketable entry, and no settled exit stay distinct", () => {
   h.observe({ symbol: "R_100", epoch: 16, quote: 97.1, bid: 97, ask: 97.2 });
   assert.equal(h.gradeTicket("R_100", plan, 11000, 16500).state, "UNVERIFIED");
 });
+
+test("Forecast uses the first fresh quote received after issuance within the same venue second", () => {
+  const history = new PublicPaperBracketHistory();
+  const plan = {
+    action: "BUY" as const, reference: 100, stop: 99, target: 102, entryLimit: 100.5, reason: "test",
+  };
+  const add = (epoch: number, bid: number, receivedAt: number) =>
+    history.observe({ symbol: "R_100", epoch, bid, ask: bid + 0.2, quote: bid + 0.1 }, receivedAt);
+  add(10, 100.7, 10040);
+  add(12, 100, 12052);
+  add(14, 100.7, 14042);
+  add(16, 102.1, 16031);
+  assert.deepEqual(history.gradeTicket("R_100", plan, 12025, 12040), { state: "PENDING" });
+  assert.deepEqual(history.gradeTicket("R_100", plan, 12025, 12052), { state: "OPEN", entry: 100.2 });
+  assert.deepEqual(history.gradeTicket("R_100", plan, 12025, 16100), {
+    state: "TARGET", entry: 100.2, exit: 102.1, observedAt: 16031,
+  });
+  assert.equal(history.gradeTicket("R_100", plan, 12052, 16100).state, "SKIPPED");
+});

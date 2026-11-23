@@ -57,7 +57,10 @@ export class PublicPaperBracketHistory {
     let entry: number | undefined;
     for (const tick of ticks) {
       const at = tick.epoch * 1000;
-      if (at < publishedAt || tick.releasedAt > now) continue;
+      if (tick.releasedAt > now) continue;
+      // The venue stamps whole seconds. A fresh quote from the issuance
+      // second may reach ARX after the ticket was published.
+      if (at < publishedAt && tick.receivedAt <= publishedAt) continue;
       if (at - previous > cadence || tick.bid == null || tick.ask == null)
         return { state: "UNVERIFIED", entry };
       previous = at;
@@ -85,7 +88,7 @@ export class PublicPaperBracketHistory {
           state: hit.hit === "TP" ? "TARGET" : "STOP",
           entry,
           exit,
-          observedAt: at,
+          observedAt: tick.releasedAt,
         };
     }
     if (now - previous > cadence + 3000) return { state: "UNVERIFIED", entry };

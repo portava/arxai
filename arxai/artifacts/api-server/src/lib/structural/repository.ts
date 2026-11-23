@@ -61,22 +61,24 @@ export const structuralRepository: ForecastRepository = {
       geometry: model.geometry, confirmation: model.confirmation, prebreak: model.prebreak,
       geometryGate: model.geometryGate, confirmationGate: model.confirmationGate, prebreakGate: model.prebreakGate,
       partitions: model.partitions, dataQuality: model.dataQuality, holdout: model.holdout, rangeEngine: model.rangeEngine ?? null, policy: MODEL_POLICY };
-    const inserted = await db.insert(receipts).values({ receiptId: row.id, userId,
-      symbol: row.forecast.origin.symbol, timeframe: FORECAST_HORIZONS.find(h => h.stepMs === forecastStepMs(row.forecast))?.timeframe ?? "M1", source: SOURCE,
-      marketSentence: "Structural event forecast; ghost paths are illustrations.",
-      chartTruthSnapshot: { origin: row.forecast.origin },
-      intelligenceSnapshot: { forecast: row.forecast, issuedAt: row.issuedAt, manifest },
-      fingerprint: { kind: SOURCE, snapshotSha256: sha256Hex(stableStringify(row.forecast)) },
-      expiresAt: new Date(row.forecast.asOf + 60 * forecastStepMs(row.forecast)),
-    }).onConflictDoNothing({ target: receipts.receiptId }).returning();
-    if (inserted.length) {
+    const saved = await db.transaction(async tx => {
+      const inserted = await tx.insert(receipts).values({ receiptId: row.id, userId,
+        symbol: row.forecast.origin.symbol, timeframe: FORECAST_HORIZONS.find(h => h.stepMs === forecastStepMs(row.forecast))?.timeframe ?? "M1", source: SOURCE,
+        marketSentence: "Structural event forecast; ghost paths are illustrations.",
+        chartTruthSnapshot: { origin: row.forecast.origin },
+        intelligenceSnapshot: { forecast: row.forecast, issuedAt: row.issuedAt, manifest },
+        fingerprint: { kind: SOURCE, snapshotSha256: sha256Hex(stableStringify(row.forecast)) },
+        expiresAt: new Date(row.forecast.asOf + 60 * forecastStepMs(row.forecast)),
+      }).onConflictDoNothing({ target: receipts.receiptId }).returning();
+      if (!inserted.length) return null;
       if (row.forecast.origin.provider === "deriv_public" && /^V(10|25|50|75|100)(_1S)?$/.test(row.forecast.origin.symbol) && row.forecast.paperInstruction && row.forecast.paperInstruction.action !== "HOLD") {
         const at = Date.now();
-        await db.insert(outcomes).values({receiptRef:row.id,userId,kind:"STRUCTURAL_PAPER_ISSUED", evidence:{at}});
+        await tx.insert(outcomes).values({receiptRef:row.id,userId,kind:"STRUCTURAL_PAPER_ISSUED", evidence:{at}});
         return { ...row, paperPublishedAt: at };
       }
       return row;
-    }
+    });
+    if (saved) return saved;
     const existing = (await this.list(userId, row.forecast.origin.symbol)).find(r => r.id === row.id);
     if (!existing) throw new Error("FORECAST_PERSISTENCE_FAILED");
     return existing;
