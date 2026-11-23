@@ -359,3 +359,21 @@ test("forgetting a stream discards its pending quote", async t => {
   f.setNow((epoch+1)*1000);
   assert.equal(f.client.getCachedTick("R_75"), null);
 });
+
+test("a clock lead spanning several ticks releases each in venue order only when due", async t => {
+  const f = fixture();
+  t.after(() => f.client.stop());
+  await f.client.subscribeTicks("R_75");
+  const seen: number[] = [];
+  f.client.onTick(tick => seen.push(tick.epoch));
+  for (const delta of [3, 2, 4, 2, 60]) {
+    f.sockets[0]!.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: epoch + delta, quote: 120 + delta }, subscription: { id: "sub-R_75" } }));
+  }
+  assert.deepEqual(seen, []);
+  f.setNow((epoch + 3) * 1000);
+  assert.equal(f.client.getCachedTick("R_75")?.epoch, epoch + 3);
+  assert.deepEqual(seen, [epoch + 2, epoch + 3]);
+  f.setNow((epoch + 61) * 1000);
+  assert.equal(f.client.getCachedTick("R_75")?.epoch, epoch + 4);
+  assert.deepEqual(seen, [epoch + 2, epoch + 3, epoch + 4]);
+});

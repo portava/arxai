@@ -64,7 +64,7 @@ export function normalizePublicCandles(raw: unknown, now: number, granularity?: 
 
 // Deriv stamps whole seconds. A tick can reach this host just before that
 // second starts. It can be staged, but cannot enter the chart or feed earlier.
-const TICK_CLOCK_LEAD_MS = 1000;
+export const DERIV_PUBLIC_MAX_CLOCK_LEAD_MS = 5_000;
 
 interface Options {
   enabled?: () => boolean;
@@ -91,7 +91,7 @@ export class DerivPublicDataClient {
   private opening: Promise<void> | null = null;
   private pending = new Map<number, Pending>();
   private ticks = new Map<string, DerivTick>();
-  private staged = new Map<string, { tick: DerivTick; timer: ReturnType<typeof setTimeout> }>();
+  private staged = new Map<string, Map<number, { tick: DerivTick; timer: ReturnType<typeof setTimeout> }>>();
   private listeners = new Set<DerivTickListener>();
   private desired = new Set<string>();
   private subscriptions = new Map<string, string>();
@@ -266,29 +266,38 @@ export class DerivPublicDataClient {
   }
   private clearStaged(symbol: string) {
     const pending = this.staged.get(symbol);
-    if (pending) clearTimeout(pending.timer);
+    if (pending) for (const item of pending.values()) clearTimeout(item.timer);
     this.staged.delete(symbol);
   }
   private releaseStaged(symbol: string) {
     const pending = this.staged.get(symbol);
-    if (!pending || pending.tick.epoch * 1000 > this.now()) return;
-    this.clearStaged(symbol);
-    if (this.subscriptions.has(symbol) && this.desired.has(symbol) && this.isSymbolAvailable(symbol)) {
-      this.publishTick(pending.tick);
+    if (!pending) return;
+    const now = this.now();
+    for (const epoch of Array.from(pending.keys()).sort((a, b) => a - b)) {
+      if (epoch * 1000 > now) break;
+      const item = pending.get(epoch)!;
+      clearTimeout(item.timer);
+      pending.delete(epoch);
+      if (this.subscriptions.has(symbol) && this.desired.has(symbol) && this.isSymbolAvailable(symbol)) {
+        this.publishTick(item.tick);
+      }
     }
+    if (!pending.size) this.staged.delete(symbol);
   }
   private acceptTick(raw: unknown, symbol: string): DerivTick | null {
     if (!this.isSymbolAvailable(symbol)) return null;
     const now = this.now();
-    const tick = normalizePublicTick(raw, symbol, now + TICK_CLOCK_LEAD_MS);
+    const tick = normalizePublicTick(raw, symbol, now + DERIV_PUBLIC_MAX_CLOCK_LEAD_MS);
     this.releaseStaged(symbol);
     if (!tick) return this.getCachedTick(symbol);
     const delay = tick.epoch * 1000 - now;
     if (delay <= 0) return this.publishTick(tick);
-    if (!this.staged.has(symbol)) {
+    const pending = this.staged.get(symbol) ?? new Map();
+    if (!pending.has(tick.epoch)) {
       const timer = setTimeout(() => this.releaseStaged(symbol), delay);
       timer.unref?.();
-      this.staged.set(symbol, { tick, timer });
+      pending.set(tick.epoch, { tick, timer });
+      this.staged.set(symbol, pending);
     }
     return this.getCachedTick(symbol);
   }
