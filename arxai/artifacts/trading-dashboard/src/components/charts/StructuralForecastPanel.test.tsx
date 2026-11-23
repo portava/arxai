@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StructuralForecastPanel, forecastDirectionRead, routeProgress, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
 
 const row = { id: "saved-1", issuedAt: 1800000000000, scores: [], forecast: {
@@ -214,4 +214,21 @@ describe("chart directional weights", () => {
     expect(read([.48002,.47998,.04])?.verdict).toBe("No clear favorite");
     expect(read([.9,.9,0])).toBeNull();
   });
+});
+
+it("dynamic Forecast keeps its bar timer when the chart redraws", async () => {
+  vi.useFakeTimers();
+  const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+    response(init?.method === "POST" ? { saved: true, ...row } : { forecasts: [] }));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const props = () => ({symbol:"V75",onPaths:vi.fn(),onShowOnTimeframe:vi.fn(),chartTimeframe:"M1"});
+    const view=render(<StructuralForecastPanel {...props()} />);
+    await act(async () => { fireEvent.click(screen.getByRole("checkbox",{name:"Dynamic forecast"})); });
+    for(let i=0;i<15;i++) {
+      view.rerender(<StructuralForecastPanel {...props()} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
+    expect(fetch.mock.calls.filter(([,opts])=>opts?.method === "POST")).toHaveLength(2);
+  } finally { vi.useRealTimers(); }
 });

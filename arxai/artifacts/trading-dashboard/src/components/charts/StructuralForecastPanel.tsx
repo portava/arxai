@@ -246,12 +246,17 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
     } finally { if (!controller.signal.aborted) setBusy(false); }
   }, [symbol, preset, canonicalSymbol, chartTimeframe, onShowOnTimeframe]);
 
+  const dynamicRequest = useRef({ generate, busy });
+  useEffect(() => { dynamicRequest.current = { generate, busy }; }, [generate, busy]);
   useEffect(() => {
     if (!auto) return;
     // A new forecast is possible once per closed bar of the window's length.
-    const timer = setInterval(() => { if (!document.hidden && !busy) void generate(); }, preset.stepMs);
+    const timer = setInterval(() => {
+      const current = dynamicRequest.current;
+      if (!document.hidden && !current.busy) void current.generate();
+    }, preset.stepMs);
     return () => clearInterval(timer);
-  }, [auto, busy, generate, preset.stepMs]);
+  }, [auto, symbol, preset.id, preset.stepMs]);
 
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
