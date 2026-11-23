@@ -92,6 +92,7 @@ export interface ChartCandleStats {
   range: number | null;
   body: number | null;
   avgRange: number | null;
+  nextMomentumRangeAbove?: number;
   atr: number | null;
 }
 
@@ -336,7 +337,13 @@ export function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats 
   }
 
   const rangeWin = closed.slice(Math.max(0, n - RECENT_WINDOW));
-  const avgRange = mean(rangeWin.map((c) => c.high - c.low));
+  const ranges = rangeWin.map(c => c.high - c.low);
+  const avgRange = mean(ranges);
+  // The next range is itself part of the 20-bar mean. Solve x > M*(sum+x)/20
+  // using only the 19 closed ranges that will remain in that window.
+  const nextMomentumRangeAbove = ranges.length >= RECENT_WINDOW - 1
+    ? MOMENTUM_MULT * ranges.slice(1 - RECENT_WINDOW).reduce((sum, range) => sum + range, 0) / (RECENT_WINDOW - MOMENTUM_MULT)
+    : undefined;
 
   const atrWin = closed.slice(Math.max(0, n - (ATR_PERIOD + 1)));
   const trs: number[] = [];
@@ -367,6 +374,7 @@ export function computeStats(closed: NormalizedChartCandle[]): ChartCandleStats 
     range,
     body,
     avgRange: rangeWin.length > 0 ? avgRange : null,
+    ...(nextMomentumRangeAbove != null ? { nextMomentumRangeAbove } : {}),
     atr,
   };
 }

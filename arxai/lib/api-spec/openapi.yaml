@@ -14386,6 +14386,7 @@ components:
         range: { type: ["number", "null"], description: High minus low of the latest closed bar }
         body: { type: ["number", "null"], description: abs(close - open) of the latest closed bar }
         avgRange: { type: ["number", "null"], description: Mean high-low across analyzed bars }
+        nextMomentumRangeAbove: { type: number, description: Next candle range must exceed this price distance to satisfy the chart momentum rule }
         atr: { type: ["number", "null"], description: Simple ATR (mean true range) across analyzed bars }
 
     ChartFastFlags:

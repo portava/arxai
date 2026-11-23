@@ -4500,6 +4500,8 @@ export interface ChartCandleStats {
    * @nullable
    */
   avgRange: number | null;
+  /** Next candle range must exceed this price distance to satisfy the chart momentum rule */
+  nextMomentumRangeAbove?: number;
   /**
    * Simple ATR (mean true range) across analyzed bars
    * @nullable

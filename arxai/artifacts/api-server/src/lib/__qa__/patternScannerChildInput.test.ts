@@ -205,3 +205,23 @@ test("a broken level calls for the missing retest or hold on each side", () => {
     assert.match(hold.headline, bullish ? /101 was retested.*close back above 101/ : /101 was retested.*close back below 101/);
   }
 });
+
+test("the live close and candle range lead the history recheck on either setup side", () => {
+  for (const buy of [true, false]) {
+    const bias = buy ? "bullish" : "bearish";
+    const row = opp({
+      recommendedAction: buy ? "BUY" : "SELL",
+      historicalContext: hist({ bias: buy ? "BEARISH" : "BULLISH", sampleSize: 1, alignsWithScanner: false }),
+      patternImpact: impact({labelHint: "needs_confirmation"}),
+      patternTrigger: { name: "Retest", confirmed: true, bias, invalidation: null },
+      momentumConfirmation: { lastClose: 100.25, rangeAbove: 1.75 },
+    });
+    const read = computeFinalRead(row);
+    assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+    assert.match(read.headline, buy ? /^Retest is confirmed.*close above 100\.25/ : /^Retest is confirmed.*close below 100\.25/);
+    assert.match(read.headline, /range greater than 1\.75 points.*historical candle pair/);
+    const fallback = computeFinalRead({ ...row, momentumConfirmation: undefined });
+    assert.match(fallback.headline, /1.5× the 20-bar average/);
+    assert.equal(fallback.label, read.label);
+  }
+});

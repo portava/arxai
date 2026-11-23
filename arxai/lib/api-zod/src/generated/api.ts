@@ -7137,6 +7137,12 @@ export const GetMeChartIntelligenceResponse = zod.object({
             .number()
             .nullable()
             .describe("Mean high-low across analyzed bars"),
+          nextMomentumRangeAbove: zod
+            .number()
+            .optional()
+            .describe(
+              "Next candle range must exceed this price distance to satisfy the chart momentum rule",
+            ),
           atr: zod
             .number()
             .nullable()

@@ -396,6 +396,7 @@ export interface ScannerOpportunity {
    */
   patternImpact?: PatternScannerImpact;
   patternConfirmationLevel?: number;
+  momentumConfirmation?: { lastClose: number; rangeAbove: number };
   patternTrigger?: { name: string; confirmed: boolean; bias: "bullish" | "bearish" | "neutral"; invalidation: number | null; retest?: DetectedPattern["retest"] };
   /**
    * TRENDLINE TRUTH (Task #649) — display-only CHILD input. The folded
@@ -670,6 +671,12 @@ export function computeFinalRead(
   const atLevel = (level?: number) => priceText(level) ? ` at ${priceText(level)}` : "";
   const momentumTrigger = (name: string, bias: "bullish" | "bearish" | "neutral") => {
     if (bias === "neutral") return `${name} has no directional bias. Look for a new directional setup at the next ${opp.timeframe} close.`;
+    const rule = opp.momentumConfirmation;
+    if (rule && Number.isFinite(rule.lastClose) && rule.lastClose > 0 && Number.isFinite(rule.rangeAbove) && rule.rangeAbove >= 0) {
+      const side = bias === "bullish" ? "above" : "below";
+      const range = rule.rangeAbove.toLocaleString("en-US", { maximumSignificantDigits: 6 });
+      return `${name} is confirmed. Watch the next ${opp.timeframe} candle for a close ${side} ${priceText(rule.lastClose)} and a high–low range greater than ${range} points (rounded).`;
+    }
     const side = bias === "bullish" ? "higher" : "lower";
     return `${name} is confirmed. Watch for a ${opp.timeframe} candle that closes ${side} than the previous close with a range above 1.5× the 20-bar average.`;
   };
@@ -693,6 +700,7 @@ export function computeFinalRead(
   let label: FinalReadLabel = "TRADE_WATCH";
 
   let avoidReason: string | undefined;
+  let historyRecheck: string | undefined;
   function avoidSetup(current: FinalReadLabel, reason: string): FinalReadLabel {
     reasons.push(reason);
     if (current === "NO_TRADE") return current;
@@ -725,7 +733,7 @@ export function computeFinalRead(
       const bias = hist.bias === "BULLISH" || hist.bias === "BEARISH" ? hist.bias.toLowerCase() : "opposing";
       const reason = `The ${bias} same-time reading${sample} conflicts with this ${opp.recommendedAction} setup.`;
       reasons.push(reason);
-      confirmations.push(`${reason} Recheck at the next ${opp.timeframe} close for that conflict to clear.`);
+      historyRecheck = `${reason} Recheck at the next ${opp.timeframe} close for that conflict to clear.`;
     }
     if (news?.alignsWithScanner === false) {
       reasons.push(`The news reading conflicts with this ${opp.recommendedAction} setup.`);
@@ -1093,6 +1101,7 @@ export function computeFinalRead(
   }
 
   if (label === "WAIT_FOR_CONFIRMATION") {
+    if (historyRecheck) confirmations.push(historyRecheck);
     if (!liveData || opp.sufficiency?.mayShowConfidence === false) {
       confirmations.unshift(opp.disabledReason || opp.sufficiency?.humanReason || "Wait for a current quote and closed candles on the same feed.");
     } else if (noDirectionalSetup) {
@@ -2147,6 +2156,10 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       recommendedAction: displayAction,
       setupType: setupTypeFor(a, mayShowBias),
       bidAsk: routed?.bidAsk,
+      momentumConfirmation: structureChart?.fastFlags?.populated && structureChart.candleStats?.lastClose != null
+        && structureChart.candleStats.nextMomentumRangeAbove != null
+        ? { lastClose: structureChart.candleStats.lastClose, rangeAbove: structureChart.candleStats.nextMomentumRangeAbove }
+        : undefined,
       entryRoom: sufficiency.canShowTradeSetup && chartConfirmed
         ? measureScannerEntryRoom(displayAction, routed?.bidAsk, a.stopLoss, a.takeProfit,
           structureChart?.marketUnderstanding?.levels?.levels ?? [])
