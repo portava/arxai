@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareScannerCandles, scannerQuoteFor, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { chartMatchesClosedBar, selectScannerChartContext, prepareScannerCandles, scannerQuoteFor, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import type { ChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import { timeBasis } from "../data/chart/candleNormalization.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
@@ -155,4 +156,25 @@ test("a bid/ask quote with a positive spread is BOUND and matches scannerQuoteFo
   const b = classifyScannerQuoteBinding(bars(), quote(), "EURUSD", now);
   assert.equal(b.binding, "BOUND");
   assert.deepEqual(scannerQuoteFor(bars(), quote(), "EURUSD", now), { mid: b.mid, spread: b.spread });
+});
+
+test("chart confirmation selects the same closed candle independently of its gate verdict", () => {
+  const provider = "deriv_public";
+  const bar = bars(provider).candles.at(-1)!;
+  function context(openTime = bar.time, source = provider, close = bar.close, usable = true) {
+    const state = {
+      aiUsable: usable, truthState: { source }, gateOutput: { scannerConfirmAllowed: usable },
+      latestClosedCandle: { ...bar, openTime, close },
+    } as unknown as ChartIntelligenceState;
+    return { state };
+  }
+  const exact = context(), stale = context(new Date(Date.parse(bar.time) - interval).toISOString());
+  const corrected = context(bar.time, provider, bar.close + 0.001);
+  assert.equal(selectScannerChartContext(stale, exact, provider, bar), exact);
+  assert.equal(selectScannerChartContext(stale, corrected, provider, bar), null);
+  assert.equal(selectScannerChartContext(context(bar.time, "deriv"), null, provider, bar), null);
+  assert.equal(selectScannerChartContext(exact, null, provider, undefined), null);
+  const denied = context(bar.time, provider, bar.close, false);
+  assert.equal(selectScannerChartContext(denied, exact, provider, bar), denied);
+  assert.equal(chartMatchesClosedBar(denied.state, provider, bar), false);
 });

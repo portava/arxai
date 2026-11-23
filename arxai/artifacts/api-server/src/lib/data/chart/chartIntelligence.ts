@@ -501,13 +501,14 @@ export async function buildChartIntelligenceState(
   symbol: string,
   timeframe: ChartTimeframe,
   limit: number,
+  acceptsCachedState?: (state: ChartIntelligenceState) => boolean,
 ): Promise<ChartIntelligenceState> {
   // Keyed by whose series this is (lib/data/feedScope.ts): the chart, the AI
   // read and the scanner of one trader share an entry; two traders never do.
   const cacheKey = `${symbol}|${timeframe}|${limit}|${feedScopeCacheKey(await currentFeedScopeBridge())}`;
   const now = Date.now();
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
+  if (cached && cached.expiresAt > now && (!acceptsCachedState || acceptsCachedState(cached.state))) {
     return cached.state;
   }
 

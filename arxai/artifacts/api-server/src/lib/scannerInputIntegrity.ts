@@ -12,11 +12,26 @@ import { classifyQuoteFreshness } from "./data/freshness.js";
 const sourceBinding: unique symbol = Symbol("scannerSourceBinding");
 type SourceBound = { [sourceBinding]?: string };
 
-export function chartMatchesClosedBar(chart: ChartIntelligenceState | null, provider: string | null | undefined, bar: Candle | undefined): boolean {
+export function chartDescribesClosedBar(chart: ChartIntelligenceState | null, provider: string | null | undefined, bar: Candle | undefined): boolean {
   const checked = chart?.latestClosedCandle;
-  return !!(chart?.aiUsable && chart.truthState.source === provider && checked && bar &&
+  return !!(chart && chart.truthState.source === provider && checked && bar &&
     checked.openTime === bar.time && checked.open === bar.open && checked.high === bar.high &&
     checked.low === bar.low && checked.close === bar.close);
+}
+
+export function chartMatchesClosedBar(chart: ChartIntelligenceState | null, provider: string | null | undefined, bar: Candle | undefined): boolean {
+  return !!chart?.aiUsable && chartDescribesClosedBar(chart, provider, bar);
+}
+
+/** Prefer the longer chart when both describe the scanner's bar, including
+ * when its gate denies confirmation. A gate verdict never selects the cache. */
+export function selectScannerChartContext<T extends { state: ChartIntelligenceState }>(
+  longer: T | null, shorter: T | null, provider: string | null | undefined, bar: Candle | undefined,
+): T | null {
+  for (const context of [longer, shorter]) {
+    if (context && chartDescribesClosedBar(context.state, provider, bar)) return context;
+  }
+  return null;
 }
 
 export function scannerSourceIdentity(result: Pick<MarketCandlesResult, "primaryProvider" | "provenance">): string {

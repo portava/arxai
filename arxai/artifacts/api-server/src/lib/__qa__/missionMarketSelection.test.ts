@@ -15,6 +15,7 @@ let quoteSource = "deriv";
 let candleSource = "deriv";
 let lastClosedTime = "";
 let chartAllowed = true;
+let chartUsable = true;
 let chartOffset = 0;
 let last = 0;
 let historyCalls = 0;
@@ -39,12 +40,12 @@ mock.module("../data/marketDataRouter.js", { namedExports: {
 } });
 mock.module("../data/chart/chartIntelligence.js", { namedExports: {
   buildChartIntelligenceState: async () => ({
-    aiUsable: true, truthState: { source: candleSource }, gateOutput: { scannerConfirmAllowed: chartAllowed },
+    aiUsable: chartUsable, truthState: { source: candleSource }, gateOutput: { scannerConfirmAllowed: chartAllowed },
     latestClosedCandle: { openTime: lastClosedTime, open: last, high: last + 0.5, low: last - 0.5, close: last + chartOffset },
   }),
 } });
 const { scoutPaperMissionMarket } = await import("../missionMarketSelection.js");
-beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = candleSource = "deriv"; chartAllowed = true; chartOffset = 0; });
+beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = candleSource = "deriv"; chartAllowed = true; chartUsable = true; chartOffset = 0; });
 
 test("Mission can buy or sell a trend while Scanner waits, using the executable side", async () => {
   for (const sign of [1, -1]) {
@@ -81,6 +82,9 @@ test("Mission checks its own public chart when Scanner has no direction", async 
   assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "NONE");
   chartAllowed = true;
   chartOffset = 0.1;
+  assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "NONE");
+  chartOffset = 0;
+  chartUsable = false;
   assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "NONE");
 });
 

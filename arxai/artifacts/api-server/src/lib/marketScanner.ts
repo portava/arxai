@@ -8,7 +8,7 @@ import { measureScannerEntryRoom, type ScannerEntryRoom } from "./scannerEntryRo
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { chartMatchesClosedBar, prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
+import { chartDescribesClosedBar, selectScannerChartContext, prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
 import { seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
 import { buildChartIntelligenceState, getCachedIntelligenceContext, chartLevelProximity, type ChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
@@ -1961,17 +1961,20 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     let chartConfirmed = false;
     let structureChart: ChartIntelligenceState | null = null;
     {
-      const cached =
-        getCachedIntelligenceContext(sym, tf as ChartTimeframe, 300) ??
-        getCachedIntelligenceContext(sym, tf as ChartTimeframe, 200);
       const publicFeed = a.feedProvider === "deriv_public";
       const directional = a.recommendedAction === "BUY" || a.recommendedAction === "SELL";
+      // Chart intelligence always timestamps the bar at its open, even on a
+      // provider whose raw candles carry their closing timestamp.
+      const last = routed?.regimeCandles.at(-1);
+      const matchesBar = (state: ChartIntelligenceState) => chartDescribesClosedBar(state, a.feedProvider, last);
+      const longer = getCachedIntelligenceContext(sym, tf as ChartTimeframe, 300);
+      const shorter = getCachedIntelligenceContext(sym, tf as ChartTimeframe, 200);
+      const cached = publicFeed ? selectScannerChartContext(longer, shorter, a.feedProvider, last) : longer ?? shorter;
       let chart = cached?.state ?? null;
-      if (publicFeed && ds === "LIVE_FEED" && routed?.quoteUsable && directional && !chart) {
-        chart = await runWithScannerBudget(() => buildChartIntelligenceState(sym, tf as ChartTimeframe, 200)).catch(() => null);
+      if (publicFeed && ds === "LIVE_FEED" && routed?.quoteUsable && directional && last && !chart) {
+        chart = await runWithScannerBudget(() => buildChartIntelligenceState(sym, tf as ChartTimeframe, 200, matchesBar)).catch(() => null);
       }
-      const last = routed?.rawCandles.at(-1);
-      const sameClosedBar = chartMatchesClosedBar(chart, a.feedProvider, last);
+      const sameClosedBar = !!chart?.aiUsable && matchesBar(chart);
       chartConfirmed = !!chart?.gateOutput.scannerConfirmAllowed &&
         (!publicFeed || (ds === "LIVE_FEED" && routed?.quoteUsable === true && directional && sameClosedBar));
       const writer = routed?.attribution;

@@ -4,7 +4,7 @@ import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRo
 import type { ScannerOpportunity } from "./marketScanner.js";
 import { buildChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { normalizeChartTimeframe } from "./data/chart/timeframes.js";
-import { chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles, scannerRowSourceIdentity, scannerSourceIdentity } from "./scannerInputIntegrity.js";
+import { chartDescribesClosedBar, chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles, scannerRowSourceIdentity, scannerSourceIdentity } from "./scannerInputIntegrity.js";
 
 export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalId: string): Promise<AgentProposal> {
   const { symbol, timeframe } = opp;
@@ -47,9 +47,10 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
   if (signal.direction === "WAIT") return proposal;
   if (candles.primaryProvider === "deriv_public") {
     const tf = normalizeChartTimeframe(timeframe);
+    const last = series.openClosed.at(-1);
     const chart = tf
-      ? await buildChartIntelligenceState(symbol, tf, 200).catch(() => null) : null;
-    if (!chart?.gateOutput.scannerConfirmAllowed || !chartMatchesClosedBar(chart, candles.primaryProvider, series.openClosed.at(-1))) {
+      ? await buildChartIntelligenceState(symbol, tf, 200, state => chartDescribesClosedBar(state, candles.primaryProvider, last)).catch(() => null) : null;
+    if (!chart?.gateOutput.scannerConfirmAllowed || !chartMatchesClosedBar(chart, candles.primaryProvider, last)) {
       proposal.reason = "Mission is waiting for its chart to verify the same closed candle and live source.";
       return proposal;
     }
