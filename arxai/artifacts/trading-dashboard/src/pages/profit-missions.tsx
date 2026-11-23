@@ -1044,6 +1044,8 @@ function MissionAgentDesk({ missionId }: { missionId: number }) {
 // ── A single proposal row (read-only analysis artifact) ──────────────────────
 export function ProposalRow({ p }: { p: MissionProposal }) {
   const dir = directionMeta(p.direction);
+  const buy = p.direction === "BUY";
+  const limit = buy ? p.entryPlan.entryZoneHigh : p.direction === "SELL" ? p.entryPlan.entryZoneLow : null;
   const levels = [p.entryPlan.entryPrice, p.riskPlan.stopLoss, p.riskPlan.takeProfit];
   const fmtLevel = (n: number | null | undefined) => formatMissionPrice(p.symbol, n, levels);
   const sMeta = PROPOSAL_STATUS_META[p.status] ?? {
@@ -1081,6 +1083,9 @@ export function ProposalRow({ p }: { p: MissionProposal }) {
         <div>
           <span className="text-muted-foreground">Entry</span>
           <div>{fmtLevel(p.entryPlan.entryPrice)}</div>
+          {limit != null && (p.status === "selected" || p.status === "proposed") && (
+            <div>{buy ? "Maximum buy ask" : "Minimum sell bid"} {fmtLevel(limit)}</div>
+          )}
         </div>
         <div>
           <span className="text-muted-foreground">Stop / Target</span>

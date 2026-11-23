@@ -29,6 +29,13 @@ describe("mission price precision", () => {
     expect(screen.queryByText("86%")).toBeNull();
   });
 
+  it.each([["BUY", "Maximum buy ask"], ["SELL", "Minimum sell bid"]] as const)("shows the executable limit for a %s proposal", (direction, label) => {
+    const limit = 1.08725;
+    render(<ul><ProposalRow p={proposal({ direction, entryPlan: { entryPrice: 1.0872,
+      entryZoneHigh: direction === "BUY" ? limit : null, entryZoneLow: direction === "SELL" ? limit : null } })} /></ul>);
+    expect(screen.getByText(label + " 1.08725")).toBeTruthy();
+  });
+
   it("EURUSD levels keep the pair's 5 digits", () => {
     render(<ul><ProposalRow p={proposal({})} /></ul>);
     const row = screen.getByTestId("proposal-p1").textContent ?? "";

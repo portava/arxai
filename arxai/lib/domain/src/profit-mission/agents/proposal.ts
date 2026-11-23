@@ -66,6 +66,12 @@ export const DEFAULT_RISK_REVIEW_CONFIG: RiskReviewConfig = {
   minExpectedR: 1,
 };
 
+/** Worst entry price that still satisfies the Mission reward-to-risk floor. */
+export function missionEntryLimit(stop: number, target: number): number {
+  const minR = DEFAULT_RISK_REVIEW_CONFIG.minExpectedR;
+  return stop + (target - stop) / (1 + minR);
+}
+
 /**
  * Pure Risk reviewer. Returns an objection string when the setup endangers
  * capital, else null. Context-only (direction NONE) proposals are never

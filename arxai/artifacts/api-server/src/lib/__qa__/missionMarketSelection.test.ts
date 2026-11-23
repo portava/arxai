@@ -52,6 +52,9 @@ test("Mission can buy or sell a trend while Scanner waits, using the executable 
     assert.equal(p.direction, sign === 1 ? "BUY" : "SELL");
     assert.equal(p.entryPlan.entryPrice, last + sign * 0.01);
     assert.ok(p.riskPlan.expectedR! > 1);
+    const limit = (p.riskPlan.takeProfit! + p.riskPlan.stopLoss!) / 2;
+    assert.ok(Math.abs((sign === 1 ? p.entryPlan.entryZoneHigh : p.entryPlan.entryZoneLow)! - limit) < 1e-10);
+    assert.equal(sign === 1 ? p.entryPlan.entryZoneLow : p.entryPlan.entryZoneHigh, null);
     assert.equal(p.marketSnapshot?.scannerRead, "WAIT_FOR_CONFIRMATION");
   }
 });

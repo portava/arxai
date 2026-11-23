@@ -1,4 +1,4 @@
-import type { AgentProposal } from "@workspace/domain/profit-mission";
+import { missionEntryLimit, type AgentProposal } from "@workspace/domain/profit-mission";
 import { runSingleStrategy } from "./backtestStrategyRegistry.js";
 import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import type { ScannerOpportunity } from "./marketScanner.js";
@@ -67,9 +67,10 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     proposal.reason = "Mission needs a closed candle advancing with its trend and a live exit-side quote still holding the prior close.";
     return proposal;
   }
+  const limit = missionEntryLimit(signal.stopLoss, signal.takeProfit);
   return { ...proposal, status: "proposed", direction: signal.direction, confidence: signal.score,
     urgency: signal.score >= 75 ? "high" : "medium", reason: signal.reason, invalidationLevel: String(signal.stopLoss),
-    entryPlan: { ...proposal.entryPlan, entryPrice: entry },
+    entryPlan: { entryPrice: entry, entryZoneHigh: buy ? limit : null, entryZoneLow: buy ? null : limit },
     riskPlan: { stopLoss: signal.stopLoss, takeProfit: signal.takeProfit, expectedR: reward / risk, riskAmount: null },
     marketSnapshot: { ...proposal.marketSnapshot, finalRead: "MISSION_TREND", barTime: series.openClosed.at(-1)?.time,
       quoteTime: quote.quote.timestamp, bid: quote.quote.bid, ask: quote.quote.ask, strategyScore: signal.score },
