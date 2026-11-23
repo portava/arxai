@@ -139,3 +139,37 @@ test("Eleanor's nearest-level line uses instrument precision and plain personali
   const eur = activeLevelLine(sentenceState("EURUSD", "forex", 1.08523, 1.0861));
   assert.match(eur ?? "", /support at 1\.08523 /);
 });
+
+test("rereading the same candle preserves its observed break count and exact level price", () => {
+  const bars = zigzag("XAUUSD", 2400.55, 2410.55);
+  const latest = bars[bars.length - 1]!;
+  Object.assign(latest, { open: 2410, low: 2409, high: 2417, close: 2416 });
+  const first = computeLevelPersonality(bars, [], "XAUUSD", "M5");
+  const event = first.newEvents.find(row => row.levelKind === "resistance" && row.eventType === "breakout");
+  assert.ok(event);
+  const original = first.read.levels.find(level => level.kind === "resistance")!;
+  assert.equal(original.breakCount, 1);
+  const repeat = computeLevelPersonality(bars, [event], "XAUUSD", "M5");
+  assert.deepEqual(repeat.read.levels, first.read.levels);
+  assert.equal(event.price, original.price);
+  const earlier = { ...event, barTime: new Date(epoch - 300_000) };
+  const withEarlierBreak = computeLevelPersonality(bars, [earlier], "XAUUSD", "M5");
+  assert.equal(withEarlierBreak.read.levels.find(level => level.kind === "resistance")!.breakCount, 2);
+});
+
+test("a gap through resistance breaks it and a second break requires a reclaim", () => {
+  const bars = zigzag("XAUUSD", 2400.55, 2410.55);
+  const changes = [
+    { open: 2418, low: 2417.9, high: 2418.2, close: 2418 },
+    { open: 2418, low: 2417.5, high: 2418.1, close: 2417.9 },
+    { open: 2417.9, low: 2405, high: 2418, close: 2405 },
+    { open: 2405, low: 2405, high: 2419, close: 2418.5 },
+  ];
+  for (const [i, values] of changes.entries()) {
+    const last = bars.at(-1)!;
+    bars.push({ ...last, ...values, openTime: last.closeTime, closeTime: new Date(Date.parse(last.closeTime)+300_000).toISOString() });
+    const level = computeLevelPersonality(bars, [], "XAUUSD", "M5").read.levels.find(l => l.kind === "resistance" && l.price === 2410.55);
+    assert.ok(level);
+    assert.equal(level.breakCount, i === 3 ? 2 : 1);
+  }
+});

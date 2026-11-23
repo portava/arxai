@@ -88,37 +88,19 @@ function countBehaviour(
     const c = candles[i]!;
     const near =
       c.low <= level.price + band && c.high >= level.price - band;
-    if (!near && !broken) continue;
-
-    if (level.kind === "resistance") {
-      if (c.close > level.price + band) {
-        if (!broken) {
-          broken = true;
-          breakCount++;
-        }
-      } else if (near) {
-        touchCount++;
-        if (broken) {
-          retestCount++;
-        } else if (c.high >= level.price - band && c.close < level.price) {
-          rejectionCount++;
-        }
-      }
-    } else {
-      if (c.close < level.price - band) {
-        if (!broken) {
-          broken = true;
-          breakCount++;
-        }
-      } else if (near) {
-        touchCount++;
-        if (broken) {
-          retestCount++;
-        } else if (c.low <= level.price + band && c.close > level.price) {
-          rejectionCount++;
-        }
-      }
+    const beyond = level.kind === "resistance" ? c.close - level.price : level.price - c.close;
+    if (beyond > band) {
+      if (!broken) breakCount++;
+      broken = true;
+      continue;
     }
+    if (near) {
+      touchCount++;
+      if (broken) retestCount++;
+      else if (beyond < 0) rejectionCount++;
+    }
+    // A close back through the level resets it for a distinct subsequent break.
+    if (beyond < -band) broken = false;
   }
 
   return { touchCount, rejectionCount, breakCount, retestCount };
@@ -168,6 +150,8 @@ function rememberedFor(
   kind: ChartLevelKind,
   price: number,
   band: number,
+  candleIndices: ReadonlyMap<number, number>,
+  firstSwingIndex: number,
 ): { rejections: number; breaks: number; retests: number; traps: number } {
   let rejections = 0;
   let breaks = 0;
@@ -176,6 +160,11 @@ function rememberedFor(
   for (const e of events) {
     if (e.levelKind !== kind) continue;
     if (Math.abs(e.price - price) > band) continue;
+    // Visible post-formation candles already contributed their behaviour above.
+    // Trap classifications are additional evidence that countBehaviour does not compute.
+    const candleIndex = candleIndices.get(e.barTime.getTime());
+    if (candleIndex !== undefined && candleIndex > firstSwingIndex &&
+        e.eventType !== "wick_trap" && e.eventType !== "failed_breakout") continue;
     switch (e.eventType) {
       case "rejected":
       case "held":
@@ -211,6 +200,7 @@ function detectLatestEvents(
   levels: RawLevel[],
   band: number,
   atrVal: number,
+  decimals: number,
   symbol: string,
   timeframe: ChartTimeframe,
 ): ChartEventInput[] {
@@ -251,7 +241,7 @@ function detectLatestEvents(
         timeframe,
         eventType,
         levelKind: lv.kind,
-        price: round(lv.price, decimalsFor(lv.price)),
+        price: round(lv.price, decimals),
         barTime,
         atrAtEvent: atrVal > 0 ? round(atrVal, decimalsFor(atrVal)) : null,
       });
@@ -297,9 +287,11 @@ export function computeLevelPersonality(
     // Drop single-touch fresh levels that are far away and never interacted.
     .filter((l) => l.swingIndices.length >= 1);
 
+  const candleIndices = new Map<number, number>();
+  if (remembered.length) closed.forEach((c, i) => candleIndices.set(Date.parse(c.closeTime), i));
   const levels: ChartLevel[] = raw.map((lv) => {
     const b = countBehaviour(closed, lv, band);
-    const mem = rememberedFor(remembered, lv.kind, lv.price, band);
+    const mem = rememberedFor(remembered, lv.kind, lv.price, band, candleIndices, lv.swingIndices[0]!);
     const { personality, strength, weakness, trap } = resolvePersonality(b, mem);
     const distancePct =
       lastClose !== 0 ? round(((lv.price - lastClose) / lastClose) * 100, 3) : null;
@@ -334,7 +326,7 @@ export function computeLevelPersonality(
   const nearestResistance =
     resistances.sort((a, b) => a.price - b.price)[0] ?? null;
 
-  const newEvents = detectLatestEvents(closed, raw, band, atrVal, symbol, timeframe);
+  const newEvents = detectLatestEvents(closed, raw, band, atrVal, decimals, symbol, timeframe);
 
   return {
     read: {
