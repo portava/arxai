@@ -36,6 +36,7 @@ import {
   agentProposesOn,
   assessRiskObjection,
   computeEdgeScore,
+  missionSpreadStatus,
   rewardToRiskScore,
   routeOpportunities,
   describeMissionSelection,
@@ -55,10 +56,10 @@ import {
   DEFAULT_MISSION_RISK_BUDGET,
 } from "@workspace/domain/profit-mission";
 import { isApprovedArxMarket } from "@workspace/domain/market";
-import { annotateScanProposals, exposureBudgetFrom } from "./missionExecutionQuality.js";
+import { annotateScanProposals, exposureBudgetFrom, isScalpTimeframe } from "./missionExecutionQuality.js";
 import { reviewScannerOpportunities } from "./scannerReview.js";
 import { scanSymbolTimeframe, type ScannerOpportunity } from "./marketScanner.js";
-import { scoutPaperMissionMarket } from "./missionMarketSelection.js";
+import { paperMissionSpreadShare, scoutPaperMissionMarket } from "./missionMarketSelection.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 
 // Default discovery universe when a mission carries no explicit symbol list.
@@ -273,8 +274,8 @@ function mapEdgeFeedStatus(dataSource: ScannerOpportunity["dataSource"]): EdgeFe
 /**
  * Compose a scanner opportunity onto the pure Edge Engine input. Components come
  * straight from scanner truth (no re-derivation); honest caps come from the feed
- * status. Spread/timing stay `unknown` unless the scanner positively reports a
- * bad regime. Measured same-timeframe tradeability contributes to the score.
+ * status. The independent paper scout binds spread to its executable target.
+ * Measured same-timeframe tradeability contributes to the score.
  */
 export function opportunityToEdgeInput(opp: ScannerOpportunity, proposal: AgentProposal): EdgeInput {
   const timing = opp.timingContext?.timeframe === opp.timeframe ? opp.timingContext : undefined;
@@ -289,7 +290,7 @@ export function opportunityToEdgeInput(opp: ScannerOpportunity, proposal: AgentP
     },
     honesty: {
       feedStatus: mapEdgeFeedStatus(opp.dataSource),
-      spread: "unknown",
+      spread: independent ? missionSpreadStatus(paperMissionSpreadShare(proposal), isScalpTimeframe(proposal.timeframe)) : "unknown",
       timing: "unknown",
     },
   };
@@ -531,6 +532,7 @@ export async function runMissionScan(args: {
       dataSource: oppByProposalId.get(p.proposalId)?.dataSource ?? "AWAITING_FEED",
       riskAmount: sizedRiskByProposalId.get(p.proposalId) ?? p.riskPlan.riskAmount,
       expectedR: p.riskPlan.expectedR,
+      spreadShareOfMove: paperMissionSpreadShare(p),
       isSelected: p.proposalId === selectedId,
     })),
   });

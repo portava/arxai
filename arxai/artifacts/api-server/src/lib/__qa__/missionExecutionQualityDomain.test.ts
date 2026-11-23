@@ -311,3 +311,17 @@ test("Phase 7 verdict copy carries no guaranteed-profit vocabulary", () => {
   assert.equal(result.ok, true);
   assert.deepEqual(result.violations, []);
 });
+
+test("scan-time target-relative spread is available without a synthetic pip conversion", () => {
+  const base = { isScalp: true, direction: "BUY", quoteFreshness: "fresh" } as const;
+  for (const [share, status] of [[.05, "normal"], [.15, "wide"], [.25, "extreme"]] as const) {
+    const quality = computeExecutionQuality({ ...base, spreadShareOfMove: share });
+    assert.equal(quality.spreadStatus, status);
+    assert.equal(quality.spreadShareOfMove, share);
+    assert.equal(quality.observedSpreadPips, null);
+    assert.equal(quality.blockers.includes("SPREAD_EATS_EDGE"), status === "extreme");
+  }
+  for (const share of [null, NaN, Infinity, -1]) {
+    assert.equal(computeExecutionQuality({ ...base, spreadShareOfMove: share }).spreadStatus, "unknown");
+  }
+});

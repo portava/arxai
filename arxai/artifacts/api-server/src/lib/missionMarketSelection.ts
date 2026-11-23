@@ -82,3 +82,16 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
       quoteTime: quote.quote.timestamp, bid: quote.quote.bid, ask: quote.quote.ask, strategyScore: signal.score },
   };
 }
+
+/** The independent scout records the same quote that priced its paper entry. */
+export function paperMissionSpreadShare(proposal: AgentProposal): number | null {
+  const snapshot = proposal.marketSnapshot;
+  if (snapshot?.selectionModel !== "mission_trend_continuation" || proposal.direction === "NONE") return null;
+  const { bid, ask } = snapshot;
+  const entry = proposal.entryPlan.entryPrice, target = proposal.riskPlan.takeProfit;
+  const buy = proposal.direction === "BUY";
+  if (typeof bid !== "number" || typeof ask !== "number" || !Number.isFinite(bid) || !Number.isFinite(ask) ||
+      bid <= 0 || ask <= bid || entry !== (buy ? ask : bid) || target == null || !Number.isFinite(target)) return null;
+  const move = buy ? target - entry : entry - target;
+  return move > 0 ? (ask - bid) / move : null;
+}

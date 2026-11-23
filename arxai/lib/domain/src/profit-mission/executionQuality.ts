@@ -46,6 +46,8 @@ export interface ExecutionQualityInput {
   spreadPips?: number | null;
   /** Setup target distance entry→TP in pips (null = unknown). */
   expectedMovePips?: number | null;
+  /** Observed bid/ask spread divided by the executable entry-to-target move, in the same price units. */
+  spreadShareOfMove?: number | null;
   /** Average true range in pips (null = unknown). */
   atrPips?: number | null;
   /** Current vs average liquidity ratio (null = unknown). */
@@ -100,6 +102,15 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+export function missionSpreadStatus(share: number | null | undefined, isScalp: boolean): SpreadStatus {
+  if (share == null || !Number.isFinite(share) || share < 0) return "unknown";
+  const style = isScalp ? "scalp" : "swing";
+  const rounded = round2(share);
+  if (rounded >= SPREAD_SHARE_BLOCK[style]) return "extreme";
+  if (rounded >= SPREAD_SHARE_WARN[style]) return "wide";
+  return "normal";
+}
+
 /**
  * Compute an honest execution-quality verdict. Pure. Block-only: the verdict can
  * refuse a draft but can never make a refused draft tradeable.
@@ -136,38 +147,25 @@ export function computeExecutionQuality(input: ExecutionQualityInput): Execution
   }
 
   // ── Spread regime vs expected move (scalp-stricter). ───────────────────────
-  let spreadStatus: SpreadStatus = "unknown";
-  let spreadShareOfMove: number | null = null;
   const spreadPips =
     input.spreadPips != null && Number.isFinite(input.spreadPips) && input.spreadPips >= 0
-      ? input.spreadPips
-      : null;
-  if (spreadPips != null) {
-    if (
-      input.expectedMovePips != null &&
-      Number.isFinite(input.expectedMovePips) &&
-      input.expectedMovePips > 0
-    ) {
-      spreadShareOfMove = round2(spreadPips / input.expectedMovePips);
-      const blockAt = scalp ? SPREAD_SHARE_BLOCK.scalp : SPREAD_SHARE_BLOCK.swing;
-      const warnAt = scalp ? SPREAD_SHARE_WARN.scalp : SPREAD_SHARE_WARN.swing;
-      if (spreadShareOfMove >= blockAt) {
-        spreadStatus = "extreme";
-        blockers.push("SPREAD_EATS_EDGE");
-        warnings.push(
-          `Spread (${spreadPips}p) is ${(spreadShareOfMove * 100).toFixed(0)}% of the ${input.expectedMovePips}p target — too costly${scalp ? " for a scalp" : ""}.`,
-        );
-      } else if (spreadShareOfMove >= warnAt) {
-        spreadStatus = "wide";
-        warnings.push("Spread is wide relative to the target move — execution-quality downgraded.");
-      } else {
-        spreadStatus = "normal";
-      }
-    } else {
-      // Spread observed but no target to compare against: cannot certify normal.
-      spreadStatus = "unknown";
-      warnings.push("Spread observed but target move unknown — spread quality unverified.");
-    }
+      ? input.spreadPips : null;
+  const move = input.expectedMovePips;
+  const pipShare = spreadPips != null && move != null && Number.isFinite(move) && move > 0
+    ? Math.min(spreadPips / move, Number.MAX_VALUE) : null;
+  const share = pipShare ?? input.spreadShareOfMove;
+  const spreadStatus = missionSpreadStatus(share, scalp);
+  const spreadShareOfMove = share != null && spreadStatus !== "unknown" ? round2(share) : null;
+  if (spreadStatus === "extreme") {
+    blockers.push("SPREAD_EATS_EDGE");
+    const percent = (spreadShareOfMove! * 100).toFixed(0);
+    warnings.push(pipShare != null
+      ? `Spread (${spreadPips}p) is ${percent}% of the ${move}p target — too costly${scalp ? " for a scalp" : ""}.`
+      : `Spread consumes ${percent}% of the target move.`);
+  } else if (spreadStatus === "wide") {
+    warnings.push("Spread is wide relative to the target move — execution-quality downgraded.");
+  } else if (spreadStatus === "unknown" && spreadPips != null) {
+    warnings.push("Spread observed but target move unknown — spread quality unverified.");
   }
 
   // ── Liquidity. ─────────────────────────────────────────────────────────────

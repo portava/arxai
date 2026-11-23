@@ -75,3 +75,21 @@ test("Scanner withholds room when the executable exit side has reached the stop"
     assert.equal(measureScannerEntryRoom(side, recovered, stop, target, [])?.rewardToRisk, 4);
   }
 });
+
+test("paper Mission ranks the spread against its own executable target in both directions", () => {
+  for (const dir of ["BUY", "SELL"] as const) {
+    const buy = dir === "BUY";
+    const row = { timeframe: "M1", dataSource: "LIVE_FEED", recommendedAction: "WAIT" } as ScannerOpportunity;
+    const proposal = opportunityToProposal("TREND", "spread", row);
+    proposal.direction = dir;
+    proposal.entryPlan.entryPrice = buy ? 102 : 100;
+    proposal.marketSnapshot = { selectionModel: "mission_trend_continuation", bid: 100, ask: 102 };
+    for (const [move, status] of [[20, "normal"], [12, "wide"], [8, "extreme"]] as const) {
+      proposal.riskPlan.takeProfit = proposal.entryPlan.entryPrice + (buy ? move : -move);
+      assert.equal(opportunityToEdgeInput(row, proposal).honesty.spread, status);
+    }
+    assert.equal(opportunityToEdgeInput({ ...row, timeframe: "H1" }, { ...proposal, timeframe: "H1" }).honesty.spread, "normal");
+    proposal.entryPlan.entryPrice = 101;
+    assert.equal(opportunityToEdgeInput(row, proposal).honesty.spread, "unknown");
+  }
+});

@@ -145,7 +145,7 @@ function currenciesFor(symbol: string): string[] {
   return [];
 }
 
-function isScalpTimeframe(timeframe: string): boolean {
+export function isScalpTimeframe(timeframe: string): boolean {
   return SCALP_TIMEFRAMES.has(timeframe.trim().toUpperCase());
 }
 
@@ -541,6 +541,7 @@ export interface ScanProposalAnnotationInput {
   dataSource: string;
   riskAmount: number | null;
   expectedR: number | null;
+  spreadShareOfMove?: number | null;
   /** True for the Judge-selected proposal (gets the exposure verdict). */
   isSelected: boolean;
 }
@@ -574,7 +575,7 @@ export async function annotateScanProposals(args: {
       isScalp,
       direction: p.direction,
       quoteFreshness: quoteFreshnessFromDataSource(p.dataSource),
-      // Per-symbol microstructure is not honestly observable at scan time.
+      spreadShareOfMove: p.spreadShareOfMove,
       spreadPips: null,
       expectedMovePips: null,
       atrPips: null,
