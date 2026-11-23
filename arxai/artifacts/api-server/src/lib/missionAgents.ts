@@ -363,8 +363,7 @@ export async function runMissionScan(args: {
     for (const opp of observations.values()) {
       if (opp.dataSource === "LIVE_FEED" && opp.selectable) liveFeedConnected = true;
       const proposalId = `${missionId}:TREND:${opp.symbol}:${scanRunTs}`;
-      const proposal = await scoutPaperMissionMarket(opp, proposalId).catch(() => null);
-      if (!proposal) continue;
+      const proposal = await scoutPaperMissionMarket(opp, proposalId);
       proposal.riskObjection = assessRiskObjection(proposal);
       if (proposal.riskObjection) {
         proposal.status = "vetoed";

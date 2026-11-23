@@ -1560,7 +1560,7 @@ export async function decorateOpportunitiesWithHistory(
 
 /** A closed countertrend candle defines the pullback. Its extreme is the
  * trigger until a newer countertrend candle forms or the close breaks it.
- * Only the first close through the level confirms an entry. */
+ * The first close through the level starts a one-bar retest window. */
 export function driftPullbackTrigger(
   bars: readonly { open: number; high: number; low: number; close: number }[],
   side: ScannerOpportunity["recommendedAction"],

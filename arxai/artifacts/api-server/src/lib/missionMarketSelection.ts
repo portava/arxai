@@ -23,8 +23,16 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     return proposal;
   }
 
-  const candles = await routeCandles(symbol, timeframe, 251);
-  const quote = await routeQuote(symbol, quotePinForSeries(candles));
+  const candles = await routeCandles(symbol, timeframe, 251).catch(() => null);
+  if (!candles?.ok) {
+    proposal.reason = "Live candle history is unavailable for this market.";
+    return proposal;
+  }
+  const quote = await routeQuote(symbol, quotePinForSeries(candles)).catch(() => null);
+  if (!quote?.ok) {
+    proposal.reason = "A live quote from the candle provider is unavailable for this market.";
+    return proposal;
+  }
   const now = Date.now();
   const series = prepareScannerCandles(candles, symbol, timeframe, now);
   if (!series || series.trailingIntervals !== 1 || classifyScannerQuoteBinding(candles, quote, symbol, now).binding !== "BOUND" ||
