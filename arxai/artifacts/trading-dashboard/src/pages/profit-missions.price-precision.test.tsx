@@ -22,6 +22,13 @@ function proposal(over: Partial<MissionProposal>): MissionProposal {
 afterEach(cleanup);
 
 describe("mission price precision", () => {
+  it("presents a heuristic proposal score in points", () => {
+    render(<ul><ProposalRow p={proposal({ confidence: 86 })} /></ul>);
+    expect(screen.getByText("Setup score")).toBeTruthy();
+    expect(screen.getByText("86 / 100")).toBeTruthy();
+    expect(screen.queryByText("86%")).toBeNull();
+  });
+
   it("EURUSD levels keep the pair's 5 digits", () => {
     render(<ul><ProposalRow p={proposal({})} /></ul>);
     const row = screen.getByTestId("proposal-p1").textContent ?? "";

@@ -1075,8 +1075,8 @@ export function ProposalRow({ p }: { p: MissionProposal }) {
           <div>{p.agentKey}</div>
         </div>
         <div>
-          <span className="text-muted-foreground">Confidence</span>
-          <div>{Math.round(p.confidence)}%</div>
+          <span className="text-muted-foreground">Setup score</span>
+          <div>{Math.round(p.confidence)} / 100</div>
         </div>
         <div>
           <span className="text-muted-foreground">Entry</span>
@@ -1481,8 +1481,7 @@ function OpportunityQueuePanel({ queue }: { queue: OpportunityQueue }) {
           <ListOrdered className="h-4 w-4" /> Opportunity Queue
         </CardTitle>
         <CardDescription>
-          Setups ranked by risk-adjusted mission fit — not raw confidence. The
-          agents wait when nothing clears the bar.
+          Eligible setups rank by edge score. Reward-to-risk breaks ties.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
