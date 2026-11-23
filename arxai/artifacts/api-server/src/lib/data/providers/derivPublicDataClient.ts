@@ -1,3 +1,4 @@
+import { publicPaperBrackets } from "../../tradeEngine/publicPaperBrackets.js";
 // Public market data only. This connection never reads credentials, creates an
 // account session, sends authorize/OTP, or accepts an order/account operation.
 import WebSocket from "ws";
@@ -91,7 +92,7 @@ export class DerivPublicDataClient {
   private opening: Promise<void> | null = null;
   private pending = new Map<number, Pending>();
   private ticks = new Map<string, DerivTick>();
-  private staged = new Map<string, Map<number, { tick: DerivTick; timer: ReturnType<typeof setTimeout> }>>();
+  private staged = new Map<string, Map<number, { tick: DerivTick; receivedAt: number; timer: ReturnType<typeof setTimeout> }>>();
   private listeners = new Set<DerivTickListener>();
   private desired = new Set<string>();
   private subscriptions = new Map<string, string>();
@@ -279,7 +280,7 @@ export class DerivPublicDataClient {
       clearTimeout(item.timer);
       pending.delete(epoch);
       if (this.subscriptions.has(symbol) && this.desired.has(symbol) && this.isSymbolAvailable(symbol)) {
-        this.publishTick(item.tick);
+        this.publishTick(item.tick, item.receivedAt);
       }
     }
     if (!pending.size) this.staged.delete(symbol);
@@ -291,22 +292,23 @@ export class DerivPublicDataClient {
     this.releaseStaged(symbol);
     if (!tick) return this.getCachedTick(symbol);
     const delay = tick.epoch * 1000 - now;
-    if (delay <= 0) return this.publishTick(tick);
+    if (delay <= 0) return this.publishTick(tick, now);
     const pending = this.staged.get(symbol) ?? new Map();
     if (!pending.has(tick.epoch)) {
       const timer = setTimeout(() => this.releaseStaged(symbol), delay);
       timer.unref?.();
-      pending.set(tick.epoch, { tick, timer });
+      pending.set(tick.epoch, { tick, receivedAt: now, timer });
       this.staged.set(symbol, pending);
     }
     return this.getCachedTick(symbol);
   }
-  private publishTick(tick: DerivTick): DerivTick | null {
+  private publishTick(tick: DerivTick, receivedAt: number): DerivTick | null {
     const symbol = tick.symbol;
     const prior = this.ticks.get(symbol);
     if (prior && (tick.epoch < prior.epoch || tick.epoch === prior.epoch && tick.quote !== prior.quote)) return prior ?? null;
     if (prior?.epoch === tick.epoch) return prior;
     this.ticks.set(symbol, tick);
+    publicPaperBrackets.observe(tick, receivedAt, this.now());
     for (const listener of this.listeners) { try { listener(tick); } catch { /* observers do not own transport */ } }
     return tick;
   }

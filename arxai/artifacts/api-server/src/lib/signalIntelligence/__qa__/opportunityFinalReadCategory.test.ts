@@ -195,3 +195,15 @@ test("a confirmed Scanner entry with less than one risk unit of room quotes the 
   assert.equal(computeFinalRead({...row,entryRoom:{...row.entryRoom!,rewardToRisk:1}}).label,"TRADE_WATCH");
   assert.notEqual(computeFinalRead({...row,chartConfirmed:false}).label,"TRADE_WATCH");
 });
+
+test("a delayed retest can qualify only once within three bars while the broken level holds", () => {
+  const pull = { open:102, high:103, low:99, close:100 };
+  const broken = { open:100, high:105, low:100, close:104 };
+  const away = { open:104, high:106, low:103.5, close:105 };
+  const touch = { open:104, high:106, low:102.8, close:104 };
+  const read = (...after: typeof pull[]) => driftPullbackTrigger([pull,broken,...after], "BUY")?.retestLevel;
+  assert.equal(read(away,away,touch),103);
+  assert.equal(read(away,away,away,touch),undefined);
+  assert.equal(read(touch,touch),undefined);
+  assert.equal(read({ ...away, close:102, low:101 },touch),undefined);
+});

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { brier, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
+import { brier, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
-interface Row { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[] }
+interface Row { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[]; paperPublishedAt?: number; paperGrade?: ForecastPaperGrade }
 const labels: Record<Scenario, string> = { UP_FIRST: "Bullish first", DOWN_FIRST: "Bearish first", NEITHER: "Neither confirmed" };
 const allScenarios: Scenario[] = ["UP_FIRST", "DOWN_FIRST", "NEITHER"];
 const allPaths: Array<Scenario | TrajectoryKind> = ["BULL", "MIDDLE", "BEAR", ...allScenarios];
@@ -255,6 +255,12 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
 
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
+  const paperTickets = windowHistory.filter(r => r.paperPublishedAt != null);
+  const targets = paperTickets.filter(r => r.paperGrade?.state === "TARGET").length;
+  const stops = paperTickets.filter(r => r.paperGrade?.state === "STOP").length;
+  const skippedOrders = paperTickets.filter(r => r.paperGrade?.state === "SKIPPED").length;
+  const unverifiedOrders = paperTickets.filter(r => r.paperGrade?.state === "UNVERIFIED").length;
+  const selectedPaperGrade = windowHistory.find(r => r.id === shown?.id)?.paperGrade ?? shown?.paperGrade;
   const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
     .flatMap(r => uniqueHorizonScores(r.scores, preset.bars).map(score => {
       const weights = r.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
@@ -297,6 +303,15 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <div aria-label="Selected horizon probabilities" className="my-2 flex flex-wrap gap-4"><span>Outcomes within {preset.label}:</span>
         {allScenarios.map((scenario, i) => <span key={scenario}>{labels[scenario]}: <strong>{((probability?.[i] ?? 0) * 100).toFixed(1)}%</strong></span>)}
       </div>
+      {shown.forecast.paperInstruction && <div aria-label="Issued Forecast paper order" className="my-2">
+        <strong>Paper instruction at issue · {shown.forecast.paperInstruction.action}</strong>
+        {shown.forecast.paperInstruction.action !== "HOLD" && <span> · Reference {shown.forecast.paperInstruction.reference.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Stop {shown.forecast.paperInstruction.stop.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Target {shown.forecast.paperInstruction.target.toLocaleString(undefined, {maximumSignificantDigits: 9})}</span>}
+        {shown.forecast.paperInstruction.action !== "HOLD" && shown.forecast.paperInstruction.entryLimit != null && <div className="text-xs">
+          First quote only · {shown.forecast.paperInstruction.action === "BUY" ? "maximum buy ask" : "minimum sell bid"} {shown.forecast.paperInstruction.entryLimit.toLocaleString(undefined, {maximumSignificantDigits: 9})}
+        </div>}
+        <div className="text-xs text-zinc-400">{shown.forecast.paperInstruction.reason}</div>
+        {selectedPaperGrade && <div>Ticket result · {({ STOP: "Stopped", TARGET: "Target reached", OPEN: "Open", SKIPPED: "Entry skipped", UNVERIFIED: "Quote coverage incomplete", PENDING: "Awaiting first quote" })[selectedPaperGrade.state]}</div>}
+      </div>}
       {shown.forecast.routes && <label className="mt-2 inline-flex items-center gap-2">Chart view
         <select aria-label="Forecast chart view" className="rounded bg-zinc-900 p-1" value={view} onChange={e => setView(e.target.value === "estimate" ? "estimate" : e.target.value === "range" ? "range" : "routes")}>
           {shown.forecast.priceEstimate && <option value="estimate">Estimated closes</option>}
@@ -344,6 +359,9 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <span>Direction recall: {actualDirection ? `${(100 * correctDirection / actualDirection).toFixed(1)}%` : "—"}</span>
       <span>Saved {preset.label} forecasts: {windowHistory.length + (shown && !windowHistory.some(r => r.id === shown.id) ? 1 : 0)}</span>
     </div>}
+    {paperTickets.length > 0 && <p aria-label="Forecast paper ticket results" className="mt-2 text-zinc-300">
+      Recent paper tickets · {targets + stops ? `${(100 * targets / (targets + stops)).toFixed(1)}% targets (${targets} of ${targets + stops} settled)` : "Awaiting a verified exit"} · {skippedOrders} skipped · {unverifiedOrders} with incomplete quotes · {paperTickets.length - targets - stops - skippedOrders - unverifiedOrders} open or pending
+    </p>}
     {windowHistory.length > 0 && <p data-testid="forecast-range-coverage" className="mt-2 text-zinc-300">
       Range coverage: {rangeCoverage.coverage == null ? "awaiting completed original forecasts" : `${pct(rangeCoverage.coverage)} inside across ${rangeCoverage.n} non-overlapping completed windows (${rangeCoverage.outside} outside; nominal target 50%)`}.
       {" "}{rangeCoverage.excluded} updates, overlapping, unresolved or ungraded windows excluded. Descriptive history; this does not establish calibrated future coverage or trading edge.

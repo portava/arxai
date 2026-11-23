@@ -129,6 +129,7 @@ export interface PriceEstimate {
   candles: StructuralBar[];
 }
 export interface StructuralForecast {
+  paperInstruction?: import("./paperInstruction.js").ForecastPaperInstruction;
   version: string; asOf: number; origin: DataOrigin; modelId: string;
   featureVersion: string; eventDefinitionVersion: string;
   trainedThrough: number; features: number[]; preBreakEligible: boolean;

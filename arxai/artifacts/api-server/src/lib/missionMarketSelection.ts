@@ -62,6 +62,11 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     proposal.reason = "The current bid and ask have moved outside the Mission bracket.";
     return proposal;
   }
+  const previousClose = history.at(-2)!.close;
+  if (sign * (history.at(-1)!.close - previousClose) <= 0 || sign * (liquidation - previousClose) <= 0) {
+    proposal.reason = "Mission needs a closed candle advancing with its trend and a live exit-side quote still holding the prior close.";
+    return proposal;
+  }
   return { ...proposal, status: "proposed", direction: signal.direction, confidence: signal.score,
     urgency: signal.score >= 75 ? "high" : "medium", reason: signal.reason, invalidationLevel: String(signal.stopLoss),
     entryPlan: { ...proposal.entryPlan, entryPrice: entry },

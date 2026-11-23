@@ -1,12 +1,15 @@
+import { forecastPaperInstruction, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
   forecastHorizon, forecastHorizonBars, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
   regradeAgainstBaseline, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
 
-export interface StoredForecast { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[] }
+export interface StoredForecast { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[]; paperPublishedAt?: number; paperGrade?: ForecastPaperGrade }
 export interface ForecastRepository {
   list(userId: number, symbol: string): Promise<StoredForecast[]>;
+  calibrationHistory?(userId: number, symbol: string, provider: string, version: string, horizon: ForecastHorizonPreset, asOf: number): Promise<GradedObservation[]>;
+  savePaperGrade?(userId: number, id: string, grade: ForecastPaperGrade): Promise<void>;
   save(userId: number, row: StoredForecast, model: StructuralModel): Promise<StoredForecast>;
   appendScores(userId: number, id: string, scores: ForecastScore[]): Promise<void>;
 }
@@ -34,6 +37,7 @@ export class ForecastRefusal extends Error {
 }
 export interface ForecastDependencies {
   readFeed(symbol: string, horizon?: ForecastHorizonPreset): Promise<ForecastFeed>; repository: ForecastRepository; now(): number;
+  gradePaperTicket?(row: StoredForecast, now: number): ForecastPaperGrade | undefined;
   fit?: (...args: Parameters<typeof fitStructuralModel>) => StructuralModel | Promise<StructuralModel>;
 }
 
@@ -112,7 +116,9 @@ export class StructuralForecastService {
     const forecast = forecastStructural(model, feed.bars.slice(-120), feed.origin, quarantined, horizon.bars, horizon.id, feed.bars);
     // Learn from this window's graded forecasts: calibrate the shown
     // probabilities only when that scored better on forecasts it never saw.
-    const graded: GradedObservation[] = existing.filter(r => r.forecast.origin.provider === feed.origin.provider).flatMap(r => {
+    const graded: GradedObservation[] = this.deps.repository.calibrationHistory
+      ? await this.deps.repository.calibrationHistory(userId, symbol, feed.origin.provider, model.version, horizon, asOf)
+      : existing.filter(r => r.forecast.origin.provider === feed.origin.provider).flatMap(r => {
       const score = r.scores.find(s => s.horizon === horizon.bars);
       return score ? [{ p: r.forecast.calibration?.raw ?? probabilities(r.forecast.mass, horizon.bars), outcome: scenarioIndex(score.outcome),
         completedAt: score.observedThrough, asOf: r.forecast.asOf, update: Boolean(r.forecast.update) }] : [];
@@ -130,6 +136,7 @@ export class StructuralForecastService {
       window.probabilities = learned.shown;
       forecast.calibration = learned.record;
     }
+    forecast.paperInstruction = forecastPaperInstruction(feed.bars.filter(b => b.closeTime <= asOf), window?.probabilities);
     const id = createHash("sha256").update(`${userId}:${symbol}:${horizon.id}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();
     if (issuedAt >= asOf + horizon.stepMs) throw new ForecastRefusal("FIRST_HORIZON_ALREADY_CLOSED", facts({ lastCloseAgeSeconds: Math.round((issuedAt - asOf) / 1000) }));
@@ -151,6 +158,13 @@ export class StructuralForecastService {
     };
     // A stale current tip may still resolve old horizons. Require same provider.
     for (const row of rows) {
+      if (!row.paperGrade && row.paperPublishedAt != null) {
+        const grade = this.deps.gradePaperTicket?.(row, now);
+        if (grade) {
+          row.paperGrade = grade;
+          if (["TARGET", "STOP", "SKIPPED"].includes(grade.state)) await this.deps.repository.savePaperGrade?.(userId, row.id, grade);
+        }
+      }
       const step = forecastStepMs(row.forecast);
       const preset = forecastHorizon(forecastHorizonId(row.forecast)) ?? FORECAST_HORIZONS.find(h => h.stepMs === step);
       // A window scored before grades existed has no letter; it is still due.

@@ -1,3 +1,4 @@
+import { checkedPaperBracketQuote } from "../tradeEngine/publicPaperBrackets.js";
 // Build EE — Paper Execution Monitor.
 //
 // SAFETY (strict freeze): READ-ONLY for market data; never calls live broker.
@@ -110,8 +111,9 @@ export async function runPaperMonitor(opts?: {
       } else {
         // One execution price source (audit H4): the router quote the venue
         // fills on. A stale or missing quote never marks an SL/TP hit.
-        const q = await currentQuote(order.symbol);
+        const q = await checkedPaperBracketQuote(order, await currentQuote(order.symbol));
         if (!q.ok) {
+          summary.stillOpen++;
           summary.warnings.push(`order=${order.id}: no current execution price (${q.reasons.join("; ").slice(0, 160)})`);
           continue;
         }

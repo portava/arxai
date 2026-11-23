@@ -87,3 +87,10 @@ test("a feed error preserves the assessed market with a reason", async () => {
   assert.equal(p.direction, "NONE");
   assert.match(p.reason, /unavailable/i);
 });
+
+test("an executable quote that loses the prior close withholds a trend entry", async () => {
+  priceOffset = -1;
+  const proposal = await scoutPaperMissionMarket(row, "lost-close");
+  assert.equal(proposal.direction, "NONE");
+  assert.match(proposal.reason, /holding the prior close/);
+});

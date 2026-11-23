@@ -24,11 +24,17 @@ test("PostgreSQL receipt persistence is immutable, idempotent and user isolated"
     return { openTime: i * 60_000, closeTime: (i + 1) * 60_000, open, high: Math.max(open, price) + .15,
       low: Math.min(open, price) - .15, close: price, isFinal: true };
   });
-  const origin: DataOrigin = { provider: "fixture", symbol: "V75", kind: "SYNTHETIC_TEST", fetchedAt: new Date().toISOString(), historicalArrivalTimesKnown: false };
+  const origin: DataOrigin = { provider: "deriv_public", symbol: "V75", kind: "SYNTHETIC_TEST", fetchedAt: new Date().toISOString(), historicalArrivalTimesKnown: false };
   const model = fitStructuralModel(bars, origin), forecast = forecastStructural(model, bars.slice(-120), origin);
   const row = { id, issuedAt: Date.now(), forecast, scores: [] };
   try {
-    await repository.save(userId, row, model);
+    row.forecast.paperInstruction = { action: "BUY", reference: 100, stop: 98, target: 103, entryLimit: 100.5, reason: "paper regression" };
+    const issued = await repository.save(userId, row, model);
+    assert.ok(issued.paperPublishedAt && issued.paperPublishedAt >= row.issuedAt);
+    const paperGrade = { state: "STOP" as const, entry: 100.2, exit: 97.8, observedAt: issued.paperPublishedAt + 2000 };
+    await assert.rejects(repository.savePaperGrade!(userId + 1, id, paperGrade), /FORECAST_NOT_FOUND/);
+    await Promise.all([repository.savePaperGrade!(userId,id,paperGrade),repository.savePaperGrade!(userId,id,paperGrade)]);
+
     const original = (await db.select().from(receipts).where(eq(receipts.receiptId, id)))[0]!;
     const replacement = structuredClone(row); replacement.forecast.gateReason = "MUST_NOT_OVERWRITE";
     const existing = await repository.save(userId, replacement, model);
@@ -40,6 +46,16 @@ test("PostgreSQL receipt persistence is immutable, idempotent and user isolated"
     await Promise.all([repository.appendScores(userId, id, [score]), repository.appendScores(userId, id, [score])]);
     const result = (await repository.list(userId, "V75")).find(r => r.id === id)!;
     assert.equal(result.scores.length, 1);
+    assert.deepEqual(result.paperGrade, paperGrade);
+    const horizon = { id: "1h", label: "1 hour", timeframe: "M1" as const, stepMs: 60000, bars: 60, minutes: 60 };
+    const settled = { ...score, horizon: 60, observedThrough: forecast.asOf + 3600000 };
+    await repository.appendScores(userId, id, [settled]);
+    const calibration = (who: number, provider: string, cutoff: number) =>
+      repository.calibrationHistory!(who, "V75", provider, forecast.version, horizon, cutoff);
+    assert.equal((await calibration(userId, "deriv_public", settled.observedThrough)).length, 1);
+    assert.deepEqual(await calibration(userId, "deriv_public", settled.observedThrough - 1), []);
+    assert.deepEqual(await calibration(userId + 1, "deriv_public", settled.observedThrough), []);
+    assert.deepEqual(await calibration(userId, "another_provider", settled.observedThrough), []);
     const final = (await db.select().from(receipts).where(eq(receipts.receiptId, id)))[0]!;
     assert.deepEqual(final, original);
   } finally {

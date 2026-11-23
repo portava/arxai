@@ -1,3 +1,4 @@
+import { checkedPaperBracketQuote } from "./publicPaperBrackets.js";
 // PAPER venue of the Trade Engine pipeline (lib/tradeEngine/pipeline.ts).
 //
 // The paper simulator book (paper_orders) used to be written straight from
@@ -534,7 +535,7 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
 }
 
 async function currentOrderQuote(order: PaperOrderRow): ReturnType<typeof currentQuote> {
-  if (isMarketPriced(order)) return currentQuote(order.symbol);
+  if (isMarketPriced(order)) return checkedPaperBracketQuote(order, await currentQuote(order.symbol));
   const at = new Date();
   const price = getMockPrice(order.symbol, at.getTime());
   return { ok: true, bid: price, ask: price, at, source: "paper_simulator_price" };

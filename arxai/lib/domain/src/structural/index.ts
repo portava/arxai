@@ -8,3 +8,4 @@ export * from "./learning.js";
 export * from "./volRange.js";
 
 export * from "./scorecard.js";
+export * from "./paperInstruction.js";
