@@ -2,7 +2,9 @@ import type { AgentProposal } from "@workspace/domain/profit-mission";
 import { runSingleStrategy } from "./backtestStrategyRegistry.js";
 import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import type { ScannerOpportunity } from "./marketScanner.js";
-import { classifyScannerQuoteBinding, prepareScannerCandles } from "./scannerInputIntegrity.js";
+import { buildChartIntelligenceState } from "./data/chart/chartIntelligence.js";
+import { normalizeChartTimeframe } from "./data/chart/timeframes.js";
+import { chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles } from "./scannerInputIntegrity.js";
 
 export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalId: string): Promise<AgentProposal> {
   const { symbol, timeframe } = opp;
@@ -14,7 +16,9 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     status: "context_only", riskObjection: null, judgeDecision: null, selectionReason: null, rejectionReason: null,
     marketSnapshot: { selectionModel: "mission_trend_continuation", dataSource: opp.dataSource, scannerRead: opp.finalRead?.label ?? null },
   };
-  if (opp.dataSource !== "LIVE_FEED" || !opp.selectable || !opp.tradeable || !opp.chartConfirmed) return proposal;
+  if (opp.dataSource !== "LIVE_FEED" || !opp.selectable || !opp.tradeable) return proposal;
+  const publicFeed = opp.feedProvider === "deriv_public";
+  if (!publicFeed && !opp.chartConfirmed) return proposal;
   const timing = opp.timingContext;
   if (opp.newsContext?.eventRiskUnchecked || ["medium", "high", "critical"].includes(opp.newsContext?.riskLevel ?? "") ||
       ["REJECTED_BY_RISK", "SPREAD_TOO_HIGH", "CHOPPY_MARKET"].includes(opp.statusBadge) ||
@@ -28,20 +32,28 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     proposal.reason = "Live candle history is unavailable for this market.";
     return proposal;
   }
-  const quote = await routeQuote(symbol, quotePinForSeries(candles)).catch(() => null);
-  if (!quote?.ok) {
-    proposal.reason = "A live quote from the candle provider is unavailable for this market.";
-    return proposal;
-  }
-  const now = Date.now();
-  const series = prepareScannerCandles(candles, symbol, timeframe, now);
-  if (!series || series.trailingIntervals !== 1 || classifyScannerQuoteBinding(candles, quote, symbol, now).binding !== "BOUND" ||
-      quote.quote?.bid == null || quote.quote.ask == null) return proposal;
+  const series = prepareScannerCandles(candles, symbol, timeframe, Date.now());
+  if (!series || series.trailingIntervals !== 1) return proposal;
   // The registered trend and chop rules consume OHLC only.
   const history = series.openClosed.slice(-250).map(bar => ({ ...bar, volume: bar.volume ?? 0 }));
   const signal = runSingleStrategy("trendContinuation", symbol, history, 60);
   proposal.reason = signal.reason;
   if (signal.direction === "WAIT") return proposal;
+  if (publicFeed) {
+    const tf = normalizeChartTimeframe(timeframe);
+    const chart = tf && candles.primaryProvider === "deriv_public"
+      ? await buildChartIntelligenceState(symbol, tf, 200).catch(() => null) : null;
+    if (!chart?.gateOutput.scannerConfirmAllowed || !chartMatchesClosedBar(chart, candles.primaryProvider, series.openClosed.at(-1))) {
+      proposal.reason = "Mission is waiting for its chart to verify the same closed candle and live source.";
+      return proposal;
+    }
+  }
+  const quote = await routeQuote(symbol, quotePinForSeries(candles)).catch(() => null);
+  if (!quote?.ok || classifyScannerQuoteBinding(candles, quote, symbol, Date.now()).binding !== "BOUND" ||
+      quote.quote?.bid == null || quote.quote.ask == null) {
+    proposal.reason = "A current bid and ask from the candle provider is unavailable for this market.";
+    return proposal;
+  }
   const buy = signal.direction === "BUY", sign = buy ? 1 : -1;
   const entry = buy ? quote.quote.ask : quote.quote.bid;
   const liquidation = buy ? quote.quote.bid : quote.quote.ask;

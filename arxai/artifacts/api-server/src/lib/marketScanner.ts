@@ -8,7 +8,7 @@ import { measureScannerEntryRoom, type ScannerEntryRoom } from "./scannerEntryRo
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
+import { chartMatchesClosedBar, prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
 import { seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
 import { buildChartIntelligenceState, getCachedIntelligenceContext, chartLevelProximity, type ChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
@@ -1923,10 +1923,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
         chart = await runWithScannerBudget(() => buildChartIntelligenceState(sym, tf as ChartTimeframe, 200)).catch(() => null);
       }
       const last = routed?.rawCandles.at(-1);
-      const checked = chart?.latestClosedCandle;
-      const sameClosedBar = !!(chart?.aiUsable && chart.truthState.source === a.feedProvider && checked && last &&
-        checked.openTime === last.time && checked.open === last.open && checked.high === last.high &&
-        checked.low === last.low && checked.close === last.close);
+      const sameClosedBar = chartMatchesClosedBar(chart, a.feedProvider, last);
       chartConfirmed = !!chart?.gateOutput.scannerConfirmAllowed &&
         (!publicFeed || (ds === "LIVE_FEED" && routed?.quoteUsable === true && directional && sameClosedBar));
       const writer = routed?.attribution;

@@ -10,6 +10,10 @@ let direction = 1;
 let priceOffset = 0;
 let unavailable = false;
 let quoteSource = "deriv";
+let candleSource = "deriv";
+let lastClosedTime = "";
+let chartAllowed = true;
+let chartOffset = 0;
 let last = 0;
 let historyCalls = 0;
 mock.module("../data/marketDataRouter.js", { namedExports: {
@@ -21,17 +25,24 @@ mock.module("../data/marketDataRouter.js", { namedExports: {
     const candles = Array.from({ length: 250 }, (_, i) => {
       const close = 1000 + direction * (0.15 * i + (i % 2 === 0 ? -0.4 : 0.4));
       last = close;
+      lastClosedTime = new Date(start + i * minute).toISOString();
       return { time: new Date(start + i * minute).toISOString(), open: close, high: close + 0.5, low: close - 0.5, close, volume: 0 };
     });
-    return { ok: true, symbol, assetClass: "synthetic", primaryProvider: "deriv", attempts: [], userMessage: "", adminDetail: "", candles };
+    return { ok: true, symbol, assetClass: "synthetic", primaryProvider: candleSource, attempts: [], userMessage: "", adminDetail: "", candles };
   },
   routeQuote: async (symbol: string): Promise<MarketQuoteResult> => ({
     ok: true, symbol, assetClass: "synthetic", primaryProvider: quoteSource, attempts: [], userMessage: "", adminDetail: "",
     quote: { symbol, bid: last + priceOffset - 0.01, ask: last + priceOffset + 0.01, timestamp: new Date().toISOString() },
   }),
 } });
+mock.module("../data/chart/chartIntelligence.js", { namedExports: {
+  buildChartIntelligenceState: async () => ({
+    aiUsable: true, truthState: { source: candleSource }, gateOutput: { scannerConfirmAllowed: chartAllowed },
+    latestClosedCandle: { openTime: lastClosedTime, open: last, high: last + 0.5, low: last - 0.5, close: last + chartOffset },
+  }),
+} });
 const { scoutPaperMissionMarket } = await import("../missionMarketSelection.js");
-beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = "deriv"; });
+beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = candleSource = "deriv"; chartAllowed = true; chartOffset = 0; });
 
 test("Mission can buy or sell a trend while Scanner waits, using the executable side", async () => {
   for (const sign of [1, -1]) {
@@ -55,6 +66,17 @@ test("a crossed stop, mismatched feed and risk veto withhold an executable Missi
   const veto = await scoutPaperMissionMarket({ ...row, statusBadge: "REJECTED_BY_RISK" }, "p");
   assert.equal(veto.status, "context_only");
   assert.equal(historyCalls, calls);
+});
+
+test("Mission checks its own public chart when Scanner has no direction", async () => {
+  quoteSource = candleSource = "deriv_public";
+  const waiting = { ...row, feedProvider: "deriv_public", chartConfirmed: false };
+  assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "BUY");
+  chartAllowed = false;
+  assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "NONE");
+  chartAllowed = true;
+  chartOffset = 0.1;
+  assert.equal((await scoutPaperMissionMarket(waiting, "p")).direction, "NONE");
 });
 
 test("a feed error preserves the assessed market with a reason", async () => {

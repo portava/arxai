@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "./data/marketDataRouter.js";
+import type { ChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import type { Candle } from "./data/types.js";
 import { normalizeCandles, sourceModeFromProvider, providerCandleTimeBasis } from "./data/chart/candleNormalization.js";
 import { normalizeChartTimeframe, timeframeMs, barIntervalDistance, calendarAwareTrailingIntervals } from "./data/chart/timeframes.js";
@@ -10,6 +11,13 @@ import { classifyQuoteFreshness } from "./data/freshness.js";
 // omits them. The value is an opaque digest, never raw account/bridge IDs.
 const sourceBinding: unique symbol = Symbol("scannerSourceBinding");
 type SourceBound = { [sourceBinding]?: string };
+
+export function chartMatchesClosedBar(chart: ChartIntelligenceState | null, provider: string | null | undefined, bar: Candle | undefined): boolean {
+  const checked = chart?.latestClosedCandle;
+  return !!(chart?.aiUsable && chart.truthState.source === provider && checked && bar &&
+    checked.openTime === bar.time && checked.open === bar.open && checked.high === bar.high &&
+    checked.low === bar.low && checked.close === bar.close);
+}
 
 export function scannerSourceIdentity(result: Pick<MarketCandlesResult, "primaryProvider" | "provenance">): string {
   const p = result.provenance;
