@@ -1129,7 +1129,7 @@ export function computeFinalRead(
 
 export function decorateOpportunitiesWithFinalRead(
   opps: ScannerOpportunity[],
-): ScannerOpportunity[] {
+): (ScannerOpportunity & { finalRead: ScannerFinalRead })[] {
   return opps.map((o) => ({ ...o, finalRead: computeFinalRead(o) }));
 }
 

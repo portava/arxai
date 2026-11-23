@@ -33,14 +33,12 @@ import {
   ENRICHMENT_CONCURRENCY,
   runWithScannerBudget,
   isApprovedScannerSymbol,
-  decorateOpportunitiesWithHistory,
-  decorateOpportunitiesWithNewsRisk,
-  decorateOpportunitiesWithFinalRead,
   effectiveOpportunityScore,
   symbolsForUniverse,
   type ScannerOpportunity,
   type UniverseId,
 } from "../marketScanner.js";
+import { reviewScannerOpportunities } from "../scannerReview.js";
 import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { routeCandles, routeQuote, quotePinForSeries } from "../data/marketDataRouter.js";
 
@@ -299,9 +297,7 @@ export async function buildOpportunityMapCore(
     }
   }
 
-  const withHistory = await decorateOpportunitiesWithHistory(base);
-  const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
-  const decorated = decorateOpportunitiesWithFinalRead(withNews);
+  const decorated = await reviewScannerOpportunities(base);
 
   // Real per-row lateness (live rows only); fail-soft to null per row.
   const lateness = await mapWithConcurrency(decorated, ENRICHMENT_CONCURRENCY, latenessFor);

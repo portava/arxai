@@ -10,6 +10,7 @@ let quoteAgeMs = 0;
 let missingQuote = false;
 let lateProvider = "mt5_broker";
 let stopLoss = 1.09;
+let standDown = false;
 let changedIdentity: Partial<SeriesProvenance> = {};
 function provenance(symbol: string, timeframe: string): SeriesProvenance {
   return { providerId: "mt5_broker", subProviderId: null, sourceId: `mt5_broker:${symbol}:${timeframe}`, source: "DERIVED", brokerCode: "mt5", bridgeConnectionId: 101, userId: 42, brokerSymbol: symbol, environment: "demo", receivedAt: new Date().toISOString(), delayed: false };
@@ -35,25 +36,34 @@ mock.module("../../data/marketDataRouter.js", {
 });
 const scanner = await import("../../marketScanner.js");
 const identity = async (rows: ScannerOpportunity[]) => rows;
+async function scanTestRow(symbol: string, timeframe: string) {
+  scans++; scanPeak = Math.max(scanPeak, scans);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  scans--;
+  return bindScannerSource({
+    symbol, timeframe, dataSource: "LIVE_FEED", dataStatus: "live", feedProvider: "mt5_broker",
+    recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss, takeProfit: 1.12,
+    entrySniperScore: 70, confidenceScore: 70, riskRewardRatio: 2,
+    setupType: "Upward drift", opportunity: { score: 70 },
+    // The Chart Truth gate passed for this symbol/timeframe: without it the
+    // real final read is WAIT_FOR_CONFIRMATION, never TRADE_WATCH.
+    chartConfirmed: true,
+    driftTrigger: { side: "BUY", confirmed: true, level: 1.098, retestLevel: 1.098 },
+    regime: { regime: "TREND_UP" }, bidAsk: { bid: 1.0999, ask: 1.1001 },
+  } as ScannerOpportunity, scannerSourceIdentity({ primaryProvider: "mt5_broker", provenance: provenance(symbol, timeframe) }));
+}
 mock.module("../../marketScanner.js", {
   namedExports: {
     ...scanner,
-    scanSymbolTimeframe: async (symbol: string, timeframe: string) => {
-      scans++; scanPeak = Math.max(scanPeak, scans);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      scans--;
-      return bindScannerSource({
-        symbol, timeframe, dataSource: "LIVE_FEED", dataStatus: "live", feedProvider: "mt5_broker",
-        recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss, takeProfit: 1.12,
-        entrySniperScore: 70, confidenceScore: 70, riskRewardRatio: 2,
-        setupType: "Trend continuation", opportunity: { score: 70 },
-        // The Chart Truth gate passed for this symbol/timeframe: without it the
-        // real final read is WAIT_FOR_CONFIRMATION, never TRADE_WATCH.
-        chartConfirmed: true,
-      } as ScannerOpportunity, scannerSourceIdentity({ primaryProvider: "mt5_broker", provenance: provenance(symbol, timeframe) }));
-    },
+    scanSymbolTimeframe: scanTestRow,
+    scanOnce: async ({symbols, timeframes}: {symbols: string[]; timeframes: string[]}) =>
+      [await scanTestRow(symbols[0]!, timeframes[0]!)],
     decorateOpportunitiesWithHistory: identity,
     decorateOpportunitiesWithNewsRisk: identity,
+    decorateOpportunitiesWithTimingContext: async (rows: ScannerOpportunity[]) => standDown
+      ? rows.map(row => ({ ...row, timingContext: { timeframe: row.timeframe, entryPermission: "STAND_DOWN", actionReason: "Timing veto in this test" } }))
+      : rows,
+    decorateOpportunitiesWithFvgRead: identity,
     // The real (pure) final read, not a pass-through: since 81105b03 the map
     // files a row as "Ready now" only when its own final read is TRADE_WATCH,
     // and a row with no final read is withheld. With the chart-confirmed live
@@ -125,4 +135,24 @@ test("same-provider bridge/account/environment/native-symbol switches withhold l
   }
   changedIdentity = {};
   assert.ok((await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" })).map.categories.READY_NOW.length > 0);
+});
+
+test("map and assistant follow Scanner when timing vetoes an otherwise ready retest", async () => {
+  const { dispatchTool } = await import("../../assistant/tools.js");
+  const { FAIL_CLOSED_ENVELOPE } = await import("../../assistant/derivedEnvelope.js");
+  const { reviewScannerOpportunities } = await import("../../scannerReview.js");
+  try {
+    for (const veto of [false, true]) {
+      standDown = veto;
+      const [card] = await reviewScannerOpportunities([await scanTestRow("EURUSD", "M5")]);
+      assert.equal(card!.finalRead.label, veto ? "AVOID_FOR_NOW" : "TRADE_WATCH");
+      const assistant = await dispatchTool("getFinalTradeRead", {symbol: "EURUSD", timeframe: "M5"}, 1, undefined, FAIL_CLOSED_ENVELOPE) as {finalRead: unknown};
+      assert.deepEqual(assistant.finalRead, card!.finalRead);
+      const result = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
+      assert.equal(result.map.categories.READY_NOW.length > 0, !veto);
+      if (veto) assert.ok(result.map.rows.some(row => row.reason?.includes("Timing veto in this test")));
+    }
+  } finally {
+    standDown = false;
+  }
 });

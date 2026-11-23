@@ -2703,7 +2703,8 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       }
     }
     case "getFinalTradeRead": {
-      const { scanOnce, decorateOpportunitiesWithHistory, decorateOpportunitiesWithNewsRisk, computeFinalRead } = await import("../marketScanner.js");
+      const { scanOnce } = await import("../marketScanner.js");
+      const { reviewScannerOpportunities } = await import("../scannerReview.js");
       const sym = String(args.symbol ?? "").toUpperCase();
       const tf = typeof args.timeframe === "string" ? args.timeframe : "M15";
       try {
@@ -2715,10 +2716,9 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
             safetyNote: "Read is honest: no scanner setup means no trade right now.",
           };
         }
-        const withHistory = await decorateOpportunitiesWithHistory(all);
-        const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
-        const opp = withNews[0]!;
-        const finalRead = computeFinalRead(opp);
+        const reviewed = await reviewScannerOpportunities(all);
+        const opp = reviewed[0]!;
+        const finalRead = opp.finalRead;
         return {
           symbol: opp.symbol, timeframe: opp.timeframe,
           finalRead,
@@ -2729,7 +2729,7 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
           historicalContext: opp.historicalContext ?? null,
           newsContext: opp.newsContext ?? null,
           safetyNote: finalRead.confidence === "LOW"
-            ? "Confidence is LOW because news/history feeds are limited. Say so honestly. Do not force a buy/sell answer."
+            ? "Confidence is LOW. Explain the reasons and confirmation conditions in the final read."
             : "Decision support only. You are allowed to recommend WAIT or NO_TRADE when appropriate.",
         };
       } catch {
