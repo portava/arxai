@@ -527,7 +527,9 @@ export async function buildChartIntelligenceState(
   // ── Market Understanding Engines (deterministic, candle-only) ───────────
   // Engine 2's level personality folds in remembered market events. The read
   // is defensive (returns [] on any error) so the hot path is never blocked.
-  const remembered = await getRecentChartEvents(truth.symbol, timeframe);
+  const remembered = latestClosedCandle
+    ? await getRecentChartEvents(truth.symbol, timeframe, new Date(latestClosedCandle.closeTime))
+    : [];
 
   const trend = computeTrendRegime(closed);
   const levelsResult = computeLevelPersonality(

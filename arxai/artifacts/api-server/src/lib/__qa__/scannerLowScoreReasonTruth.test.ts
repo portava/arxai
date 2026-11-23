@@ -106,3 +106,26 @@ test("a conflicting historical read cannot hide the score that rejected the setu
   assert.match(result.headline, /score 56 is below the scanner's minimum of 60/);
   assert.ok(result.reasons.some(reason => /conflict/.test(reason)));
 });
+
+test("a failed setup remains the reason to skip when a later trendline adds context", () => {
+  const row = lowScoreRow({
+    statusBadge: "WATCHLIST",
+    patternImpact: { labelHint: "failed_setup" } as ScannerOpportunity["patternImpact"],
+    trendlineImpact: { labelHint: "mixed_conditional" } as ScannerOpportunity["trendlineImpact"],
+  });
+  const read = computeFinalRead(row);
+  assert.equal(read.label, "AVOID_FOR_NOW");
+  assert.match(read.headline, /pattern failed or was invalidated/i);
+  assert.ok(read.reasons.some(reason => /trendline conflicts/i.test(reason)));
+});
+
+test("a live public-feed WAIT explains the technical blocker before requesting chart confirmation", () => {
+  const row = lowScoreRow({ statusBadge: "WAIT_FOR_CONFIRMATION", recommendedAction: "WAIT",
+    feedProvider: "deriv_public", tradeable: true, bidAsk: { bid: 100, ask: 100.2 }, chartConfirmed: false,
+    reasonToAvoid: "The spread penalty is 38. The limit is 30." });
+  const read = computeFinalRead(row);
+  assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
+  assert.match(read.headline, /^The spread penalty is 38/);
+  assert.doesNotMatch(read.headline, /verified chart/i);
+  assert.match(computeFinalRead({ ...row, recommendedAction: "SELL" }).headline, /verified chart/i);
+});

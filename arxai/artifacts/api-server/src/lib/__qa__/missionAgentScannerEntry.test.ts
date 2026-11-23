@@ -65,3 +65,13 @@ test("Mission takes profit at the first defended level ahead of the entry", () =
     assert.equal(measureScannerEntryRoom(side, quote, stop, nominal, [])!.target,nominal);
   }
 });
+
+test("Scanner withholds room when the executable exit side has reached the stop", () => {
+  const quote = { bid: 99, ask: 101 };
+  for (const [side, stop, target] of [["BUY", 99, 109], ["SELL", 101, 91]] as const) {
+    const room = measureScannerEntryRoom(side, quote, stop, target, []);
+    assert.equal(room?.rewardToRisk, 0);
+    const recovered = side === "BUY" ? { ...quote, bid: 99.1 } : { ...quote, ask: 100.9 };
+    assert.equal(measureScannerEntryRoom(side, recovered, stop, target, [])?.rewardToRisk, 4);
+  }
+});

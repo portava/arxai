@@ -259,7 +259,11 @@ describe("three-tier measured ranking", () => {
   it("no scanner read re-sorts by the raw score after decoration", () => {
     const routes = readFileSync(resolve(here, "../../routes/scanner.ts"), "utf8");
     assert.doesNotMatch(routes, /effectiveOpportunityScore\(b\) - effectiveOpportunityScore\(a\)/);
-    assert.equal((routes.match(/decorateOpportunitiesWithFinalRead\(rankScannerOpportunities\(withFvg\)\)/g) ?? []).length, 2);
+    assert.match(routes, /reviewScannerOpportunities\(base\)/);
+    assert.match(routes, /reviewScannerOpportunities\(opps\)/);
+    const review = src("scannerReview.ts");
+    assert.match(review, /return decorateOpportunitiesWithFinalRead\(rankScannerOpportunities\(fvg\)\)/);
+    assert.doesNotMatch(review, /effectiveOpportunityScore\(b\) - effectiveOpportunityScore\(a\)/);
     assert.doesNotMatch(src("data/marketOverview.ts"), /effectiveOpportunityScore\(b\) - effectiveOpportunityScore\(a\)/);
     assert.match(src("opportunityRadar/radar.ts"), /rankByMeasuredTier\(/);
   });

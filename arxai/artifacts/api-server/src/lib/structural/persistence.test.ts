@@ -79,3 +79,23 @@ test("PostgreSQL receipt persistence is immutable, idempotent and user isolated"
     await db.delete(receipts).where(eq(receipts.receiptId, id));
   }
 });
+
+test("chart memory uses the last closed candle before limiting the results", { skip: !testUrl }, async () => {
+  const { getRecentChartEvents, recordChartEvents } = await import("../data/chart/engines/chartMarketMemory.js");
+  const { db, chartMarketEventsTable: events } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
+  const symbol = "TEST-MEMORY-" + process.pid;
+  const day = 86_400_000;
+  const cutoff = new Date(Date.now() - 32 * day);
+  const offsets = [-31 * day, -30 * day, 0, ...Array.from({ length: 201 }, (_, i) => (i + 1) * 60_000)];
+  try {
+    await recordChartEvents(offsets.map(offset => ({
+      symbol, timeframe: "M1", eventType: "held", levelKind: "support", price: 100,
+      barTime: new Date(cutoff.getTime() + offset), atrAtEvent: null,
+    })));
+    const rows = await getRecentChartEvents(symbol, "M1", cutoff);
+    assert.deepEqual(rows.map(row => row.barTime.getTime()), [cutoff.getTime(), cutoff.getTime() - 30 * day]);
+  } finally {
+    await db.delete(events).where(eq(events.symbol, symbol));
+  }
+});

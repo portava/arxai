@@ -15,7 +15,7 @@
 //    fabricated.
 
 import { db, chartMarketEventsTable } from "@workspace/db";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { logger } from "../../../logger.js";
 import type { ChartTimeframe } from "../timeframes.js";
 import type { ChartLevelKind } from "./marketUnderstandingTypes.js";
@@ -87,9 +87,12 @@ export async function recordChartEvents(events: ChartEventInput[]): Promise<void
 export async function getRecentChartEvents(
   symbol: string,
   timeframe: ChartTimeframe,
+  lastClosedAt: Date,
 ): Promise<RememberedEvent[]> {
   try {
-    const horizon = new Date(Date.now() - MEMORY_HORIZON_MS);
+    const cutoff = Math.min(lastClosedAt.getTime(), Date.now());
+    if (!Number.isFinite(cutoff)) return [];
+    const horizon = new Date(cutoff - MEMORY_HORIZON_MS);
     const rows = await db
       .select({
         eventType: chartMarketEventsTable.eventType,
@@ -103,6 +106,7 @@ export async function getRecentChartEvents(
           eq(chartMarketEventsTable.symbol, symbol),
           eq(chartMarketEventsTable.timeframe, timeframe),
           gte(chartMarketEventsTable.barTime, horizon),
+          lte(chartMarketEventsTable.barTime, new Date(cutoff)),
         ),
       )
       .orderBy(desc(chartMarketEventsTable.barTime))

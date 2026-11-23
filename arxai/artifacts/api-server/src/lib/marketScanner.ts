@@ -654,9 +654,9 @@ export function computeFinalRead(
     reasons.push(reason);
     return "NO_TRADE";
   }
+  const noDirectionalSetup = opp.feedProvider === "deriv_public" && opp.dataSource === "LIVE_FEED" &&
+    opp.tradeable && opp.bidAsk && opp.recommendedAction !== "BUY" && opp.recommendedAction !== "SELL";
   function noteChartContext(source: string) {
-    const noDirectionalSetup = opp.feedProvider === "deriv_public" && opp.dataSource === "LIVE_FEED" &&
-      opp.tradeable && opp.bidAsk && opp.recommendedAction !== "BUY" && opp.recommendedAction !== "SELL";
     const reason = noDirectionalSetup
       ? `Scanner has no BUY or SELL setup to confirm from this ${opp.timeframe} close.`
       : `${source} is context only — the feed is not live-confirmed.`;
@@ -689,12 +689,24 @@ export function computeFinalRead(
   // Start with WAIT for any non-actionable technical signal.
   let label: FinalReadLabel = "TRADE_WATCH";
 
+  let avoidReason: string | undefined;
+  function avoidSetup(current: FinalReadLabel, reason: string): FinalReadLabel {
+    reasons.push(reason);
+    if (current === "NO_TRADE") return current;
+    avoidReason ??= reason;
+    return "AVOID_FOR_NOW";
+  }
+
   // 1. Critical news / event-risk window → AVOID or NO_TRADE.
   if (newsLevel === "critical") {
     label = rejectSetup("Major event nearby. Volatility may spike.");
   } else if (newsLevel === "high") {
-    label = news?.timing === "now" ? "AVOID_FOR_NOW" : "WAIT_FOR_CONFIRMATION";
-    reasons.push("News risk is high. Waiting may be safer.");
+    if (news?.timing === "now") {
+      label = avoidSetup(label, "The high-risk news window is active. Recheck after it clears.");
+    } else {
+      label = "WAIT_FOR_CONFIRMATION";
+      reasons.push("News risk is high. Waiting may be safer.");
+    }
   } else if (newsLevel === "medium") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("News risk is elevated. Confirm before acting.");
@@ -703,7 +715,7 @@ export function computeFinalRead(
   // 2. Conflict between technical and news/history → downgrade.
   if (conflict) {
     if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
-    if (label === "WAIT_FOR_CONFIRMATION" && newsLevel !== "none") label = "AVOID_FOR_NOW";
+    if (label === "WAIT_FOR_CONFIRMATION" && newsLevel !== "none") label = avoidSetup(label, "A directional conflict coincides with elevated news risk. Recheck when the news window clears.");
     if (hist?.alignsWithScanner === false) {
       const sample = Number.isInteger(hist.sampleSize) && hist.sampleSize > 0
         ? ` from ${hist.sampleSize} historical candle ${hist.sampleSize === 1 ? "pair" : "pairs"}` : "";
@@ -885,15 +897,16 @@ export function computeFinalRead(
     reasons.push(matchingPattern ? "The chart pattern and the closed pullback entry agree." : "A separate chart pattern is still forming.");
   } else if (pat && pat.labelHint !== "none") {
     if (pat.labelHint === "failed_setup") {
-      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") {
-        label = "AVOID_FOR_NOW";
-      }
+      const failed = opp.patternTrigger;
+      const boundary = priceText(failed?.invalidation ?? undefined);
+      const reason = failed
+        ? `${failed.name} failed.${boundary ? ` Invalidation level ${boundary}.` : ""} Recheck after a new ${opp.timeframe} setup forms.`
+        : "A recent chart pattern failed or was invalidated.";
+      label = avoidSetup(label, reason);
       confidence = "LOW";
-      reasons.push("A recent chart pattern failed or was invalidated.");
     } else if (pat.labelHint === "too_late_chase") {
-      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
+      label = avoidSetup(label, "The chart pattern looks late/exhausted — avoid chasing it.");
       if (confidence === "HIGH") confidence = "MEDIUM";
-      reasons.push("The chart pattern looks late/exhausted — avoid chasing it.");
     } else if (pat.contextOnly) {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
@@ -945,15 +958,11 @@ export function computeFinalRead(
     reasons.push("A separate trendline still has only two touches.");
   } else if (tl && tl.labelHint !== "none" && tl.labelHint !== "supportive") {
     if (tl.labelHint === "trap_risk") {
-      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") {
-        label = "AVOID_FOR_NOW";
-      }
+      label = avoidSetup(label, "A recent trendline break looks like a trap/false break.");
       confidence = "LOW";
-      reasons.push("A recent trendline break looks like a trap/false break.");
     } else if (tl.labelHint === "too_late_chase") {
-      if (label === "TRADE_WATCH" || label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
+      label = avoidSetup(label, "The trendline move looks late/over-extended — avoid chasing it.");
       if (confidence === "HIGH") confidence = "MEDIUM";
-      reasons.push("The trendline move looks late/over-extended — avoid chasing it.");
     } else if (tl.contextOnly || tl.labelHint === "context_only") {
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       if (confidence === "HIGH") confidence = "MEDIUM";
@@ -998,8 +1007,8 @@ export function computeFinalRead(
         : tl.labelHint === "retest_watch" || tl.labelHint === "needs_confirmation"
           ? `Wait for price to retest the trendline${observedSide ? "" : line} and ${hold} on a closed ${opp.timeframe} candle.`
           : `Wait for a ${opp.timeframe} candle to close beyond the trendline${line}.`;
-      if (observed?.reclaimed && label === "WAIT_FOR_CONFIRMATION") label = "AVOID_FOR_NOW";
-      reasons.push(trigger);
+      if (observed?.reclaimed && label === "WAIT_FOR_CONFIRMATION") label = avoidSetup(label, trigger);
+      else reasons.push(trigger);
       confirmations.push(trigger);
     } else if (tl.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";
@@ -1012,8 +1021,12 @@ export function computeFinalRead(
   if (label === "TRADE_WATCH" && driftSetup) {
     const timed = timing?.timeframe === opp.timeframe && timing.entryPermission === "GO" && timing.pressureBias === side;
     if (timing?.timeframe === opp.timeframe && ["NO_TRADE", "STAND_DOWN", "WAIT_NEWS"].includes(timing.entryPermission)) {
-      label = timing.entryPermission === "WAIT_NEWS" ? "WAIT_FOR_CONFIRMATION" : "AVOID_FOR_NOW";
-      reasons.push(timing.actionReason);
+      if (timing.entryPermission === "WAIT_NEWS") {
+        label = "WAIT_FOR_CONFIRMATION";
+        reasons.push(timing.actionReason);
+      } else {
+        label = avoidSetup(label, timing.actionReason);
+      }
       confirmations.push(timing.actionReason);
     } else if (entryConfirmed && opp.bidAsk && (buy
       ? opp.bidAsk.bid <= (retest ?? trigger?.level ?? -Infinity)
@@ -1073,6 +1086,8 @@ export function computeFinalRead(
   if (label === "WAIT_FOR_CONFIRMATION") {
     if (!liveData || opp.sufficiency?.mayShowConfidence === false) {
       confirmations.unshift(opp.disabledReason || opp.sufficiency?.humanReason || "Wait for a current quote and closed candles on the same feed.");
+    } else if (noDirectionalSetup) {
+      if (!confirmations.length) confirmations.push(`Recheck for a directional setup after the next ${opp.timeframe} close.`);
     } else if (opp.chartConfirmed !== true) {
       confirmations.unshift(`Wait for a verified chart read on ${opp.symbol} ${opp.timeframe}.`);
     }
@@ -1081,7 +1096,7 @@ export function computeFinalRead(
   }
   const headline =
     label === "NO_TRADE" ? `Skip this setup. ${rejectionReason}` :
-    label === "AVOID_FOR_NOW" ? `Skip this setup. ${reasons.at(-1)}` :
+    label === "AVOID_FOR_NOW" ? `Skip this setup. ${avoidReason}` :
     label === "WAIT_FOR_CONFIRMATION" ? (confirmations.length ? [...new Set(confirmations)].slice(0, 2).join(" ") : reasons[0] ?? "Waiting for the next verified market read.") :
     opp.selectable && opp.tradeable && (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && opp.entry > 0 && opp.stopLoss > 0 && opp.takeProfit > 0
       ? `Review the ${opp.recommendedAction} setup on ${opp.symbol} ${opp.timeframe}. Reference entry${atLevel(opp.entry)}, stop${atLevel(opp.stopLoss)}, target${atLevel(opp.takeProfit)}.${room ? ` Available room ${room.rewardToRisk.toFixed(2)}R${room.defendedLevel === null ? "" : ` to defended ${buy ? "resistance" : "support"} at ${priceText(room.defendedLevel)}`}.` : ""}`

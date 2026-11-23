@@ -24,6 +24,7 @@ export function measureScannerEntryRoom(
   const sign = buy ? 1 : -1;
   const entry = buy ? quote.ask : quote.bid;
   const risk = sign * (entry - stop);
+  const stopIntact = buy ? quote.bid > stop : quote.ask < stop;
   const targetDistance = sign * (target - entry);
   const opposingKind = buy ? "resistance" : "support";
   let first = target;
@@ -34,7 +35,7 @@ export function measureScannerEntryRoom(
   }
   return {
     entry, target: first, defendedLevel: first === target ? null : first,
-    rewardToRisk: risk > 0 && targetDistance > 0 ? sign * (first - entry) / risk : 0,
+    rewardToRisk: stopIntact && risk > 0 && targetDistance > 0 ? sign * (first - entry) / risk : 0,
     oneRiskEntry: (stop + first) / 2,
   };
 }
