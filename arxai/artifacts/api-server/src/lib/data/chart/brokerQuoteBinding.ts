@@ -172,6 +172,12 @@ export function seriesAttributionFrom(provenance: SeriesProvenance | null | unde
   };
 }
 
+export function sameChartSeriesWriter(a: ChartSeriesAttribution | null | undefined, b: ChartSeriesAttribution | null | undefined): boolean {
+  return !!a && !!b && a.providerId === b.providerId && a.subProviderId === b.subProviderId &&
+    a.bridgeConnectionId === b.bridgeConnectionId && a.userId === b.userId &&
+    a.environment === b.environment && a.brokerSymbol === b.brokerSymbol;
+}
+
 export function attachSeriesAttribution<T extends object>(target: T, attribution: ChartSeriesAttribution | null): T {
   Object.defineProperty(target, seriesAttributionKey, { value: attribution, enumerable: false });
   return target;

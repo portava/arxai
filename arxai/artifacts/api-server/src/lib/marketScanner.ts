@@ -9,7 +9,7 @@ import { measureScannerEntryRoom, type ScannerEntryRoom } from "./scannerEntryRo
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
 import { chartDescribesClosedBar, selectScannerChartContext, prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
-import { seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
+import { sameChartSeriesWriter, seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
 import { buildChartIntelligenceState, getCachedIntelligenceContext, chartLevelProximity, type ChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
@@ -1977,12 +1977,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       const sameClosedBar = !!chart?.aiUsable && matchesBar(chart);
       chartConfirmed = !!chart?.gateOutput.scannerConfirmAllowed &&
         (!publicFeed || (ds === "LIVE_FEED" && routed?.quoteUsable === true && directional && sameClosedBar));
-      const writer = routed?.attribution;
-      const cachedWriter = cached?.seriesAttribution;
-      const sameWriter = writer && cachedWriter && writer.providerId === cachedWriter.providerId &&
-        writer.subProviderId === cachedWriter.subProviderId && writer.bridgeConnectionId === cachedWriter.bridgeConnectionId &&
-        writer.userId === cachedWriter.userId && writer.environment === cachedWriter.environment &&
-        writer.brokerSymbol === cachedWriter.brokerSymbol;
+      const sameWriter = sameChartSeriesWriter(routed?.attribution, cached?.seriesAttribution);
       if (chartConfirmed && sameClosedBar && (publicFeed || sameWriter)) structureChart = chart;
     }
 

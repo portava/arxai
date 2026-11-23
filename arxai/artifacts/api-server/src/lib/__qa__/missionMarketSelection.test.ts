@@ -3,6 +3,7 @@ import { beforeEach, mock, test } from "node:test";
 import type { ScannerOpportunity } from "../marketScanner.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
+import { assessRiskObjection } from "@workspace/domain/profit-mission";
 import { bindScannerSource, scannerSourceIdentity } from "../scannerInputIntegrity.js";
 
 const minute = 60_000;
@@ -17,6 +18,21 @@ let lastClosedTime = "";
 let chartAllowed = true;
 let chartUsable = true;
 let chartOffset = 0;
+let levelOffset: number | undefined;
+let attributed = false;
+let cachedUser = 7;
+function writer() {
+  return { providerId: candleSource, subProviderId: null, bridgeConnectionId: 1, brokerSymbol: "V75", userId: 7, environment: "demo" as const };
+}
+function chartState() {
+  return {
+    aiUsable: chartUsable, truthState: { source: candleSource }, gateOutput: { scannerConfirmAllowed: chartAllowed },
+    latestClosedCandle: { openTime: lastClosedTime, open: last, high: last + 0.5, low: last - 0.5, close: last + chartOffset },
+    marketUnderstanding: { levels: { levels: levelOffset === undefined ? [] : [
+      { price: last + direction * levelOffset, kind: direction > 0 ? "resistance" : "support", personality: "defended" },
+    ] } },
+  };
+}
 let last = 0;
 let historyCalls = 0;
 mock.module("../data/marketDataRouter.js", { namedExports: {
@@ -31,7 +47,8 @@ mock.module("../data/marketDataRouter.js", { namedExports: {
       lastClosedTime = new Date(start + i * minute).toISOString();
       return { time: new Date(start + i * minute).toISOString(), open: close, high: close + 0.5, low: close - 0.5, close, volume: 0 };
     });
-    return { ok: true, symbol, assetClass: "synthetic", primaryProvider: candleSource, attempts: [], userMessage: "", adminDetail: "", candles };
+    return { ok: true, symbol, assetClass: "synthetic", primaryProvider: candleSource, attempts: [], userMessage: "", adminDetail: "", candles,
+      ...(attributed ? { provenance: { ...writer(), brokerCode: "deriv", delayed: false, receivedAt: new Date().toISOString(), source: "DERIVED", sourceId: candleSource + ":" + symbol + ":M1" } } : {}) };
   },
   routeQuote: async (symbol: string): Promise<MarketQuoteResult> => ({
     ok: true, symbol, assetClass: "synthetic", primaryProvider: quoteSource, attempts: [], userMessage: "", adminDetail: "",
@@ -39,13 +56,11 @@ mock.module("../data/marketDataRouter.js", { namedExports: {
   }),
 } });
 mock.module("../data/chart/chartIntelligence.js", { namedExports: {
-  buildChartIntelligenceState: async () => ({
-    aiUsable: chartUsable, truthState: { source: candleSource }, gateOutput: { scannerConfirmAllowed: chartAllowed },
-    latestClosedCandle: { openTime: lastClosedTime, open: last, high: last + 0.5, low: last - 0.5, close: last + chartOffset },
-  }),
+  buildChartIntelligenceState: async () => chartState(),
+  getCachedIntelligenceContext: () => attributed ? { state: chartState(), seriesAttribution: { ...writer(), userId: cachedUser } } : null,
 } });
 const { scoutPaperMissionMarket } = await import("../missionMarketSelection.js");
-beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = candleSource = "deriv"; chartAllowed = true; chartUsable = true; chartOffset = 0; });
+beforeEach(() => { direction = 1; priceOffset = 0; historyCalls = 0; unavailable = false; quoteSource = candleSource = "deriv"; chartAllowed = true; chartUsable = true; chartOffset = 0; levelOffset = undefined; attributed = false; cachedUser = 7; });
 
 test("Mission can buy or sell a trend while Scanner waits, using the executable side", async () => {
   for (const sign of [1, -1]) {
@@ -122,4 +137,45 @@ test("Mission rejects a changed account source even when its provider name match
   assert.match(p.reason, /source changed/i);
   const same = bindScannerSource({ ...row, feedProvider: candleSource }, scannerSourceIdentity({ primaryProvider: candleSource }));
   assert.equal((await scoutPaperMissionMarket(same, "source-matches")).direction, "BUY");
+});
+
+test("independent Mission brackets use its own defended price on either side, including for risk review", async () => {
+  quoteSource = candleSource = "deriv_public";
+  const waiting = { ...row, feedProvider: candleSource, chartConfirmed: false };
+  for (const sign of [1, -1]) {
+    direction = sign;
+    levelOffset = undefined;
+    const nominal = await scoutPaperMissionMarket(waiting, "trend");
+    levelOffset = 0.3;
+    const capped = await scoutPaperMissionMarket(waiting, "trend");
+    const price = last + sign * levelOffset;
+    assert.equal(capped.direction, nominal.direction);
+    assert.equal(capped.marketSnapshot?.strategyTarget, nominal.riskPlan.takeProfit);
+    assert.equal(capped.riskPlan.takeProfit, price);
+    assert.equal(capped.marketSnapshot?.defendedLevel, price);
+    assert.equal(capped.riskPlan.stopLoss, nominal.riskPlan.stopLoss);
+    assert.equal(sign > 0 ? capped.entryPlan.entryZoneHigh : capped.entryPlan.entryZoneLow,
+      (price + capped.riskPlan.stopLoss!) / 2);
+    assert.match(assessRiskObjection(capped)!, /below the 1R floor/);
+    assert.match(capped.reason, sign > 0 ? /defended resistance/ : /defended support/);
+    levelOffset = 0.01;
+    const atLevel = await scoutPaperMissionMarket(waiting, "no-room");
+    assert.equal(atLevel.direction, "NONE");
+    assert.match(atLevel.reason, /already at defended/);
+  }
+});
+
+test("a private chart level needs the same series writer and exact bar as the Mission read", async () => {
+  attributed = true;
+  levelOffset = 0.3;
+  const exact = await scoutPaperMissionMarket(row, "same-writer");
+  assert.equal(exact.marketSnapshot?.defendedLevel, last + 0.3);
+  cachedUser = 8;
+  const other = await scoutPaperMissionMarket(row, "different-writer");
+  assert.equal(other.marketSnapshot?.defendedLevel, undefined);
+  assert.ok(other.riskPlan.takeProfit! > exact.riskPlan.takeProfit!);
+  cachedUser = 7;
+  chartOffset = 0.2;
+  const stale = await scoutPaperMissionMarket(row, "different-bar");
+  assert.equal(stale.riskPlan.takeProfit, other.riskPlan.takeProfit);
 });

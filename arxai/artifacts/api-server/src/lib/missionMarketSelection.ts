@@ -2,9 +2,12 @@ import { missionEntryLimit, type AgentProposal } from "@workspace/domain/profit-
 import { runSingleStrategy } from "./backtestStrategyRegistry.js";
 import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRouter.js";
 import type { ScannerOpportunity } from "./marketScanner.js";
-import { buildChartIntelligenceState } from "./data/chart/chartIntelligence.js";
+import { buildChartIntelligenceState, getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { normalizeChartTimeframe } from "./data/chart/timeframes.js";
-import { chartDescribesClosedBar, chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles, scannerRowSourceIdentity, scannerSourceIdentity } from "./scannerInputIntegrity.js";
+import { sameChartSeriesWriter, seriesAttributionFrom } from "./data/chart/brokerQuoteBinding.js";
+import type { ChartLevel } from "./data/chart/engines/marketUnderstandingTypes.js";
+import { measureScannerEntryRoom } from "./scannerEntryRoom.js";
+import { selectScannerChartContext, chartDescribesClosedBar, chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles, scannerRowSourceIdentity, scannerSourceIdentity } from "./scannerInputIntegrity.js";
 
 export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalId: string): Promise<AgentProposal> {
   const { symbol, timeframe } = opp;
@@ -45,14 +48,25 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
   const signal = runSingleStrategy("trendContinuation", symbol, history, 60);
   proposal.reason = signal.reason;
   if (signal.direction === "WAIT") return proposal;
+  const tf = normalizeChartTimeframe(timeframe);
+  const last = series.openClosed.at(-1);
+  let levels: ChartLevel[] = [];
   if (candles.primaryProvider === "deriv_public") {
-    const tf = normalizeChartTimeframe(timeframe);
-    const last = series.openClosed.at(-1);
     const chart = tf
       ? await buildChartIntelligenceState(symbol, tf, 200, state => chartDescribesClosedBar(state, candles.primaryProvider, last)).catch(() => null) : null;
     if (!chart?.gateOutput.scannerConfirmAllowed || !chartMatchesClosedBar(chart, candles.primaryProvider, last)) {
       proposal.reason = "Mission is waiting for its chart to verify the same closed candle and live source.";
       return proposal;
+    }
+    levels = chart.marketUnderstanding.levels.levels;
+  } else if (tf) {
+    const cached = selectScannerChartContext(
+      getCachedIntelligenceContext(symbol, tf, 300), getCachedIntelligenceContext(symbol, tf, 200),
+      candles.primaryProvider, last,
+    );
+    if (cached?.state.aiUsable && cached.state.gateOutput.scannerConfirmAllowed &&
+        sameChartSeriesWriter(seriesAttributionFrom(candles.provenance), cached.seriesAttribution)) {
+      levels = cached.state.marketUnderstanding.levels.levels;
     }
   }
   const quote = await routeQuote(symbol, quotePinForSeries(candles)).catch(() => null);
@@ -64,9 +78,12 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
   const buy = signal.direction === "BUY", sign = buy ? 1 : -1;
   const entry = buy ? quote.quote.ask : quote.quote.bid;
   const liquidation = buy ? quote.quote.bid : quote.quote.ask;
-  const risk = sign * (entry - signal.stopLoss), reward = sign * (signal.takeProfit - entry);
-  if (!(risk > 0 && reward > 0 && sign * (liquidation - signal.stopLoss) > 0)) {
-    proposal.reason = "The current bid and ask have moved outside the Mission bracket.";
+  const room = measureScannerEntryRoom(signal.direction, {bid:quote.quote.bid, ask:quote.quote.ask},
+    signal.stopLoss, signal.takeProfit, levels);
+  if (!room || room.rewardToRisk <= 0) {
+    proposal.reason = room?.defendedLevel === entry
+      ? `The executable entry is already at defended ${buy ? "resistance" : "support"} at ${entry}.`
+      : "The current bid and ask have moved outside the Mission bracket.";
     return proposal;
   }
   const previousClose = history.at(-2)!.close;
@@ -74,12 +91,16 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     proposal.reason = "Mission needs a closed candle advancing with its trend and a live exit-side quote still holding the prior close.";
     return proposal;
   }
-  const limit = missionEntryLimit(signal.stopLoss, signal.takeProfit);
+  const limit = missionEntryLimit(signal.stopLoss, room.target);
+  const reason = room.defendedLevel === null ? signal.reason :
+    `${signal.reason} Take profit at defended ${buy ? "resistance" : "support"} at ${room.target}. Room from the executable entry is ${room.rewardToRisk.toFixed(2)}R.`;
   return { ...proposal, status: "proposed", direction: signal.direction, confidence: signal.score,
-    urgency: signal.score >= 75 ? "high" : "medium", reason: signal.reason, invalidationLevel: String(signal.stopLoss),
+    urgency: signal.score >= 75 ? "high" : "medium", reason, invalidationLevel: String(signal.stopLoss),
     entryPlan: { entryPrice: entry, entryZoneHigh: buy ? limit : null, entryZoneLow: buy ? null : limit },
-    riskPlan: { stopLoss: signal.stopLoss, takeProfit: signal.takeProfit, expectedR: reward / risk, riskAmount: null },
-    marketSnapshot: { ...proposal.marketSnapshot, finalRead: "MISSION_TREND", barTime: series.openClosed.at(-1)?.time,
+    riskPlan: { stopLoss: signal.stopLoss, takeProfit: room.target, expectedR: room.rewardToRisk, riskAmount: null },
+    marketSnapshot: { ...proposal.marketSnapshot,
+      ...(room.defendedLevel === null ? {} : { defendedLevel: room.defendedLevel, strategyTarget: signal.takeProfit }),
+      finalRead: "MISSION_TREND", barTime: series.openClosed.at(-1)?.time,
       quoteTime: quote.quote.timestamp, bid: quote.quote.bid, ask: quote.quote.ask, strategyScore: signal.score },
   };
 }
