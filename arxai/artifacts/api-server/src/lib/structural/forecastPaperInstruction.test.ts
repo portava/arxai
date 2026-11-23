@@ -35,6 +35,12 @@ test("odds alone hold and a confirmed directional break fixes the paper bracket"
         result.reference + 0.01,
       ),
     );
+    const breakout = buy ? input[13]!.high : input[13]!.low;
+    assert.equal(result.breakoutLevel, breakout);
+    const bid = buy ? breakout : breakout - 0.02;
+    const ask = buy ? breakout + 0.02 : breakout;
+    assert.equal(executableForecastPaperOrder(result, bid, ask), false);
+    assert.equal(executableForecastPaperOrder({ ...result, breakoutLevel: undefined }, bid, ask), true);
     const chased = (result.entryLimit! + result.target) / 2;
     assert.equal(
       executableForecastPaperOrder(result, chased - 0.01, chased + 0.01),

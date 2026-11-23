@@ -9,6 +9,7 @@ export type ForecastPaperInstruction =
       stop: number;
       target: number;
       entryLimit?: number;
+      breakoutLevel?: number;
       reason: string;
     };
 
@@ -74,6 +75,7 @@ export function forecastPaperInstruction(
     stop,
     target,
     entryLimit: (stop + target) / 2,
+    breakoutLevel: buy ? prev.high : prev.low,
     reason: "The first-break leader agrees with a closed-candle breakout.",
   };
 }
@@ -92,10 +94,12 @@ export function executableForecastPaperOrder(
   )
     return false;
   return plan.action === "BUY"
-    ? bid > plan.stop &&
+    ? (plan.breakoutLevel == null || bid > plan.breakoutLevel) &&
+        bid > plan.stop &&
         ask < plan.target &&
         (plan.entryLimit == null || ask <= plan.entryLimit)
-    : ask < plan.stop &&
+    : (plan.breakoutLevel == null || ask < plan.breakoutLevel) &&
+        ask < plan.stop &&
         bid > plan.target &&
         (plan.entryLimit == null || bid >= plan.entryLimit);
 }

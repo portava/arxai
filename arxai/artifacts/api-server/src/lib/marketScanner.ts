@@ -648,6 +648,12 @@ export function computeFinalRead(
   const news = opp.newsContext ?? null;
   const reasons: string[] = [];
   const confirmations: string[] = [];
+  let rejectionReason: string | undefined;
+  function rejectSetup(reason: string): "NO_TRADE" {
+    rejectionReason ??= reason;
+    reasons.push(reason);
+    return "NO_TRADE";
+  }
   function noteChartContext(source: string) {
     const noDirectionalSetup = opp.feedProvider === "deriv_public" && opp.dataSource === "LIVE_FEED" &&
       opp.tradeable && opp.bidAsk && opp.recommendedAction !== "BUY" && opp.recommendedAction !== "SELL";
@@ -685,8 +691,7 @@ export function computeFinalRead(
 
   // 1. Critical news / event-risk window → AVOID or NO_TRADE.
   if (newsLevel === "critical") {
-    label = "NO_TRADE";
-    reasons.push("Major event nearby. Volatility may spike.");
+    label = rejectSetup("Major event nearby. Volatility may spike.");
   } else if (newsLevel === "high") {
     label = news?.timing === "now" ? "AVOID_FOR_NOW" : "WAIT_FOR_CONFIRMATION";
     reasons.push("News risk is high. Waiting may be safer.");
@@ -705,15 +710,12 @@ export function computeFinalRead(
 
   // 3. Weak technical signal → no trade regardless of news.
   if (opp.statusBadge === "REJECTED_BY_RISK" || opp.statusBadge === "CHOPPY_MARKET") {
-    label = "NO_TRADE";
-    reasons.push(opp.reasonToAvoid || "No clean trade right now — setup rejected by risk rules.");
+    label = rejectSetup(opp.reasonToAvoid || "No clean trade right now — setup rejected by risk rules.");
   } else if (opp.statusBadge === "SPREAD_TOO_HIGH") {
-    label = "NO_TRADE";
-    reasons.push(opp.reasonToAvoid || "The scan rejected this setup with a risk score above 65.");
+    label = rejectSetup(opp.reasonToAvoid || "The scan rejected this setup with a risk score above 65.");
   } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
     // Same non-actionable outcome as before (never raised), with the true cause.
-    label = "NO_TRADE";
-    reasons.push(lowOpportunityScoreReason(opp));
+    label = rejectSetup(lowOpportunityScoreReason(opp));
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
@@ -1068,7 +1070,7 @@ export function computeFinalRead(
     if (newsLevel === "high" || newsLevel === "medium") confirmations.unshift("Wait for the elevated news-risk window to clear.");
   }
   const headline =
-    label === "NO_TRADE" ? `Skip this setup. ${reasons[0]}` :
+    label === "NO_TRADE" ? `Skip this setup. ${rejectionReason}` :
     label === "AVOID_FOR_NOW" ? `Skip this setup. ${reasons.at(-1)}` :
     label === "WAIT_FOR_CONFIRMATION" ? (confirmations.length ? [...new Set(confirmations)].slice(0, 2).join(" ") : reasons[0] ?? "Waiting for the next verified market read.") :
     opp.selectable && opp.tradeable && (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && opp.entry > 0 && opp.stopLoss > 0 && opp.takeProfit > 0

@@ -321,6 +321,7 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
         {shown.forecast.paperInstruction.action !== "HOLD" && <span> · Reference {shown.forecast.paperInstruction.reference.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Stop {shown.forecast.paperInstruction.stop.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Target {shown.forecast.paperInstruction.target.toLocaleString(undefined, {maximumSignificantDigits: 9})}</span>}
         {shown.forecast.paperInstruction.action !== "HOLD" && shown.forecast.paperInstruction.entryLimit != null && <div className="text-xs">
           First quote only · {shown.forecast.paperInstruction.action === "BUY" ? "maximum buy ask" : "minimum sell bid"} {shown.forecast.paperInstruction.entryLimit.toLocaleString(undefined, {maximumSignificantDigits: 9})}
+          {shown.forecast.paperInstruction.breakoutLevel != null && <> · {shown.forecast.paperInstruction.action === "BUY" ? "bid must hold above" : "ask must hold below"} {shown.forecast.paperInstruction.breakoutLevel.toLocaleString(undefined, {maximumSignificantDigits: 9})}</>}
         </div>}
         <div className="text-xs text-zinc-400">{shown.forecast.paperInstruction.reason}</div>
         {selectedPaperGrade && <div>Ticket result · {({ STOP: "Stopped", TARGET: "Target reached", OPEN: "Open", SKIPPED: "Entry skipped", UNVERIFIED: "Quote coverage incomplete", PENDING: "Awaiting first quote" })[selectedPaperGrade.state]}</div>}

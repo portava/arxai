@@ -97,3 +97,12 @@ test("(b) the low-score reason does not say 'No risk rule failed' over an unchec
   assert.doesNotMatch(reason, /No risk rule failed/);
   assert.match(reason, /spread was not observed/);
 });
+
+test("a conflicting historical read cannot hide the score that rejected the setup", () => {
+  const row = lowScoreRow();
+  row.historicalContext = { ...row.historicalContext!, alignsWithScanner: false };
+  const result = computeFinalRead(row);
+  assert.equal(result.label, "NO_TRADE");
+  assert.match(result.headline, /score 56 is below the scanner's minimum of 60/);
+  assert.ok(result.reasons.some(reason => /conflict/.test(reason)));
+});
