@@ -3,6 +3,8 @@ import { beforeEach, mock, test } from "node:test";
 import type { ScannerOpportunity } from "../marketScanner.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
+import { bindScannerSource, scannerSourceIdentity } from "../scannerInputIntegrity.js";
+
 const minute = 60_000;
 const row = { symbol: "V75", timeframe: "M1", dataSource: "LIVE_FEED", selectable: true, tradeable: true,
   chartConfirmed: true, recommendedAction: "WAIT", finalRead: { label: "WAIT_FOR_CONFIRMATION" } } as ScannerOpportunity;
@@ -96,4 +98,24 @@ test("an executable quote that loses the prior close withholds a trend entry", a
   const proposal = await scoutPaperMissionMarket(row, "lost-close");
   assert.equal(proposal.direction, "NONE");
   assert.match(proposal.reason, /holding the prior close/);
+});
+
+test("Mission keeps the reviewed market and trend on the same data feed", async () => {
+  const reviewed = { ...row, feedProvider: "deriv" };
+  quoteSource = candleSource = "deriv_public";
+  const p = await scoutPaperMissionMarket(reviewed, "fallback");
+  assert.equal(p.direction, "NONE");
+  assert.match(p.reason, /source changed/i);
+});
+
+test("Mission rejects a changed account source even when its provider name matches", async () => {
+  const priorSource = scannerSourceIdentity({ primaryProvider: candleSource, provenance: {
+    sourceId: "deriv:V75:M1", providerId: "deriv", environment: "demo",
+  } as NonNullable<MarketCandlesResult["provenance"]> });
+  const reviewed = bindScannerSource({ ...row, feedProvider: candleSource }, priorSource);
+  const p = await scoutPaperMissionMarket(reviewed, "source-changed");
+  assert.equal(p.direction, "NONE");
+  assert.match(p.reason, /source changed/i);
+  const same = bindScannerSource({ ...row, feedProvider: candleSource }, scannerSourceIdentity({ primaryProvider: candleSource }));
+  assert.equal((await scoutPaperMissionMarket(same, "source-matches")).direction, "BUY");
 });

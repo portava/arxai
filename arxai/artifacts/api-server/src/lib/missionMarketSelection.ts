@@ -4,7 +4,7 @@ import { quotePinForSeries, routeCandles, routeQuote } from "./data/marketDataRo
 import type { ScannerOpportunity } from "./marketScanner.js";
 import { buildChartIntelligenceState } from "./data/chart/chartIntelligence.js";
 import { normalizeChartTimeframe } from "./data/chart/timeframes.js";
-import { chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles } from "./scannerInputIntegrity.js";
+import { chartMatchesClosedBar, classifyScannerQuoteBinding, prepareScannerCandles, scannerRowSourceIdentity, scannerSourceIdentity } from "./scannerInputIntegrity.js";
 
 export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalId: string): Promise<AgentProposal> {
   const { symbol, timeframe } = opp;
@@ -32,6 +32,12 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
     proposal.reason = "Live candle history is unavailable for this market.";
     return proposal;
   }
+  const reviewedSource = scannerRowSourceIdentity(opp);
+  if ((opp.feedProvider && candles.primaryProvider !== opp.feedProvider) ||
+      (reviewedSource && scannerSourceIdentity(candles) !== reviewedSource)) {
+    proposal.reason = "The market data source changed after review. Mission needs a new review on the current feed.";
+    return proposal;
+  }
   const series = prepareScannerCandles(candles, symbol, timeframe, Date.now());
   if (!series || series.trailingIntervals !== 1) return proposal;
   // The registered trend and chop rules consume OHLC only.
@@ -39,9 +45,9 @@ export async function scoutPaperMissionMarket(opp: ScannerOpportunity, proposalI
   const signal = runSingleStrategy("trendContinuation", symbol, history, 60);
   proposal.reason = signal.reason;
   if (signal.direction === "WAIT") return proposal;
-  if (publicFeed) {
+  if (candles.primaryProvider === "deriv_public") {
     const tf = normalizeChartTimeframe(timeframe);
-    const chart = tf && candles.primaryProvider === "deriv_public"
+    const chart = tf
       ? await buildChartIntelligenceState(symbol, tf, 200).catch(() => null) : null;
     if (!chart?.gateOutput.scannerConfirmAllowed || !chartMatchesClosedBar(chart, candles.primaryProvider, series.openClosed.at(-1))) {
       proposal.reason = "Mission is waiting for its chart to verify the same closed candle and live source.";
