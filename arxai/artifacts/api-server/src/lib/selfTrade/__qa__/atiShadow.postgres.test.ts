@@ -635,6 +635,13 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(enrichedTrigger.live.roundTrips.reconciled, 1);
       assert.deepEqual(enrichedTrigger.live.roundTrips.byEntryStrategy[0], cohort);
 
+      await pool.query(`UPDATE execution_events SET received_at=received_at+interval '500 microseconds'
+        WHERE command_id=7002 AND event_type='RESULT_LIVE_FILLED'`);
+      assert.equal((await reviewEntryWindow(fillTime + 7002)).live.roundTrips.reconciled, 0,
+        "a later receipt in the same millisecond is still unavailable");
+      assert.equal((await reviewEntryWindow(fillTime + 7003)).live.roundTrips.reconciled, 1);
+      await pool.query(`UPDATE execution_events SET received_at=occurred_at
+        WHERE command_id=7002 AND event_type='RESULT_LIVE_FILLED'`);
       const completedShadowId = randomUUID();
       await pool.query(`INSERT INTO ati_shadow_runs(id,owner_id,agent_id,symbol,timeframe,setup,baseline_version,challenger_version,started_at,ends_at)
         SELECT $1,owner_id,agent_id,$2,timeframe,setup,baseline_version,challenger_version,$3,$4 FROM ati_shadow_runs WHERE id=$5`,
@@ -671,6 +678,10 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(lateDemo.demo.coverage.commission, 0);
       assert.equal(lateDemo.demo.coverage.swap, 0);
 
+      await pool.query("UPDATE mt5_demo_commands SET terminal_at=terminal_at+interval '500 microseconds' WHERE command_id='demo-late-window'");
+      assert.equal((await demoWindow(demoKnownAt)).demo.reconciledDealCount, 0);
+      assert.equal((await demoWindow(demoKnownAt + 1)).demo.reconciledDealCount, 1);
+      await pool.query("UPDATE mt5_demo_commands SET terminal_at=$1 WHERE command_id='demo-late-window'", [new Date(demoKnownAt).toISOString()]);
       await pool.query(`INSERT INTO mt5_demo_commands(command_id,bridge_connection_id,sent_at,status,user_id,command_type,
         routed_via_master,payload,fill_volume,fill_price,broker_raw_result,terminal_at)
         SELECT 'other-demo-claim',bridge_connection_id,$1,status,user_id,command_type,routed_via_master,payload,fill_volume,

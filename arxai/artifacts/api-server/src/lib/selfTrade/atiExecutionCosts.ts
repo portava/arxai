@@ -1,4 +1,4 @@
-import { and, eq, exists, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, exists, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import {
   arxLiveCommandsTable as live, db, executionEventsTable as events,
   mt5DemoCommandsTable as demo, securityEventsTable as security,
@@ -32,17 +32,21 @@ type CommandCostQuery = {
   position?: AtiPositionScope;
   snapshotWindow?: boolean;
   dispatchUntil?: Date;
+  evidenceAsOf?: Date;
 };
 
 async function readCommandCosts(ownerId: number, symbol: string, from: Date, until: Date, options: CommandCostQuery = {}) {
   const { history, liveCommandIds, monitorDispatches, position, snapshotWindow, dispatchUntil = until } = options;
   const bound = history ?? position;
   const asOf = !!bound || snapshotWindow || liveCommandIds !== undefined;
+  // SQL timestamps can carry microseconds that a JavaScript Date would truncate.
+  const known = (column: typeof events.receivedAt | typeof events.occurredAt | typeof security.createdAt | typeof demo.terminalAt) =>
+    options.evidenceAsOf ? lte(column, options.evidenceAsOf) : lt(column, until);
   // Owner-bound commands for the same instrument and dispatch window.
   const eligibleLiveReceipt = bound ? exists(db.select({ command: events.commandId }).from(events).where(and(
     eq(events.commandId, live.id), eq(events.source, "ea"),
     inArray(events.eventType, ["RESULT_LIVE_FILLED", "RESULT_LIVE_PARTIALLY_FILLED"]),
-    lt(events.receivedAt, until), lt(events.occurredAt, until),
+    known(events.receivedAt), known(events.occurredAt),
     sql`${events.payload} #>> '{atiCostEvidence,accountBinding}' = ${bound.accountBinding}`,
     position ? or(inArray(sql<string>`${events.payload} #>> '{atiCostEvidence,positionId}'`, position.positions),
       inArray(sql<string>`${events.payload} #>> '{atiCostEvidence,deal}'`, position.tickets)) : undefined,
@@ -54,13 +58,13 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
     sql`${events.payload}->>'commandId' = ${live.commandId}`,
     sql`${events.payload}->>'bridgeConnectionId' = ${String(history.bridgeConnectionId)}`,
     sql`${events.payload}->>'atiAccountBinding' = ${history.accountBinding}`,
-    lt(events.receivedAt, until), lt(events.occurredAt, until),
+    known(events.receivedAt), known(events.occurredAt),
   ))) : undefined;
   const boundDemoDispatch = history && monitorDispatches ? exists(db.select({ actor: security.actorUserId }).from(security).where(and(
     eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"), eq(security.status, "ALLOWED"),
     sql`${security.metadata}->>'commandId' = ${demo.commandId}`,
     sql`${security.metadata}->>'bridgeConnectionId' = ${String(history.bridgeConnectionId)}`,
-    sql`${security.metadata}->>'atiAccountBinding' = ${history.accountBinding}`, lt(security.createdAt, until),
+    sql`${security.metadata}->>'atiAccountBinding' = ${history.accountBinding}`, known(security.createdAt),
   ))) : undefined;
   const [liveRows, demoRows] = await Promise.all([
     bound?.mode === "DEMO" ? [] : db.select({
@@ -84,13 +88,13 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
         eq(events.source, "arx"), eq(events.eventType, "DISPATCH_SENT"),
         sql`${events.payload}->>'commandId' = ${live.commandId}`,
         sql`${events.payload}->>'bridgeConnectionId' = ${live.bridgeConnectionId}::text`,
-        lt(events.receivedAt, until), lt(events.occurredAt, until)))) : undefined,
-      gte(live.sentToMt5At, from), lt(live.sentToMt5At, dispatchUntil),
+        known(events.receivedAt), known(events.occurredAt)))) : undefined,
+      gte(live.sentToMt5At, from), lt(live.sentToMt5At, dispatchUntil), options.evidenceAsOf ? lte(live.sentToMt5At, options.evidenceAsOf) : undefined,
     )),
     bound?.mode === "LIVE" || liveCommandIds ? [] : db.select({
       commandId: demo.commandId, bridge: demo.bridgeConnectionId, sentAt: demo.sentAt,
       status: demo.status, commandType: demo.commandType, payload: demo.payload, order: demo.brokerOrderId,
-      brokerTicket: demo.brokerTicket, terminalAt: demo.terminalAt,
+      brokerTicket: demo.brokerTicket, terminalAt: demo.terminalAt, terminalKnown: known(demo.terminalAt),
       volume: demo.fillVolume, price: demo.fillPrice, raw: demo.brokerRawResult,
     }).from(demo).where(and(
       eq(demo.userId, ownerId), inArray(demo.commandType, ["PLACE_MARKET_ORDER", "CLOSE_POSITION"]),
@@ -99,12 +103,12 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       snapshotWindow ? exists(db.select({ id: security.actorUserId }).from(security).where(and(
         eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"), eq(security.status, "ALLOWED"),
         sql`${security.metadata}->>'commandId' = ${demo.commandId}`,
-        sql`${security.metadata}->>'bridgeConnectionId' = ${demo.bridgeConnectionId}::text`, lt(security.createdAt, until)))) : undefined,
-      monitorDispatches ? boundDemoDispatch : bound ? and(lt(demo.terminalAt, until),
+        sql`${security.metadata}->>'bridgeConnectionId' = ${demo.bridgeConnectionId}::text`, known(security.createdAt)))) : undefined,
+      monitorDispatches ? boundDemoDispatch : bound ? and(known(demo.terminalAt),
         sql`${demo.brokerRawResult} #>> '{atiCostEvidence,accountBinding}' = ${bound.accountBinding}`,
         position ? or(inArray(sql<string>`${demo.brokerRawResult} #>> '{atiCostEvidence,positionId}'`, position.positions),
           inArray(sql<string>`${demo.brokerRawResult} #>> '{atiCostEvidence,deal}'`, position.tickets)) : undefined) : undefined,
-      gte(demo.sentAt, from), lt(demo.sentAt, dispatchUntil),
+      gte(demo.sentAt, from), lt(demo.sentAt, dispatchUntil), options.evidenceAsOf ? lte(demo.sentAt, options.evidenceAsOf) : undefined,
     )),
   ]);
   const [liveEvents, demoDispatches] = await Promise.all([
@@ -116,13 +120,13 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       inArray(events.commandId, liveRows.map((row) => row.id)),
       asOf ? or(inArray(events.eventType, ["DISPATCH_SENT", "LATE_RESULT_RETAINED"]), sql`${events.eventType} LIKE 'RESULT_%'`)
         : inArray(events.eventType, ["DISPATCH_SENT", "RESULT_LIVE_FILLED", "RESULT_LIVE_PARTIALLY_FILLED", "LATE_RESULT_RETAINED"]),
-      asOf ? and(lt(events.receivedAt, until), lt(events.occurredAt, until)) : undefined,
+      asOf ? and(known(events.receivedAt), known(events.occurredAt)) : undefined,
     )) : [],
     demoRows.length ? db.select({ metadata: security.metadata, availableAt: security.createdAt })
       .from(security).where(and(
         eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"),
         eq(security.status, "ALLOWED"), gte(security.createdAt, from),
-        asOf ? lt(security.createdAt, until) : undefined,
+        asOf ? known(security.createdAt) : undefined,
         inArray(sql<string>`${security.metadata}->>'commandId'`, demoRows.map((row) => row.commandId)),
       )) : [],
   ]);
@@ -218,7 +222,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
     const dispatch = demoBindingsByCommand.get(JSON.stringify([commandId, row.bridge]));
     const bindings = dispatch?.bindings;
     const accountBinding = bindings?.values().next().value;
-    const asOfStatus = (monitorDispatches || snapshotWindow) && (!row.terminalAt || row.terminalAt >= until) ? "UNVERIFIED_AS_OF_DECISION" : status;
+    const asOfStatus = (monitorDispatches || snapshotWindow) && !row.terminalKnown ? "UNVERIFIED_AS_OF_DECISION" : status;
     const result = asOfStatus !== "FILLED_DEMO" ? unresolved("COMMAND_OUTCOME_UNRESOLVED")
       : raw.atiCostEvidence == null ? unresolved("NO_DEAL_COST_RECEIPT")
       : bindings?.size !== 1 ? unresolved("DISPATCH_OR_BRIDGE_UNVERIFIED")
@@ -267,7 +271,7 @@ function withDistinctDeals<T extends { dealKey: string | null; result: { state: 
     ? { ...row, instrumentWitness: null, entryStrategy: null, decisionBenchmarkSource: null, result: unresolved("DEAL_CLAIMED_BY_MULTIPLE_COMMANDS") } : row);
 }
 
-async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCostRow[], mode: "LIVE" | "DEMO", until: Date) {
+async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCostRow[], mode: "LIVE" | "DEMO", until: Date, evidenceAsOf?: Date) {
   // A command outside the dispatch window can claim the same account/deal.
   // It can invalidate the cost measurement without becoming a cohort member.
   const groups = new Map<string, { accountBinding: string; brokerSymbol: string; tickets: Set<string> }>();
@@ -285,7 +289,7 @@ async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCos
     for (let i = 0; i < deals.length; i += 256) {
       const batch = deals.slice(i, i + 256);
       const checked = await readCommandCosts(ownerId, brokerSymbol, new Date(0), until, {
-        position: { accountBinding, brokerSymbol, mode, positions: [], tickets: batch },
+        position: { accountBinding, brokerSymbol, mode, positions: [], tickets: batch }, evidenceAsOf,
       });
       for (const ticket of batch) if (checked.disputed.has("deal:" + ticket)) disputed.add(JSON.stringify([accountBinding, ticket]));
     }
@@ -321,11 +325,12 @@ export async function readAtiLiveMemoryCosts(ownerId: number, commandIds: string
 }
 
 export async function readAtiExecutionCosts(ownerId: number, symbol: string, from: Date, windowEnd: Date, asOf?: Date) {
-  // Dispatch and history windows are half-open. An explicit knowledge cutoff includes its own millisecond.
+  // Dispatch windows are half-open. Integer millisecond archives use the next millisecond
+  // as an exclusive bound. SQL receipt timestamps use the exact inclusive review time.
   const until = asOf ? new Date(+asOf + 1) : windowEnd;
   const dispatchUntil = until < windowEnd ? until : windowEnd;
   const followPosition = until > windowEnd;
-  const initial = await readCommandCosts(ownerId, symbol, from, until, { snapshotWindow: !!asOf, dispatchUntil });
+  const initial = await readCommandCosts(ownerId, symbol, from, until, { snapshotWindow: !!asOf, dispatchUntil, evidenceAsOf: asOf });
   const { liveResults, demoResults } = initial;
   const brokerTriggeredExits = await readAtiTriggeredExits(ownerId, symbol, from, dispatchUntil,
     [...liveResults, ...demoResults].flatMap(({ instrumentWitness }) => instrumentWitness ? [instrumentWitness] : []), undefined, until);
@@ -357,7 +362,7 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
   }
   async function lifetime(scope: AtiPositionScope) {
     const [commands, history] = await Promise.all([
-      readCommandCosts(ownerId, scope.brokerSymbol, new Date(0), until, { position: scope }),
+      readCommandCosts(ownerId, scope.brokerSymbol, new Date(0), until, { position: scope, evidenceAsOf: asOf }),
       readAtiTriggeredExits(ownerId, scope.brokerSymbol, new Date(0), until, [scope], scope),
     ]);
     const live = scope.mode === "LIVE";
@@ -434,7 +439,7 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
   const [liveTrips, demoTrips] = await Promise.all([positionReport("LIVE", snapshot.liveResults, brokerTriggeredExits.live),
     positionReport("DEMO", snapshot.demoResults, brokerTriggeredExits.demo)]);
   const [reviewedLive, reviewedDemo] = asOf ? await Promise.all([
-    checkAccountDealClaims(ownerId, liveResults, "LIVE", until), checkAccountDealClaims(ownerId, demoResults, "DEMO", until),
+    checkAccountDealClaims(ownerId, liveResults, "LIVE", until, asOf), checkAccountDealClaims(ownerId, demoResults, "DEMO", until, asOf),
   ]) : [liveResults, demoResults];
   function reportMode(rows: readonly CommandCostRow[], roundTrips: typeof liveTrips) {
     const results = rows.map(({ dealKey: _key, instrumentWitness: _witness, ...row }) => row)
