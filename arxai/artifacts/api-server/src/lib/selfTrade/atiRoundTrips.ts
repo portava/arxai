@@ -145,6 +145,8 @@ export function reportAtiEntryStrategies(input: Position[]) {
     });
     return { cohortKey, strategy, positionKeys: group.map(p => p.positionKey), closedPositions: group.length,
       decisionToFill: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseFillVsDecisionMidPriceUnits : null),
+      decisionSpread: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.decisionSpreadPriceUnits : null),
+      movementBeforeSubmission: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseMovementBeforeSubmissionPriceUnits : null),
       submissionSpread: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.submissionSpreadPriceUnits : null),
       commandSlippage: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseSlippagePriceUnits : null),
       triggerMovement: volumeWeightedCost(protective, row => row.benchmark.source === "BROKER_TRIGGER" ? row.benchmark.adverseMovementFromTriggerPriceUnits : null),

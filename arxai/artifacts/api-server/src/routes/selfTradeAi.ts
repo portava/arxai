@@ -33,6 +33,7 @@ import { readAtiExecutionOperations } from "../lib/selfTrade/atiExecutionOperati
 import { readAtiGuardianComparison } from "../lib/selfTrade/atiGuardianReport.js";
 import { readAtiShadowMemory } from "../lib/selfTrade/atiTradingMemory.js";
 import { readAtiLiveMemory } from "../lib/selfTrade/atiLiveTradingMemory.js";
+import { readAtiCandidateReview } from "../lib/selfTrade/atiCandidateReview.js";
 import { listAtiResearch, readAtiResearch, readAtiReplication, registerAtiResearch, replayAtiResearchObservation, sealAtiResearch } from "../lib/selfTrade/atiResearchLab.js";
 import { atiResearchInput } from "../lib/selfTrade/atiResearchModel.js";
 import { ATI_FLEET_BASELINE, ATI_FLEET_SYMBOL } from "../lib/selfTrade/atiFleetShadow.js";
@@ -278,6 +279,14 @@ router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId/forward-eviden
   if (!query.success) { err(res, 400, "INVALID_INPUT", "Use verifyReplay=1 to replay the scored outcomes."); return; }
   const report = await readAtiReplication(req.authUser!.id, params.data.id, params.data.runId, query.data.verifyReplay === "1");
   if (!report) { err(res,404,"NOT_FOUND","Research study not found."); return; }
+  res.json(report);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId/candidate-review", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or study id."); return; }
+  const report = await readAtiCandidateReview(req.authUser!.id, params.data.id, params.data.runId);
+  if (!report) { err(res, 404, "NOT_FOUND", "Research study not found."); return; }
   res.json(report);
 });
 

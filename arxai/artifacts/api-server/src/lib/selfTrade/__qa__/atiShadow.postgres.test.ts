@@ -594,6 +594,28 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(cohort?.strategy.setup, "TREND_CONTINUATION");
       assert.equal(cohort?.strategy.revision, version.build.revision);
       assert.deepEqual(cohort?.positionKeys, [position.positionKey]);
+      const { incumbentStudyCosts } = await import("../atiCandidateReview.js");
+      const scopedCosts = (ids: number[], identity = cohort.strategy) =>
+        incumbentStudyCosts(complete.live.roundTrips.positions, new Set(ids), identity);
+      assert.deepEqual(scopedCosts([7001]).byEntryStrategy, [cohort]);
+      assert.equal(scopedCosts([7001, 7003]).reproducedDecisions, 2);
+      assert.equal(scopedCosts([7001, 7003]).decisionsWithReconciledPosition, 1);
+      assert.deepEqual(scopedCosts([7002]).byEntryStrategy, [], "matching strategy version cannot credit a different decision");
+      for (const other of [{ revision: "b".repeat(40) }, { agentId: 4 }, { setup: "RANGE_FADE" as const },
+        { symbol: "V75" }, { decisionSettingsHash: "f".repeat(64) }]) {
+        assert.deepEqual(scopedCosts([7001], { ...cohort.strategy, ...other }).decisionsWithLinkedOpeningFill, 0);
+      }
+      assert.deepEqual(incumbentStudyCosts(complete.demo.roundTrips.positions, new Set([7001]), cohort.strategy).reconciledPositions, 0);
+      const entry = position.deals.find(row => row.leg === "ENTRY")!;
+      const mixedEntries = [...position.deals, { ...entry, entryStrategy: { ...entry.entryStrategy!, decisionId: 7003 } }];
+      const mixed = incumbentStudyCosts([{ ...position, deals: mixedEntries }], new Set([7001]), cohort.strategy);
+      assert.equal(mixed.positionsWithOtherOpeningDecisions, 1);
+      assert.deepEqual(mixed.byEntryStrategy, []);
+      const unfinished = incumbentStudyCosts(partial.positions, new Set([7001]), cohort.strategy);
+      assert.equal(unfinished.unresolvedPositionsWithLinkedEntry, 1);
+      assert.equal(unfinished.reconciledPositions, 0);
+      assert.equal(cohort.decisionSpread.coveredFills, 1);
+      assert.equal(cohort.movementBeforeSubmission.coveredFills, 1);
       assert.equal(cohort.commandSlippage.coveredFills, 2);
       assert.equal(cohort.decisionToFill.totalFills, 1);
       assert.equal(cohort.triggerMovement.coveredFills, 1);
@@ -1594,6 +1616,12 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const openReview = await readAtiReplication(1, 3, researchId, true);
       assert.ok(openReview && openReview.gaps.includes("BUILD_UNVERIFIED"));
       assert.deepEqual(openReview.archiveReplay, { primary: null, forward: null });
+      const { readAtiCandidateReview } = await import("../atiCandidateReview.js");
+      const openCandidate = await readAtiCandidateReview(1, 3, researchId);
+      assert.deepEqual(openCandidate?.primary, { status: "AWAITING_SEAL" });
+      assert.equal(openCandidate?.forward, null);
+      assert.equal(await readAtiCandidateReview(2, 3, researchId), null);
+      assert.equal(await readAtiCandidateReview(1, 4, researchId), null);
       const initial = await readAtiReplication(1,3,historicalId);
       assert.deepEqual(initial?.gaps,["NO_DESIGNATED_FORWARD_STUDY"]);
       assert.equal(await readAtiReplication(2,3,historicalId),null);
@@ -1926,6 +1954,19 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(nativeAudit?.status, "PASSED_REGISTERED_FORWARD_COMPARISON");
       assert.equal(nativeAudit.comparison.decisionScope, ATI_FLEET_SCOPE);
       assert.equal(nativeAudit.archiveReplay?.forward?.reproduced, 4);
+      const candidateReview = await readAtiCandidateReview(1, 3, nativePrimary.runId);
+      assert.equal(candidateReview?.research.status, "PASSED_REGISTERED_FORWARD_COMPARISON");
+      assert.equal(candidateReview.status, "EVIDENCE_INCOMPLETE");
+      assert.equal(candidateReview.executionAuthority, "NONE");
+      assert.equal(candidateReview.challengerExecution.observedBrokerCosts, null);
+      assert.ok(candidateReview.primary.status === "SEALED" && candidateReview.forward?.status === "SEALED");
+      assert.equal(candidateReview.primary.incumbentCosts.status, "NO_MATCHED_ROUND_TRIP");
+      assert.equal(candidateReview.primary.incumbentCosts.eligibleReproducedDecisions, 4);
+      assert.equal(candidateReview.forward.incumbentCosts.status, "NO_MATCHED_ROUND_TRIP");
+      assert.equal(candidateReview.primary.capture.length, 3);
+      assert.equal(candidateReview.primary.simulationCosts.basis, "ASSUMED");
+      const fromForward = await readAtiCandidateReview(1, 3, nativeForward.runId);
+      assert.deepEqual(fromForward?.research, candidateReview.research);
       assert.equal((await registerAtiResearch(1, 3, { ...specFor(nextBar + 16 * 86_400_000, fleetSpec.market),
         costs: nativeForward.registration.spec.costs, replicates: nativeLink })).status, "REPLICATION_IDENTITY_MISMATCH");
       const certified = nativeForward.dataset.observations[0]!;

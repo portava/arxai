@@ -1,0 +1,241 @@
+{
+  "candidateReview": {
+    "scope": "REGISTERED_ATI_CANDIDATE_REVIEW",
+    "reviewedAt": "2026-11-24T09:28:15.083Z",
+    "executionAuthority": "NONE",
+    "status": "EVIDENCE_INCOMPLETE",
+    "research": {
+      "comparison": {
+        "agentId": 1,
+        "decisionScope": "OWNER_FLEET_AFTER_SUPERVISION",
+        "symbol": "V75",
+        "setup": "TREND_CONTINUATION",
+        "timeframe": "M5",
+        "baselineVersion": "self-trade-owner-fleet-supervised-v1",
+        "challengerVersion": "skip-timeframe-conflict-v1",
+        "market": {
+          "source": "deriv_public",
+          "mode": null
+        },
+        "costs": {
+          "basis": "ASSUMED",
+          "assumptions": {
+            "adverseSlippagePerFillPriceUnits": 1,
+            "feePerFillPriceUnits": 0
+          }
+        }
+      },
+      "primary": {
+        "runId": "474bc5cf-b88d-44b2-8664-34754d039062",
+        "registrationHash": "207d5196cd1d0d5acdd7d81f660e93ef90dba9a1508d134bf5b55ff5894332c8",
+        "status": "REGISTERED",
+        "build": {
+          "revision": "663c91f32d2e5400b4e8915e9dd7e56c957a4c03",
+          "sourceState": "clean"
+        },
+        "startsAtMs": 1795511100000,
+        "endsAtMs": 1795543500000,
+        "sealed": null
+      },
+      "policyHash": "e1ce9351a7e32fb55656f228255c751c5926142e731163d14cf3f335a7f61b4b",
+      "scope": "SEALED_SHADOW_STUDY_COMPARISON",
+      "executionAuthority": "NONE",
+      "forward": null,
+      "archiveReplay": {
+        "primary": null,
+        "forward": null
+      },
+      "gaps": [
+        "PRIMARY_UNSEALED",
+        "NO_DESIGNATED_FORWARD_STUDY"
+      ],
+      "status": "FORWARD_EVIDENCE_INCOMPLETE"
+    },
+    "primary": {
+      "status": "AWAITING_SEAL"
+    },
+    "forward": null,
+    "challengerExecution": {
+      "status": "SHADOW_ONLY",
+      "observedBrokerCosts": null
+    },
+    "recovery": {
+      "status": "NO_CANDIDATE_BOUND_RECOVERY_RECEIPT"
+    },
+    "rollback": {
+      "source": "ARX_STRATEGY_LIFECYCLE",
+      "triggers": {
+        "expectancyFloorR": 0,
+        "drawdownReviewPct": 6,
+        "drawdownDegradePct": 9,
+        "calibrationCeilingPct": 20,
+        "peerSlippageBelow01": 0.4,
+        "minSamplesForExpectancyTrigger": 80
+      },
+      "candidateRehearsal": null
+    },
+    "gaps": [
+      "PRIMARY_UNSEALED",
+      "NO_DESIGNATED_FORWARD_STUDY",
+      "CHALLENGER_BROKER_COSTS_UNAVAILABLE",
+      "CANDIDATE_RECOVERY_UNVERIFIED",
+      "CANDIDATE_ROLLBACK_UNREHEARSED"
+    ]
+  },
+  "readbackAt": "2026-11-24T09:29:30.586Z",
+  "independentReadbackMatchedExcludingReviewTime": true,
+  "isolatedV75CostInventory": [
+    {
+      "database": "ati_observed_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T09:28:00.000Z",
+      "evidenceAsOf": "2026-11-24T09:28:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_fleet_versioned_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T09:28:00.000Z",
+      "evidenceAsOf": "2026-11-24T09:28:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_shadow_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T09:28:00.000Z",
+      "evidenceAsOf": "2026-11-24T09:28:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_registered_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T09:28:00.000Z",
+      "evidenceAsOf": "2026-11-24T09:28:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    }
+  ]
+}

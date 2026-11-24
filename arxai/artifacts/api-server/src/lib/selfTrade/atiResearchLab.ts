@@ -208,11 +208,24 @@ export async function readAtiResearch(ownerId: number, agentId: number, runId: s
     : { status: "REGISTERED" as const, registration, registrationHash: row.study.registrationHash };
 }
 
+export async function readAtiStudyPair(ownerId: number, agentId: number, runId: string) {
+  const parent = await readAtiResearch(ownerId, agentId, runId);
+  if (!parent) return null;
+  const [child,extra] = await db.select({id:studies.runId}).from(studies).where(and(studyScope(ownerId,agentId),
+    sql`(${studies.registration}::jsonb #>> '{spec,replicates,runId}') = ${runId.toLowerCase()}`)).limit(2);
+  if (extra) return integrity();
+  const forward = child ? await readAtiResearch(ownerId,agentId,child.id) : null;
+  return { parent, forward };
+}
+
 /** Independent forward evidence for one exact research experiment. Only sealed
  * reports can release outcomes. This packet carries no trading authority. */
 export async function readAtiReplication(ownerId: number, agentId: number, runId: string, verifyReplay = false) {
-  const parent = await readAtiResearch(ownerId,agentId,runId);
-  if (!parent) return null;
+  const pair = await readAtiStudyPair(ownerId, agentId, runId);
+  return pair ? reviewAtiStudyPair(pair, verifyReplay) : null;
+}
+
+export async function reviewAtiStudyPair({ parent, forward }: NonNullable<Awaited<ReturnType<typeof readAtiStudyPair>>>, verifyReplay: boolean) {
   const summary = (study: NonNullable<typeof parent>) => ({
     runId:study.registration.runId, registrationHash:study.registrationHash, status:study.status,
     build:study.registration.build, startsAtMs:study.registration.spec.startsAtMs, endsAtMs:study.registration.spec.holdoutEndsAtMs,
@@ -236,10 +249,6 @@ export async function readAtiReplication(ownerId: number, agentId: number, runId
   };
   const head = { comparison, primary: summary(parent), policyHash: atiReplicationPolicy(parent.registration),
     scope: "SEALED_SHADOW_STUDY_COMPARISON" as const, executionAuthority: "NONE" as const };
-  const [child,extra] = await db.select({id:studies.runId}).from(studies).where(and(studyScope(ownerId,agentId),
-    sql`(${studies.registration}::jsonb #>> '{spec,replicates,runId}') = ${runId.toLowerCase()}`)).limit(2);
-  if (extra) return integrity();
-  const forward = child ? await readAtiResearch(ownerId,agentId,child.id) : null;
   const gaps: string[] = [];
   if (parent.status !== "SEALED") gaps.push("PRIMARY_UNSEALED");
   else if (parent.result.verdict !== "FORWARD_REVIEW_REQUIRED") gaps.push("PRIMARY_" + parent.result.verdict);

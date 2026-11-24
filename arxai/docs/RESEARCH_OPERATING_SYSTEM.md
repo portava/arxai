@@ -61,3 +61,55 @@ evidence, independent validation, and a default outcome of rejection.
   correlations.
 - Whether the product can support meaningful live capital within the approved
   drawdown and operational constraints.
+
+## ATI implementation order
+
+Start with one versioned Self-Trade setup on one instrument and timeframe.
+The following dependencies apply to the isolated ATI build. Existing ARX
+components provide starting points. Each stage needs its own evidence before
+its conclusions can affect a later decision.
+
+| Order | What ARX already provides | ATI deliverable and evidence required |
+| --- | --- | --- |
+| 1a. Shadow report | Self-Trade decision engine, venue adapters and Trade Engine bracket grading | Capture both decisions before the outcome. Replay the same released quotes after restart. Show skipped setups, unobserved bars, partial paths and per-strategy net results. |
+| 1b. Execution costs, in parallel | MT5 command pipeline, bridge events and deal-history receipts | Reconcile owner, account, mode, order, deal, side and quantity. Report decision spread, movement to submission, slippage and separately evidenced charges. Check a complete broker round trip before using it for net-cost calibration. |
+| 2. Trading Memory | Persisted decisions, outcomes and execution events | Reconstruct what a single owner could know at each decision, including when a label became available. Keep research holdouts private and test across restart. |
+| 3. Research Lab | Research lifecycle, chronological folds, Monte Carlo validation | Register the hypothesis, chronology and rejection criteria. Freeze the dataset, verify an offline replay and retain the outcome when the hypothesis fails. |
+| 4. Counterargument and timing | Existing decision checks, entry zone and Trading Memory | Compare the original entry with waiting, reducing size or skipping. Account for missed winners, no-fills and adverse executable entries after waiting. |
+| 5. Regime and instrument rules | Market evidence, structural context and instrument profiles | Freeze classifications at decision time. Compare net results within each supported instrument and regime, with sample counts and an untouched period. |
+| 6. Early patterns and Ghost | Structural forecast issuance, persistence and scoring | Score early breaks and projected paths against simple frequency and last-close baselines. Check probability calibration, band coverage and restart-safe forward receipts. |
+| 7. Position Guardian | L3 position-management evaluator, first target and archived quote replay | Change one exit rule at a time. Compare paired net returns, changed exits and drawdown on the same eligible strategy entries. Carry every unfilled or unresolved case through the report. |
+| 8. Adaptive portfolio risk | Portfolio Risk Engine, Risk Governor, position sizer and Self-Trade correlation checks | Freeze the owner/account book, exposure, drawdown, cost quality and applicable limits at the decision. Compare constrained sizes under the same concurrent opportunities. Test simultaneous losses, missing risk inputs and hard-limit dominance. |
+| 9. Specialist scoring | Agent result ledger, weighting logic, signal evidence and frozen research cohorts | Score each specialist against a simple baseline for its assigned job. Compare calibration and net contribution on held-out regimes, including an ablation that removes each specialist. |
+| 10. Monitoring and recovery | Feed freshness, bridge sequencing, immutable research seals and execution reconciliation | Detect stale inputs, broken streams, delayed fills, cost drift and restart gaps. Rehearse recovery with duplicated or reordered messages, then prove that recovery preserves the evidence and cannot duplicate an order. |
+| 11. Controlled promotion readiness | Strategy lifecycle, promotion and demotion gates, Risk Governor | Assemble a version-specific review packet with out-of-sample results, independent forward evidence, reconciled venue costs and rollback criteria. Negative, missing or cross-strategy evidence cannot satisfy the gate. |
+
+### Candidate review
+
+`GET /api/self-trade-ai/agents/:id/ati-research-studies/:runId/candidate-review`
+accepts either member of a registered primary/forward pair. It replays the
+scored outcomes, reports sealed capture coverage by phase, and includes
+the cost basis used in each simulation. Open studies withhold decisions,
+grades and broker matches. The review has no execution authority.
+
+For a sealed native fleet study, ARX rebuilds the cutoff dataset and selects
+the reproduced out-of-sample decisions. The MT5 reader independently reconciles
+each position. Every opening fill must link to one of those exact decision IDs
+under the registered agent, build, instrument, setup, timeframe and settings.
+The primary and forward each have their own dispatch window. Results retain
+the broker account grouping and mode, including when the decision feed was
+Deriv. Spread and movement before submission have their own entry-fill
+denominators. Broker costs attach to the incumbent. The shadow challenger
+retains its simulation basis.
+
+The packet also lists the existing lifecycle demotion thresholds. Applying
+those rules and rehearsing recovery for this candidate require separate
+evidence. A passed archive replay alone can establish the registered
+comparison and leaves the remaining evidence gaps visible.
+
+At 09:28 UTC on November 24, the V75 fleet primary was open. Two fresh
+read-only processes returned the same candidate evidence. Across the four
+isolated V75 study databases inspected, the owner had zero attested DEMO
+or LIVE dispatches, triggered deals or reconciled positions from midnight
+through the review cutoff. Real broker costs for that sample are unknown.
+[Candidate review and isolated MT5 inventory](ati-evidence/v75-m5-candidate-review-20261124T0928Z.json).
