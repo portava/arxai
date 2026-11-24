@@ -14,6 +14,8 @@ import { ATI_REGIME_INSTRUMENT_CHALLENGER, atiInstrumentProfile, atiObservedRegi
   atiRegimePolicy, boundAtiRegimeAssessment, scoreAtiRegimeTransitions, summarizeAtiRegimeTransitions,
   type AtiInstrumentProfile, type AtiRegimeTransitions } from "./atiRegimeInstrument.js";
 
+import { ATI_FLEET_BASELINE, ATI_FLEET_SYMBOL, cleanFleetVersion } from "./atiFleetDefinition.js";
+
 export const ATI_RESEARCH_VERSION = "ati-paired-shadow-study-v1";
 export const ATI_WALK_FORWARD_VERSION = "ati-paired-shadow-walk-forward-v2";
 const { barMs } = atiShadowDefinition;
@@ -42,6 +44,7 @@ export const atiResearchInput = z.object({
   developmentEndsAtMs: boundary,
   validationEndsAtMs: boundary,
   holdoutEndsAtMs: boundary,
+  baselineVersion: z.enum([atiShadowDefinition.baselineVersion, ATI_FLEET_BASELINE]).optional(),
   challengerVersion: atiChallengerVersion.optional(),
   walkForward: z.object({
     folds: z.number().int().min(2).max(12),
@@ -70,7 +73,11 @@ export const atiResearchInput = z.object({
     (!walk || (walk.minPassingFolds <= walk.folds && Math.floor(validationBars / walk.folds) * barMs > holdMs &&
       spec.startsAtMs < spec.developmentEndsAtMs - holdMs - walk.embargoBars * barMs)) &&
     (spec.market.source === "mt5_broker" || spec.costs.basis === "ASSUMED");
-}, "Use ordered M5 boundaries and leave room for the one-hour label horizon in each phase.");
+}, "Use ordered M5 boundaries and leave room for the one-hour label horizon in each phase.")
+  .refine(spec => spec.baselineVersion !== ATI_FLEET_BASELINE ||
+    (spec.symbol === ATI_FLEET_SYMBOL && spec.market.source === "deriv_public" &&
+      (spec.challengerVersion ?? atiShadowDefinition.challengerVersion) === atiShadowDefinition.challengerVersion),
+  "Fleet research supports the V75 public feed and the timeframe-conflict challenger.");
 
 export type AtiResearchInput = z.infer<typeof atiResearchInput>;
 const buildIdentity = z.object({ revision: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
@@ -96,7 +103,8 @@ export function researchRegistration(runId: string, ownerId: number, agentId: nu
   return {
     runId, ownerId, agentId, registeredAtMs, spec, build: buildIdentity.parse(build),
     runnerVersion: walk ? ATI_WALK_FORWARD_VERSION : ATI_RESEARCH_VERSION,
-    definition: spec.challengerVersion ? { ...atiShadowDefinition, challengerVersion: spec.challengerVersion } : atiShadowDefinition,
+    definition: { ...atiShadowDefinition, baselineVersion: spec.baselineVersion ?? atiShadowDefinition.baselineVersion,
+      challengerVersion: spec.challengerVersion ?? atiShadowDefinition.challengerVersion },
     holdWindowMs: holdMs, gradeCutoffMs: spec.holdoutEndsAtMs + holdMs, monteCarlo,
     executionAuthority: "NONE" as const,
     ...(folds ? { folds } : {}),
@@ -147,7 +155,13 @@ const fill = z.object({
   pnlRiskBasis: z.literal("FROZEN_PLANNED_STOP_DISTANCE").optional(),
 }).strict();
 
+export const fleetResearchReceipt = z.object({
+  decisionId: z.number().int().positive(), cycleId: z.string().min(1), cycleStartedAt: z.number().int().positive(),
+  version: cleanFleetVersion,
+}).strict();
+
 const dataRow = z.object({
+  fleetDecision: fleetResearchReceipt.nullable().optional(),
   observationKey: z.string(),
   observedAtMs: z.number().int().positive(),
   recordedAtMs: z.number().int().positive().nullable(),
@@ -190,7 +204,7 @@ type Registration = ReturnType<typeof researchRegistration>;
 type FoldWindow = { name: "PRIOR_CONTEXT" | "WALK_FORWARD_TEST"; startMs: number; endMs: number };
 
 function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, phase: Phase | FoldWindow, simulateTail = true,
-  developmentTransitions?: AtiRegimeTransitions) {
+  developmentTransitions?: AtiRegimeTransitions, replayKeys?: Set<string>) {
   const { spec, build } = registration;
   const { criteria } = spec;
   const lastDecisionMs = phase.endMs - holdMs;
@@ -219,6 +233,10 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
   const trustedRegimeFills = new Map<string, z.infer<typeof fill>>();
   const legReturn = primary === "pnlWithAssumedCosts" ? "assumedR" : "measuredR";
   const settled = eligible.flatMap((row) => {
+    if (spec.baselineVersion === ATI_FLEET_BASELINE && !row.fleetDecision) {
+      unresolved++;
+      return [];
+    }
     const evidence = row.evidence;
     if (!evidence || evidence.recordedAtMs >= labelCutoffMs || evidence.recordedAtMs < row.recordedAtMs! ||
         evidence.evaluatedAtMs <= row.observedAtMs || evidence.evaluatedAtMs > evidence.recordedAtMs) {
@@ -246,6 +264,7 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
         unresolved++;
         return [];
       }
+      if (grade.noFill || grade.baseline.exit || grade.challenger.exit) replayKeys?.add(row.observationKey);
       guardians.push(grade);
       if (grade.status === "UNRESOLVED") unresolved++;
       if (grade.status === "SETTLED_PAIR") {
@@ -282,6 +301,7 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
         unresolved++;
         return [];
       }
+      if (baseline.state !== "UNRESOLVED" || challenger.state !== "UNRESOLVED") replayKeys?.add(row.observationKey);
       retests.push(retest);
       if (baseline.state === "UNRESOLVED" || challenger.state === "UNRESOLVED") unresolved++;
       else if ([baseline, challenger].some((leg) => leg.state === "SIMULATED_FILL" && leg.returns[legReturn] == null)) missingCosts++;
@@ -304,6 +324,7 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
     }
     if (fill.baselineSizeRatio !== fill.challengerSizeRatio) changedPairs++;
     if (usesRegime) trustedRegimeFills.set(row.observationKey, fill);
+    replayKeys?.add(row.observationKey);
     return [fill];
   });
 
@@ -346,6 +367,8 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
     return { p05FinalR, p95FinalR, worstDrawdownR };
   }
   const evidenceGaps = [
+    ...(spec.baselineVersion === ATI_FLEET_BASELINE && observed.some(row => !row.fleetDecision)
+      ? ["FLEET_DECISION_UNVERIFIED"] : []),
     ...(invalidGuardian ? ["GUARDIAN_RECEIPT_UNAVAILABLE_OR_CONFLICTING"] : []),
     ...(usesRegime && eligible.some((row) => !regimeBound(row) ||
       atiRegimeOutcome(row.baseline, row.regimeAssessment ?? null) !== row.challenger)
@@ -400,12 +423,12 @@ function evaluatePhase(registration: Registration, dataset: AtiResearchDataset, 
   };
 }
 
-export function evaluateAtiResearch(registration: Registration, dataset: AtiResearchDataset) {
+export function evaluateAtiResearch(registration: Registration, dataset: AtiResearchDataset, replayKeys?: Set<string>) {
   const { spec } = registration;
   const [developmentWindow, ...evaluationWindows] = researchPhases(spec);
   const development = evaluatePhase(registration, dataset, developmentWindow);
   const developmentTransitions = development.regimeReport?.transitions;
-  const phases = [development, ...evaluationWindows.map((phase) => evaluatePhase(registration, dataset, phase, true, developmentTransitions))];
+  const phases = [development, ...evaluationWindows.map((phase) => evaluatePhase(registration, dataset, phase, true, developmentTransitions, replayKeys))];
   const outOfSample = phases.filter((phase) => phase.name !== "DEVELOPMENT");
   const sufficientlyMeasured = outOfSample.every((phase) => !phase.evidenceGaps.length);
   const baseVerdict = !sufficientlyMeasured ? "INSUFFICIENT_EVIDENCE" as const
@@ -422,7 +445,7 @@ export function evaluateAtiResearch(registration: Registration, dataset: AtiRese
     }, false);
     const test = evaluatePhase(registration, dataset, {
       name: "WALK_FORWARD_TEST", startMs: fold.testStartMs, endMs: fold.testEndMs,
-    }, false, developmentTransitions);
+    }, false, developmentTransitions, replayKeys);
     return { fold: index + 1, ...fold, prior: { observedSlots: prior.observedSlots, settledPairs: prior.base.settledPairs,
       unavailableLabels: prior.exclusions.unavailableLabels }, test };
   });

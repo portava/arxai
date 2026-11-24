@@ -8,14 +8,15 @@ import { atiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
 import { getBuildIdentity } from "../startup/buildIdentity.js";
 import { ATI_DERIV_ARCHIVE_GRADE_VERSION, ATI_MT5_GRADE_VERSION, ATI_RETEST_GRADE_VERSION,
-  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, type AtiShadowGrade } from "./atiShadowGrading.js";
+  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, timeframeConflictOutcome, type AtiShadowGrade } from "./atiShadowGrading.js";
 import { loadAtiMt5ReplayQuotes, type AtiMt5ReplayQuote } from "./atiMt5QuoteReplay.js";
 import { loadAtiDerivReplayQuotes } from "./atiDerivQuoteReplay.js";
 import { selectAtiMeasuredCosts, type AtiMeasuredCostProfile } from "./atiMeasuredCosts.js";
 import { ATI_GUARDIAN_GRADE_VERSION, guardianComparisonPolicy } from "./atiGuardian.js";
 import { ATI_RETEST_CHALLENGER, atiCounterargumentEvidence, atiRetestPlan, isAtiCounterargumentChallenger } from "./atiCounterargument.js";
 import { ATI_REGIME_INSTRUMENT_CHALLENGER, atiInstrumentProfileSchema, atiRegimeAssessment } from "./atiRegimeInstrument.js";
-import { ATI_WALK_FORWARD_VERSION, atiResearchDataset, atiResearchInput, canonicalResearch, evaluateAtiResearch, researchRegistration, atiReplicationPolicy,
+import { ATI_FLEET_BASELINE, ATI_FLEET_SCOPE } from "./atiFleetDefinition.js";
+import { fleetResearchReceipt, atiResearchDataset, atiResearchInput, canonicalResearch, evaluateAtiResearch, researchRegistration, atiReplicationPolicy,
   type AtiResearchDataset, type AtiResearchInput } from "./atiResearchModel.js";
 
 const researchLock = 1096042834; // ATI research registration and overlap checks, keyed by authenticated owner.
@@ -39,6 +40,41 @@ const replayColumns = {
 };
 type ReplayInput = { observedAt: Date; sourceIdentity: string | null; challenger: string; baselinePlan: DecisionCandidate | null;
   mt5Origin: unknown; derivOrigin: unknown; retestPlan: unknown; regimeAssessment: unknown; decisionQuote: AtiMt5ReplayQuote | null };
+
+// The post-supervision decision is written in the same transaction as the observation.
+function matchedFleetReceipt(registration: Registration) {
+  if (registration.definition.baselineVersion !== ATI_FLEET_BASELINE) return sql<unknown>`null`;
+  const e = observations.evidence;
+  const receipt = sql`${e}->'fleetReceipt'`, candidate = sql`${e}->'baseline'`;
+  return sql<unknown>`case when exists (
+    select 1 from self_trade_decisions d join self_trade_agents a on a.id = d.agent_id
+    where d.id = case when ${receipt}->>'decisionId' ~ '^[0-9]{1,10}$' then (${receipt}->>'decisionId')::bigint end
+      and a.owner_type = 'USER' and a.owner_id = ${registration.ownerId} and d.agent_id = ${registration.agentId}
+      and d.symbol = ${registration.spec.symbol} and d.timeframe = ${registration.definition.timeframe}
+      and d.cycle_id = ${receipt}->>'cycleId'
+      and to_jsonb(extract(epoch from d.evaluated_at)*1000) = ${receipt}->'cycleStartedAt'
+      and d.evaluated_at >= ${new Date(registration.spec.startsAtMs).toISOString()}::timestamptz
+      and d.evaluated_at <= ${observations.observedAt} and d.created_at <= ${observations.recordedAt}
+      and d.score_breakdown->'atiFleetDecisionV1' = ${receipt}->'version'
+      and ${receipt}#>'{version,build}' = ${e}->'researchBuild'
+      and ${receipt}#>>'{version,decisionSettingsHash}' = ${e}->>'decisionSettingsHash'
+      and to_jsonb(d.agent_id) = ${candidate}->'agentId' and d.agent_key = ${candidate}->>'agentKey'
+      and d.symbol = ${candidate}->>'symbol' and d.timeframe = ${candidate}->>'timeframe'
+      and coalesce(d.setup_type,'NONE') = ${candidate}->>'setup' and coalesce(d.setup_type,'NONE') = ${observations.setup}
+      and d.outcome = ${candidate}->>'outcome' and d.outcome = ${observations.baselineOutcome}
+      and d.side is not distinct from (${candidate}->>'side') and d.reason = ${candidate}->>'reason'
+      and d.handshakes = ${candidate}->'checks' and d.thesis is not distinct from nullif(${candidate}->'thesis', 'null'::jsonb)
+      and d.owner_agent_key is not distinct from (${candidate}->>'ownerAgentKey')
+      and d.conflict_state = ${candidate}->>'conflictState'
+      and to_char(d.setup_expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        is not distinct from (${candidate}->>'setupExpiresAt')
+      and ${e}#>>'{fleetPriceOrigin,symbol}' = 'R_75'
+      and ${e}#>>'{input,signal,marketEvidence,source}' = 'deriv_public'
+      and ${e}#>>'{input,signal,marketEvidence,sourceIdentity}' = ${observations.sourceIdentity}
+      and (${observations.baselineOutcome} not in ('APPROVED','APPROVED_REDUCED') or ${observations.setup} <> ${registration.spec.setup}
+        or ${e}->'fleetPriceOrigin' = ${e}->'derivQuoteOrigin')
+  ) then ${receipt} end`;
+}
 
 function replayInputHash(row: ReplayInput, venue: "deriv_public" | "mt5_broker") {
   return canonicalResearch([+row.observedAt, row.sourceIdentity, row.challenger,
@@ -139,7 +175,7 @@ export async function registerAtiResearch(ownerId: number, agentId: number, inpu
     }
     const { canonical, hash } = canonicalResearch(registration);
     await tx.insert(runs).values({ id: runId, ownerId, agentId, symbol: spec.symbol, setup: spec.setup,
-      timeframe: atiShadowDefinition.timeframe, baselineVersion: atiShadowDefinition.baselineVersion,
+      timeframe: registration.definition.timeframe, baselineVersion: registration.definition.baselineVersion,
       challengerVersion: registration.definition.challengerVersion, startedAt: new Date(spec.startsAtMs),
       endsAt: new Date(spec.holdoutEndsAtMs), researchSource: spec.market.source, researchMode: spec.market.mode,
       assumedCosts: spec.costs.basis === "ASSUMED" ? spec.costs.assumptions : null,
@@ -174,7 +210,7 @@ export async function readAtiResearch(ownerId: number, agentId: number, runId: s
 
 /** Independent forward evidence for one exact research experiment. Only sealed
  * reports can release outcomes. This packet carries no trading authority. */
-export async function readAtiReplication(ownerId: number, agentId: number, runId: string) {
+export async function readAtiReplication(ownerId: number, agentId: number, runId: string, verifyReplay = false) {
   const parent = await readAtiResearch(ownerId,agentId,runId);
   if (!parent) return null;
   const summary = (study: NonNullable<typeof parent>) => ({
@@ -189,7 +225,7 @@ export async function readAtiReplication(ownerId: number, agentId: number, runId
   const { spec, definition, agentId: registeredAgentId } = parent.registration;
   const comparison = {
     agentId: registeredAgentId,
-    decisionScope: ATI_SHADOW_DECISION_SCOPE,
+    decisionScope: definition.baselineVersion === ATI_FLEET_BASELINE ? ATI_FLEET_SCOPE : ATI_SHADOW_DECISION_SCOPE,
     symbol: spec.symbol,
     setup: spec.setup,
     timeframe: definition.timeframe,
@@ -216,16 +252,50 @@ export async function readAtiReplication(ownerId: number, agentId: number, runId
         link.datasetHash !== parent.datasetHash || link.resultHash !== parent.resultHash ||
         Date.parse(parent.sealedAt) >= forward.registration.registeredAtMs ||
         atiReplicationPolicy(forward.registration) !== head.policyHash) gaps.push("REPLICATION_IDENTITY_MISMATCH");
-    const build = parent.registration.build, other = forward.registration.build;
-    if (!build.revision || build.sourceState !== "clean" || other.revision !== build.revision || other.sourceState !== "clean")
-      gaps.push("BUILD_UNVERIFIED");
     if (forward.status === "SEALED" && (!parent.dataset.decisionSettingsHash ||
         parent.dataset.decisionSettingsHash !== forward.dataset.decisionSettingsHash ||
         !parent.dataset.sourceIdentity || parent.dataset.sourceIdentity !== forward.dataset.sourceIdentity))
       gaps.push("SOURCE_OR_SETTINGS_MISMATCH");
   }
-  return {...head,forward:forward ? summary(forward) : null, gaps,
-    status:gaps.length ? "FORWARD_EVIDENCE_INCOMPLETE" as const : "PASSED_REGISTERED_FORWARD_COMPARISON" as const};
+  const build = parent.registration.build, other = forward?.registration.build;
+  if (!build.revision || build.sourceState !== "clean" || (other && (other.revision !== build.revision || other.sourceState !== "clean"))) {
+    gaps.push("BUILD_UNVERIFIED");
+  }
+  const archiveReplay = verifyReplay ? {
+    primary: parent.status === "SEALED" ? await auditSealedOutcomes(parent) : null,
+    forward: forward?.status === "SEALED" ? await auditSealedOutcomes(forward) : null,
+  } : null;
+  if (archiveReplay?.primary && !archiveReplay.primary.complete) gaps.push("PRIMARY_REPLAY_INCOMPLETE");
+  if (archiveReplay?.forward && !archiveReplay.forward.complete) gaps.push("FORWARD_REPLAY_INCOMPLETE");
+  return { ...head, forward: forward ? summary(forward) : null, archiveReplay, gaps,
+    status: gaps.length ? "FORWARD_EVIDENCE_INCOMPLETE" as const : !archiveReplay ? "ARCHIVE_REPLAY_REQUIRED" as const
+      : "PASSED_REGISTERED_FORWARD_COMPARISON" as const };
+}
+
+async function auditSealedOutcomes(study: SealedStudy) {
+  // The scorer selects its own contributing rows. An episode used by two folds counts once.
+  const required = new Set<string>();
+  evaluateAtiResearch(study.registration, study.dataset, required);
+  const episodes = study.dataset.observations.filter(row => required.has(row.observationKey));
+  const { ownerId, agentId, runId } = study.registration;
+  const [run] = await db.select().from(runs).where(runScope(ownerId, agentId, runId)).limit(1);
+  const sourceDataset = run && await readCutoffDataset(db, run, study.registration, study.registrationHash);
+  const sourceDatasetHash = sourceDataset?.success ? canonicalResearch(sourceDataset.data).hash : null;
+  const receipts = [];
+  // Bound concurrent reads and the number of in-memory quote tapes during a full review.
+  for (let i = 0; i < episodes.length; i += 4) {
+    const batch = await Promise.all(episodes.slice(i, i + 4).map(async row => {
+      const result = await replaySealedEpisode(study, row);
+      return { observationKey: row.observationKey, status: result.status,
+        gradeHash: result.status === "REPRODUCED" ? result.gradeHash : null };
+    }));
+    receipts.push(...batch);
+  }
+  const reproduced = receipts.filter(r => r.status === "REPRODUCED").length;
+  const complete = sourceDatasetHash === study.datasetHash && required.size > 0 && required.size === episodes.length && reproduced === required.size;
+  return { runId, sourceDatasetHash, datasetHash: study.datasetHash, resultHash: study.resultHash, required: required.size, reproduced, complete,
+    basis: "UNIQUE_VALIDATION_HOLDOUT_AND_TEST_FOLD_OUTCOMES" as const, receipts,
+    auditHash: canonicalResearch({ runId, sourceDatasetHash, datasetHash: study.datasetHash, resultHash: study.resultHash, receipts }).hash };
 }
 
 export async function replayAtiResearchObservation(ownerId: number, agentId: number, runId: string, observationKey: string) {
@@ -235,18 +305,40 @@ export async function replayAtiResearchObservation(ownerId: number, agentId: num
   if (study.status !== "SEALED") return { status: "STUDY_NOT_SEALED" as const, ...authority };
   const episode = study.dataset.observations.find((row) => row.observationKey === observationKey);
   if (!episode) return null;
-  const spec = study.registration.spec;
+  return replaySealedEpisode(study, episode);
+}
+
+type SealedStudy = Extract<NonNullable<Awaited<ReturnType<typeof readAtiResearch>>>, { status: "SEALED" }>;
+
+async function replaySealedEpisode(study: SealedStudy, episode: AtiResearchDataset["observations"][number]) {
+  const { ownerId, agentId, runId, spec } = study.registration;
+  const { observationKey } = episode;
+  const authority = { executionAuthority: "NONE" as const };
   const proof = spec.market.source === "mt5_broker" ? episode.mt5ReplayProof : episode.derivReplayProof;
   if (!proof || !episode.evidence || (!episode.evidence.fill && !episode.evidence.retest && !episode.evidence.guardian)) return { status: "NO_ARCHIVE_PROOF" as const, ...authority };
-  const [row] = await db.select({ ...replayColumns, measuredCostProfile: runs.measuredCostProfile }).from(runs)
+  const [row] = await db.select({ ...replayColumns, fleetDecision: matchedFleetReceipt(study.registration), measuredCostProfile: runs.measuredCostProfile }).from(runs)
     .innerJoin(observations, and(eq(observations.runId, runs.id), eq(observations.observationKey, observationKey)))
     .where(runScope(ownerId, agentId, runId)).limit(1);
   if (!row) return { status: "ARCHIVE_UNAVAILABLE" as const, ...authority };
+  if (spec.baselineVersion === ATI_FLEET_BASELINE) {
+    const receipt = fleetResearchReceipt.safeParse(row.fleetDecision);
+    if (!receipt.success || !episode.fleetDecision || canonicalResearch(receipt.data).hash !== canonicalResearch(episode.fleetDecision).hash) {
+      return { status: "FLEET_DECISION_UNVERIFIED" as const, ...authority };
+    }
+  }
   const cohort = study.dataset;
   const measuredCostHash = row.measuredCostProfile ? canonicalResearch(row.measuredCostProfile).hash : null;
-  if (!row.baselinePlan || !row.decisionQuote || episode.sourceIdentity !== cohort.sourceIdentity ||
+  if (!row.baselinePlan || !row.decisionQuote || episode.coverage !== "OBSERVED" || row.sourceIdentity !== episode.sourceIdentity ||
+      episode.sourceIdentity !== cohort.sourceIdentity ||
+      episode.baseline !== row.baselinePlan.outcome || episode.setup !== row.baselinePlan.setup ||
+      episode.challenger !== row.challenger || episode.observedAtMs !== +row.observedAt ||
       replayInputHash(row, spec.market.source) !== proof.inputHash ||
       measuredCostHash !== cohort.measuredCostProfileHash) return { status: "ARCHIVE_MISMATCH" as const, ...authority };
+
+  if (study.registration.definition.challengerVersion === atiShadowDefinition.challengerVersion &&
+      (!Array.isArray(row.baselinePlan.checks) || timeframeConflictOutcome(row.baselinePlan) !== episode.challenger)) {
+    return { status: "CHALLENGER_DECISION_MISMATCH" as const, ...authority };
+  }
 
   const decisionAt = +row.observedAt;
   const evaluatedAt = episode.evidence.evaluatedAtMs;
@@ -279,6 +371,11 @@ export async function replayAtiResearchObservation(ownerId: number, agentId: num
   if ((grade?.state !== "SIMULATED_FILL" && grade?.state !== "RETEST_COMPARISON" && grade?.state !== "GUARDIAN_COMPARISON") || gradeHash(grade) !== proof.gradeHash) {
     return { status: "ARCHIVE_MISMATCH" as const, ...authority };
   }
+  const { evaluatedAtMs: _evaluated, recordedAtMs: _recorded, build: _build, version, ...sealedScore } = episode.evidence;
+  if (!hasArchivedReplay(grade, version, spec.market.source) ||
+      canonicalResearch(sealedScore).hash !== canonicalResearch(scoredGrade(grade, input.guardian)).hash) {
+    return { status: "ARCHIVE_MISMATCH" as const, ...authority };
+  }
   return { status: "REPRODUCED" as const, observationKey, evaluatedAtMs: evaluatedAt,
     datasetHash: study.datasetHash, gradeHash: proof.gradeHash, grade, ...authority };
 }
@@ -306,6 +403,17 @@ function fillFrom(grade: AtiShadowGrade | null): NonNullable<AtiResearchDataset[
     ...(grade.pnlRiskBasis ? { pnlRiskBasis: grade.pnlRiskBasis } : {}) };
 }
 
+function scoredGrade(grade: AtiShadowGrade, guardian: boolean) {
+  return {
+    fill: fillFrom(grade), unresolvedReason: grade.state === "UNRESOLVED" ? grade.reason : null,
+    ...(guardian && grade.state === "GUARDIAN_COMPARISON" ? { guardian: withoutResearchBuild(grade) } : {}),
+    ...(grade.state === "RETEST_COMPARISON" ? { retest: {
+      state: grade.state, quoteSource: grade.quoteSource, mt5Mode: grade.mt5Mode, plannedRiskPriceUnits: grade.plannedRiskPriceUnits,
+      baseline: grade.baseline, challenger: grade.challenger,
+    } } : {}),
+  };
+}
+
 function hasArchivedReplay(grade: AtiShadowGrade | null, version: string | null, venue: "mt5_broker" | "deriv_public") {
   if (grade?.state === "GUARDIAN_COMPARISON") return version === ATI_GUARDIAN_GRADE_VERSION && grade.quoteSource === venue &&
     !!(grade.archivePrefixHash || grade.noFill?.tapeHash);
@@ -323,6 +431,73 @@ function counterargumentFrom(evidence: unknown) {
   return { counterargument: { ...review, evidenceHash: canonicalResearch(parsed.data).hash } };
 }
 
+async function readCutoffDataset(reader: Pick<typeof db, "select">, run: Run, registration: Registration, registrationHash: string) {
+  const cutoff = new Date(registration.gradeCutoffMs);
+  const rows = await reader.select({
+    ...replayColumns, fleetDecision: matchedFleetReceipt(registration),
+    observationKey: observations.observationKey, recordedAt: observations.recordedAt,
+    coverage: observations.coverage, setup: observations.setup, baseline: observations.baselineOutcome,
+    captureBuild: sql<unknown>`${observations.evidence}->'researchBuild'`,
+    decisionSettingsHash: sql<string | null>`${observations.evidence}->>'decisionSettingsHash'`,
+    counterargument: sql<unknown>`${observations.evidence}->'counterargument'`,
+    grade: sql<AtiShadowGrade | null>`${outcomes.evidence}`,
+    gradeBuild: sql<unknown>`${outcomes.evidence}->'researchBuild'`,
+    evaluatedAt: outcomes.evaluatedAt, gradeRecordedAt: outcomes.recordedAt, version: outcomes.gradeVersion,
+  }).from(observations).leftJoin(outcomes, and(eq(outcomes.runId, observations.runId),
+    eq(outcomes.observationKey, observations.observationKey), lt(outcomes.evaluatedAt, cutoff), lt(outcomes.recordedAt, cutoff)))
+    .where(and(eq(observations.runId, run.id), gte(observations.observedAt, run.startedAt),
+      lt(observations.observedAt, run.endsAt), lt(observations.recordedAt, cutoff)))
+    .orderBy(asc(observations.observedAt), asc(observations.observationKey));
+
+  const fleetReceipts = new Map<string, NonNullable<AtiResearchDataset["observations"][number]["fleetDecision"]>>();
+  const decisionIds = new Set<number>(), repeatedIds = new Set<number>();
+  if (run.baselineVersion === ATI_FLEET_BASELINE) {
+    for (const row of rows) {
+      const receipt = fleetResearchReceipt.safeParse(row.fleetDecision);
+      if (!receipt.success || row.coverage !== "OBSERVED") continue;
+      const { decisionId } = receipt.data;
+      if (decisionIds.has(decisionId)) repeatedIds.add(decisionId);
+      decisionIds.add(decisionId);
+      fleetReceipts.set(row.observationKey, receipt.data);
+    }
+  }
+  const firstObserved = rows.find((row) => row.coverage === "OBSERVED");
+  const usesRetest = registration.definition.challengerVersion === ATI_RETEST_CHALLENGER;
+  const usesGuardian = registration.definition.challengerVersion === guardianComparisonPolicy.version;
+  return atiResearchDataset.safeParse({
+    registrationHash,
+    sourceIdentity: firstObserved?.sourceIdentity ?? null,
+    decisionSettingsHash: firstObserved?.decisionSettingsHash ?? null,
+    measuredCostProfileHash: run.measuredCostProfile ? canonicalResearch(run.measuredCostProfile).hash : null,
+    observations: rows.map((row) => {
+      const regime = registration.definition.challengerVersion === ATI_REGIME_INSTRUMENT_CHALLENGER
+        ? atiRegimeAssessment.safeParse(row.regimeAssessment) : null;
+      const fleet = fleetReceipts.get(row.observationKey);
+      return {
+        ...(run.baselineVersion === ATI_FLEET_BASELINE ? { fleetDecision: fleet && !repeatedIds.has(fleet.decisionId) ? fleet : null } : {}),
+        observationKey: row.observationKey, observedAtMs: +row.observedAt, recordedAtMs: ms(row.recordedAt),
+        sourceIdentity: row.sourceIdentity, coverage: row.coverage, setup: row.setup,
+        baseline: row.baseline, challenger: row.challenger, captureBuild: row.captureBuild, decisionSettingsHash: row.decisionSettingsHash,
+        ...(isAtiCounterargumentChallenger(registration.definition.challengerVersion) ? counterargumentFrom(row.counterargument) : {}),
+        ...(usesRetest && row.retestPlan != null ? { retestPlan: row.retestPlan } : {}),
+        ...(regime?.success ? { regimeAssessment: regime.data } : {}),
+        ...(row.grade && hasArchivedReplay(row.grade, row.version, "mt5_broker") && row.baselinePlan && row.decisionQuote &&
+            row.sourceIdentity != null && row.sourceIdentity === firstObserved?.sourceIdentity &&
+            row.coverage === "OBSERVED" && atiMt5QuoteOrigin.safeParse(row.mt5Origin).success
+          ? { mt5ReplayProof: { inputHash: replayInputHash(row, "mt5_broker"), gradeHash: gradeHash(row.grade) } } : {}),
+        ...(row.grade && hasArchivedReplay(row.grade, row.version, "deriv_public") && row.baselinePlan && row.decisionQuote &&
+            row.sourceIdentity != null && row.sourceIdentity === firstObserved?.sourceIdentity &&
+            row.coverage === "OBSERVED" && atiDerivQuoteOrigin.safeParse(row.derivOrigin).success
+          ? { derivReplayProof: { inputHash: replayInputHash(row, "deriv_public"), gradeHash: gradeHash(row.grade) } } : {}),
+        evidence: row.grade && row.version && row.evaluatedAt && row.gradeRecordedAt ? {
+          evaluatedAtMs: +row.evaluatedAt, recordedAtMs: +row.gradeRecordedAt, version: row.version,
+          build: row.gradeBuild, ...scoredGrade(row.grade, usesGuardian),
+        } : null,
+      };
+    }),
+  });
+}
+
 export async function sealAtiResearch(ownerId: number, agentId: number, runId: string) {
   return db.transaction(async (tx) => {
     // Research observation and grade writers use this same run lock.
@@ -336,63 +511,7 @@ export async function sealAtiResearch(ownerId: number, agentId: number, runId: s
 
     const { rows: [clock] } = await tx.execute<{ at: number }>(databaseClock);
     if (!clock || clock.at < registration.gradeCutoffMs) return { status: "GRADE_WINDOW_OPEN" as const };
-    const cutoff = new Date(registration.gradeCutoffMs);
-    const rows = await tx.select({
-      ...replayColumns,
-      observationKey: observations.observationKey, recordedAt: observations.recordedAt,
-      coverage: observations.coverage, setup: observations.setup, baseline: observations.baselineOutcome,
-      captureBuild: sql<unknown>`${observations.evidence}->'researchBuild'`,
-      decisionSettingsHash: sql<string | null>`${observations.evidence}->>'decisionSettingsHash'`,
-      counterargument: sql<unknown>`${observations.evidence}->'counterargument'`,
-      grade: sql<AtiShadowGrade | null>`${outcomes.evidence}`,
-      gradeBuild: sql<unknown>`${outcomes.evidence}->'researchBuild'`,
-      evaluatedAt: outcomes.evaluatedAt, gradeRecordedAt: outcomes.recordedAt, version: outcomes.gradeVersion,
-    }).from(observations).leftJoin(outcomes, and(eq(outcomes.runId, observations.runId),
-      eq(outcomes.observationKey, observations.observationKey), lt(outcomes.evaluatedAt, cutoff), lt(outcomes.recordedAt, cutoff)))
-      .where(and(eq(observations.runId, runId), gte(observations.observedAt, run.startedAt),
-        lt(observations.observedAt, run.endsAt), lt(observations.recordedAt, cutoff)))
-      .orderBy(asc(observations.observedAt), asc(observations.observationKey));
-
-    const firstObserved = rows.find((row) => row.coverage === "OBSERVED");
-    const usesRetest = registration.definition.challengerVersion === ATI_RETEST_CHALLENGER;
-    const usesGuardian = registration.definition.challengerVersion === guardianComparisonPolicy.version;
-    const archiveProofs = usesGuardian || registration.runnerVersion === ATI_WALK_FORWARD_VERSION || usesRetest ||
-      registration.definition.challengerVersion === ATI_REGIME_INSTRUMENT_CHALLENGER;
-    const data = atiResearchDataset.safeParse({
-      registrationHash: study.registrationHash,
-      sourceIdentity: firstObserved?.sourceIdentity ?? null,
-      decisionSettingsHash: firstObserved?.decisionSettingsHash ?? null,
-      measuredCostProfileHash: run.measuredCostProfile ? canonicalResearch(run.measuredCostProfile).hash : null,
-      observations: rows.map((row) => {
-        const regime = registration.definition.challengerVersion === ATI_REGIME_INSTRUMENT_CHALLENGER
-          ? atiRegimeAssessment.safeParse(row.regimeAssessment) : null;
-        return {
-          observationKey: row.observationKey, observedAtMs: +row.observedAt, recordedAtMs: ms(row.recordedAt),
-          sourceIdentity: row.sourceIdentity, coverage: row.coverage, setup: row.setup,
-          baseline: row.baseline, challenger: row.challenger, captureBuild: row.captureBuild, decisionSettingsHash: row.decisionSettingsHash,
-          ...(isAtiCounterargumentChallenger(registration.definition.challengerVersion) ? counterargumentFrom(row.counterargument) : {}),
-          ...(usesRetest && row.retestPlan != null ? { retestPlan: row.retestPlan } : {}),
-          ...(regime?.success ? { regimeAssessment: regime.data } : {}),
-          ...(archiveProofs && row.grade && hasArchivedReplay(row.grade, row.version, "mt5_broker") && row.baselinePlan && row.decisionQuote &&
-              row.sourceIdentity != null && row.sourceIdentity === firstObserved?.sourceIdentity &&
-              row.coverage === "OBSERVED" && atiMt5QuoteOrigin.safeParse(row.mt5Origin).success
-            ? { mt5ReplayProof: { inputHash: replayInputHash(row, "mt5_broker"), gradeHash: gradeHash(row.grade) } } : {}),
-          ...(archiveProofs && row.grade && hasArchivedReplay(row.grade, row.version, "deriv_public") && row.baselinePlan && row.decisionQuote &&
-              row.sourceIdentity != null && row.sourceIdentity === firstObserved?.sourceIdentity &&
-              row.coverage === "OBSERVED" && atiDerivQuoteOrigin.safeParse(row.derivOrigin).success
-            ? { derivReplayProof: { inputHash: replayInputHash(row, "deriv_public"), gradeHash: gradeHash(row.grade) } } : {}),
-          evidence: row.grade && row.version && row.evaluatedAt && row.gradeRecordedAt ? {
-            evaluatedAtMs: +row.evaluatedAt, recordedAtMs: +row.gradeRecordedAt, version: row.version,
-            fill: fillFrom(row.grade), unresolvedReason: row.grade.state === "UNRESOLVED" ? row.grade.reason : null, build: row.gradeBuild,
-            ...(usesGuardian && row.grade.state === "GUARDIAN_COMPARISON" ? { guardian: withoutResearchBuild(row.grade) } : {}),
-            ...(row.grade.state === "RETEST_COMPARISON" ? { retest: {
-              state: row.grade.state, quoteSource: row.grade.quoteSource, mt5Mode: row.grade.mt5Mode,
-              plannedRiskPriceUnits: row.grade.plannedRiskPriceUnits, baseline: row.grade.baseline, challenger: row.grade.challenger,
-            } } : {}),
-          } : null,
-        };
-      }),
-    });
+    const data = await readCutoffDataset(tx, run, registration, study.registrationHash);
     if (!data.success) return integrity();
     const { canonical, hash } = canonicalResearch(data.data);
     if (Buffer.byteLength(canonical, "utf8") > maxDatasetBytes) return { status: "DATASET_TOO_LARGE" as const };

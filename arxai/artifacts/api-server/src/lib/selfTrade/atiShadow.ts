@@ -29,7 +29,7 @@ import { ATI_REGIME_INSTRUMENT_CHALLENGER, assessAtiRegimeInstrument, atiInstrum
 import { getBuildIdentity } from "../startup/buildIdentity.js";
 import {
   ATI_DERIV_ARCHIVE_GRADE_VERSION, ATI_MT5_GRADE_VERSION, ATI_RETEST_GRADE_VERSION, ATI_SHADOW_GRADE_VERSION, ATI_SHADOW_HOLD_WINDOW_MS,
-  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, isAtiEntryDecision, summarizeAtiShadowGrades,
+  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, timeframeConflictOutcome, isAtiEntryDecision, summarizeAtiShadowGrades,
   type AtiAssumedCosts, type AtiShadowGrade,
 } from "./atiShadowGrading.js";
 
@@ -112,7 +112,7 @@ function comparison(read: CandidateRead, run: Run, sourceIdentity: string | null
 
   const eligible = coverage === "OBSERVED" && baseline.setup === run.setup && isAtiEntryDecision(baseline.outcome);
   const usesLegacyChallenger = eligible && run.challengerVersion === CHALLENGER_VERSION &&
-    baseline.checks.some((check) => check.key === "mtf_alignment" && check.status === "WARN");
+    timeframeConflictOutcome(baseline) !== baseline.outcome;
   const counterargument = eligible && isAtiCounterargumentChallenger(run.challengerVersion)
     ? assessAtiCounterargument(baseline, input, read.observation.boundQuote, run.ownerId, read.evaluatedAt, history) : null;
   const retestPlan = counterargument && run.challengerVersion === ATI_RETEST_CHALLENGER
@@ -255,12 +255,12 @@ async function storeObservation(run: Run, scope: ReturnType<typeof runScope>,
 export async function recordAtiFleetObservation(run: Run, candidate: DecisionCandidate, captured: AtiFleetRead,
   availableAt: number, receipt: AtiFleetReceipt, connection: DbOrTx) {
   if (run.baselineVersion !== ATI_FLEET_BASELINE || run.challengerVersion !== CHALLENGER_VERSION ||
-      run.researchSource != null || run.agentId !== candidate.agentId || candidate.symbol !== run.symbol ||
+      (run.researchSource != null && run.researchSource !== "deriv_public") || run.researchMode != null || run.agentId !== candidate.agentId || candidate.symbol !== run.symbol ||
       captured.observation.input.agentId !== run.agentId || captured.observation.input.symbol !== run.symbol ||
       receipt.cycleStartedAt < +run.startedAt || availableAt < receipt.cycleStartedAt || availableAt >= +run.endsAt) return;
   const read = { candidate, observation: captured.observation, evaluatedAt: availableAt };
   const gap = fleetInputGap(captured, run.ownerId, availableAt) ?? (sawObservedFeed(read, run) ? null : "UNVERIFIED_DECISION_QUOTE");
-  return storeObservation(run, runScope(run.ownerId, run.agentId, run.id, "SHADOW"), identity => {
+  return storeObservation(run, runScope(run.ownerId, run.agentId, run.id, run.researchSource ? "RESEARCH" : "SHADOW"), identity => {
     if (gap) return {
       runId: run.id, observationKey: `gap:${Math.floor(availableAt / BAR_MS)}`, observedAt: new Date(availableAt),
       coverage: "NO_OBSERVED_FEED", sourceIdentity: null, setup: candidate.setup,

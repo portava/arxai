@@ -274,7 +274,9 @@ router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId", requireUser,
 router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId/forward-evidence", requireUser, async (req,res) => {
   const params = atiRunParams.safeParse(req.params);
   if (!params.success) { err(res,400,"INVALID_ID","Invalid agent or study id."); return; }
-  const report = await readAtiReplication(req.authUser!.id,params.data.id,params.data.runId);
+  const query = z.object({ verifyReplay: z.literal("1").optional() }).safeParse(req.query);
+  if (!query.success) { err(res, 400, "INVALID_INPUT", "Use verifyReplay=1 to replay the scored outcomes."); return; }
+  const report = await readAtiReplication(req.authUser!.id, params.data.id, params.data.runId, query.data.verifyReplay === "1");
   if (!report) { err(res,404,"NOT_FOUND","Research study not found."); return; }
   res.json(report);
 });

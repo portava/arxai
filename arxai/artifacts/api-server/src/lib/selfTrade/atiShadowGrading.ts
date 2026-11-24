@@ -63,6 +63,11 @@ export function isAtiEntryDecision(outcome: string) {
   return outcome === "APPROVED" || outcome === "APPROVED_REDUCED";
 }
 
+export function timeframeConflictOutcome(baseline: DecisionCandidate) {
+  return isAtiEntryDecision(baseline.outcome) && baseline.checks.some(check => check.key === "mtf_alignment" && check.status === "WARN")
+    ? "WAIT" : baseline.outcome;
+}
+
 interface GradeInput {
   observedAt: number;
   source: string | null;

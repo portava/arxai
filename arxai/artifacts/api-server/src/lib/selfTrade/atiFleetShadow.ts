@@ -1,5 +1,5 @@
 // The pilot compares the actual owner-fleet winner with a veto applied after supervision.
-import { and, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, or } from "drizzle-orm";
 import { atiShadowRunsTable as runs, db } from "@workspace/db";
 import { ATI_DEFAULT_CHALLENGER } from "./atiCounterargument.js";
 import { publicDerivQuoteOrigin, type AtiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
@@ -8,10 +8,8 @@ import { evidenceMatches, isCurrentBuild, sameMarketReadSourceFamily } from "../
 import type { SelfTradeObservationInput } from "./decisionEngine.js";
 import type { atiFleetDecisionVersion } from "./atiStrategyOrigin.js";
 
-export const ATI_FLEET_BASELINE = "self-trade-owner-fleet-supervised-v1";
-export const ATI_FLEET_SCOPE = "OWNER_FLEET_AFTER_SUPERVISION";
-export const ATI_FLEET_CAPTURE = "PERSISTED_OWNER_FLEET_CYCLES";
-export const ATI_FLEET_SYMBOL = "V75";
+import { ATI_FLEET_BASELINE, ATI_FLEET_SYMBOL } from "./atiFleetDefinition.js";
+export { ATI_FLEET_BASELINE, ATI_FLEET_CAPTURE, ATI_FLEET_SCOPE, ATI_FLEET_SYMBOL } from "./atiFleetDefinition.js";
 
 export type AtiFleetRead = { observation: SelfTradeObservationInput; priceOrigin: AtiDerivQuoteOrigin | null };
 export type AtiFleetReceipt = {
@@ -47,6 +45,7 @@ export function fleetInputGap(captured: AtiFleetRead, owner: number, at: number)
 export function activeAtiFleetRuns(ownerId: number, cycleStartedAt: number) {
   const at = new Date(cycleStartedAt);
   return db.select().from(runs).where(and(eq(runs.ownerId, ownerId), eq(runs.baselineVersion, ATI_FLEET_BASELINE),
-    eq(runs.challengerVersion, ATI_DEFAULT_CHALLENGER), eq(runs.symbol, ATI_FLEET_SYMBOL), isNull(runs.researchSource),
+    eq(runs.challengerVersion, ATI_DEFAULT_CHALLENGER), eq(runs.symbol, ATI_FLEET_SYMBOL), isNull(runs.researchMode),
+    or(isNull(runs.researchSource), eq(runs.researchSource, "deriv_public")),
     lte(runs.startedAt, at), gt(runs.endsAt, at)));
 }

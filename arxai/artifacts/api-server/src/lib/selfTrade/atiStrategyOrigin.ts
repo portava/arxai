@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 import type { DecisionCandidateInput } from "@workspace/domain/self-trade";
+import { ATI_FLEET_ENGINE as fleetEngine, cleanFleetVersion } from "./atiFleetDefinition.js";
 import { getBuildIdentity } from "../startup/buildIdentity.js";
 import { entrySymbolMatches, entrySnapshotHash } from "./entryAuthority.js";
 
@@ -10,7 +11,7 @@ export function atiDecisionSettingsHash(input: DecisionCandidateInput) {
     input.quota.dailyMinTrades, input.quota.effectiveMaxTrades]) : null;
 }
 
-const fleetEngine = "SELF_TRADE_FLEET_DECISION" as const;
+
 export function atiFleetDecisionVersion(input: DecisionCandidateInput) {
   return { engine: fleetEngine, build: getBuildIdentity(), decisionSettingsHash: atiDecisionSettingsHash(input) };
 }
@@ -19,11 +20,6 @@ const id = z.number().int().positive();
 const admission = z.object({ version: z.literal(1), executionId: id, snapshotHash: z.hash("sha256") });
 const payload = z.object({ agentAdmissionV1: admission,
   agentOwnership: z.object({ selfTradeAgentId: id, selfTradeDecisionId: id }), selfTradeSymbolBinding: z.unknown().optional() });
-const cleanFleetVersion = z.object({
-  engine: z.literal(fleetEngine),
-  build: z.object({ revision: z.string().regex(/^[0-9a-f]{40}$/), sourceState: z.literal("clean") }),
-  decisionSettingsHash: z.hash("sha256"),
-});
 const snapshot = z.object({
   version: z.literal(1),
   agent: z.object({ id, agentKey: z.string().min(1), ownerType: z.literal("USER"), ownerId: id }),

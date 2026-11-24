@@ -1346,8 +1346,23 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
             minChangedPairs: 1, minMeanImprovementR: 0.2, maxDrawdownIncreaseR: 0, extraStressCostRPerRoundTrip: 0.2 },
         });
       }
+      const { ATI_FLEET_BASELINE, ATI_FLEET_SCOPE } = await import("../atiFleetDefinition.js");
+      const { activeAtiFleetRuns } = await import("../atiFleetShadow.js");
       const nextBar = Math.ceil(Date.now() / bar) * bar + bar;
       const prospective = specFor(nextBar, { source: "mt5_broker", mode: "DEMO" });
+      const fleetSpec = { ...specFor(nextBar + 12 * 86_400_000, { source: "deriv_public", mode: null }), baselineVersion: ATI_FLEET_BASELINE } as const;
+      assert.equal(atiResearchInput.safeParse({ ...fleetSpec, symbol: "EURUSD" }).success, false);
+      assert.equal(atiResearchInput.safeParse({ ...fleetSpec, market: { source: "mt5_broker", mode: "LIVE" } }).success, false);
+      assert.equal(atiResearchInput.safeParse({ ...fleetSpec, challengerVersion: "guardian-early-breakeven-v1" }).success, false);
+      const nativeRegistration = await registerAtiResearch(1, 3, fleetSpec);
+      assert.ok(nativeRegistration.status === "REGISTERED");
+      const nativeRegistrationId = nativeRegistration.registration.runId;
+      assert.equal(nativeRegistration.registration.definition.baselineVersion, ATI_FLEET_BASELINE);
+      assert.equal((await appendAtiShadowObservation(1, 3, nativeRegistrationId, "RESEARCH")).status, "PASSIVE_FLEET_CAPTURE");
+      assert.equal((await activeAtiFleetRuns(1, fleetSpec.startsAtMs)).some(r => r.id === nativeRegistrationId), true);
+      assert.equal((await activeAtiFleetRuns(2, fleetSpec.startsAtMs)).some(r => r.id === nativeRegistrationId), false);
+      assert.equal((await activeAtiFleetRuns(1, fleetSpec.holdoutEndsAtMs)).some(r => r.id === nativeRegistrationId), false);
+      assert.equal(await readAtiShadowRun(1, 3, nativeRegistrationId), null);
       const before = readCount;
       assert.equal((await registerAtiResearch(2, 3, prospective)).status, "AGENT_UNAVAILABLE");
       const concurrent = await Promise.all([registerAtiResearch(1, 3, prospective), registerAtiResearch(1, 3, prospective)]);
@@ -1447,6 +1462,9 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.deepEqual(sealing[1], sealed);
       assert.equal(sealed.result.verdict, "FORWARD_REVIEW_REQUIRED");
       const { readAtiReplication } = await import("../atiResearchLab.js");
+      const openReview = await readAtiReplication(1, 3, researchId, true);
+      assert.ok(openReview && openReview.gaps.includes("BUILD_UNVERIFIED"));
+      assert.deepEqual(openReview.archiveReplay, { primary: null, forward: null });
       const initial = await readAtiReplication(1,3,historicalId);
       assert.deepEqual(initial?.gaps,["NO_DESIGNATED_FORWARD_STUDY"]);
       assert.equal(await readAtiReplication(2,3,historicalId),null);
@@ -1511,6 +1529,14 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         await archivedStudy(daysBefore - 1, primary, scenario === "negative forward", (scenario === "other settings" ? "a" : "d").repeat(64));
         const report = await readAtiReplication(1, 3, primary.runId);
         assert.ok(report?.forward?.sealed);
+        if (scenario === "passed") {
+          const checked = await readAtiReplication(1, 3, primary.runId, true);
+          assert.equal(checked?.status, "FORWARD_EVIDENCE_INCOMPLETE");
+          assert.deepEqual(checked.gaps, ["PRIMARY_REPLAY_INCOMPLETE", "FORWARD_REPLAY_INCOMPLETE"]);
+          assert.ok(checked.archiveReplay?.primary?.required && checked.archiveReplay.forward?.required);
+          assert.ok(checked.archiveReplay.primary.receipts.every(r => r.status === "NO_ARCHIVE_PROOF"));
+          assert.equal(checked.archiveReplay.forward.reproduced, 0);
+        }
         assert.equal(report.scope, "SEALED_SHADOW_STUDY_COMPARISON");
         assert.deepEqual(report.comparison, {
           agentId: 3, decisionScope: "SOURCE_BOUND_SINGLE_AGENT_BEFORE_FLEET_SUPERVISION",
@@ -1522,7 +1548,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         assert.equal(report.primary.sealed?.decisionSettingsHash, "d".repeat(64));
         assert.equal(report.forward.sealed.decisionSettingsHash, (scenario === "other settings" ? "a" : "d").repeat(64));
         assert.equal(report.executionAuthority, "NONE");
-        assert.equal(report.status, scenario === "passed" ? "PASSED_REGISTERED_FORWARD_COMPARISON" : "FORWARD_EVIDENCE_INCOMPLETE");
+        assert.equal(report.status, scenario === "passed" ? "ARCHIVE_REPLAY_REQUIRED" : "FORWARD_EVIDENCE_INCOMPLETE");
         assert.deepEqual(report.gaps, scenario === "passed" ? [] : [scenario === "negative primary" ? "PRIMARY_REJECTED"
           : scenario === "negative forward" ? "FORWARD_REJECTED" : "SOURCE_OR_SETTINGS_MISMATCH"]);
       }
@@ -1570,7 +1596,10 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
               recordedAtMs: evidence.recordedAtMs + shift, fill: { ...evidence.fill!, exitObservedAt: evidence.fill!.exitObservedAt + shift } } };
         }));
       const walkData = { ...sealed.dataset, registrationHash: canonicalResearch(walkRegistration).hash, observations: walkRows };
-      const walkRun = evaluateAtiResearch(walkRegistration, walkData);
+      const walkReplayKeys = new Set<string>();
+      const walkRun = evaluateAtiResearch(walkRegistration, walkData, walkReplayKeys);
+      assert.deepEqual([...walkReplayKeys].sort(), walkRows.filter(row => row.observedAtMs >= fold1.testStartMs)
+        .map(row => row.observationKey).sort());
       assert.ok(walkRun.runnerVersion === ATI_WALK_FORWARD_VERSION);
       assert.equal(walkRun.verdict, "FORWARD_REVIEW_REQUIRED");
       assert.equal(walkRun.walkForward?.passingFolds, 2);
@@ -1688,6 +1717,146 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const derivReproduced = await replayDeriv();
       assert.equal(derivReproduced?.status, "REPRODUCED");
       assert.equal(await replayAtiResearchObservation(2, 3, derivStudyId, derivObservation.observationKey), null);
+      // The disposable database supplies independent, disjoint quote paths for both registered studies.
+      const { atiDerivQuoteFramesTable: frames } = await import("@workspace/db");
+      const { loadAtiDerivReplayQuotes } = await import("../atiDerivQuoteReplay.js");
+      const { sql } = await import("drizzle-orm");
+      async function replaceTestSeal(runId: string, fields: Partial<typeof seals.$inferInsert>) {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`ALTER TABLE ati_research_seals DISABLE TRIGGER ati_research_seals_no_change`);
+          await tx.update(seals).set(fields).where(eq(seals.runId, runId));
+          await tx.execute(sql`ALTER TABLE ati_research_seals ENABLE TRIGGER ati_research_seals_no_change`);
+        });
+      }
+      let nextDecisionId = 123_000;
+      async function studyWithQuoteArchive(start: number, replicates?: ReplicationLink, options: { omitConflictWarning?: boolean; fleet?: boolean } = {}) {
+        const assumptions = { adverseSlippagePerFillPriceUnits: 0.00001, feePerFillPriceUnits: 0.000005 };
+        const fixed = { ...specFor(start, { source: "deriv_public", mode: null }),
+          ...(options.fleet ? { baselineVersion: ATI_FLEET_BASELINE } as const : {}),
+          costs: { basis: "ASSUMED" as const, assumptions }, ...(replicates ? { replicates } : {}) };
+        const runId = randomUUID();
+        const reg = researchRegistration(runId, 1, 3, start - bar, fixed, build);
+        const receipt = canonicalResearch(reg);
+        await db.insert(runs).values({ id: runId, ownerId: 1, agentId: 3, symbol: fixed.symbol, setup,
+          timeframe: reg.definition.timeframe, baselineVersion: reg.definition.baselineVersion, challengerVersion: reg.definition.challengerVersion,
+          researchSource: fixed.market.source, researchMode: fixed.market.mode, startedAt: new Date(start),
+          endsAt: new Date(fixed.holdoutEndsAtMs), assumedCosts: assumptions });
+        await db.insert(studies).values({ runId, ownerId: 1, agentId: 3, requestId: fixed.requestId,
+          registration: receipt.canonical, registrationHash: receipt.hash, registeredAt: new Date(reg.registeredAtMs) });
+        for (const phaseStart of [fixed.developmentEndsAtMs, fixed.validationEndsAtMs]) {
+          for (const [index, exitBid] of [1.0989, 1.1029].entries()) {
+            const barAt = phaseStart + index * bar, at = barAt + 1000;
+            const origin = { streamId: randomUUID(), symbol: "R_75" as const, epoch: at / 1000 };
+            const quote = { observedAt: new Date(at).toISOString(), bid: 1.1, ask: 1.1001 };
+            const baseline = { ...facts.baseline, outcome: "APPROVED" as const, checks: index || options.omitConflictWarning ? [] : facts.baseline.checks,
+              agentId: 3, agentKey: "fleet-test", symbol: fixed.symbol, timeframe: "M5" as const, conflictState: "NONE" as const,
+              setupExpiresAt: new Date(at + 15_000).toISOString() };
+            const challenger = index ? "APPROVED" : "WAIT";
+            const evaluateAt = at + 3000, observationKey = `bar:${barAt}`;
+            const tape = [quote.bid, quote.bid, exitBid].map((bid, tick) => {
+              const offset = [0, 1, 3][tick]!;
+              return { ...origin, epoch: origin.epoch + offset, receivedAt: at + offset * 1000,
+                releasedAt: at + offset * 1000, bid, ask: tick === 2 ? bid + 0.0001 : quote.ask };
+            });
+            await db.insert(frames).values(tape);
+            const grade = gradeAtiShadowPair({ observedAt: at, source: "deriv_public", symbol: fixed.symbol,
+              baseline, challengerOutcome: challenger, assumedCosts: assumptions,
+              derivReplay: { origin, quote, rows: await loadAtiDerivReplayQuotes(origin, evaluateAt) } }, evaluateAt);
+            assert.ok(grade?.state === "SIMULATED_FILL" && grade.derivReplay?.tapeHash);
+            const fleetReceipt = { decisionId: ++nextDecisionId, cycleId: randomUUID(), cycleStartedAt: at - 1,
+              version: { engine: "SELF_TRADE_FLEET_DECISION", build, decisionSettingsHash: "d".repeat(64) } };
+            if (options.fleet) {
+              await pool.query(`INSERT INTO self_trade_decisions (id, agent_id, symbol, side, score_breakdown, cycle_id, agent_key,
+                timeframe, setup_type, outcome, reason, handshakes, thesis, conflict_state, setup_expires_at, evaluated_at, created_at)
+                VALUES ($1,3,'V75','BUY',$2,$3,'fleet-test','M5',$4,$5,$6,$7,$8,'NONE',$9,$10,$10)`, [
+                fleetReceipt.decisionId, { atiFleetDecisionV1: fleetReceipt.version }, fleetReceipt.cycleId, setup, baseline.outcome,
+                baseline.reason, JSON.stringify(baseline.checks), baseline.thesis, baseline.setupExpiresAt, new Date(at - 1)]);
+            }
+            await db.insert(observations).values({ runId, observationKey, observedAt: new Date(at), recordedAt: new Date(at + 1),
+              sourceIdentity: "deriv-archive-comparison", coverage: "OBSERVED", setup, baselineOutcome: baseline.outcome,
+              challengerOutcome: challenger, evidence: { researchBuild: build, decisionSettingsHash: "d".repeat(64),
+                baseline, quote, derivQuoteOrigin: origin, ...(options.fleet ? { fleetReceipt, fleetPriceOrigin: origin,
+                  input: { signal: { marketEvidence: { source: "deriv_public", sourceIdentity: "deriv-archive-comparison" } } } } : {}) } });
+            await db.insert(outcomes).values({ runId, observationKey, gradeVersion: ATI_DERIV_ARCHIVE_GRADE_VERSION,
+              evaluatedAt: new Date(evaluateAt), recordedAt: new Date(evaluateAt + 1), evidence: { ...grade, researchBuild: build } });
+          }
+        }
+        const result = await sealAtiResearch(1, 3, runId);
+        assert.ok(result?.status === "SEALED");
+        assert.equal(result.result.verdict, "FORWARD_REVIEW_REQUIRED");
+        return { runId, ...result };
+      }
+      await pool.query(`ALTER TABLE self_trade_decisions ADD cycle_id text, ADD agent_key text, ADD timeframe text,
+        ADD setup_type text, ADD outcome text, ADD reason text, ADD handshakes jsonb, ADD thesis jsonb, ADD owner_agent_key text,
+        ADD conflict_state text, ADD setup_expires_at timestamptz, ADD evaluated_at timestamptz, ADD created_at timestamptz`);
+      const nativePrimary = await studyWithQuoteArchive(base - 31 * 86_400_000, undefined, { fleet: true });
+      await replaceTestSeal(nativePrimary.runId, { sealedAt: new Date(nativePrimary.registration.gradeCutoffMs + 1) });
+      const nativeLink = { runId: nativePrimary.runId, datasetHash: nativePrimary.datasetHash, resultHash: nativePrimary.resultHash };
+      const nativeForward = await studyWithQuoteArchive(base - 30 * 86_400_000, nativeLink, { fleet: true });
+      const nativeAudit = await readAtiReplication(1, 3, nativePrimary.runId, true);
+      assert.equal(nativeAudit?.status, "PASSED_REGISTERED_FORWARD_COMPARISON");
+      assert.equal(nativeAudit.comparison.decisionScope, ATI_FLEET_SCOPE);
+      assert.equal(nativeAudit.archiveReplay?.forward?.reproduced, 4);
+      assert.equal((await registerAtiResearch(1, 3, { ...specFor(nextBar + 16 * 86_400_000, fleetSpec.market),
+        costs: nativeForward.registration.spec.costs, replicates: nativeLink })).status, "REPLICATION_IDENTITY_MISMATCH");
+      const certified = nativeForward.dataset.observations[0]!;
+      const nativeDecisionId = certified.fleetDecision?.decisionId;
+      assert.ok(nativeDecisionId);
+      await pool.query("UPDATE self_trade_decisions SET outcome='ASSIGNED_TO_ANOTHER' WHERE id=$1", [nativeDecisionId]);
+      assert.equal((await replayAtiResearchObservation(1, 3, nativeForward.runId, certified.observationKey))?.status, "FLEET_DECISION_UNVERIFIED");
+      const disputed = await readAtiReplication(1, 3, nativePrimary.runId, true);
+      assert.deepEqual(disputed?.gaps, ["FORWARD_REPLAY_INCOMPLETE"]);
+      assert.equal(disputed?.archiveReplay?.forward?.reproduced, 3);
+      const tapePrimary = await studyWithQuoteArchive(base - 7 * 86_400_000);
+      await replaceTestSeal(tapePrimary.runId, { sealedAt: new Date(tapePrimary.registration.gradeCutoffMs + 1) });
+      const tapeForward = await studyWithQuoteArchive(base - 6 * 86_400_000, {
+        runId: tapePrimary.runId, datasetHash: tapePrimary.datasetHash, resultHash: tapePrimary.resultHash });
+      assert.equal((await readAtiReplication(1, 3, tapePrimary.runId))?.status, "ARCHIVE_REPLAY_REQUIRED");
+      const verified = await readAtiReplication(1, 3, tapePrimary.runId, true);
+      assert.equal(verified?.status, "PASSED_REGISTERED_FORWARD_COMPARISON");
+      for (const audit of [verified.archiveReplay?.primary, verified.archiveReplay?.forward]) {
+        assert.ok(audit?.complete);
+        assert.equal(audit.required, 4);
+        assert.equal(audit.reproduced, 4);
+        assert.equal(audit.sourceDatasetHash, audit.datasetHash);
+      }
+      assert.deepEqual((await readAtiReplication(1, 3, tapePrimary.runId, true))?.archiveReplay, verified.archiveReplay);
+      const wrongVeto = await studyWithQuoteArchive(base - 5 * 86_400_000, undefined, { omitConflictWarning: true });
+      const vetoAudit = (await readAtiReplication(1, 3, wrongVeto.runId, true))?.archiveReplay?.primary;
+      assert.equal(vetoAudit?.sourceDatasetHash, wrongVeto.datasetHash);
+      assert.equal(vetoAudit?.reproduced, 2);
+      assert.equal(vetoAudit?.receipts.filter(r => r.status === "CHALLENGER_DECISION_MISMATCH").length, 2);
+      assert.equal(vetoAudit?.complete, false);
+      // Rehash a changed return in a counterfeit fixture. The quote tape and stored raw-grade witness stay identical.
+      const altered = structuredClone(tapeForward.dataset);
+      const first = altered.observations[0]!;
+      assert.ok(first.evidence?.fill?.pnlWithAssumedCosts);
+      first.evidence.fill.pnlWithAssumedCosts.challengerR += 0.5;
+      const alteredReceipt = canonicalResearch(altered);
+      const alteredResult = evaluateAtiResearch(tapeForward.registration, altered);
+      assert.equal(alteredResult.verdict, "FORWARD_REVIEW_REQUIRED");
+      await replaceTestSeal(tapeForward.runId, { dataset: alteredReceipt.canonical, datasetHash: alteredReceipt.hash,
+        resultHash: canonicalResearch(alteredResult).hash, verdict: alteredResult.verdict });
+      assert.equal((await replayAtiResearchObservation(1, 3, tapeForward.runId, first.observationKey))?.status, "ARCHIVE_MISMATCH");
+      const changed = await readAtiReplication(1, 3, tapePrimary.runId, true);
+      assert.deepEqual(changed?.gaps, ["FORWARD_REPLAY_INCOMPLETE"]);
+      assert.equal(changed?.archiveReplay?.forward?.reproduced, 3);
+      assert.equal(changed?.archiveReplay?.forward?.sourceDatasetHash, tapeForward.datasetHash);
+      assert.equal(changed?.status, "FORWARD_EVIDENCE_INCOMPLETE");
+      await replaceTestSeal(tapeForward.runId, { dataset: canonicalResearch(tapeForward.dataset).canonical,
+        datasetHash: tapeForward.datasetHash, resultHash: tapeForward.resultHash, verdict: tapeForward.result.verdict });
+      // A missing capture changes the denominator even if every remaining fill replays.
+      const lateObservation = { runId: tapeForward.runId, observationKey: "gap:late-receipt",
+        observedAt: new Date(tapeForward.registration.spec.startsAtMs), recordedAt: new Date(tapeForward.registration.gradeCutoffMs + 1),
+        coverage: "NO_OBSERVED_FEED", setup, baselineOutcome: "WAIT", challengerOutcome: "UNOBSERVED", evidence: {} };
+      await db.insert(observations).values(lateObservation);
+      assert.deepEqual((await readAtiReplication(1, 3, tapePrimary.runId, true))?.archiveReplay, verified.archiveReplay);
+      await db.insert(observations).values({ ...lateObservation, observationKey: "gap:omitted-at-cutoff",
+        recordedAt: new Date(tapeForward.registration.spec.startsAtMs + 1) });
+      const omitted = await readAtiReplication(1, 3, tapePrimary.runId, true);
+      assert.deepEqual(omitted?.gaps, ["FORWARD_REPLAY_INCOMPLETE"]);
+      assert.equal(omitted?.archiveReplay?.forward?.reproduced, 4);
+      assert.notEqual(omitted?.archiveReplay?.forward?.sourceDatasetHash, tapeForward.datasetHash);
       const { guardianComparisonPolicy } = await import("../atiGuardian.js");
       const guardianSpec = atiResearchInput.parse({ ...derivSpec, challengerVersion: guardianComparisonPolicy.version, requestId: randomUUID(),
         costs: { basis: "ASSUMED", assumptions: { adverseSlippagePerFillPriceUnits: 0.01, feePerFillPriceUnits: 0.01 } } });
