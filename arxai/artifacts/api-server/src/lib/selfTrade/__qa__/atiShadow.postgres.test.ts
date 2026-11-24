@@ -157,6 +157,13 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const summary = summarizeAtiShadowReport(report);
       assert.equal(summary.eligibleEntries, 2);
       assert.deepEqual(summary.counts, report.counts);
+      assert.deepEqual(summary.setupCoverage, { noSetup: 0, otherSetup: 0 });
+      const observed = report.observations.find((row: { coverage: string }) => row.coverage === "OBSERVED");
+      const outside = summarizeAtiShadowReport({ ...report, observations: [...report.observations,
+        { ...observed, setup: "NONE" }, { ...observed, setup: "BREAKOUT" },
+        { ...observed, coverage: "NO_OBSERVED_FEED", setup: "NONE" }] });
+      assert.deepEqual(outside.setupCoverage, { noSetup: 1, otherSetup: 1 });
+      assert.equal(outside.eligibleEntries, summary.eligibleEntries);
       assert.deepEqual(summary.simulations, report.simulations);
       assert.equal(summary.costs.demo.reconciledDealCount, 0);
       assert.equal("observations" in summary, false);

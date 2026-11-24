@@ -28,6 +28,7 @@ type DecisionGroup = {
 };
 type Report = Run & {
   agentId: number; asOf: string; endsAt: string; decisionScope: string; baselineVersion: string; eligibleEntries: number;
+  setupCoverage?: { noSetup: number; otherSetup: number };
   counts: { observations: number; paired: number; different: number; ungraded: number; unresolved: number; sourceChanged: number; noObservedFeed: number };
   simulations: { quoteSideOnly: Simulation; withAssumedCosts: Simulation | null; withMeasuredSlippage: Simulation | null; withMeasuredCosts: Simulation | null };
   assumedCosts: { adverseSlippagePerFillPriceUnits: number; feePerFillPriceUnits: number } | null;
@@ -132,6 +133,8 @@ export function AtiShadowResult({ report, fullUrl }: { report: Report; fullUrl: 
     <section className="space-y-1"><h5 className="font-medium">Decision coverage</h5>
       <p className="text-xs text-muted-foreground">{report.fleetCohorts ? "Decisions after fleet supervision" : "Single-agent decisions before fleet supervision"}</p>
       <p className="text-sm">{counts.observations} observations · {counts.paired} matching pairs · {report.eligibleEntries} eligible baseline entries · {counts.different} changed decisions</p>
+      {report.setupCoverage && (report.setupCoverage.noSetup > 0 || report.setupCoverage.otherSetup > 0) &&
+        <p className="text-sm text-muted-foreground">Observed outside this setup · {report.setupCoverage.noSetup} with no setup · {report.setupCoverage.otherSetup} with another setup</p>}
       <p className="text-sm text-muted-foreground">{counts.noObservedFeed} missing feed · {counts.sourceChanged} changed source · {counts.ungraded} pending · {counts.unresolved} unresolved</p></section>
     {report.fleetCohorts && report.fleetCohorts.length > 0 && <details><summary className="cursor-pointer text-sm">Fleet evidence by build, settings and feed ({report.fleetCohorts.length})</summary>
       <ul className="mt-2 space-y-2 text-sm">{report.fleetCohorts.map((c, i) => <li key={i}>

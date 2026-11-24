@@ -25,6 +25,8 @@ export function summarizeAtiShadowReport(report: ShadowReport) {
     challengerVersion, counts, simulations, executionCosts, decisionScope, assumedCosts } = report;
   const eligibleEntries = report.observations.filter(row => row.coverage === "OBSERVED" && row.setup === setup &&
     isAtiEntryDecision(row.baselineOutcome)).length;
+  const outsideSetup = report.observations.filter(row => row.coverage === "OBSERVED" && row.setup !== setup);
+  const noSetup = outsideSetup.filter(row => row.setup === "NONE").length;
   function costs(mode: "demo" | "live") {
     const { commandCount, reconciledDealCount, coverage, results } = executionCosts[mode];
     const deals = results.flatMap(({ commandId, result }) => result.state === "OBSERVED_BROKER_DEAL" ? [{
@@ -39,5 +41,6 @@ export function summarizeAtiShadowReport(report: ShadowReport) {
       source: c.sourceIdentity, verified: c.hasVerifiedVersion, matchingBars: c.matchingBars, eligibleEntries: c.eligibleEntries,
       observedIncumbentCosts: c.observedIncumbentCosts,
       decisionBreakdown: c.decisionBreakdown, settledPairs: c.quoteSideOnly.settledPairs, pairedDifferenceR: c.quoteSideOnly.pairedDifferenceR })),
-    decisionScope, counts, eligibleEntries, simulations, assumedCosts, costs: { demo: costs("demo"), live: costs("live") } };
+    decisionScope, counts, eligibleEntries, setupCoverage: { noSetup, otherSetup: outsideSetup.length - noSetup },
+    simulations, assumedCosts, costs: { demo: costs("demo"), live: costs("live") } };
 }

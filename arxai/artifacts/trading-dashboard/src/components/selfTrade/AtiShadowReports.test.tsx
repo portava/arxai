@@ -11,7 +11,8 @@ const run = { id: "2c3b8b68-945a-4477-b463-189d9b8d6aa1", startedAt: asOf, symbo
 const simulation = { settledPairs: 0, baseline: { totalR: null }, challenger: { totalR: null }, pairedDifferenceR: null };
 const costs = { commandCount: 0, reconciledDealCount: 0, triggeredExits: 0, deals: [] };
 const report = { ...run, agentId: 9, asOf, endsAt: asOf, baselineVersion: "current-v1", eligibleEntries: 0, assumedCosts: null,
-  counts: { observations: 13, paired: 13, different: 0, sourceChanged: 0, noObservedFeed: 1, ungraded: 0, unresolved: 0 },
+  setupCoverage: { noSetup: 1, otherSetup: 2 },
+  counts: { observations: 17, paired: 13, different: 0, sourceChanged: 0, noObservedFeed: 1, ungraded: 0, unresolved: 0 },
   simulations: { quoteSideOnly: simulation, withAssumedCosts: null, withMeasuredCosts: null, withMeasuredSlippage: null },
   costs: { demo: costs, live: costs } };
 const panel = (client: QueryClient) => <QueryClientProvider client={client}><AtiShadowReports agentId={9} /></QueryClientProvider>;
@@ -23,6 +24,7 @@ test("owner-scoped report opens on demand at a fixed cutoff and clears on identi
   expect(get).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
   await screen.findByText("No eligible entries. This run has no return comparison.");
+  expect(screen.getByText(/1 with no setup · 2 with another setup/)).toBeTruthy();
   expect(screen.getAllByText("Command execution costs are unknown.")).toHaveLength(2);
   expect(screen.getByRole("link", { name: /full report/ }).getAttribute("href")).toBe(`/api/self-trade-ai/agents/9/ati-shadow-runs/${run.id}?asOf=${encodeURIComponent(asOf)}`);
   expect(get.mock.calls.map(([url]) => url)).toEqual(["/api/self-trade-ai/agents/9/ati-shadow-runs", `/api/self-trade-ai/agents/9/ati-shadow-runs/${run.id}?asOf=${encodeURIComponent(asOf)}&view=summary`]);
