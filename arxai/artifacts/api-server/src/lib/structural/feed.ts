@@ -31,6 +31,7 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
     origin: { symbol, provider: history.source ?? "unknown", fetchedAt: new Date(now).toISOString(),
       kind: "BROKER_HISTORY", historicalArrivalTimesKnown: false },
     ready: sameSource && known && current.aiUsable && current.quality === "clean",
+    atiHistoricalSourceVerified: history.ok && history.source === "deriv_public" && known,
     // Refusals are stable codes: a free-text chart warning was masked by the
     // route as a generic failure, hiding why the forecast was withheld.
     reason: current.source == null && current.quality === "unavailable" ? "LIVE_CHART_UNAVAILABLE"

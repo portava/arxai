@@ -610,7 +610,11 @@ export const CALIBRATION_MIN_TOTAL = 20;
 /** Tracked outcomes needed on EACH side (confidence 80-100 and 50-70). */
 export const CALIBRATION_MIN_PER_SIDE = 10;
 export function confidenceCalibration() {
-  const arr = [...decisions.values()].filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
+  return calibrateConfidence(decisions.values());
+}
+
+function calibrateConfidence(rows: Iterable<ShadowDecision>) {
+  const arr = [...rows].filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const buckets = [
     { label: "50-60", min: 50, max: 60 }, { label: "60-70", min: 60, max: 70 },
     { label: "70-80", min: 70, max: 80 }, { label: "80-90", min: 80, max: 90 },
@@ -691,8 +695,11 @@ function gatedStrategies(): string[] {
   return Array.from(names);
 }
 
-function strategyStats(strategy: string) {
-  const arr = [...decisions.values()].filter((d) => d.strategy === strategy);
+function strategyRows(strategy: string) {
+  return [...decisions.values()].filter((d) => d.strategy === strategy);
+}
+
+function strategyStats(arr: ShadowDecision[]) {
   const tracked = arr.filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const wins = tracked.filter((d) => d.status === "SHADOW_WIN");
   const winRate = tracked.length ? wins.length / tracked.length : 0;
@@ -706,11 +713,19 @@ function strategyStats(strategy: string) {
 
 export function promotionStatus() {
   return gatedStrategies().map((s) => {
-    const g = viewGate(s); const st = strategyStats(s); const cal = confidenceCalibration();
-    const eligible = computeNextLevel(g.level, st, cal.label);
-    return { ...g, stats: st, eligibleFor: eligible };
+    const gate = viewGate(s);
+    const { stats, eligibleFor } = promotionEvidence(s, gate.level);
+    return { ...gate, stats, eligibleFor };
   });
 }
+
+function promotionEvidence(strategy: string, level: PromotionLevel) {
+  const rows = strategyRows(strategy);
+  const stats = strategyStats(rows);
+  const calibration = calibrateConfidence(rows);
+  return { stats, eligibleFor: computeNextLevel(level, stats, calibration.label) };
+}
+
 function computeNextLevel(curr: PromotionLevel, st: ReturnType<typeof strategyStats>, calLabel: string): PromotionLevel | null {
   if (curr === "FUTURE_MT5_LIVE_LOCKED") return null;
   if (curr === "LIVE_INTENT_APPROVED") return null;
@@ -730,12 +745,12 @@ function computeNextLevel(curr: PromotionLevel, st: ReturnType<typeof strategySt
   return null;
 }
 export function promote(strategy: string, by: string): { ok: boolean; gate?: StrategyGate; error?: string } {
-  const st = strategyStats(strategy); const cal = confidenceCalibration();
-  const next = computeNextLevel(viewGate(strategy).level, st, cal.label);
-  if (!next) return { ok: false, error: `Strategy ${strategy} not eligible from ${viewGate(strategy).level}` };
+  const { level } = viewGate(strategy);
+  const { stats, eligibleFor } = promotionEvidence(strategy, level);
+  if (!eligibleFor) return { ok: false, error: `Strategy ${strategy} not eligible from ${level}` };
   const g = getGate(strategy);
-  g.level = next; g.demotion = null; g.updatedAt = new Date().toISOString();
-  g.lastReason = `Promoted to ${next} by ${by}; sample=${st.tracked}, wr=${(st.winRate * 100).toFixed(1)}%, exp=${st.expectancy.toFixed(2)}`;
+  g.level = eligibleFor; g.demotion = null; g.updatedAt = new Date().toISOString();
+  g.lastReason = `Promoted to ${eligibleFor} by ${by}; sample=${stats.tracked}, wr=${(stats.winRate * 100).toFixed(1)}%, exp=${stats.expectancy.toFixed(2)}`;
   return { ok: true, gate: g };
 }
 export function demote(strategy: string, level: DemotionLevel, reason: string, by: string): StrategyGate {
@@ -749,7 +764,7 @@ export function demotionScan() {
   // WIN_RATE_LOW / NEGATIVE_R need 10+ tracked outcomes; `tracked` says how many there were.
   const out: Array<{ strategy: string; suggested: DemotionLevel | null; reasons: string[]; tracked: number }> = [];
   for (const s of gatedStrategies()) {
-    const st = strategyStats(s);
+    const st = strategyStats(strategyRows(s));
     const reasons: string[] = [];
     if (st.tracked >= 10 && st.winRate < 0.3) reasons.push("WIN_RATE_LOW");
     if (st.tracked >= 10 && st.avgR < 0) reasons.push("NEGATIVE_R");

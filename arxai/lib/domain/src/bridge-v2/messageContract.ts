@@ -146,6 +146,40 @@ export const tradeTransactionPayloadSchema = z.object({
   arxCommandId: z.string().max(64).nullable().optional(),
 });
 
+const atiAccountClaim = z.object({
+  login: z.string().regex(/^\d{1,20}$/),
+  server: z.string().min(1).max(128),
+  mode: z.enum(["DEMO", "LIVE"]),
+});
+const atiHistoryTicket = z.string().refine((value) =>
+  /^[1-9]\d{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n);
+export const atiClosedPositionTickets = z.array(atiHistoryTicket).min(2).max(64)
+  .refine(tickets => new Set(tickets).size === tickets.length)
+  .transform(tickets => tickets.sort());
+const atiExitTrigger = z.enum(["STOP_LOSS", "TAKE_PROFIT"]);
+const atiTriggeredExitFields = z.object({
+  version: z.literal(1),
+  trigger: atiExitTrigger,
+  orderTicket: atiHistoryTicket,
+  positionId: atiHistoryTicket,
+  triggerPrice: z.number().positive().nullable(),
+  closedPositionDealTickets: atiClosedPositionTickets.optional().catch(undefined),
+  currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
+  fee: z.number().nullable(),
+  order: z.object({
+    ticket: atiHistoryTicket,
+    positionId: atiHistoryTicket,
+    symbol: z.string().min(1).max(32),
+    trigger: atiExitTrigger,
+    side: z.enum(["BUY", "SELL"]),
+    initialVolume: z.number().positive(),
+  }).strict().nullable(),
+}).strict();
+const atiTriggeredExitWire = atiTriggeredExitFields.extend({ account: atiAccountClaim });
+export const atiTriggeredExitTraceSchema = atiTriggeredExitFields.extend({
+  accountBinding: z.string().regex(/^[a-f0-9]{64}$/), mode: z.enum(["DEMO", "LIVE"]),
+});
+
 export const dealHistoryPayloadSchema = z.object({
   dealTicket: z.string().min(1).max(64),
   positionTicket: z.string().max(64).nullable().optional(),
@@ -157,9 +191,11 @@ export const dealHistoryPayloadSchema = z.object({
   commission: z.number().nullable().optional(),
   swap: z.number().nullable().optional(),
   closedAtEpochMs: z.number().int().positive(),
+  atiTriggeredExit: atiTriggeredExitWire.optional().catch(undefined),
 });
 
 export const tickPayloadSchema = z.object({
+  atiAccount: atiAccountClaim.optional().catch(undefined),
   brokerSymbol: z.string().min(1).max(128).refine(s => s.trim() === s && !/[\x00-\x1f\x7f]/.test(s)).optional(),
   symbol: z.string().min(1).max(32),
   bid: z.number().positive(),
@@ -172,6 +208,7 @@ export const tickPayloadSchema = z.object({
 });
 
 export const candlePayloadSchema = z.object({
+  atiAccount: atiAccountClaim.optional().catch(undefined),
   brokerSymbol: z.string().min(1).max(128).refine(s => s.trim() === s && !/[\x00-\x1f\x7f]/.test(s)).optional(),
   // Original optional producer declaration; same wire vocabulary as batch candles.
   // Missing/ASK never establishes a supported chart price basis.

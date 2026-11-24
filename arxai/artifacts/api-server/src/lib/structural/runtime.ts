@@ -1,3 +1,5 @@
+import { retainSpecialistQuoteStudy } from "../data/atiDerivQuotes.js";
+import { resolveDerivSymbol } from "../data/providers/derivProvider.js";
 import { gradePublicForecastOrder } from "./paperGrading.js";
 import { getChartCandles } from "../data/chart/chartDataService.js";
 import { StructuralForecastService } from "./service.js";
@@ -11,11 +13,15 @@ export const structuralService = new StructuralForecastService({
   now: Date.now,
   repository: structuralRepository,
   fit: fitInWorker,
+  specialistQuoteStudy(symbol, issuedAt, end) {
+    const venueSymbol = resolveDerivSymbol(symbol)?.derivId;
+    return venueSymbol ? retainSpecialistQuoteStudy(venueSymbol, issuedAt, end) : undefined;
+  },
   gradePaperTicket(row, now) {
     if (row.forecast.origin.provider !== "deriv_public" || row.paperPublishedAt == null || !row.forecast.paperInstruction) return undefined;
     return gradePublicForecastOrder(row.forecast.origin.symbol, row.forecast.paperInstruction, row.paperPublishedAt, now);
   },
-  async readFeed(symbol, requested) {
+  async readFeed(symbol, requested, provider) {
     const horizon = requested ?? forecastHorizon(DEFAULT_FORECAST_HORIZON)!;
     const tf = horizon.timeframe;
     // Existing paginated cache/backfill supplies training depth. Fetch the
@@ -25,6 +31,7 @@ export const structuralService = new StructuralForecastService({
       const current = await getChartCandles(symbol, tf, 120, false, excludeProviders ? { excludeProviders } : {});
       return assembleForecastFeed(symbol, history, current, Date.now(), horizon);
     };
+    if (provider === "deriv_public") return read(["mt5_broker", "assistant_real"]);
     const primary = await read();
     // The router serves the first provider that answers. Its one-minute
     // series can still be unusable for a model that needs gap-free bars

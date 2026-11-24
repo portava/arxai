@@ -63,8 +63,11 @@ test("PostgreSQL receipt persistence is immutable, idempotent and user isolated"
     assert.equal(result.scores.length, 1);
     assert.deepEqual(result.paperGrade, paperGrade);
     const horizon = { id: "1h", label: "1 hour", timeframe: "M1" as const, stepMs: 60000, bars: 60, minutes: 60 };
-    const settled = { ...score, horizon: 60, observedThrough: forecast.asOf + 3600000 };
-    await repository.appendScores(userId, id, [settled]);
+    const atiValidation = { version: "public-deriv-closed-bar-v1", pattern: "INVALIDATED", ghost: null } as const;
+    const settled = { ...score, horizon: 60, observedThrough: forecast.asOf + 3600000, atiValidation };
+    await Promise.all([repository.appendScores(userId, id, [settled]), repository.appendScores(userId, id, [settled])]);
+    const storedScores = (await repository.list(userId, "V75")).find(r => r.id === id)!.scores.filter(s => s.horizon === 60);
+    assert.deepEqual(storedScores, [settled]);
     const calibration = (who: number, provider: string, cutoff: number) =>
       repository.calibrationHistory!(who, "V75", provider, forecast.version, horizon, cutoff);
     assert.equal((await calibration(userId, "deriv_public", settled.observedThrough)).length, 1);

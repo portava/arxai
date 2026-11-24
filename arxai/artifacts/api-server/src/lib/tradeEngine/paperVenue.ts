@@ -469,7 +469,7 @@ async function bookPaperOrder(values: typeof paperOrdersTable.$inferInsert, risk
     const linkedDecisionId = `risk:${risk.auditEventId}`;
     const payload = { ...extra, userId: order.userId, orderId: order.id, linkedTradeId: String(order.id), linkedDecisionId,
       entityType: "paper_order", accountId: order.paperAccountId, symbol: order.symbol, direction: order.direction, lotSize: order.lotSize,
-      simulated: true, disclaimer: SIMULATED_TAG };
+      entryPrice: order.entryPrice, initialStopLoss: order.stopLoss, simulated: true, disclaimer: SIMULATED_TAG };
     await tx.insert(vaultEventsTable).values({ kind: "PAPER_ORDER_PLACED", source: "SYSTEM", severity: "INFO", truthDomain: "EXECUTION",
       summary: "Paper order booked", payload, symbol: order.symbol, linkedTradeId: String(order.id), linkedDecisionId,
       operationalMode: posture.operationalMode, globalState: posture.globalState, generatedAtIso: new Date().toISOString() });
@@ -564,7 +564,7 @@ export async function modifyPaperOrder(a: {
     const resultText = sized.amount != null ? `P&L ${sized.amount.toFixed(2)}` : notSizedText(sized);
     const settled = await settlePaperOrder({
       order: cur, status: crossed.hit === "SL" ? "CLOSED_SL" : "CLOSED_TP",
-      triggerLevel: crossed.level, triggerObservedAt: isMarketPriced(cur) ? quote.at : undefined, exitPrice: fill, pnl: sized.amount ?? 0,
+      triggerLevel: crossed.level, triggerObservedAt: isMarketPriced(cur) ? quote.at : undefined, exitQuote: isMarketPriced(cur) ? quote : undefined, exitPrice: fill, pnl: sized.amount ?? 0,
       eventMessage: `${SIMULATED_TAG} ${crossed.hit} reached before bracket change at ${fill} (${quote.source}), ${resultText}`,
     });
     if (!settled) return { ok: false, reason: "PAPER_ORDER_CHANGED" };
@@ -630,7 +630,9 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
     if (order) await recordPaperOutcome(tx, order, "CLOSED_MANUAL", r.amount != null
       ? `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${r.amount.toFixed(2)} (${priceSource})`
       : `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)} (${priceSource}), ${notSizedText(r)}`,
-      risk.auditEventId, { pnl: r.amount, manual: true, ...(r.amount == null ? { pnlUnavailableReason: r.unavailableReason } : {}) });
+      risk.auditEventId, { pnl: r.amount, manual: true,
+        ...(isMarketPriced(cur) ? { exitQuote: { bid: quote.bid, ask: quote.ask, at: quote.at.toISOString(), source: quote.source } } : {}),
+        ...(r.amount == null ? { pnlUnavailableReason: r.unavailableReason } : {}) });
     return order;
   });
   if (!closed) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
@@ -759,6 +761,7 @@ export async function closePaperFill(a: {
 export async function settlePaperOrder(a: {
   order: Pick<PaperOrderRow, "id" | "userId">;
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
+  exitQuote?: PaperQuote;
   triggerLevel?: number;
   /** Source time of the executable market quote that crossed the bracket. */
   triggerObservedAt?: Date;
@@ -775,7 +778,9 @@ export async function settlePaperOrder(a: {
       a.triggerLevel !== undefined && a.status === "CLOSED_TP" ? eq(paperOrdersTable.takeProfit, a.triggerLevel) : undefined,
       a.order.userId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, a.order.userId))).returning();
     if (!order) return false;
-    await recordPaperOutcome(tx, order, a.status, a.eventMessage);
+    await recordPaperOutcome(tx, order, a.status, a.eventMessage, null, a.exitQuote ? {
+      exitQuote: { bid: a.exitQuote.bid, ask: a.exitQuote.ask, at: a.exitQuote.at.toISOString(), source: a.exitQuote.source },
+    } : {});
     return true;
   });
 }

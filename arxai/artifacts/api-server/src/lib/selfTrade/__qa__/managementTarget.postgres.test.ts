@@ -361,6 +361,56 @@ async function resetFixture() {
   );
 }
 beforeEach(resetFixture);
+
+it("ATI Trading Memory joins only the exact owner, decision, entry and close", async () => {
+  const { readAtiLiveMemory } = await import("../atiLiveTradingMemory.js");
+  const { nativeAccountBinding } = await import("../../brokerHub/nativeAccountReport.js");
+  const asOf = new Date();
+  const sent = new Date(+asOf - 10_000), opened = new Date(+asOf - 9_000), closed = new Date(+asOf - 4_000);
+  await db.update(decisions).set({ createdAt: new Date(+sent - 1000), setupType: "TREND_CONTINUATION",
+    scoreBreakdown: { atiMarketContextV1: { decidedAtMs: +sent - 1000, builtAtMs: +sent - 1100, regime: "TREND",
+      bias: "BULLISH", direction: "BUY", lifecycleStage: "READY", dataSource: "LIVE_FEED", session: "LONDON",
+      source: "mt5_broker", sourceIdentity: "fixture-source", lastClosedBarAt: null } } }).where(eq(decisions.id, 7));
+  await db.update(commands).set({ sentToMt5At: sent, filledAt: opened }).where(eq(commands.commandId, "entry-1"));
+  await db.insert(commands).values({ commandId: "close-memory-1", userId: 9, bridgeConnectionId: 1,
+    accountLogin: "A", brokerServer: "Venue Company", commandType: "CLOSE_LIVE_POSITION", status: "LIVE_FILLED",
+    symbol: "EURUSD.a", side: "BUY", orderType: "CLOSE", requestedVolume: 0.1, executedVolume: 0.1,
+    fillPrice: 1.102, brokerTicket: "123", sentToMt5At: new Date(+closed - 300), filledAt: closed,
+    sourcePage: MANAGEMENT_TARGET_SOURCE, payload: { brokerTicket: "123" } });
+  await db.update(executions).set({ status: "CLOSED", filledAt: opened, closedAt: closed, createdAt: opened, updatedAt: closed,
+    closePrice: 1.102, managementState: { closeCommandId: "close-memory-1" } }).where(eq(executions.id, 1));
+  const [entryCommand] = await db.select().from(commands).where(eq(commands.commandId, "entry-1"));
+  assert.ok(entryCommand);
+  const accountBinding = nativeAccountBinding("100", "Venue-Server-1");
+  await db.insert(executionEvents).values([
+    { commandId: entryCommand.id, source: "arx", eventType: "DISPATCH_SENT", occurredAt: sent, receivedAt: sent, sequenceNo: 1,
+      payload: { commandId: "entry-1", bridgeConnectionId: 1, atiAccountBinding: accountBinding } },
+    { commandId: entryCommand.id, source: "ea", eventType: "RESULT_LIVE_FILLED", occurredAt: opened, receivedAt: opened, sequenceNo: 2,
+      payload: { applied: true, commandId: "entry-1", reportingBridgeConnectionId: 1,
+        finalStatus: "LIVE_FILLED", brokerTicket: "123", fillPrice: 1.1, executedVolume: 0.1, atiCostEvidence: {
+        version: 1, mode: "LIVE", accountBinding, symbol: "EURUSD.a", side: "BUY", order: "123", deal: "456", volume: 0.1,
+        price: 1.1, brokerFilledAtMs: +opened, submissionQuote: null, currency: "USD", commission: 0, fee: null, swap: null,
+      } } },
+  ]);
+  const filter = { asOf, limit: 10, symbol: "EURUSD" };
+  const page = await readAtiLiveMemory(9, 4, filter);
+  const episode = page.episodes[0];
+  assert.ok(episode);
+  assert.equal(episode.marketContext?.regime, "TREND");
+  assert.equal(episode.entry.fill?.price, 1.1);
+  assert.equal(episode.outcome.exit?.price, 1.102);
+  assert.equal(episode.outcome.recordedLedgerPnl, null);
+  assert.equal(episode.executionQuality.entry?.state, "OBSERVED_BROKER_DEAL");
+  assert.ok(episode.evidenceGaps.includes("EXCURSION_PATH_UNAVAILABLE"));
+  assert.deepEqual((await readAtiLiveMemory(8, 4, filter)).episodes, []);
+  assert.deepEqual((await readAtiLiveMemory(9, 4, { ...filter, asOf: opened })).episodes, []);
+
+  await db.update(commands).set({ accountLogin: "B" }).where(eq(commands.commandId, "close-memory-1"));
+  const unsafe = (await readAtiLiveMemory(9, 4, filter)).episodes[0];
+  assert.equal(unsafe?.outcome.exit, null);
+  assert.ok(unsafe?.evidenceGaps.includes("EXIT_RECEIPT_UNVERIFIED"));
+});
+
 const target = async () => (await resolveManagementTarget(9, reference)).target;
 async function draft(inputTarget?: Awaited<ReturnType<typeof target>>) {
   const targetValue = inputTarget ?? (await target());
@@ -2336,6 +2386,26 @@ it("actual concurrent cold-map manual polls complete with a one-connection pool"
   const result=spawnSync(process.execPath,["--import","tsx",fileURLToPath(new URL("./terminalPollSingleConnection.ts",import.meta.url))],
     {env:process.env,encoding:"utf8",timeout:8000});
   assert.equal(result.status,0,`${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+});
+it("a restarted terminal poll cannot pick up an already delivered command on either transport", async () => {
+  await db.insert(commands).values({commandId:"restart-poll",userId:9,bridgeConnectionId:1,
+    commandType:"CLOSE_LIVE_POSITION",symbol:"EURUSD.a",side:"BUY",orderType:"CLOSE",requestedVolume:.1,
+    status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"}});
+  await db.insert(mailbox).values({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",
+    status:"PENDING",payload:{positionTicket:"456"}});
+  assert.equal((await pollRoute(false)).command.commandId,"restart-poll");
+  assert.equal((await pollRoute(true)).commands.length,1);
+  const beforeNative = await db.select().from(commands).where(eq(commands.commandId,"restart-poll"));
+  const beforeMailbox = await db.select().from(mailbox);
+  const child = fileURLToPath(new URL("./terminalPollSingleConnection.ts",import.meta.url));
+  for (const transport of [[],["--legacy"]]) {
+    const fresh = spawnSync(process.execPath,["--import","tsx",child,"--already-picked",...transport],{
+      env:process.env,encoding:"utf8",timeout:15000,
+    });
+    assert.equal(fresh.status,0,`${fresh.stdout} ${fresh.stderr}`);
+  }
+  assert.deepEqual(await db.select().from(commands).where(eq(commands.commandId,"restart-poll")),beforeNative);
+  assert.deepEqual(await db.select().from(mailbox),beforeMailbox);
 });
 it("actual precision-rich automatic mirror survives float4 storage through mailbox poll and extracted EA", async () => {
   await updateConnection(1,{accountNumber:"100"});

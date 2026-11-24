@@ -30,6 +30,7 @@ import { reportedManagementIdentity } from "../lib/selfTrade/managementConsumers
 import { resolveBrokerSymbolName } from "../lib/instruments/index.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
+import { atiCostReceiptFromResult } from "../lib/mt5/atiCostEvidence.js";
 
 const router = Router();
 
@@ -181,6 +182,7 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     commandId,
     outcome,
     reportingBridgeConnectionId: conn.id,
+    atiCostEvidence: atiCostReceiptFromResult(b, conn, "LIVE"),
     reportedExecutionIdentity: reportedManagementIdentity(b),
     brokerTicket: typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
     fillPrice: typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,

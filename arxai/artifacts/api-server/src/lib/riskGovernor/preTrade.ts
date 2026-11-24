@@ -429,6 +429,8 @@ export interface AccountSnapshotFacts {
 }
 
 export interface RiskContext {
+  /** Provenance for a research copy of the native paper book. Ignored by the decision rules. */
+  atiOwnedPaperBook?: boolean;
   now: Date;
   limits: EffectiveLimits;
   account: RiskAccount | null;

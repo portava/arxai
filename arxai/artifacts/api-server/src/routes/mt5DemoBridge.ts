@@ -33,6 +33,7 @@
 import { Router, type Request } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { atiCostReceiptFromResult } from "../lib/mt5/atiCostEvidence.js";
 import {
   db,
   mt5DemoCommandsTable,
@@ -215,6 +216,8 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
     }
   }
 
+  const { atiExecutionCostV1: _rawCost, atiCostEvidence: _storedCost, ...legacyRaw } = parsed.data.raw ?? {};
+  const atiCostEvidence = parsed.data.raw && atiCostReceiptFromResult(parsed.data.raw, conn, "DEMO");
   const result = await reconcileBrokerResult({
     userId,
     // Only the bridge the command was sent to may report on it.
@@ -229,7 +232,7 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
       filledAt: parsed.data.filledAt ?? null,
       reason: parsed.data.reason ?? null,
       reportedEaVersion: parsed.data.reportedEaVersion ?? null,
-      raw: parsed.data.raw ?? null,
+      raw: parsed.data.raw ? { ...legacyRaw, ...(atiCostEvidence ? { atiCostEvidence } : {}) } : null,
     },
     actorIp: shortIp(req),
     actorUserAgent: req.header("user-agent") ?? null,

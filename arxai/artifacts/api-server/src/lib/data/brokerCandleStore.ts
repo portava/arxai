@@ -669,7 +669,7 @@ export async function ingestBrokerCandles(
   // Older backfill never replaces the live window or the shared legacy cache.
   if (mirrorClosed.length > 0 && rejected === 0 && payload.historyPage?.kind !== "backfill") {
     publish = async () => {
-      const { mergeCandleFromMT5, readMt5Candles, updateCandlesFromMT5 } = await import("./providers/mt5Provider.js");
+      const { bindMt5CandleHistory, mergeCandleFromMT5, readMt5Candles, updateCandlesFromMT5 } = await import("./providers/mt5Provider.js");
       const writer = { bridgeConnectionId: ctx.bridgeConnectionId, userId: ctx.userId, historyIdentity };
       for (const c of mirrorClosed) mergeCandleFromMT5(symbol, c, timeframe, writer);
       const current = readMt5Candles(symbol, timeframe, 1500, writer);
@@ -689,7 +689,8 @@ export async function ingestBrokerCandles(
           // A concurrent account change or expired live observation cannot be
           // revived by this delayed read. Current observations win duplicates.
           if (latest.historyIdentity === historyIdentity && latest.candles.length > 0 && rows.length > latest.candles.length) {
-            updateCandlesFromMT5(symbol, [...rows.reverse().map(brokerHistoryCandle), ...latest.candles], timeframe, writer);
+            const restored = rows.reverse().map((row) => bindMt5CandleHistory(brokerHistoryCandle(row), historyIdentity));
+            updateCandlesFromMT5(symbol, [...restored, ...latest.candles], timeframe, writer);
           }
         } catch {
           // The accepted live bars remain visible; the next live push retries

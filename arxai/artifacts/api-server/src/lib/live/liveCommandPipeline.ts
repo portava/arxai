@@ -1,4 +1,6 @@
 import { liveManagementPickupPredicate } from "../mt5/managementTargetProtocol.js";
+import { nativeAccountBinding } from "../brokerHub/nativeAccountReport.js";
+import type { AtiCostEvidence } from "../mt5/atiCostEvidence.js";
 import { holdChangedSettlementEvidence, SettlementEvidenceHeld, enqueueResultSettlement, settleCommandJobs, settlementWorkerEnabled, assertSettlementClaim, StaleSettlementClaim, type SettlementClaim, type SettlementConsumer } from "./resultSettlementOutbox.js";
 // Phase A — Live command pipeline (per-user).
 //
@@ -23,6 +25,7 @@ import { getConnection, listUserConnections } from "../brokerHub/connections.js"
 import { heartbeatAgeSecondsFrom } from "../brokerHub/freshness.js";
 import { randomUUID } from "node:crypto";
 import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
+import { atiDispatchAdmission } from "../selfTrade/atiStrategyOrigin.js";
 import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -4463,6 +4466,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       symbol: row.symbol, side: row.side, volume: Number(row.requestedVolume),
       idempotencyKey: idemKey,
     }, "Phase B dispatch SENT_TO_MT5_LIVE — awaiting EA pickup");
+    const atiAdmission = sent.commandType === "PLACE_LIVE_MARKET_ORDER" && sent.actorType === "SELF_TRADE_AGENT"
+      ? atiDispatchAdmission(sent.payload) : null;
     await recordExecutionEvent({
       commandRowId: sent.id, source: "arx", eventType: "DISPATCH_SENT",
       occurredAt: dispatchNow,
@@ -4473,6 +4478,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         requestedVolume: Number(row.requestedVolume),
         ttlSeconds: LIVE_COMMAND_TTL_SECONDS,
         expiresAt: expiresAt.toISOString(),
+        ...(atiAdmission ? { atiAdmission } : {}),
+        atiAccountBinding: nativeAccountBinding(bridge!.accountNumber, bridge!.serverName),
       },
     });
 
@@ -5298,6 +5305,7 @@ export async function recordLiveCommandResult(args: {
   /** Only identity explicitly reported by the terminal; never filled from the current bridge. */
   reportedExecutionIdentity?: ReturnType<typeof reportedManagementIdentity>;
   terminalResultEvidence?: import("../mt5/terminalResultEvidence.js").TerminalResultEvidence;
+  atiCostEvidence?: AtiCostEvidence | null;
   brokerTicket?: string | null;
   fillPrice?: number | null;
   executedVolume?: number | null;
@@ -5539,6 +5547,9 @@ export async function recordLiveCommandResult(args: {
               }
             : { existingStatus: row.status }),
           ...reportedEvidence,
+          // Read-side telemetry is excluded from the result fingerprint and
+          // all command transitions and settlement authority.
+          ...(mayApply && args.atiCostEvidence ? { atiCostEvidence: args.atiCostEvidence } : {}),
           reportFingerprint,
           settlementOutboxVersion: 1,
         },

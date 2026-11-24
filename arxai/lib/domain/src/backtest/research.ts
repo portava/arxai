@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { prepareCausalResearch, finalizeCausalResearch, RESEARCH_ENGINE_VERSION, type ResearchInput, type ResearchConfig } from "./researchCore.js";
 export * from "./researchCore.js";
+export { chronologicalFoldBounds } from "./chronologicalFolds.js";
 const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** Existing synchronous server API; v1 bytes and fingerprints are unchanged. */
 export function runCausalResearch(raw: ResearchInput, config: ResearchConfig) {

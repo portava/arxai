@@ -17,6 +17,7 @@
 import type { DerivCandle, DerivGranularity } from "./derivWsClient.js";
 
 import { DERIV_PUBLIC_DATA_URL } from "./derivPublicDataClient.js";
+import { transferAtiDerivQuoteFrame } from "../atiDerivQuotes.js";
 import { getDerivFeedClient, derivMarketDataConfigured, derivMarketDataSource } from "./derivFeedClient.js";
 
 export interface DerivSyntheticSymbol {
@@ -424,7 +425,9 @@ export async function getDerivTick(symbol: string): Promise<DerivTickResult> {
   try {
     const tick = await client.subscribeTicks(map.derivId) ?? client.getCachedTick(map.derivId);
     if (!tick) return { ok: false, reason: "NO_TICK_AVAILABLE", tick: null };
-    return { ok: true, reason: null, tick: { ...tick, symbol, derivSymbol: map.derivId } };
+    const mapped = { ...tick, symbol, derivSymbol: map.derivId };
+    transferAtiDerivQuoteFrame(tick, mapped);
+    return { ok: true, reason: null, tick: mapped };
   } catch (err) {
     return { ok: false, reason: (err as Error).message.replace(/app_id=[^&\s]+/gi, "app_id=<redacted>"), tick: null };
   }

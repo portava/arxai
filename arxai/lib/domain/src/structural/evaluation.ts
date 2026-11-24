@@ -3,9 +3,10 @@ import { validateBars, observeStructure } from "./observer.js";
 import { probabilities, brier, logLoss } from "./math.js";
 import { MODEL_POLICY } from "./model.js";
 import { favoredScenarioIndex, gradeForecast } from "./learning.js";
+import { gradeAtiStructural } from "./atiValidation.js";
 
 /** Forecast must already be durably saved by the application before calling. */
-export function evaluateForecast(f: StructuralForecast, future: StructuralBar[], now: number): ForecastScore[] {
+export function evaluateForecast(f: StructuralForecast, future: StructuralBar[], now: number, atiIssuedAt?: number): ForecastScore[] {
   // Horizons are counted in bars of the forecast's own length.
   const step = forecastStepMs(f);
   const end = Math.min(now, f.asOf + 60 * step);
@@ -39,8 +40,10 @@ export function evaluateForecast(f: StructuralForecast, future: StructuralBar[],
     const window = horizon === forecastHorizonBars(f);
     const shown = (window ? f.horizons.find(h => h.bars === horizon)?.probabilities : null) ?? p;
     const baseline = probabilities(f.baselineMass, horizon);
+    const atiValidation = window && atiIssuedAt != null ? gradeAtiStructural(f, eligible.slice(0, horizon), events, atiIssuedAt) : undefined;
     return { evaluationVersion: `${STRUCTURAL_VERSION}:scoring-1`, horizon, minutes: horizon * step / 60_000, observedThrough: f.asOf + horizon * step, outcome, event,
       brier: brier(p, y), baselineBrier: brier(baseline, y), logLoss: logLoss(p, y),
+      ...(atiValidation ? { atiValidation } : {}),
       ...(window ? { shownBrier: brier(shown, y), grade: gradeForecast(f, eligible.slice(0, horizon), shown, y, baseline) } : {}) };
   });
 }

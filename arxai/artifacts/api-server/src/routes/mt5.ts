@@ -3,6 +3,7 @@ import { mt5PriceBasisEvidence } from "../lib/data/candlePriceBasisEvidence.js";
 import { mt5TickVolumeEvidence } from "../lib/data/candleVolumeEvidence.js";
 import type { Candle } from "../lib/data/types.js";
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
+import { atiCostReceiptFromResult } from "../lib/mt5/atiCostEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
 import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
 import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate, liveMirrorMailboxPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
@@ -1128,11 +1129,13 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
     const body = PostMt5CommandResultBody.parse(req.body);
     const now = new Date();
-    // Preserve the FULL raw EA result body for admin/debug (requirement 4).
+    // Preserve the raw EA result for admin/debug. Account-bearing cost
+    // telemetry is verified separately and stored only in the owner receipt.
     // The EA sends a flat body, not a resultPayload wrapper, so capture the
     // whole thing rather than a (nonexistent) nested object.
     const resultPayload = (body as unknown as { resultPayload?: Record<string, unknown> }).resultPayload
       ?? ((req.body && typeof req.body === "object") ? (req.body as Record<string, unknown>) : null);
+    const { atiExecutionCostV1: _rawCost, atiCostEvidence: _storedCost, ...mailboxResult } = resultPayload ?? {};
     // T033 Phase 8 — the EA (v1.50 PostResultStruct) sends execution detail as
     // TOP-LEVEL fields on the command-result body: mt5Retcode, mt5Ticket,
     // mt5Comment, resolvedBrokerSymbol, bid/ask, etc. But PostMt5CommandResultBody
@@ -1192,7 +1195,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       status: reportedStatus,
       detail: body.detail ?? null,
       errorMessage: isFailed ? (body.detail ?? null) : null,
-      resultPayload,
+      resultPayload: resultPayload ? mailboxResult : null,
       mt5Retcode,
       brokerMessage,
       fillPrice,
@@ -1375,6 +1378,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           commandId: liveCommandId,
           outcome: liveOutcome,
           terminalResultEvidence: terminal?.evidence,
+          atiCostEvidence: conn.userId === liveOwnerUserId ? atiCostReceiptFromResult(raw, conn, "LIVE") : null,
           reportingBridgeConnectionId: conn.id,
           reportedExecutionIdentity: (await import("../lib/selfTrade/managementConsumers.js")).reportedManagementIdentity(raw, rp),
           brokerTicket: liveBrokerTicket,

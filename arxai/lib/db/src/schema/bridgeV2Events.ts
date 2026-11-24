@@ -22,6 +22,7 @@ import {
   pgTable, serial, integer, text, timestamp, jsonb, boolean,
   bigint, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Append-only ingest trace. One row per EA message the server saw (accepted or
 // rejected). The unique idempotency key is the dedupe anchor.
@@ -71,6 +72,11 @@ export const bridgeV2EventsTable = pgTable("bridge_v2_events", {
     t.userId, t.bridgeConnectionId, t.messageType, t.streamKey, t.sequence,
   ),
   recentIdx: index("bridge_v2_events_recent_idx").on(t.userId, t.createdAt),
+  dealHistoryReceiptIdx: index("bridge_v2_events_deal_history_receipt_idx").on(t.userId, t.serverReceivedAtEpochMs)
+    .where(sql`${t.messageType} = 'DEAL_HISTORY' AND ${t.accepted} AND ${t.bridgeConnectionId} IS NOT NULL`),
+  tickReplayIdx: index("bridge_v2_events_tick_replay_idx")
+    .on(t.userId, t.bridgeConnectionId, t.streamKey, t.serverReceivedAtEpochMs)
+    .where(sql`${t.messageType} = 'TICK' AND ${t.accepted}`),
 }));
 
 export type BridgeV2Event = typeof bridgeV2EventsTable.$inferSelect;

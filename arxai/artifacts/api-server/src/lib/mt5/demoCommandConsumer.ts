@@ -602,6 +602,7 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
       reportedEaVersion: gate.evidence.reportedEaVersion,
       eaMinDemoVersion: EA_MIN_DEMO_VERSION,
       result: "SENT_TO_MT5_DEMO",
+      atiAccountBinding: gate.evidence.atiAccountBinding ?? null,
       reason: "PER_USER_DEMO_DISPATCH_ALLOWED",
       safetyGateSnapshot: sentSnapshot,
     },

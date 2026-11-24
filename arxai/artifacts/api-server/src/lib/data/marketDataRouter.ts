@@ -511,6 +511,7 @@ async function tryDerivQuote(symbol: string): Promise<QuoteAttempt> {
       : {}),
     timestamp: new Date(r.tick.epoch * 1000).toISOString(),
   };
+  if (source === "deriv_public") transferAtiDerivQuoteFrame(r.tick, quote);
   return {
     provider: source, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
     // The timestamp is the tick's own epoch from the Deriv tick payload.
@@ -1027,3 +1028,4 @@ function redact(s: string): string {
 
 /** Convenience re-export for callers that need it. */
 export { resolveDerivSymbol };
+import { transferAtiDerivQuoteFrame } from "./atiDerivQuotes.js";

@@ -5,7 +5,8 @@ import {
   type ForecastPaperInstruction,
 } from "@workspace/domain/structural";
 import type { DerivTick } from "../data/providers/derivWsClient.js";
-import { crossedPaperLevel, paperExitQuote } from "./paperLevels.js";
+import { crossedPaperLevel, paperExitQuote, recordBracketSample, retestQuoteDecision, startSampledBracketPath,
+  type ReplaySampleObserver, type EntryReplayPolicy, type ObservedNoFill, type SampledBracketPath } from "./paperLevels.js";
 
 type Bracket = {
   id: number;
@@ -26,22 +27,23 @@ const FORECAST_QUOTE_MAX_AGE_MS = 3000;
 export class PublicPaperBracketHistory {
   private streams = new Map<
     string,
-    (DerivTick & { receivedAt: number; releasedAt: number })[]
+    (DerivTick & { receivedAt: number; releasedAt: number; archivePrefixHash?: string })[]
   >();
-  private forecastCheckpoints = new Map<string, { through: number; checkedAt: number; entry: number }>();
+  private forecastCheckpoints = new Map<string, { through: number; checkedAt: number; entry: number; path?: SampledBracketPath }>();
   private checked = new Map<number, { key: string; epoch: number }>();
 
   observe(
     tick: DerivTick,
     receivedAt = tick.epoch * 1000,
     releasedAt = receivedAt,
+    archivePrefixHash?: string,
   ) {
     if (!/^(R_(10|25|50|75|100)|1HZ(10|25|50|75|100)V)$/.test(tick.symbol))
       return;
     const ticks = this.streams.get(tick.symbol) ?? [];
     if (tick.epoch <= (ticks.at(-1)?.epoch ?? 0)) return;
     if (ticks.length >= 8192) ticks.splice(0, 4096);
-    ticks.push({ ...tick, receivedAt, releasedAt });
+    ticks.push({ ...tick, receivedAt, releasedAt, archivePrefixHash });
     this.streams.set(tick.symbol, ticks);
   }
 
@@ -50,7 +52,11 @@ export class PublicPaperBracketHistory {
     plan: ForecastPaperInstruction,
     publishedAt: number,
     now: number,
-  ): ForecastPaperGrade {
+    entryExpiresAt?: number,
+    capturePath = false,
+    entryPolicy?: EntryReplayPolicy,
+    onSample?: ReplaySampleObserver,
+  ): ForecastPaperGrade & { path?: SampledBracketPath; terminalEpoch?: number; noFill?: ObservedNoFill } {
     const pending: ForecastPaperGrade = { state: "PENDING" };
     if (plan.action === "HOLD") return { state: "SKIPPED" };
     const ticks = this.streams.get(symbol);
@@ -59,34 +65,51 @@ export class PublicPaperBracketHistory {
     const cadence = symbol.startsWith("1HZ") ? 1000 : 2000;
     // A long-held paper order can outlive the rolling quote buffer. Reuse only
     // an uninterrupted prefix observed under the same published ticket terms.
+    const entryDeadline = entryPolicy?.band ? entryExpiresAt ?? publishedAt : Math.min(publishedAt + FORECAST_QUOTE_MAX_AGE_MS, entryExpiresAt ?? Infinity);
     const key = JSON.stringify([symbol, publishedAt, plan.action, plan.reference, plan.stop, plan.target,
-      plan.entryLimit, plan.breakoutLevel]);
+      plan.entryLimit, plan.breakoutLevel, entryDeadline, capturePath, entryPolicy ?? null]);
     const saved = this.forecastCheckpoints.get(key);
-    const checkpoint = saved && saved.checkedAt <= now ? saved : undefined;
+    const checkpoint = !onSample && saved && saved.checkedAt <= now ? saved : undefined;
     let previous = checkpoint?.through ?? publishedAt;
     let entry = checkpoint?.entry;
+    let path = checkpoint?.path ? { ...checkpoint.path } : undefined;
     for (const tick of ticks) {
       const at = tick.epoch * 1000;
-      if (tick.releasedAt > now || (checkpoint && at <= checkpoint.through)) continue;
+      if (tick.releasedAt > now || at > now || (checkpoint && at <= checkpoint.through)) continue;
       // The venue stamps whole seconds. A fresh quote from the issuance
       // second may reach ARX after the ticket was published.
       if (at < publishedAt && tick.receivedAt <= publishedAt) continue;
       if (at - previous > cadence || tick.bid == null || tick.ask == null)
         return { state: "UNVERIFIED", entry };
       previous = at;
-      const staleQuote = tick.releasedAt - at > FORECAST_QUOTE_MAX_AGE_MS;
-      if (entry != null && staleQuote) return { state: "UNVERIFIED", entry };
+      const staleQuote = at > tick.releasedAt || tick.releasedAt - at > FORECAST_QUOTE_MAX_AGE_MS;
+      if ((entry != null || entryPolicy) && staleQuote) return { state: "UNVERIFIED", entry };
       if (entry == null) {
         if (tick.receivedAt <= publishedAt) continue;
+        if (entryPolicy) {
+          const skip = (reason: ObservedNoFill["reason"]) => ({ state: "SKIPPED" as const, terminalEpoch: tick.epoch,
+            noFill: { reason, atMs: tick.releasedAt } });
+          if (entryPolicy.band) {
+            if (tick.releasedAt >= entryDeadline) return skip("ENTRY_WINDOW_EXPIRED");
+            const retest = retestQuoteDecision(plan, entryPolicy.band, { bid: tick.bid, ask: tick.ask }, entryPolicy.maximumSpreadFractionOfStop);
+            if (retest === "BRACKET_INVALIDATED") return skip(retest);
+            if (retest === "WAIT" || !executableForecastPaperOrder(plan, tick.bid, tick.ask)) continue;
+          } else if (tick.releasedAt > entryDeadline || !executableForecastPaperOrder(plan, tick.bid, tick.ask)) {
+            return skip(tick.releasedAt > entryDeadline ? "ENTRY_WINDOW_EXPIRED" : "FIRST_QUOTE_NOT_EXECUTABLE");
+          }
+        }
         if (
-          tick.releasedAt - publishedAt > FORECAST_QUOTE_MAX_AGE_MS ||
+          tick.releasedAt > entryDeadline ||
           staleQuote ||
           !executableForecastPaperOrder(plan, tick.bid, tick.ask)
         )
           return { state: "SKIPPED" };
         entry = plan.action === "BUY" ? tick.ask : tick.bid;
+        if (capturePath) path = startSampledBracketPath({ atMs: tick.releasedAt, price: entry });
       }
       const exit = plan.action === "BUY" ? tick.bid : tick.ask;
+      onSample?.(entry, exit, tick.releasedAt, tick.archivePrefixHash);
+      if (path) recordBracketSample(path, plan.action, { atMs: tick.releasedAt, price: exit });
       const hit = crossedPaperLevel(
         {
           direction: plan.action,
@@ -101,17 +124,18 @@ export class PublicPaperBracketHistory {
           entry,
           exit,
           observedAt: tick.releasedAt,
+          ...(path ? { path, terminalEpoch: tick.epoch } : {}),
         };
     }
     if (now - previous > cadence + FORECAST_QUOTE_MAX_AGE_MS) return { state: "UNVERIFIED", entry };
     if (entry == null) return pending;
-    if (!saved || (now >= saved.checkedAt && previous > saved.through)) {
+    if (!onSample && (!saved || (now >= saved.checkedAt && previous > saved.through))) {
       this.forecastCheckpoints.delete(key);
       if (this.forecastCheckpoints.size >= 4096)
         this.forecastCheckpoints.delete(this.forecastCheckpoints.keys().next().value!);
-      this.forecastCheckpoints.set(key, { through: previous, checkedAt: now, entry });
+      this.forecastCheckpoints.set(key, { through: previous, checkedAt: now, entry, path });
     }
-    return { state: "OPEN", entry };
+    return { state: "OPEN", entry, ...(entryPolicy && path ? { path } : {}) };
   }
 
   read(order: Bracket, symbol: string, latest: Quote): Reading {

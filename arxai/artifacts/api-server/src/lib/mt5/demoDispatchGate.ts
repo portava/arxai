@@ -25,6 +25,7 @@ import {
 import { runDemoVerificationGate } from "./demoVerificationGate.js";
 import { getDuplicateEaProbe } from "../../routes/mt5.js";
 import { isArmedForDemo } from "./demoArmingService.js";
+import { nativeAccountBinding } from "../brokerHub/nativeAccountReport.js";
 
 
 export interface PerUserDispatchEvaluation {
@@ -40,6 +41,7 @@ export interface PerUserDispatchEvaluation {
     userOwnsBridge: boolean;
     bridgeConnectionId: number | null;
     accountLogin: string | null;
+    atiAccountBinding?: string | null;
     reportedEaVersion: string | null;
     eaVersionAtLeast: boolean;
     eaMinDemoVersion: string;
@@ -176,6 +178,7 @@ export async function evaluatePerUserDispatchGate(args: {
       userOwnsBridge,
       bridgeConnectionId: conn?.id ?? null,
       accountLogin: conn?.accountNumber ?? null,
+      atiAccountBinding: nativeAccountBinding(conn?.accountNumber, conn?.serverName),
       reportedEaVersion,
       eaVersionAtLeast: eaOk,
       eaMinDemoVersion: EA_MIN_DEMO_VERSION,

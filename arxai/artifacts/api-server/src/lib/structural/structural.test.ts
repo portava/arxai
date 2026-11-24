@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
-  structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
+  specialistIds, specialistFeatures, structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
   fitWindowCount, MIN_FIT_WINDOWS, favoredScenario, forecastRoutes, estimatePrice, scoreClosePath, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
@@ -581,4 +581,29 @@ test("route estimates condition each future close on the first break within the 
   assert.equal(score.matched, 1);
   close(score.mae, anchor.close * .005);
   close(score.flatMae, anchor.close * .015);
+});
+
+test("specialist fits ignore held-out labels, reproduce votes and preserve the incumbent forecast", () => {
+  const source: DataOrigin = { ...origin, provider: "deriv_public", kind: "BROKER_HISTORY" };
+  const original = fitStructuralModel(bars, source);
+  const changedBars = structuredClone(bars);
+  for (const bar of changedBars) {
+    if (bar.openTime < original.partitions.holdout!.first!) continue;
+    for (const field of ["open", "high", "low", "close"] as const) bar[field] *= 1.01;
+  }
+  const refit = fitStructuralModel(changedBars, source);
+  assert.deepEqual(original.atiSpecialists, refit.atiSpecialists);
+  const specialists = original.atiSpecialists!;
+  const forecast = forecastStructural(original, bars.slice(-120), source, false, 15, "15m");
+  const receipt = forecast.atiSpecialists!;
+  assert.equal(receipt.trainedThrough, original.training.at(-1)!.future[14]!.closeTime);
+  const native = forecastStructural({ ...original, atiSpecialists: undefined }, bars.slice(-120), source, false, 15, "15m");
+  const { atiSpecialists, ...incumbent } = forecast;
+  assert.deepEqual(incumbent, native);
+  assert.ok(atiSpecialists);
+  for (const id of specialistIds) {
+    assert.deepEqual(receipt.probabilities[id], predictHead(specialists.heads[id], specialistFeatures[id].map(k => forecast.features[k]!)));
+  }
+  assert.equal(forecastStructural(original, bars.slice(-120), source, false, 30, "30m").atiSpecialists, undefined);
+  assert.equal(model().atiSpecialists, undefined);
 });

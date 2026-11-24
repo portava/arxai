@@ -130,6 +130,8 @@ export interface PriceEstimate {
 }
 export interface StructuralForecast {
   paperInstruction?: import("./paperInstruction.js").ForecastPaperInstruction;
+  atiSpecialists?: import("./atiSpecialists.js").SpecialistReceipt;
+  atiEarlyBreak?: import("./atiValidation.js").AtiEarlyBreak;
   version: string; asOf: number; origin: DataOrigin; modelId: string;
   featureVersion: string; eventDefinitionVersion: string;
   trainedThrough: number; features: number[]; preBreakEligible: boolean;
@@ -163,6 +165,7 @@ export const forecastStepMs = (f: Pick<StructuralForecast, "stepMs">): number =>
 export const forecastHorizonBars = (f: Pick<StructuralForecast, "horizonBars">): number => f.horizonBars ?? 60;
 export const forecastHorizonId = (f: Pick<StructuralForecast, "horizonId">): string => f.horizonId ?? DEFAULT_FORECAST_HORIZON;
 export interface ForecastScore {
+  atiValidation?: import("./atiValidation.js").AtiStructuralOutcome;
   evaluationVersion: string;
   /** Counted in bars of the forecast's bar length (minutes for one-minute bars). */
   horizon: number; minutes?: number; observedThrough: number; outcome: Scenario;

@@ -12,12 +12,13 @@ globalThis.require = createRequire(import.meta.url);
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
-  const distDir = path.resolve(artifactDir, "dist");
+  const shadowStudy = process.argv.includes("--ati-shadow-study");
+  const distDir = path.resolve(artifactDir, shadowStudy ? "dist/ati-shadow-study" : "dist");
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
     define: { __ARX_BUILD_IDENTITY__: JSON.stringify(captureBuildIdentity(artifactDir)) },
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    entryPoints: [path.resolve(artifactDir, shadowStudy ? "scripts/run-ati-observed-shadow.ts" : "src/index.ts")],
     platform: "node",
     bundle: true,
     format: "esm",
@@ -120,6 +121,8 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  if (shadowStudy) return;
 
   // The structural forecast fits its model in a worker thread loaded from
   // dist/structuralFitWorker.mjs. It was never emitted, so every forecast that

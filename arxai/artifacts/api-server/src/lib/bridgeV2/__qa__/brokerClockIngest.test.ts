@@ -10,7 +10,10 @@
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { bridgeV2 } from "@workspace/domain";
 import { __feedMarketDataStoreForTests as feed } from "../ingest.js";
+import { routeQuote } from "../../data/marketDataRouter.js";
+import { freezeAtiDecisionQuote } from "../../mt5/atiCostEvidence.js";
 
 const fold = (messageType: string, payload: unknown, freshnessVerdict: string | null,
   bridge: { bridgeConnectionId: number; userId: number } | null, eaCreatedAtEpochMs: number | null) =>
@@ -92,4 +95,32 @@ test("an unattributed writer measures and converts on its own key, never on an a
   assert.ok(q);
   assert.equal(q.bridgeConnectionId, null);
   assert.equal(Date.parse(q.quote.timestamp), gmt);
+});
+
+test("ATI freezes only the fresh routed quote bounded by ticks from the same verified account", async () => {
+  const now = Date.now();
+  const account = { binding: "1".repeat(64), mode: "LIVE" } as const;
+  const payload = { symbol: "EURUSD", brokerSymbol: "EURUSD.pro", bid: 1.1, ask: 1.1001, brokerTimeEpochMs: now + 2 * H - 510 };
+  assert.equal(bridgeV2.tickPayloadSchema.parse({ ...payload, atiAccount: { login: 123 } }).atiAccount, undefined);
+  const push = (offset: number, ask: number, atiAccount = account) => feed({
+    messageType: "TICK", freshnessVerdict: "FRESH", bridge: BRIDGE, eaCreatedAtEpochMs: now + offset,
+    payload: { ...payload, ask, brokerTimeEpochMs: now + 2 * H + offset - 10 }, atiAccount,
+  });
+  const quote = () => routeQuote("EURUSD", { mt5Writer: { bridgeConnectionId: BRIDGE.bridgeConnectionId } });
+
+  push(-500, 1.1001);
+  assert.equal(freezeAtiDecisionQuote(await quote(), BRIDGE.userId, now), null);
+  push(-200, 1.1002);
+  const read = await quote();
+  assert.deepEqual(freezeAtiDecisionQuote(read, BRIDGE.userId, now), {
+    mode: "LIVE", ownerId: BRIDGE.userId, bridgeConnectionId: BRIDGE.bridgeConnectionId,
+    accountBinding: account.binding, brokerSymbol: "EURUSD.pro", bid: 1.1, ask: 1.1002,
+    brokerTickAtMs: now + 2 * H - 210, observedAtMs: now - 200, decidedAtMs: now,
+  });
+  assert.equal(freezeAtiDecisionQuote(read, BRIDGE.userId + 1, now), null);
+  assert.equal(freezeAtiDecisionQuote(read, BRIDGE.userId, now - 300), null);
+  assert.equal(freezeAtiDecisionQuote({ ...read, quote: { ...read.quote! } }, BRIDGE.userId, now), null);
+  push(-200, 1.1002, { ...account, binding: "2".repeat(64) });
+  assert.equal(freezeAtiDecisionQuote(read, BRIDGE.userId, now), null);
+  assert.equal(freezeAtiDecisionQuote(await quote(), BRIDGE.userId, now), null);
 });

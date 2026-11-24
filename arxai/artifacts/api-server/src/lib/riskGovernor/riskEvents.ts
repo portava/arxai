@@ -3,6 +3,8 @@
 // Every pre-trade decision, trader override and post-close discipline event is
 // written here, scoped to its trader. Secrets never reach the details column.
 
+import { createHash } from "node:crypto";
+import { stableStringify } from "@workspace/features/event-chain";
 import { db, userRiskSettingsTable, userRiskEventsTable, vaultEventsTable } from "@workspace/db";
 import { appendAuditInTransaction } from "../auditVault.js";
 import { readTraderRiskSettings } from "./limitSettings.js";
@@ -35,7 +37,10 @@ export async function logRiskEvent(args: {
       const linkedDecisionId = `risk:${rows[0]!.id}`;
       const blockers = Array.isArray(safeDetails.blockedBy) ? safeDetails.blockedBy : [];
       const kind = args.decision === "block" ? "GOVERNED_TRADE_BLOCKED" : "GOVERNED_TRADE_DECISION";
-      const payload = { userId: args.userId, linkedDecisionId, symbol: intent?.symbol ?? null, venue: intent?.venue, action: intent?.action, decision: args.decision, reason: args.reason, blockers };
+      const payload = { userId: args.userId, linkedDecisionId, symbol: intent?.symbol ?? null, venue: intent?.venue, action: intent?.action, decision: args.decision, reason: args.reason, blockers,
+        ...(intent?.venue === "PAPER" && intent.action === "OPEN" && safeDetails.atiPortfolioBook
+          ? { portfolioAccountId: (safeDetails.atiPortfolioBook as { accountId: number }).accountId,
+            portfolioEvidenceHash: createHash("sha256").update(stableStringify(rows[0]!.details)).digest("hex") } : {}) };
       await tx.insert(vaultEventsTable).values({ kind, severity: args.decision === "block" ? "WARN" : "INFO",
         source: "RISK_GOVERNOR", truthDomain: "DECISION", summary: args.reason, payload, reasons: [args.reason], blockers,
         symbol: intent?.symbol ?? null, linkedDecisionId, generatedAtIso: new Date().toISOString() });

@@ -49,6 +49,12 @@ import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntel
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
 import { routeQuote } from "../data/marketDataRouter.js";
+import { activeAtiFleetRuns, fleetPriceOrigin, type AtiFleetRead } from "./atiFleetShadow.js";
+import { atiFleetDecisionVersion } from "./atiStrategyOrigin.js";
+import { freezeAtiDecisionQuote, type AtiDecisionQuote } from "../mt5/atiCostEvidence.js";
+import { captureAtiMarketContext, type AtiMarketContext } from "./atiTradingContext.js";
+import type { AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
+import { sameMarketReadSourceFamily } from "../truth/marketReadEvidence.js";
 import { computeQuotaFromSettings } from "./agentQuotaEngine.js";
 import { writeSelfTradeAudit } from "./audit.js";
 import type { AgentScope } from "./service.js";
@@ -84,6 +90,14 @@ export interface DecisionCycleResult {
 }
 
 const cache = new Map<string, { at: number; result: DecisionCycleResult }>();
+
+export interface SelfTradeObservationInput {
+  input: DecisionCandidateInput;
+  chartConfirmation: { allowed: boolean; reason: string | null };
+  boundQuote: { bid: number; ask: number; observedAt: string } | null;
+  mt5QuoteOrigin: AtiMt5QuoteOrigin | null;
+  derivQuoteOrigin: AtiDerivQuoteOrigin | null;
+}
 
 function scopeKey(scope?: AgentScope): string {
   if (!scope) return "ALL";
@@ -157,11 +171,19 @@ async function buildCandidate(
   handshake: HandshakeReadinessContext,
   killEngaged: boolean,
   now: number,
-): Promise<DecisionCandidate> {
+  observe?: (observation: SelfTradeObservationInput) => void,
+  captureFleet?: (read: AtiFleetRead) => void,
+): Promise<{ candidate: DecisionCandidate; facts: StoredDecisionFacts }> {
+  const evidence: Omit<SelfTradeObservationInput, "input" | "chartConfirmation"> = { boundQuote: null, mt5QuoteOrigin: null, derivQuoteOrigin: null };
   const [signal, htf, quote] = await Promise.all([
-    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: PRIMARY_TF }),
-    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: HTF }).catch(() => null),
-    routeQuote(symbol).catch(() => null),
+    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: PRIMARY_TF }, (observe || captureFleet) && {
+      skipPersist: !!observe,
+      onBoundQuote: (quote, mt5Origin, derivOrigin) => Object.assign(evidence, {
+        boundQuote: quote, mt5QuoteOrigin: mt5Origin, derivQuoteOrigin: derivOrigin,
+      }),
+    }),
+    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: HTF }, observe && { skipPersist: true }).catch(() => null),
+    observe ? Promise.resolve(null) : routeQuote(symbol).catch(() => null),
   ]);
 
   // Phase 4: Check whether the Phase 3 chart gate allows chart-based
@@ -233,8 +255,9 @@ async function buildCandidate(
         blocked: [...handshake.blocked, "CHART_TRUTH_BLOCKED"],
       };
 
-  const currentPrice =
-    quote?.ok && quote.quote
+  const currentPrice = observe
+    ? evidence.boundQuote && (evidence.boundQuote.bid + evidence.boundQuote.ask) / 2
+    : quote?.ok && quote.quote
       ? quote.quote.last ??
         (quote.quote.bid != null && quote.quote.ask != null
           ? (quote.quote.bid + quote.quote.ask) / 2
@@ -257,7 +280,7 @@ async function buildCandidate(
     symbolAllowed: true, // we only iterate this agent's own allowlist
     maxSpreadPoints: null,
     signal,
-    htfSignals: htf ? [htf] : [],
+    htfSignals: htf && (!observe || sameMarketReadSourceFamily(signal.marketEvidence ?? null, htf.marketEvidence ?? null)) ? [htf] : [],
     currentPrice,
     newsRisk: deriveNewsRisk(signal.scores.newsSafety),
     // Decision-only: broker execution context is honestly unknown (we are not
@@ -276,12 +299,19 @@ async function buildCandidate(
     now,
   };
 
-  const result = runDecisionPipeline(input);
+  const decidedAt = Date.now();
+  const costQuote = freezeAtiDecisionQuote(quote, effectiveUserId, decidedAt);
+  const candidate = runDecisionPipeline(input);
+  if (observe || captureFleet) {
+    const observation = { input, ...evidence, chartConfirmation: { allowed: chartGateAllowed, reason: chartGateNote } };
+    observe?.(observation);
+    captureFleet?.({ observation, priceOrigin: fleetPriceOrigin(quote) });
+  }
   // Log chart gate note for admin diagnostics (DecisionCandidate has no notes field).
   if (chartGateNote) {
     logger.debug({ symbol, agentKey: agent.agentKey, chartGateNote }, "self-trade: chart gate advisory");
   }
-  return result;
+  return { candidate, facts: { fleetVersion: observe ? null : atiFleetDecisionVersion(input), costQuote, marketContext: captureAtiMarketContext(signal, effectiveUserId, decidedAt) } };
 }
 
 function toQuotaContext(v: ReturnType<typeof computeQuotaFromSettings>): QuotaContext {
@@ -306,7 +336,9 @@ const DEFAULT_QUOTA: QuotaContext = {
   hardCapReached: true,
 };
 
-function candidateToRow(c: DecisionCandidate, cycleId: string, evaluatedAt: Date): NewSelfTradeDecision {
+type StoredDecisionFacts = { fleetVersion: ReturnType<typeof atiFleetDecisionVersion> | null; costQuote: AtiDecisionQuote | null; marketContext: AtiMarketContext | null };
+
+function candidateToRow(c: DecisionCandidate, cycleId: string, evaluatedAt: Date, facts?: StoredDecisionFacts): NewSelfTradeDecision {
   return {
     agentId: c.agentId,
     agentKey: c.agentKey,
@@ -326,7 +358,8 @@ function candidateToRow(c: DecisionCandidate, cycleId: string, evaluatedAt: Date
     riskState: c.riskState,
     quotaProgress: c.quotaProgress as unknown as Record<string, unknown>,
     handshakes: c.checks as unknown as Record<string, unknown>[],
-    scoreBreakdown: c.scoreBreakdown as unknown as Record<string, unknown>,
+    scoreBreakdown: { ...c.scoreBreakdown, ...(facts?.fleetVersion ? { atiFleetDecisionV1: facts.fleetVersion } : {}), ...(facts?.costQuote ? { atiDecisionQuoteV1: facts.costQuote } : {}),
+      ...(facts?.marketContext ? { atiMarketContextV1: facts.marketContext } : {}) },
     thesis: (c.thesis ?? null) as unknown as Record<string, unknown> | null,
     ownerAgentKey: c.ownerAgentKey,
     conflictState: c.conflictState,
@@ -335,18 +368,19 @@ function candidateToRow(c: DecisionCandidate, cycleId: string, evaluatedAt: Date
   };
 }
 
-async function loadEvaluableAgents(scope?: AgentScope): Promise<
+async function loadEvaluableAgents(scope?: AgentScope, agentId?: number): Promise<
   { agent: SelfTradeAgent; settings: SelfTradeAgentSettings | null; ledger: SelfTradeAgentLedger | null }[]
 > {
   // Scope mirrors the read route: USER scope sees only its own agents; admin
   // (no scope) sees the whole fleet.
-  const where =
+  const owner =
     scope?.ownerType === "USER" && scope.ownerId != null
       ? and(eq(selfTradeAgentsTable.ownerType, "USER"), eq(selfTradeAgentsTable.ownerId, scope.ownerId))
       : scope?.ownerType === "OPERATOR_FLEET"
         ? eq(selfTradeAgentsTable.ownerType, "OPERATOR_FLEET")
         : undefined;
 
+  const where = agentId == null ? owner : and(owner, eq(selfTradeAgentsTable.id, agentId));
   const rows = where
     ? await db.select().from(selfTradeAgentsTable).where(where)
     : await db.select().from(selfTradeAgentsTable);
@@ -365,6 +399,25 @@ async function loadEvaluableAgents(scope?: AgentScope): Promise<
     settings: settingsBy.get(agent.id) ?? null,
     ledger: ledgerBy.get(agent.id) ?? null,
   }));
+}
+
+export async function canObserveSelfTradeAgent(ownerId: number, agentId: number, symbol: string) {
+  const [bundle] = await loadEvaluableAgents({ ownerType: "USER", ownerId }, agentId);
+  return !!bundle && allowedSymbolsOf(bundle.settings).includes(symbol);
+}
+
+/** Evaluate one owner-scoped agent with the normal decision brain before fleet
+ * contention, using only source-bound market inputs. Research captures never
+ * enter the Self-Trade decision queue. */
+export async function observeSelfTradeCandidate(ownerId: number, agentId: number, symbol: string) {
+  const [bundle] = await loadEvaluableAgents({ ownerType: "USER", ownerId }, agentId);
+  if (!bundle || !allowedSymbolsOf(bundle.settings).includes(symbol)) return null;
+  const [{ governor, handshake }, killEngaged] = await Promise.all([buildFleetSafetyContext(), globalKillEngaged()]);
+  let observation: SelfTradeObservationInput | undefined;
+  const { candidate } = await buildCandidate(bundle.agent, bundle.settings, bundle.ledger, symbol,
+    ownerId, governor, handshake, killEngaged, Date.now(), (value) => { observation = value; });
+  if (!observation) throw new Error("SELF_TRADE_OBSERVATION_UNAVAILABLE");
+  return { candidate, observation, evaluatedAt: Date.now() };
 }
 
 async function globalKillEngaged(): Promise<boolean> {
@@ -406,11 +459,32 @@ async function persistCycle(
   candidates: DecisionCandidate[],
   contendedSymbols: string[],
   evaluatedAt: Date,
-): Promise<boolean> {
+  facts: ReadonlyMap<string, StoredDecisionFacts>,
+  subscriptions: Awaited<ReturnType<typeof activeAtiFleetRuns>>,
+  fleetReads: ReadonlyMap<number, AtiFleetRead>,
+) {
   if (candidates.length === 0) return true;
   try {
-    await db.transaction(async (tx) => {
-      await tx.insert(selfTradeDecisionsTable).values(candidates.map((c) => candidateToRow(c, cycleId, evaluatedAt)));
+    return await db.transaction(async (tx) => {
+      const insert = tx.insert(selfTradeDecisionsTable).values(candidates.map(c =>
+        candidateToRow(c, cycleId, evaluatedAt, facts.get(decisionKey(c)))));
+      if (!subscriptions.length) {
+        await insert;
+      } else {
+        const saved = await insert.returning({ id: selfTradeDecisionsTable.id, agentId: selfTradeDecisionsTable.agentId,
+          symbol: selfTradeDecisionsTable.symbol });
+        const { recordAtiFleetObservation } = await import("./atiShadow.js");
+        for (const run of subscriptions) {
+          const matching = saved.filter(d => d.agentId === run.agentId && d.symbol === run.symbol);
+          const candidate = candidates.find(c => c.agentId === run.agentId && c.symbol === run.symbol);
+          const captured = fleetReads.get(run.agentId);
+          const version = candidate && facts.get(decisionKey(candidate))?.fleetVersion;
+          if (matching.length !== 1 || !candidate || !captured || !version) continue;
+          await recordAtiFleetObservation(run, candidate, captured, Date.now(), {
+            cycleId, decisionId: matching[0]!.id, cycleStartedAt: +evaluatedAt, version,
+          }, tx).catch(err => logger.warn({ err, runId: run.id }, "ATI fleet observation unavailable"));
+        }
+      }
       await writeSelfTradeAudit(tx, {
         eventType: "DECISION_CYCLE",
         scope: "FLEET",
@@ -423,13 +497,17 @@ async function persistCycle(
         },
         reason: `Self-Trade decision cycle (shadow): ${candidates.length} decisions`,
       });
+      return true;
     });
-    return true;
   } catch (err) {
     // Fail-open on persist: a logging failure must not block the decision read.
     logger.error({ err, cycleId }, "self-trade decision cycle persist failed (fail-open)");
     return false;
   }
+}
+
+function decisionKey(candidate: DecisionCandidate) {
+  return JSON.stringify([candidate.agentId, candidate.symbol]);
 }
 
 /**
@@ -492,7 +570,12 @@ export async function runDecisionCycle(
 
   // Build candidates (per agent, symbols in parallel; agents sequential to be
   // gentle on upstream providers).
+  const owner = scope?.ownerType === "USER" ? scope.ownerId : null;
+  const subscriptions = owner ? await activeAtiFleetRuns(owner, now)
+    .catch(err => { logger.warn({ err }, "ATI fleet subscriptions unavailable"); return []; }) : [];
+  const fleetReads = new Map<number, AtiFleetRead>();
   const allCandidates: DecisionCandidate[] = [];
+  const facts = new Map<string, StoredDecisionFacts>();
   let symbolsEvaluated = 0;
   for (const { agent, settings, ledger } of loaded) {
     const symbols = allowedSymbolsOf(settings);
@@ -507,7 +590,9 @@ export async function runDecisionCycle(
     }
     const candidates = await Promise.all(
       symbols.map((symbol) =>
-        buildCandidate(agent, settings, ledger, symbol, effectiveUserId, governor, handshake, killEngaged, now).catch(
+        buildCandidate(agent, settings, ledger, symbol, effectiveUserId, governor, handshake, killEngaged, now, undefined,
+          subscriptions.some(run => run.agentId === agent.id && run.symbol === symbol)
+            ? read => { fleetReads.set(agent.id, read); } : undefined).catch(
           (err) => {
             logger.warn({ err, agentKey: agent.agentKey, symbol }, "self-trade: candidate build failed (skipped)");
             return null;
@@ -515,9 +600,10 @@ export async function runDecisionCycle(
         ),
       ),
     );
-    for (const c of candidates) {
-      if (c) {
-        allCandidates.push(c);
+    for (const result of candidates) {
+      if (result) {
+        allCandidates.push(result.candidate);
+        facts.set(decisionKey(result.candidate), result.facts);
         symbolsEvaluated += 1;
       }
     }
@@ -528,7 +614,8 @@ export async function runDecisionCycle(
   supervised.candidates.sort((a, b) => b.rankScore - a.rankScore);
 
   const evaluatedAt = new Date(now);
-  const persisted = await persistCycle(cycleId, supervised.candidates, supervised.contendedSymbols, evaluatedAt);
+  const persisted = await persistCycle(cycleId, supervised.candidates, supervised.contendedSymbols, evaluatedAt, facts,
+    subscriptions, fleetReads);
 
   const result: DecisionCycleResult = {
     cycleId,
@@ -545,3 +632,4 @@ export async function runDecisionCycle(
   cache.set(key, { at: now, result });
   return result;
 }
+import type { AtiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";

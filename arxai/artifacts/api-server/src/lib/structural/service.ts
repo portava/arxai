@@ -4,9 +4,10 @@ import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
   forecastHorizon, forecastHorizonBars, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
-  regradeAgainstBaseline, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
+  regradeAgainstBaseline, hasAtiStructuralScope, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
 
-export interface StoredForecast { id: string; issuedAt: number; forecast: StructuralForecast; scores: ForecastScore[]; paperPublishedAt?: number; paperGrade?: ForecastPaperGrade }
+export interface StoredForecast { id: string; issuedAt: number; recordedAt?: number; forecast: StructuralForecast; scores: ForecastScore[]; paperPublishedAt?: number; paperGrade?: ForecastPaperGrade }
+export const STRUCTURAL_HISTORY_LIMIT = 250;
 export interface ForecastRepository {
   list(userId: number, symbol: string): Promise<StoredForecast[]>;
   calibrationHistory?(userId: number, symbol: string, provider: string, version: string, horizon: ForecastHorizonPreset, asOf: number): Promise<GradedObservation[]>;
@@ -25,7 +26,7 @@ export interface ForecastFeedDiagnostics {
   /** Consecutive 180-bar windows the model could train on, and how many it needs. */
   trainingWindows?: number; trainingWindowsNeeded?: number;
 }
-export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics }
+export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics; atiHistoricalSourceVerified?: boolean }
 /**
  * Fewest unbroken one-minute bars the model can be fitted on. It follows from
  * MODEL_POLICY (15-bar stride, 60-minute purge, 80 training episodes after the
@@ -37,7 +38,9 @@ export class ForecastRefusal extends Error {
   constructor(readonly code: string, readonly detail?: ForecastFeedDiagnostics) { super(code); this.name = "ForecastRefusal"; }
 }
 export interface ForecastDependencies {
-  readFeed(symbol: string, horizon?: ForecastHorizonPreset): Promise<ForecastFeed>; repository: ForecastRepository; now(): number;
+  readFeed(symbol: string, horizon?: ForecastHorizonPreset, provider?: "deriv_public"): Promise<ForecastFeed>;
+  repository: ForecastRepository; now(): number;
+  specialistQuoteStudy?(symbol: string, issuedAt: number, end: number): import("@workspace/domain/structural").SpecialistQuoteStudy | undefined;
   gradePaperTicket?(row: StoredForecast, now: number): ForecastPaperGrade | undefined;
   fit?: (...args: Parameters<typeof fitStructuralModel>) => StructuralModel | Promise<StructuralModel>;
 }
@@ -143,6 +146,10 @@ export class StructuralForecastService {
     const id = createHash("sha256").update(`${userId}:${symbol}:${horizon.id}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();
     if (issuedAt >= asOf + horizon.stepMs) throw new ForecastRefusal("FIRST_HORIZON_ALREADY_CLOSED", facts({ lastCloseAgeSeconds: Math.round((issuedAt - asOf) / 1000) }));
+    if (forecast.atiSpecialists && this.deps.specialistQuoteStudy) {
+      const quoteStudy = this.deps.specialistQuoteStudy(symbol, issuedAt, asOf + windowMs);
+      if (quoteStudy) forecast.atiSpecialists.quoteStudy = quoteStudy;
+    }
     const row = { id: `structural-${id}`, issuedAt, forecast, scores: [] };
     // Await durable write. A save failure cannot be displayed as an issued forecast.
     return this.deps.repository.save(userId, row, model);
@@ -155,9 +162,10 @@ export class StructuralForecastService {
     // Read each bar length's feed only when a saved forecast of that length
     // has a horizon that has since closed and is still unscored.
     const feeds = new Map<string, Promise<ForecastFeed>>();
-    const feedFor = (h: ForecastHorizonPreset) => {
-      if (!feeds.has(h.timeframe)) feeds.set(h.timeframe, this.deps.readFeed(symbol, h));
-      return feeds.get(h.timeframe)!;
+    const feedFor = (h: ForecastHorizonPreset, provider?: "deriv_public") => {
+      const key = `${h.timeframe}:${provider ?? "primary"}`;
+      if (!feeds.has(key)) feeds.set(key, this.deps.readFeed(symbol, h, provider));
+      return feeds.get(key)!;
     };
     // A stale current tip may still resolve old horizons. Require same provider.
     for (const row of rows) {
@@ -174,12 +182,16 @@ export class StructuralForecastService {
       const windowBars = forecastHorizonBars(row.forecast);
       const windowScores = row.scores.filter(s => s.horizon === windowBars);
       const ungradedWindow = windowScores.length > 0 && !windowScores.some(s => s.grade);
-      if (!preset || (row.scores.some(s => s.horizon === 60) && !ungradedWindow) || now < row.forecast.asOf + step) continue;
-      const feed = await feedFor(preset);
-      if (row.forecast.origin.provider !== feed.origin.provider) continue;
+      if (!preset || (row.scores.some(s => s.horizon === 60) && windowScores.some(s => s.grade)) || now < row.forecast.asOf + step) continue;
+      const feed = await feedFor(preset, row.forecast.atiEarlyBreak ? "deriv_public" : undefined);
+      if (row.forecast.origin.provider !== feed.origin.provider || row.forecast.origin.symbol !== feed.origin.symbol) continue;
+      if (row.forecast.atiEarlyBreak && !feed.atiHistoricalSourceVerified) continue;
       try {
         const future = feed.bars.filter(b => b.openTime >= row.forecast.asOf && b.closeTime <= row.forecast.asOf + 60 * step);
-        const scores = evaluateForecast(row.forecast, future, now).flatMap(s => {
+        const isAtiSource = feed.atiHistoricalSourceVerified && hasAtiStructuralScope(feed);
+        const atiIssuedAt = isAtiSource && row.recordedAt != null && row.issuedAt >= row.forecast.asOf &&
+          row.recordedAt >= row.forecast.asOf ? Math.max(row.issuedAt, row.recordedAt) : undefined;
+        const scores = evaluateForecast(row.forecast, future, now, atiIssuedAt).flatMap(s => {
           if (!row.scores.some(old => old.horizon === s.horizon)) return [s];
           return s.horizon === windowBars && ungradedWindow && s.grade ? [{ ...s, lateGrade: true }] : [];
         });

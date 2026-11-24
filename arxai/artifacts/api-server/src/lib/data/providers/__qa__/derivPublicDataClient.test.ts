@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type WebSocket from "ws";
 import { DerivPublicDataClient, DERIV_PUBLIC_DATA_URL, assertPublicDataRequest, normalizePublicTick, normalizePublicCandles } from "../derivPublicDataClient.js";
+import { publicDerivQuoteOrigin, transferAtiDerivQuoteFrame } from "../../atiDerivQuotes.js";
 
 const known = [
   { symbol: "V75", derivId: "R_75", displayName: "Volatility 75 Index" },
@@ -63,6 +64,33 @@ test("public socket uses fixed endpoint and never claims account authorization",
   assert.equal(f.client.isConnected(), true); assert.equal(f.client.isAuthorized(), false);
   assert.equal(f.client.getAccountIdentity(), null); assert.equal(f.client.getMode(), "public");
   assert.ok(f.sockets[0]!.sent.every(msg => !["authorize", "buy", "balance", "account_id", "token", "otp"].some(key => key in msg)));
+});
+
+test("ATI quote identity follows the released public subscription and never crosses a resubscribe", async (t) => {
+  const f = fixture({ reply: (socket, request) => {
+    if (!request.ticks) return false;
+    socket.respond(request, { tick: { symbol: request.ticks, quote: 123, bid: 122.5, ask: 123.5,
+      epoch: Math.floor(f.now() / 1000) }, subscription: { id: "venue-reused-id" } });
+    return true;
+  } });
+  t.after(() => f.client.stop());
+  const first = await f.client.subscribeTicks("R_75");
+  assert.ok(first);
+  const quote = { bid: first.bid, ask: first.ask, timestamp: new Date(first.epoch * 1000).toISOString() };
+  transferAtiDerivQuoteFrame(first, quote);
+  const anchor = publicDerivQuoteOrigin(quote);
+  assert.ok(anchor);
+  assert.equal(anchor.symbol, "R_75");
+  assert.equal(publicDerivQuoteOrigin({ ...quote }), null);
+  await f.client.unsubscribeTicks("R_75");
+  f.setNow(f.now() + 2000);
+  const second = await f.client.subscribeTicks("R_75");
+  assert.ok(second);
+  const next = { ...quote, timestamp: new Date(second.epoch * 1000).toISOString() };
+  transferAtiDerivQuoteFrame(second, next);
+  const newAnchor = publicDerivQuoteOrigin(next);
+  assert.ok(newAnchor);
+  assert.notEqual(newAnchor.streamId, anchor.streamId);
 });
 
 test("concurrent discovery, subscriptions and identical history share requests", async t => {

@@ -82,3 +82,35 @@ test("gates list the strategies that trade; demotion scan checks them", () => {
     mock.timers.reset();
   }
 });
+
+test("promotion uses only the target strategy's confidence outcomes", () => {
+  mock.timers.enable({ apis: ["setInterval", "Date"], now: Date.parse("2026-10-02T10:00:00Z") });
+  try {
+    sm.startShadowMode({ symbols: ["EURUSD"], intervalSec: 3600 });
+    const target = "Trend Continuation";
+
+    function record(strategy: string, score: number, count: number, settledPrice: number) {
+      scan = { direction: "BUY", score, entryPrice: 100, stopLoss: 99, takeProfit: 102,
+        strategy, reason: "r", riskWarning: "" };
+      px = 100;
+      for (let i = 0; i < count; i++) assert.ok(sm.createShadowDecision("EURUSD"));
+      px = settledPrice;
+      mock.timers.tick(1000);
+    }
+
+    record(target, 85, 50, 103);
+    record("Liquidity Sweep", 55, 10, 98);
+    assert.equal(sm.confidenceCalibration().label, "WELL_CALIBRATED");
+    assert.equal(sm.promote(target, "ADMIN").gate?.level, "PAPER_APPROVED");
+    assert.equal(sm.promotionStatus().find((row) => row.strategy === target)?.eligibleFor, null);
+    assert.equal(sm.promote(target, "ADMIN").ok, false);
+
+    record(target, 55, 5, 103);
+    record(target, 55, 5, 98);
+    assert.equal(sm.promotionStatus().find((row) => row.strategy === target)?.eligibleFor, "DEMO_APPROVED");
+    assert.equal(sm.promote(target, "ADMIN").gate?.level, "DEMO_APPROVED");
+  } finally {
+    sm.stopShadowMode();
+    mock.timers.reset();
+  }
+});

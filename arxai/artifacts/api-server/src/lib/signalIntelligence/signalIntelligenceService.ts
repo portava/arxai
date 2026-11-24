@@ -46,6 +46,8 @@ import type { ScalpResult } from "../scalp/scalpTypes.js";
 import { loadExecutionInput } from "../scalp/scalpServiceInputs.js";
 import { resolveSymbolFeedVerdict } from "../data/symbolFeedVerdict.js";
 import { hasRecentDerivTickFor } from "../data/providers/derivProvider.js";
+import { captureAtiMt5QuoteOrigin, type AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
+import { publicDerivQuoteOrigin, type AtiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 
 /** Default timeframe for a market-edge read (aligns with scanner/scalp). */
@@ -224,6 +226,9 @@ export interface BuildSignalArgs {
 }
 
 export interface BuildSignalOptions {
+  /** Optional quote evidence for a decision receipt, evaluated on the same market read. */
+  onBoundQuote?: (quote: { bid: number; ask: number; observedAt: string }, mt5Origin: AtiMt5QuoteOrigin | null,
+    derivOrigin: AtiDerivQuoteOrigin | null) => void;
   /**
    * Skip the advisory per-user `signalMemoryTable` upsert. The composed Truth
    * Snapshot path (polled ~15s by every scanner surface) sets this so the
@@ -278,7 +283,18 @@ export async function buildEleanorMarketEdgeForUser(
   // user/symbol/timeframe-only lookup can import another provider's setup age.
   const previous = contextKey ? await loadPreviousSnapshot(userId, symbol, contextKey, now) : null;
   const candles: SignalCandle[] | null = marketRead?.openClosed ?? null;
-  const price = matchedMarketQuote(candleResult, quoteResult, symbol, now)?.mid ?? null;
+  const matchedQuote = matchedMarketQuote(candleResult, quoteResult, symbol, now);
+  const price = matchedQuote?.mid ?? null;
+  const routedQuote = quoteResult.quote;
+  const quoteOwner = quoteResult.provenance?.userId;
+  const quoteOwnerAllowed = quoteOwner === userId ||
+    (quoteOwner == null && quoteResult.primaryProvider !== "mt5_broker");
+  if (options.onBoundQuote && matchedQuote && routedQuote?.bid != null && routedQuote.ask != null &&
+      quoteOwnerAllowed) {
+    options.onBoundQuote({ bid: routedQuote.bid, ask: routedQuote.ask, observedAt: routedQuote.timestamp },
+      captureAtiMt5QuoteOrigin(candleResult, quoteResult, userId),
+      quoteResult.primaryProvider === "deriv_public" ? publicDerivQuoteOrigin(routedQuote) : null);
+  }
   let dataSource = marketRead?.trailingIntervals != null && marketRead.trailingIntervals <= 1 ? "LIVE_FEED" : "AWAITING_FEED";
   const derivBacked =
     (candleResult.primaryProvider === "deriv" ||

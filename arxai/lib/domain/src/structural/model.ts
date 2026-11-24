@@ -4,6 +4,8 @@ import { observeStructure, structuralFeatures, validateBars, barStepMs } from ".
 import { softmax, hazardsToMass, probabilities, brier, reallocateEarly, prebreakCandidate, horizonsFromMass } from "./math.js";
 import { analogTrajectories, historicalNeighbors, forecastRoutes, choosePriceEstimate, estimatePrice, chooseRangeEngine, type RangeEngineChoice } from "./learning.js";
 import { deseasonalisedLevels, fitVolRangeProfile, seasonalBandAt, seasonalVolatilityBand, type VolRangeProfile } from "./volRange.js";
+import { ATI_SPECIALIST_VERSION, specialistFeatures, specialistIds, type Specialist, type SpecialistReceipt } from "./atiSpecialists.js";
+import { hasAtiStructuralScope, readAtiEarlyBreak } from "./atiValidation.js";
 
 /** New, preregisterable implementation choices, not recovered V6.7 settings. */
 export const MODEL_POLICY = Object.freeze({ stride: 15, purgeMinutes: 60, minTraining: 80,
@@ -21,6 +23,7 @@ export interface StructuralModel {
   stepMs: number;
   availableAt: number; baseline: Mass[]; geometry: LinearHead; confirmation: LinearHead;
   prebreak: LinearHead | null; geometryGate: Gate; confirmationGate: Gate; prebreakGate: Gate;
+  atiSpecialists?: { heads: Record<Specialist, LinearHead>; frequency: Triple; trainedWindows: number; trainedThrough: number };
   training: Episode[]; partitions: Record<string, { n: number; first: number | null; last: number | null }>;
   holdout: Array<{ origin: number; eligible: boolean; baselineBrier: number; selectedBrier: number }>;
   dataQuality: { inputBars: number; acceptedEpisodes: number; rejectedWindows: number };
@@ -233,6 +236,17 @@ export function fitStructuralModel(bars: StructuralBar[], origin: DataOrigin): S
   // a later head. These provisional flags never leave this fitting function.
   const geometryBlend = chooseBlend(parts.selection, () => model.baseline, e => hazardPrediction(model.geometry, e.features, true), 60, false);
   model.geometryGate = { ...rejected("SELECTION_ONLY"), accepted: geometryBlend > 0, blend: geometryBlend };
+  if (hasAtiStructuralScope({ origin }) && model.stepMs === 60_000) {
+    const train = parts.train;
+    const counts = [1, 1, 1];
+    const labels = train.map((episode) => truth(episode, 15));
+    for (const y of labels) counts[y]!++;
+    const heads = Object.fromEntries(specialistIds.map((id) => [id, fitHead(train.map((episode, i) => ({
+      x: specialistFeatures[id].map((k) => episode.features[k]!), y: labels[i]!,
+    })), 3)])) as Record<Specialist, LinearHead>;
+    model.atiSpecialists = { heads, trainedWindows: train.length, trainedThrough: train.at(-1)!.origin + 15 * model.stepMs,
+      frequency: counts.map((n) => n / (train.length + 3)) as Triple };
+  }
   const confirmationBlend = chooseBlend(parts.selection, e => baseFor(model, e.features), e => hazardPrediction(model.confirmation, e.features, false), 5, true);
   model.confirmationGate = { ...rejected("SELECTION_ONLY"), accepted: confirmationBlend > 0, blend: confirmationBlend };
   const confirmationBase = (e: Episode) => {
@@ -311,9 +325,21 @@ export function forecastStructural(model: StructuralModel, history: StructuralBa
     || barStepMs(history) !== stepMs) throw new Error("MODEL_PROVENANCE_OR_TIME_MISMATCH");
   const h = history.slice(-120), features = structuralFeatures(h, asOf);
   const prediction = predictMass(model, features.values, features.eligible, quarantined);
+  const specialists = model.atiSpecialists;
+  let atiSpecialists: SpecialistReceipt | undefined;
+  if (specialists && hasAtiStructuralScope({ origin }) && horizonBars === 15 && stepMs === 60_000 && specialists.trainedThrough < asOf) {
+    const votes = Object.fromEntries(specialistIds.map((id) => [id, predictHead(specialists.heads[id],
+      specialistFeatures[id].map((k) => features.values[k]!))])) as Record<Specialist, Triple>;
+    atiSpecialists = { version: ATI_SPECIALIST_VERSION, target: "FIRST_STRUCTURAL_BREAK_15_M1", asOf, modelId: model.modelId,
+      provider: origin.provider, symbol: origin.symbol, trainedWindows: specialists.trainedWindows, trainedThrough: specialists.trainedThrough,
+      trend: features.structure.trend === 1 ? "UP" : features.structure.trend === -1 ? "DOWN" : "UNESTABLISHED",
+      frequency: specialists.frequency, probabilities: votes };
+  }
   const seasonalBand = volHistory?.length && volHistory.at(-1)!.closeTime === asOf ? seasonalBandAt(volHistory, model.volRange, horizonBars) : null;
   const neighbors = historicalNeighbors(model, features.values, horizonBars, asOf);
   return { version: model.version, modelId: model.modelId, asOf, origin, trainedThrough: model.trainedThrough,
+    ...(atiSpecialists ? { atiSpecialists } : {}),
+    ...(hasAtiStructuralScope({ origin }) ? { atiEarlyBreak: readAtiEarlyBreak(features.structure, asOf, stepMs) } : {}),
     featureVersion: `${model.version}:features-1`, eventDefinitionVersion: `${model.version}:events-1`,
     features: features.values, preBreakEligible: features.eligible, mode: prediction.mode, gateReason: prediction.reason,
     validation: "NOT_YET_VALIDATED", mass: prediction.mass, baselineMass: prediction.baseline,

@@ -2,14 +2,14 @@ import { hasPaperQuoteCoverage } from "../tradeEngine/paperQuoteCoverage.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, chartDecisionReceiptsTable as receipts, chartDecisionOutcomesTable as outcomes } from "@workspace/db";
 import { MODEL_POLICY, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, scenarioIndex, type ForecastPaperGrade, type Triple, type HorizonForecast, forecastStepMs, type StructuralForecast, type ForecastScore, type StructuralModel } from "@workspace/domain/structural";
-import type { ForecastRepository, StoredForecast } from "./service.js";
+import { STRUCTURAL_HISTORY_LIMIT, type ForecastRepository, type StoredForecast } from "./service.js";
 import { sha256Hex, stableStringify } from "@workspace/features";
 
 const SOURCE = "structural_forecast";
 export const structuralRepository: ForecastRepository = {
   async list(userId, symbol) {
     const rows = await db.select().from(receipts).where(and(eq(receipts.userId, userId), eq(receipts.symbol, symbol), eq(receipts.source, SOURCE)))
-      .orderBy(desc(receipts.createdAt)).limit(250);
+      .orderBy(desc(receipts.createdAt), desc(receipts.id)).limit(STRUCTURAL_HISTORY_LIMIT);
     if (!rows.length) return [];
     const evaluations = await db.select().from(outcomes).where(and(eq(outcomes.userId, userId), inArray(outcomes.kind, ["STRUCTURAL_EVALUATION", "STRUCTURAL_PAPER_ISSUED", "STRUCTURAL_PAPER_RESULT"]), inArray(outcomes.receiptRef, rows.map(r => r.receiptId))));
     return rows.map(r => {
@@ -22,7 +22,8 @@ export const structuralRepository: ForecastRepository = {
       // One score per horizon; where a late grade was appended beside an
       // older ungraded score, the graded one is read.
       const pick = (h: number) => scores.find(x => x.horizon === h && x.grade) ?? scores.find(x => x.horizon === h)!;
-      return { id: r.receiptId, issuedAt: payload.issuedAt, forecast: payload.forecast, paperPublishedAt: published?.at, paperGrade,
+      return { id: r.receiptId, issuedAt: payload.issuedAt, ...(payload.forecast.atiEarlyBreak ? { recordedAt: r.createdAt.getTime() } : {}),
+        forecast: payload.forecast, paperPublishedAt: published?.at, paperGrade,
         scores: [...new Set(scores.map(s => s.horizon))].map(pick) };
     });
   },
@@ -60,6 +61,7 @@ export const structuralRepository: ForecastRepository = {
     const manifest = { version: model.version, modelId: model.modelId, origin: model.origin,
       trainedThrough: model.trainedThrough, availableAt: model.availableAt, baseline: model.baseline,
       geometry: model.geometry, confirmation: model.confirmation, prebreak: model.prebreak,
+      ...(row.forecast.atiSpecialists ? { atiSpecialists: model.atiSpecialists } : {}),
       geometryGate: model.geometryGate, confirmationGate: model.confirmationGate, prebreakGate: model.prebreakGate,
       partitions: model.partitions, dataQuality: model.dataQuality, holdout: model.holdout, rangeEngine: model.rangeEngine ?? null, policy: MODEL_POLICY };
     const saved = await db.transaction(async tx => {

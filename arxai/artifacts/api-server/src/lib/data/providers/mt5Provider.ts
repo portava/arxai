@@ -374,6 +374,26 @@ interface QuoteEntry {
   /** Measured broker-clock offset (ms) the ingest subtracted to make
    *  `quote.timestamp` UTC; null = no conversion (raw broker stamp). */
   brokerClockOffsetMs: number | null;
+  atiAccount?: AtiTickAccount | null;
+}
+type AtiTickAccount = { binding: string; mode: "DEMO" | "LIVE"; historyIdentity?: string };
+type AtiQuoteAccount = AtiTickAccount & { receiptId?: number; streamKey?: string };
+const atiQuoteAccounts = new WeakMap<MarketQuote, AtiQuoteAccount>();
+const candleHistoryProofs = new WeakMap<Candle, string>();
+
+/** Private provenance for the exact routed quote object. Legacy quotes and
+ * copies without an authenticated account-era witness carry no ATI binding. */
+export function atiMt5QuoteAccount(quote: MarketQuote): AtiQuoteAccount | null {
+  return atiQuoteAccounts.get(quote) ?? null;
+}
+
+export function bindMt5CandleHistory(candle: Candle, identity: string): Candle {
+  candleHistoryProofs.set(candle, identity);
+  return candle;
+}
+
+export function mt5CandlesMatchHistory(candles: readonly Candle[], identity: string): boolean {
+  return candles.length > 0 && candles.every((candle) => candleHistoryProofs.get(candle) === identity);
 }
 // symbol → (bridgeKey → latest quote). Same partition wall as the candle store:
 // a bridge-scoped read serves ONLY that bridge's quote; the unscoped read
@@ -521,6 +541,7 @@ export function mergeCandleFromMT5(
   timeframe: string = DEFAULT_TIMEFRAME,
   bridge?: Mt5BridgeIdentity | null,
 ): void {
+  if (bridge?.historyIdentity) bindMt5CandleHistory(candle, bridge.historyIdentity);
   const partitions = partitionsFor(symbol, timeframe);
   const bKey = bridgeKeyOf(bridge);
   const existing = partitions.get(bKey);
@@ -583,6 +604,9 @@ export interface Mt5TickInput {
   brokerTimeMs: number | null;
   /** Envelope `eaCreatedAtEpochMs`: the EA's UTC clock when it posted the tick. */
   eaUtcMs: number;
+  /** Bridge v2 event trace ID returned after successful insert. */
+  atiReceiptId?: number;
+  atiStreamKey?: string;
 }
 
 /**
@@ -612,6 +636,7 @@ export function recordMt5Tick(
   symbol: string,
   tick: Mt5TickInput,
   bridge: Mt5BridgeIdentity | null,
+  account?: AtiTickAccount | null,
 ): Mt5TickProvenance {
   const key = normalizeSymbolKey(symbol);
   const partitions = quoteStore.get(key) ?? new Map<string, QuoteEntry>();
@@ -619,10 +644,14 @@ export function recordMt5Tick(
   const existing = partitions.get(bKey);
   const tickKey = `${tick.brokerSymbol ?? "-"}|${tick.brokerTimeMs ?? "-"}|${tick.bid}|${tick.ask}`;
   const now = Date.now();
+  const sameAccount = account != null && existing?.atiAccount?.binding === account.binding &&
+    existing.atiAccount.mode === account.mode && existing.atiAccount.historyIdentity === account.historyIdentity;
   let entry: QuoteEntry;
   if (existing?.tick && existing.tick.key === tickKey) {
+    if (!sameAccount) atiQuoteAccounts.delete(existing.quote);
     entry = {
       ...existing,
+      atiAccount: sameAccount ? account : null,
       updatedAt: now,
       writeSeq: ++writeCounter,
       tick: {
@@ -662,6 +691,7 @@ export function recordMt5Tick(
       bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
       userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
       tickTimeObserved: tick.brokerTimeMs != null && tightlyBounded,
+      atiAccount: account ?? null,
       // The timestamp is the EA's own UTC clock at first sight, not a converted
       // broker stamp: no offset was removed from it.
       brokerClockOffsetMs: null,
@@ -673,6 +703,10 @@ export function recordMt5Tick(
         priorPostEaMs,
       },
     };
+    if (sameAccount && account && entry.tickTimeObserved && tick.brokerTimeMs != null &&
+        existing?.quote.brokerClockMs != null && existing.quote.brokerClockMs <= tick.brokerTimeMs) {
+      atiQuoteAccounts.set(entry.quote, { ...account, receiptId: tick.atiReceiptId, streamKey: tick.atiStreamKey });
+    }
   }
   partitions.set(bKey, entry);
   quoteStore.set(key, partitions);

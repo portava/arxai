@@ -292,6 +292,7 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   let allCloses: Awaited<ReturnType<typeof readPaperCloses>> = [];
   // The drawdown rule's two full bases (booked, and the paper risk model).
   let paperEquityBases: PaperEquityBases | null = null;
+  let atiOwnedPaperBook = false;
   if (acct) {
     const book = { account: acct.id };
     const open = await readOpenPaperOrders(book);
@@ -308,6 +309,8 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
     const dayStart = startOfTodayUtc(now).getTime();
     const closes = allCloses = await readPaperCloses(book);
+    atiOwnedPaperBook = intent.action === "OPEN" && opts.paperAccountId === acct.id && acct.userId === intent.userId && open.every((order) => order.userId === intent.userId) &&
+      recent.every((order) => order.userId === intent.userId) && closes.every((order) => order.userId === intent.userId);
     const today = paperRiskTotals(closes.filter((c) => c.closedAt.getTime() >= dayStart));
     if (today.risk < today.booked - DISCLOSE_DIFFERENCE) todayBooked = today.booked;
     const openValue = await valueOpenPaperPositions(open, {
@@ -430,7 +433,7 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     broker: acct
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
-    paperEquityBases,
+    ...(atiOwnedPaperBook ? { atiOwnedPaperBook } : {}), paperEquityBases,
     daily: {
       realizedPnl: realized, floatingPnl: risk ? risk.floating : null,
       ...(todayBooked != null && realized != null ? { bookedRealizedPnl: todayBooked } : {}),
@@ -780,6 +783,7 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
   } : halt;
   return {
     now,
+    ...(loaded.atiOwnedPaperBook && Object.keys(f).every((key) => key === "quote") ? { atiOwnedPaperBook: true } : {}),
     limits,
     equityPeak,
     account,
@@ -847,6 +851,12 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           : blocked ? decision.primaryReason ?? "Blocked by Risk Governor." : `Pre-trade risk passed (${intent.venue} ${intent.action} ${intent.symbol}).`,
         details: {
           ...(opts.auditContext ?? {}),
+          ...(intent.venue === "PAPER" && intent.action === "OPEN" ? { atiPortfolioBook:
+            ctx?.atiOwnedPaperBook && opts.paperAccountId != null && ctx.account?.source === `paper_account:${opts.paperAccountId}` ? {
+              version: "paper-governor-book-v1", ownerId: intent.userId, accountId: opts.paperAccountId,
+              decisionAt: decision.evaluatedAt, positions: ctx.positions, instruments: ctx.instruments,
+              pendingCount: ctx.inFlight.filter((order) => order.kind === "pending").length,
+            } : null } : {}),
           source: "pre_trade_risk_governor",
           intent,
           override,

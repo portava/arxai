@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { atiCostReceiptFromResult } from "../../lib/mt5/atiCostEvidence.js";
 const source = readFileSync(new URL("../mt5Live.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile(
   "mt5Live.ts",
@@ -71,6 +72,7 @@ test("direct result route returns retryable503 with receiptPersisted false on ca
     "and",
     "eq",
     "recordLiveCommandResult",
+    "atiCostReceiptFromResult",
     "reportedManagementIdentity",
     "scheduleGuardian",
     "loadModule",
@@ -92,6 +94,7 @@ test("direct result route returns retryable503 with receiptPersisted false on ca
       reason: "LIVE_RESULT_RECEIPT_CAPACITY",
       receiptPersisted: false,
     }),
+    atiCostReceiptFromResult,
     () => [],
     () => {
       guardian++;

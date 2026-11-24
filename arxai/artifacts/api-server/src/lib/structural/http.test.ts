@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
 import type { StoredForecast } from "./service.js";
+import type { reportAtiSpecialists } from "./atiSpecialistReport.js";
+import type { reportAtiSpecialistCosts } from "./atiSpecialistCosts.js";
+import type { reportAtiStructuralValidation } from "./atiValidationReport.js";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline";
 const { createStructuralForecastRouter } = await import("../../routes/structuralForecasts.js");
 
@@ -19,9 +22,24 @@ test("HTTP forecast routes enforce authentication, symbol validation and user id
   const url = `http://127.0.0.1:${address.port}/me/structural/forecasts`;
   try {
     assert.equal((await fetch(`${url}?symbol=V75`)).status, 401); assert.equal(invoked, 0);
+    const opsUrl = url + "/structural-" + "a".repeat(64) + "/operations";
+    assert.equal((await fetch(opsUrl)).status, 401);
     user = 17;
+    assert.equal((await fetch(url + "/invalid/operations")).status, 400);
+    assert.equal((await fetch(opsUrl + "?asOf=2099-01-01T00:00:00Z")).status, 400);
     assert.equal((await fetch(`${url}?symbol=NOT_A_MARKET`)).status, 400); assert.equal(invoked, 0);
     const history = await fetch(`${url}?symbol=V75`); assert.equal(history.status, 200); assert.deepEqual(await history.json(), { ok: true, forecasts: [] });
+    const ati = await (await fetch(`${url}?symbol=V75&atiValidation=1&userId=999`)).json() as {
+      atiValidation: ReturnType<typeof reportAtiStructuralValidation>;
+    };
+    assert.deepEqual(ati.atiValidation.scope, { historyLimit: 250, receiptsRead: 0, atHistoryLimit: false });
+    assert.deepEqual(ati.atiValidation.cohorts, []);
+    const specialists = await (await fetch(url + "?symbol=V75&atiSpecialists=1&atiSpecialistCosts=1&userId=999")).json() as {
+      atiSpecialists: ReturnType<typeof reportAtiSpecialists>; atiSpecialistCosts: Awaited<ReturnType<typeof reportAtiSpecialistCosts>>;
+    };
+    assert.deepEqual(specialists.atiSpecialists.cohorts, []);
+    assert.deepEqual(specialists.atiSpecialistCosts.cohorts, []);
+    assert.equal(specialists.atiSpecialistCosts.costBasis.observedBrokerCharges, null);
     const failure = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "V75", userId: 999 }) });
     assert.equal(failure.status, 503); assert.deepEqual(await failure.json(), { ok: false, saved: false, reason: "FORECAST_UNAVAILABLE" });
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }

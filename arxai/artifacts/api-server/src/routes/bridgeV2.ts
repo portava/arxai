@@ -25,12 +25,14 @@ import { db, bridgeV2EventsTable } from "@workspace/db";
 import { listRecentBridgeV2StreamStates } from "../lib/brokerHub/bridgeV2StreamState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
-import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
+import { ingestBridgeV2Message, type BridgeV2IngestInput } from "../lib/bridgeV2/ingest.js";
 import { loadBridgeV2ConfigForEa } from "../lib/bridgeV2/egress.js";
 import { claimBridgeV2CommandsForEa } from "../lib/bridgeV2/commandClaim.js";
 import { buildBridgeV2AdminStatus } from "../lib/bridgeV2/status.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { recordNativeSeamObservation } from "../lib/data/chart/nativeSeamObservation.js";
+import { nativeAccountBinding } from "../lib/brokerHub/nativeAccountReport.js";
+import { brokerHistoryIdentity } from "../lib/data/brokerHistoryPolicy.js";
 
 const router = Router();
 
@@ -75,6 +77,14 @@ router.post("/bridge/v2/ingest", bridgeAuthPerUserOnly, async (req: ConnReq, res
   }
   const userId = conn.userId;
   const bridgeConnectionId = conn.id ?? null;
+  const accountType = conn.accountType?.toLowerCase() ?? "";
+  const mode = accountType === "demo" ? "DEMO" : ["live", "real"].includes(accountType) ? "LIVE" : null;
+  const binding = nativeAccountBinding(conn.accountNumber, conn.serverName);
+  const atiAccount: BridgeV2IngestInput["atiAccount"] = binding && mode && bridgeConnectionId != null ? {
+    binding, mode,
+    historyIdentity: brokerHistoryIdentity({ userId, bridgeConnectionId, accountNumber: conn.accountNumber,
+      serverName: conn.serverName, clockBasis: "broker_server" }),
+  } : null;
   const now = Date.now();
 
   const body = req.body as unknown;
@@ -95,6 +105,7 @@ router.post("/bridge/v2/ingest", bridgeAuthPerUserOnly, async (req: ConnReq, res
         bridgeConnectionId,
         raw,
         serverReceivedAtEpochMs: now,
+        atiAccount,
       });
       results.push(r);
     } catch (e) {

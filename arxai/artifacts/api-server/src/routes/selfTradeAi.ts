@@ -26,6 +26,18 @@ import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
+import { appendAtiShadowObservation, gradeAtiShadowRun, readAtiShadowRun, startAtiShadowRun } from "../lib/selfTrade/atiShadow.js";
+import { readAtiPortfolioRisk } from "../lib/selfTrade/atiPortfolioReport.js";
+import { readAtiCaptureOperations } from "../lib/selfTrade/atiCaptureOperations.js";
+import { readAtiExecutionOperations } from "../lib/selfTrade/atiExecutionOperations.js";
+import { readAtiGuardianComparison } from "../lib/selfTrade/atiGuardianReport.js";
+import { readAtiShadowMemory } from "../lib/selfTrade/atiTradingMemory.js";
+import { readAtiLiveMemory } from "../lib/selfTrade/atiLiveTradingMemory.js";
+import { listAtiResearch, readAtiResearch, readAtiReplication, registerAtiResearch, replayAtiResearchObservation, sealAtiResearch } from "../lib/selfTrade/atiResearchLab.js";
+import { atiResearchInput } from "../lib/selfTrade/atiResearchModel.js";
+import { ATI_FLEET_BASELINE, ATI_FLEET_SYMBOL } from "../lib/selfTrade/atiFleetShadow.js";
+import { atiShadowDefinition } from "../lib/selfTrade/atiShadowGrading.js";
+import { atiChallengerVersion } from "../lib/selfTrade/atiCounterargument.js";
 
 const router = Router();
 
@@ -132,6 +144,218 @@ router.get("/self-trade-ai/volatility-matrix", requireUser, async (_req, res) =>
   // nodes/pairs when data is insufficient; never fabricated relationships.
   const matrix = await getVolatilityMatrix();
   res.json(matrix);
+});
+
+const atiPilotBody = z.object({
+  baselineVersion: z.enum([atiShadowDefinition.baselineVersion, ATI_FLEET_BASELINE]).optional(),
+  symbol: z.string().trim().min(1).max(40),
+  setup: z.enum(["TREND_CONTINUATION", "BREAKOUT_RETEST", "REVERSAL", "LIQUIDITY_SWEEP", "RANGE_FADE"]),
+  durationMinutes: z.number().int().min(1).max(1440),
+  challengerVersion: atiChallengerVersion.optional(),
+  assumedCosts: z.object({
+    adverseSlippagePerFillPriceUnits: z.number().nonnegative(),
+    feePerFillPriceUnits: z.number().nonnegative(),
+  }).optional(),
+});
+const atiRunParams = idParam.extend({ runId: z.uuid() });
+
+router.get("/self-trade-ai/ati-portfolio-risk/paper-accounts/:id", requireUser, async (req, res) => {
+  const account = idParam.safeParse(req.params);
+  const period = z.object({ from: z.iso.datetime(), through: z.iso.datetime() }).safeParse(req.query);
+  if (!account.success || !period.success) { err(res, 400, "INVALID_INPUT", "Specify an account and UTC report window."); return; }
+  const from = new Date(period.data.from), through = new Date(period.data.through);
+  if (+through > Date.now() || +from >= +through) { err(res, 400, "INVALID_WINDOW", "Choose an elapsed report window."); return; }
+  const report = await readAtiPortfolioRisk(req.authUser!.id, account.data.id, from, through);
+  if (!report) { err(res, 404, "NOT_FOUND", "Paper account unavailable."); return; }
+  if (report.state === "AUDIT_INTEGRITY_GAP") { err(res, 409, report.state, "Conflicting risk audit receipts."); return; }
+  if (report.state === "NARROW_WINDOW") { err(res, 422, report.state, "Choose a window with at most 1,000 decisions."); return; }
+  res.json(report);
+});
+
+router.post("/self-trade-ai/agents/:id/ati-shadow-runs", requireUser, async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const body = atiPilotBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    err(res, 400, "INVALID_INPUT", "Choose an agent, an allowed symbol, a setup, and a duration in minutes.");
+    return;
+  }
+  if (body.data.baselineVersion === ATI_FLEET_BASELINE && (body.data.symbol !== ATI_FLEET_SYMBOL ||
+      (body.data.challengerVersion ?? atiShadowDefinition.challengerVersion) !== atiShadowDefinition.challengerVersion)) {
+    err(res, 400, "UNSUPPORTED_FLEET_COMPARISON", "The owner-fleet pilot supports V75 and the timeframe-conflict challenger.");
+    return;
+  }
+  const run = await startAtiShadowRun(req.authUser!.id, params.data.id, body.data);
+  if (!run) {
+    err(res, 404, "AGENT_UNAVAILABLE", "No eligible agent and allowed symbol were found for this account.");
+    return;
+  }
+  res.status(201).json(run);
+});
+
+router.post("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/observations", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or run id."); return; }
+  const result = await appendAtiShadowObservation(req.authUser!.id, params.data.id, params.data.runId);
+  const status = result.status === "NOT_FOUND" ? 404
+    : result.status === "RECORDED" ? 201
+    : result.status === "ALREADY_OBSERVED" ? 200 : 409;
+  res.status(status).json(result);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or run id."); return; }
+  const query = z.object({ asOf: z.iso.datetime().optional() }).safeParse(req.query);
+  if (!query.success) { err(res, 400, "INVALID_INPUT", "Use a UTC timestamp for asOf."); return; }
+  const asOf = query.data.asOf ? new Date(query.data.asOf) : undefined;
+  if (asOf && +asOf > Date.now()) { err(res, 400, "INVALID_INPUT", "Choose an elapsed shadow report cutoff."); return; }
+  const report = await readAtiShadowRun(req.authUser!.id, params.data.id, params.data.runId, asOf);
+  if (!report) { err(res, 404, "NOT_FOUND", "Shadow run not found."); return; }
+  res.json(report);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/operations", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  const query = z.object({ observationKey: z.string().min(1).max(128).optional(), asOf: z.iso.datetime().optional() }).safeParse(req.query);
+  if (!params.success || !query.success) { err(res,400,"INVALID_INPUT","Choose a run, observation and UTC cutoff."); return; }
+  const asOf = query.data.asOf ? new Date(query.data.asOf) : new Date();
+  if (+asOf > Date.now()) { err(res,400,"FUTURE_CUTOFF","Choose an elapsed cutoff."); return; }
+  const report = query.data.observationKey
+    ? await readAtiExecutionOperations(req.authUser!.id,params.data.id,params.data.runId,query.data.observationKey,asOf)
+    : await readAtiCaptureOperations(req.authUser!.id,params.data.id,params.data.runId,asOf);
+  if (!report) { err(res,404,"NOT_FOUND","Shadow observation unavailable at this cutoff."); return; }
+  res.json(report);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/guardian", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  const query = z.object({ observationKey: z.string().min(1).max(128), asOf: z.iso.datetime().optional() }).safeParse(req.query);
+  if (!params.success || !query.success) { err(res, 400, "INVALID_INPUT", "Choose a run, observation and UTC cutoff."); return; }
+  const asOf = query.data.asOf ? new Date(query.data.asOf) : new Date();
+  if (+asOf > Date.now()) { err(res, 400, "INVALID_INPUT", "The cutoff must be in the past."); return; }
+  const report = await readAtiGuardianComparison(req.authUser!.id, params.data.id, params.data.runId, query.data.observationKey, asOf);
+  if (!report) { err(res, 404, "NOT_FOUND", "Shadow observation unavailable at this cutoff."); return; }
+  res.json(report);
+});
+
+router.post("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/grade", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or run id."); return; }
+  const result = await gradeAtiShadowRun(req.authUser!.id, params.data.id, params.data.runId);
+  if (!result) { err(res, 404, "NOT_FOUND", "Shadow run not found."); return; }
+  res.json(result);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-research-studies", requireUser, async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const query = z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) }).safeParse(req.query);
+  if (!params.success || !query.success) { err(res, 400, "INVALID_INPUT", "Invalid agent or limit."); return; }
+  res.json({ studies: await listAtiResearch(req.authUser!.id, params.data.id, query.data.limit) });
+});
+
+router.post("/self-trade-ai/agents/:id/ati-research-studies", requireUser, async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const body = atiResearchInput.safeParse(req.body);
+  if (!params.success || !body.success) { err(res, 400, "INVALID_REGISTRATION", "Invalid agent or research registration."); return; }
+  const result = await registerAtiResearch(req.authUser!.id, params.data.id, body.data);
+  const status = result.status === "REGISTERED" ? 201 : result.status === "ALREADY_REGISTERED" ? 200
+    : result.status === "AGENT_UNAVAILABLE" ? 404 : result.status === "INVALID_REGISTRATION" ? 400 : 409;
+  res.status(status).json(result);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or study id."); return; }
+  const result = await readAtiResearch(req.authUser!.id, params.data.id, params.data.runId);
+  if (!result) { err(res, 404, "NOT_FOUND", "Research study not found."); return; }
+  res.json(result);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId/forward-evidence", requireUser, async (req,res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res,400,"INVALID_ID","Invalid agent or study id."); return; }
+  const report = await readAtiReplication(req.authUser!.id,params.data.id,params.data.runId);
+  if (!report) { err(res,404,"NOT_FOUND","Research study not found."); return; }
+  res.json(report);
+});
+
+router.get("/self-trade-ai/agents/:id/ati-research-studies/:runId/replay/:observationKey", requireUser, async (req, res) => {
+  const params = atiRunParams.extend({ observationKey: z.string().min(1).max(128) }).safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid study or observation id."); return; }
+  const { id, runId, observationKey } = params.data;
+  const result = await replayAtiResearchObservation(req.authUser!.id, id, runId, observationKey);
+  if (!result) { err(res, 404, "NOT_FOUND", "Research observation not found."); return; }
+  res.status(result.status === "STUDY_NOT_SEALED" ? 409 : 200).json(result);
+});
+
+router.post("/self-trade-ai/agents/:id/ati-research-studies/:runId/observations", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or study id."); return; }
+  const result = await appendAtiShadowObservation(req.authUser!.id, params.data.id, params.data.runId, "RESEARCH");
+  const status = result.status === "NOT_FOUND" ? 404 : result.status === "ALREADY_OBSERVED" || result.status === "RECORDED" ? 202 : 409;
+  // A duplicate or changed feed must not disclose a holdout row through the write receipt.
+  res.status(status).json({ status: status === 202 ? "CAPTURE_CHECKED" : result.status });
+});
+
+router.post("/self-trade-ai/agents/:id/ati-research-studies/:runId/grade", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or study id."); return; }
+  const result = await gradeAtiShadowRun(req.authUser!.id, params.data.id, params.data.runId, "RESEARCH");
+  if (!result) { err(res, 404, "NOT_FOUND", "Research study not found."); return; }
+  res.status(202).json({ status: "GRADING_CHECKED" });
+});
+
+router.post("/self-trade-ai/agents/:id/ati-research-studies/:runId/seal", requireUser, async (req, res) => {
+  const params = atiRunParams.safeParse(req.params);
+  if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or study id."); return; }
+  const result = await sealAtiResearch(req.authUser!.id, params.data.id, params.data.runId);
+  if (!result) { err(res, 404, "NOT_FOUND", "Research study not found."); return; }
+  res.status(result.status === "SEALED" ? 200 : 409).json(result);
+});
+
+const atiMemoryQuery = z.object({
+  source: z.enum(["SHADOW", "LIVE"]).default("SHADOW"),
+  symbol: z.string().min(1).max(40).optional(),
+  setup: atiPilotBody.shape.setup.optional(),
+  asOf: z.iso.datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().min(1).max(512).optional(),
+});
+const atiMemoryCursor = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("SHADOW"), asOf: z.iso.datetime(), observedAt: z.iso.datetime(), runId: z.uuid(),
+    observationKey: z.string().min(1).max(128), symbol: atiMemoryQuery.shape.symbol, setup: atiMemoryQuery.shape.setup }),
+  z.object({ source: z.literal("LIVE"), asOf: z.iso.datetime(), beforeId: z.number().int().positive(),
+    symbol: atiMemoryQuery.shape.symbol, setup: atiMemoryQuery.shape.setup }),
+]);
+
+router.get("/self-trade-ai/agents/:id/ati-trading-memory", requireUser, async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const query = atiMemoryQuery.safeParse(req.query);
+  if (!params.success || !query.success) { err(res, 400, "INVALID_INPUT", "Invalid agent or memory filters."); return; }
+  const { source, limit, setup, symbol } = query.data;
+  let cursor: z.infer<typeof atiMemoryCursor> | undefined;
+  if (query.data.cursor) {
+    try { cursor = atiMemoryCursor.parse(JSON.parse(Buffer.from(query.data.cursor, "base64url").toString("utf8"))); }
+    catch { err(res, 400, "INVALID_CURSOR", "Invalid trading memory cursor."); return; }
+  }
+  if (cursor && (cursor.source !== source || cursor.symbol !== symbol || cursor.setup !== setup ||
+      (query.data.asOf && query.data.asOf !== cursor.asOf))) {
+    err(res, 400, "INVALID_CURSOR", "The cursor belongs to a different memory snapshot."); return;
+  }
+  const asOf = new Date(cursor?.asOf ?? query.data.asOf ?? Date.now());
+  if (+asOf > Date.now()) { err(res, 400, "INVALID_INPUT", "Choose a memory cutoff at or before the current time."); return; }
+  const ownerId = req.authUser!.id;
+  const agent = await getAgentById(params.data.id, { ownerType: "USER", ownerId });
+  if (!agent) { err(res, 404, "NOT_FOUND", "Agent not found."); return; }
+  const filter = { asOf, limit, setup, symbol };
+  const encode = (position: object) => Buffer.from(JSON.stringify({ source, asOf: asOf.toISOString(), symbol, setup, ...position })).toString("base64url");
+  if (source === "LIVE") {
+    const page = await readAtiLiveMemory(ownerId, params.data.id, filter, cursor?.source === "LIVE" ? cursor.beforeId : undefined);
+    res.json({ ...page, nextCursor: page.nextCursor ? encode({ beforeId: page.nextCursor }) : null });
+    return;
+  }
+  const page = await readAtiShadowMemory(ownerId, params.data.id, filter, cursor?.source === "SHADOW" ? cursor : undefined);
+  res.json({ ...page, nextCursor: page.nextCursor ? encode(page.nextCursor) : null });
 });
 
 const execQuery = z.object({

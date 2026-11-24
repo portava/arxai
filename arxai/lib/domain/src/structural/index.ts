@@ -9,3 +9,6 @@ export * from "./volRange.js";
 
 export * from "./scorecard.js";
 export * from "./paperInstruction.js";
+export * from "./atiValidation.js";
+
+export * from "./atiSpecialists.js";

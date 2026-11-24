@@ -1,4 +1,6 @@
 import { publicPaperBrackets } from "../../tradeEngine/publicPaperBrackets.js";
+import { randomUUID } from "node:crypto";
+import { recordPublicDerivQuote } from "../atiDerivQuotes.js";
 // Public market data only. This connection never reads credentials, creates an
 // account session, sends authorize/OTP, or accepts an order/account operation.
 import WebSocket from "ws";
@@ -98,6 +100,7 @@ export class DerivPublicDataClient {
   private listeners = new Set<DerivTickListener>();
   private desired = new Set<string>();
   private subscriptions = new Map<string, string>();
+  private subscriptionStreams = new Map<string, string>();
   private subscriptionPromises = new Map<string, Promise<DerivTick | null>>();
   private intentVersions = new Map<string, number>();
   private candlePromises = new Map<string, Promise<DerivCandle[]>>();
@@ -182,7 +185,7 @@ export class DerivPublicDataClient {
         this.connected = false; this.connectedAt = null; this.opening = null;
         this.disconnect = null; this.ws = null;
         for (const symbol of this.staged.keys()) this.clearStaged(symbol);
-        this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.subscriptions.clear();
+        this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.subscriptions.clear(); this.subscriptionStreams.clear();
         this.subscriptionPromises.clear(); this.candlePromises.clear(); this.candleCache.clear(); this.lastCandle = null; this.historySymbols.clear();
         if (this.pingTimer) clearInterval(this.pingTimer);
         this.pingTimer = null;
@@ -310,7 +313,10 @@ export class DerivPublicDataClient {
     if (prior && (tick.epoch < prior.epoch || tick.epoch === prior.epoch && tick.quote !== prior.quote)) return prior ?? null;
     if (prior?.epoch === tick.epoch) return prior;
     this.ticks.set(symbol, tick);
-    publicPaperBrackets.observe(tick, receivedAt, this.now());
+    const releasedAt = this.now();
+    publicPaperBrackets.observe(tick, receivedAt, releasedAt);
+    const streamId = this.subscriptionStreams.get(symbol);
+    if (streamId) recordPublicDerivQuote(tick, streamId, receivedAt, releasedAt);
     for (const listener of this.listeners) { try { listener(tick); } catch { /* observers do not own transport */ } }
     return tick;
   }
@@ -361,6 +367,7 @@ export class DerivPublicDataClient {
       if (version !== (this.intentVersions.get(symbol) ?? 0) || !this.desired.has(symbol)) { await this.request({ forget: id }); return null; }
       if (!normalizePublicTick(msg.tick, symbol, this.now() + DERIV_PUBLIC_MAX_CLOCK_LEAD_MS)) { await this.request({ forget: id }); throw ERROR("DERIV_PUBLIC_INVALID_TICK"); }
       this.subscriptions.set(symbol, id);
+      this.subscriptionStreams.set(symbol, randomUUID());
       return this.acceptTick(msg.tick, symbol);
     })();
     this.subscriptionPromises.set(symbol, work);
@@ -370,7 +377,7 @@ export class DerivPublicDataClient {
     if (!this.known.some(s => s.derivId === symbol)) return { ok: false, forgot: false, reason: "DERIV_PUBLIC_UNKNOWN_SYMBOL" };
     this.intentVersions.set(symbol, (this.intentVersions.get(symbol) ?? 0) + 1);
     this.clearStaged(symbol); this.desired.delete(symbol); this.ticks.delete(symbol);
-    const id = this.subscriptions.get(symbol); this.subscriptions.delete(symbol);
+    const id = this.subscriptions.get(symbol); this.subscriptions.delete(symbol); this.subscriptionStreams.delete(symbol);
     if (!id) return { ok: true, forgot: false, reason: "not_subscribed" };
     try { const result = await this.request({ forget: id }); return { ok: true, forgot: result.forget === 1 || result.forget === true }; }
     catch { return { ok: false, forgot: false, reason: "DERIV_PUBLIC_FORGET_UNCONFIRMED" }; }

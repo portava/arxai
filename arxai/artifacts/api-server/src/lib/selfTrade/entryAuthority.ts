@@ -58,6 +58,10 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+export function entrySnapshotHash(snapshot: unknown): string {
+  return createHash("sha256").update(canonical(snapshot)).digest("hex");
+}
+
 export interface AgentAdmissionEnvelope {
   version: 1;
   executionId: number;
@@ -85,9 +89,7 @@ export function admissionEnvelope(
   return {
     version: 1,
     executionId: execution.id,
-    snapshotHash: createHash("sha256")
-      .update(canonical(snapshot))
-      .digest("hex"),
+    snapshotHash: entrySnapshotHash(snapshot),
   };
 }
 

@@ -80,6 +80,26 @@ test("a sell exits on ask and ignores crossings before a bracket edit", () => {
   assert.equal(+q.at, 16000);
 });
 
+test("a deferred sell uses bid to enter and skips a wide spread inside the band", () => {
+  const book = new PublicPaperBracketHistory();
+  for (const [epoch, bid, ask] of [[12, 100, 101], [14, 100.25, 100.4], [16, 100.05, 100.15], [18, 97.9, 98]]) {
+    book.observe({ epoch: epoch!, symbol: "R_100", quote: bid!, bid, ask });
+  }
+  const plan = { action: "SELL", reference: 100, stop: 102, target: 98, reason: "fixture" } as const;
+  const policy = { band: { from: 99.9, to: 100.1 }, maximumSpreadFractionOfStop: 0.25 };
+  const grade = book.gradeTicket("R_100", plan, 10100, 18000, 20000, true, policy);
+  assert.equal(grade.state, "TARGET");
+  assert.equal(grade.path?.entry.atMs, 16000);
+  assert.equal(grade.entry, 100.05);
+  assert.equal(grade.exit, 98);
+
+  const invalidated = new PublicPaperBracketHistory();
+  invalidated.observe({ epoch: 12, symbol: "R_100", quote: 101.9, bid: 101.8, ask: 102.05 });
+  invalidated.observe({ epoch: 14, symbol: "R_100", quote: 100, bid: 100, ask: 100.1 });
+  const cancelled = invalidated.gradeTicket("R_100", plan, 10100, 14000, 20000, true, policy);
+  assert.deepEqual(cancelled.noFill, { reason: "BRACKET_INVALIDATED", atMs: 12000 });
+});
+
 test("Forecast receipt ignores a quote received before publication and grades the first later executable exit", () => {
   const history = new PublicPaperBracketHistory();
   const plan = {
@@ -163,6 +183,22 @@ test("Forecast cannot verify a stop or target through a stale executable quote",
   timely.observe({ symbol: "R_100", epoch: 14, bid: 102, ask: 102.2, quote: 102.1 }, 17000);
   assert.deepEqual(timely.gradeTicket("R_100", plan, 11000, 17000),
     { state: "TARGET", entry: 100.2, exit: 102, observedAt: 17000 });
+});
+
+test("a stated entry expiry excludes a later quote even inside the publication window", () => {
+  const history = new PublicPaperBracketHistory();
+  const plan = { action: "BUY" as const, reference: 100, stop: 99, target: 102, reason: "test" };
+  history.observe({ symbol: "R_100", epoch: 12, bid: 100, ask: 100.2, quote: 100.1 });
+  assert.deepEqual(history.gradeTicket("R_100", plan, 11000, 12000, 11999), { state: "SKIPPED" });
+  assert.deepEqual(history.gradeTicket("R_100", plan, 11000, 12000, 12000), { state: "OPEN", entry: 100.2 });
+});
+
+test("a producer timestamp ahead of availability cannot establish a fill", () => {
+  const history = new PublicPaperBracketHistory();
+  const plan = { action: "BUY" as const, reference: 100, stop: 99, target: 102, reason: "test" };
+  history.observe({ symbol: "R_100", epoch: 12, bid: 100, ask: 100.2, quote: 100.1 }, 11500);
+  assert.deepEqual(history.gradeTicket("R_100", plan, 11000, 11900), { state: "PENDING" });
+  assert.deepEqual(history.gradeTicket("R_100", plan, 11000, 12500), { state: "SKIPPED" });
 });
 
 test("an already verified open Forecast ticket can settle after the entry tick ages out", () => {

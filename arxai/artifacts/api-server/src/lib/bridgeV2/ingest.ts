@@ -39,7 +39,7 @@ import { brokerServerCandleTimeBasis, convertedBrokerCandleTimeBasis } from "../
 import { brokerStampToUtcMs, recordBrokerClockSample } from "../brokerHub/brokerClockOffset.js";
 import { isUniqueViolation } from "../pgError.js";
 import { randomUUID } from "node:crypto";
-import { isExactNativeAccountReplay } from "../brokerHub/nativeAccountReport.js";
+import { isExactNativeAccountReplay, nativeAccountBinding } from "../brokerHub/nativeAccountReport.js";
 import { emitConnectionAccountChanged } from "../live/liveAccountEventBus.js";
 
 const {
@@ -54,6 +54,7 @@ export interface BridgeV2IngestInput {
   bridgeConnectionId: number | null;
   raw: unknown;
   serverReceivedAtEpochMs: number;
+  atiAccount?: { binding: string; mode: "DEMO" | "LIVE"; historyIdentity?: string } | null;
 }
 
 export interface BridgeV2IngestResult {
@@ -80,6 +81,12 @@ export interface BridgeV2IngestResult {
   detail?: string;
 }
 
+function verifiedAtiAccount(claim: { login: string; server: string; mode: "DEMO" | "LIVE" } | undefined,
+  registered: BridgeV2IngestInput["atiAccount"]) {
+  return claim && registered && claim.mode === registered.mode &&
+    nativeAccountBinding(claim.login, claim.server) === registered.binding ? registered : null;
+}
+
 // Ingest a single message. Idempotent: replaying the same idempotencyKey returns
 // DUPLICATE without a second trace row or counter bump.
 export async function ingestBridgeV2Message(
@@ -103,6 +110,25 @@ export async function ingestBridgeV2Message(
   }
 
   const { envelope, payload } = validation;
+  // An authenticated bridge may have changed accounts. Bind a quote only
+  // when the terminal's identity matches this request's registered account.
+  // Keep the digest in evidence and never persist the raw tick account.
+  let tracePayload: unknown = payload;
+  let atiAccount: BridgeV2IngestInput["atiAccount"] = null;
+  if (envelope.messageType === "TICK" || envelope.messageType === "CANDLE") {
+    const { atiAccount: claim, ...market } = payload as ReturnType<typeof bridgeV2.tickPayloadSchema.parse | typeof bridgeV2.candlePayloadSchema.parse>;
+    atiAccount = verifiedAtiAccount(claim, input.atiAccount);
+    tracePayload = atiAccount ? { ...market, atiAccountBinding: atiAccount.binding, atiAccountMode: atiAccount.mode,
+      atiHistoryIdentity: atiAccount.historyIdentity } : market;
+  } else if (envelope.messageType === "DEAL_HISTORY") {
+    const { atiTriggeredExit: extension, ...deal } = payload as ReturnType<typeof bridgeV2.dealHistoryPayloadSchema.parse>;
+    tracePayload = deal;
+    if (extension && bridgeConnectionId != null) {
+      const { account, ...evidence } = extension;
+      const verified = verifiedAtiAccount(account, input.atiAccount);
+      if (verified) tracePayload = { ...deal, atiTriggeredExit: { ...evidence, accountBinding: verified.binding, mode: verified.mode } };
+    }
+  }
   const native = envelope.messageType === "ACCOUNT_SNAPSHOT" && payload != null && typeof payload === "object" && "reportVersion" in payload;
   if (native && (!Number.isSafeInteger(envelope.sequence) || envelope.sequence > bridgeV2.NATIVE_ACCOUNT_MAX_SEQUENCE || !Number.isSafeInteger(envelope.eaCreatedAtEpochMs) || envelope.eaCreatedAtEpochMs > serverReceivedAtEpochMs || envelope.eaCreatedAtEpochMs < (payload as unknown as {observedAtEpochMs:number}).observedAtEpochMs)) {
     const recorded = await safeInsertRejected(userId, bridgeConnectionId, raw, "PAYLOAD_INVALID", "Native sequence or capture/creation time is invalid", `reject:${userId}:${randomUUID()}`, serverReceivedAtEpochMs);
@@ -114,6 +140,7 @@ export async function ingestBridgeV2Message(
   // historical evidence without overflowing it or claiming current values.
   const transportLatencyMs = native && measuredLatencyMs > 2147483647 ? null : measuredLatencyMs;
   const freshnessVerdict = native ? null : classifyFreshness(measuredLatencyMs);
+  let atiTickReceiptId: number | undefined;
   let accountAttemptRecorded = false;
   const lifecycleState = mapLifecycleForMessage(envelope.messageType, payload);
 
@@ -183,7 +210,7 @@ export async function ingestBridgeV2Message(
         serverReceivedAtEpochMs,
         transportLatencyMs,
         freshnessVerdict,
-        payload: payload as object,
+        payload: tracePayload as object,
       };
 
       try {
@@ -202,6 +229,9 @@ export async function ingestBridgeV2Message(
             return {accepted:false,outcome:"DUPLICATE" as const,messageType:envelope.messageType,sequenceVerdict:"DUPLICATE",exactReplay:false,duplicateReason:"IDEMPOTENCY_CONFLICT" as const,transportLatencyMs,freshnessVerdict,lifecycleState};
           }
           accountAttemptRecorded=true;
+        } else if (envelope.messageType === "TICK" && atiAccount?.historyIdentity && seq.accept) {
+          const [inserted] = await tx.insert(bridgeV2EventsTable).values(row).returning({ id: bridgeV2EventsTable.id });
+          atiTickReceiptId = inserted?.id;
         }else{
           await tx.insert(bridgeV2EventsTable).values(row);
           if(envelope.messageType==="ACCOUNT_SNAPSHOT") accountAttemptRecorded=true;
@@ -278,6 +308,9 @@ export async function ingestBridgeV2Message(
         freshnessVerdict,
         eaCreatedAtEpochMs: envelope.eaCreatedAtEpochMs,
         bridge: bridgeConnectionId == null ? null : { bridgeConnectionId, userId },
+        atiAccount,
+        atiTickReceiptId,
+        atiTickStreamKey: envelope.messageType === "TICK" ? envelope.streamKey : undefined,
       });
     }
 
@@ -305,6 +338,9 @@ export interface MarketDataFeedInput {
    *  partition, which no bridge-scoped read serves). Required so every caller
    *  states the attribution explicitly. */
   bridge: Mt5BridgeIdentity | null;
+  atiAccount?: BridgeV2IngestInput["atiAccount"];
+  atiTickReceiptId?: number;
+  atiTickStreamKey?: string;
 }
 
 // Exported for the offline fresh-facts tests only; the ingest API is
@@ -325,7 +361,8 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       const bridgeUserId = bridge?.userId;
       if (typeof bridgeConnectionId !== "number" || !Number.isSafeInteger(bridgeConnectionId) || bridgeConnectionId <= 0
         || typeof bridgeUserId !== "number" || !Number.isSafeInteger(bridgeUserId) || bridgeUserId <= 0) return;
-      const candleBridge: Mt5BridgeIdentity = { bridgeConnectionId, userId: bridgeUserId };
+      const candleBridge: Mt5BridgeIdentity = { bridgeConnectionId, userId: bridgeUserId,
+        historyIdentity: brokerSymbol ? input.atiAccount?.historyIdentity : undefined };
       const symbol = typeof p.symbol === "string" ? p.symbol : null;
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
@@ -386,7 +423,9 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
         ? input.eaCreatedAtEpochMs
         : null;
     if (eaCreatedAtEpochMs == null) return;
-    recordMt5Tick(symbol, { bid, ask, brokerSymbol, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
+    recordMt5Tick(symbol, { bid, ask, brokerSymbol, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs,
+      atiReceiptId: input.atiTickReceiptId, atiStreamKey: input.atiTickStreamKey },
+      bridge, input.atiAccount);
     // One broker-clock offset sample per tick: the tick's broker time against
     // the EA's UTC clock in the same post (brokerClockOffset.ts rejects samples
     // far from the 30-minute grid, e.g. a re-posted old tick on a quiet market).
