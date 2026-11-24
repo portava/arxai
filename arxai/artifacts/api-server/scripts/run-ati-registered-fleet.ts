@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
 const [action, directoryArg] = process.argv.slice(2);
-if (!directoryArg || process.argv.length !== 4 || (action !== "capture" && action !== "report")) {
-  throw new Error("Use capture or report followed by the directory containing study-input.json");
+if (!directoryArg || process.argv.length !== 4 || (action !== "capture" && action !== "report" && action !== "candidate-review")) {
+  throw new Error("Use capture, report or candidate-review followed by the directory containing study-input.json");
 }
 const url = new URL(process.env.DATABASE_URL ?? "");
 if (url.hostname !== "localhost" || url.pathname !== "/ati_registered_fleet_v1" || !url.searchParams.get("host")?.startsWith("/")) {
@@ -51,8 +51,15 @@ try {
     await writeFile(tmp, JSON.stringify(value, null, 2) + "\n");
     await rename(tmp, file);
   };
-  await publish(study);
-  console.log(JSON.stringify({ runId: id, status: study.status, build: study.registration.build, gradeCutoffMs: study.registration.gradeCutoffMs }));
+  if (action === "candidate-review") {
+    const { readAtiCandidateReview } = await import("../src/lib/selfTrade/atiCandidateReview.js");
+    const review = await readAtiCandidateReview(owner, agent, id);
+    if (!review) throw new Error("CANDIDATE_REVIEW_UNAVAILABLE");
+    console.log(JSON.stringify(review, null, 2));
+  } else {
+    await publish(study);
+    console.log(JSON.stringify({ runId: id, status: study.status, build: study.registration.build, gradeCutoffMs: study.registration.gradeCutoffMs }));
+  }
   if (action === "capture" && study.status === "REGISTERED") {
     const { runDecisionCycle } = await import("../src/lib/selfTrade/decisionEngine.js");
     const { gradeAtiShadowRun } = await import("../src/lib/selfTrade/atiShadow.js");

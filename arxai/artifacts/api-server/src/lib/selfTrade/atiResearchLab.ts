@@ -77,6 +77,22 @@ function matchedFleetReceipt(registration: Registration) {
   ) then ${receipt} end`;
 }
 
+/** Recover only a development receipt already joined back to the owner's native decision. */
+export async function readAtiDevelopmentRecoveryAnchor(registration: Registration, key: string) {
+  if (registration.definition.baselineVersion !== ATI_FLEET_BASELINE) return null;
+  const [row] = await db.select({ native: matchedFleetReceipt(registration), sourceIdentity: observations.sourceIdentity,
+    closedBar: sql<string | null>`${observations.evidence} #>> '{input,signal,marketEvidence,lastClosedCandleAt}'`,
+    recordedAt: observations.recordedAt }).from(observations).where(and(
+      eq(observations.runId, registration.runId), eq(observations.observationKey, key), eq(observations.coverage, "OBSERVED"),
+      gte(observations.observedAt, new Date(registration.spec.startsAtMs)),
+      lt(observations.recordedAt, new Date(registration.spec.developmentEndsAtMs)),
+      lt(observations.observedAt, new Date(registration.spec.developmentEndsAtMs)),
+    ));
+  const native = fleetResearchReceipt.safeParse(row?.native);
+  if (!row?.recordedAt || !row.closedBar || key !== `bar:${Date.parse(row.closedBar)}` || !native.success) return null;
+  return { ...native.data, sourceIdentity: row.sourceIdentity, recordedAtMs: +row.recordedAt };
+}
+
 function replayInputHash(row: ReplayInput, venue: "deriv_public" | "mt5_broker") {
   return canonicalResearch([+row.observedAt, row.sourceIdentity, row.challenger,
     row.baselinePlan, venue === "mt5_broker" ? row.mt5Origin : row.derivOrigin, row.decisionQuote,

@@ -2050,7 +2050,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         });
       }
       let nextDecisionId = 123_000;
-      async function studyWithQuoteArchive(start: number, replicates?: ReplicationLink, options: { omitConflictWarning?: boolean; fleet?: boolean } = {}) {
+      async function studyWithQuoteArchive(start: number, replicates?: ReplicationLink, options: { omitConflictWarning?: boolean; fleet?: boolean; includeDevelopment?: boolean } = {}) {
         const assumptions = { adverseSlippagePerFillPriceUnits: 0.00001, feePerFillPriceUnits: 0.000005 };
         const fixed = { ...specFor(start, { source: "deriv_public", mode: null }),
           ...(options.fleet ? { baselineVersion: ATI_FLEET_BASELINE } as const : {}),
@@ -2064,7 +2064,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
           endsAt: new Date(fixed.holdoutEndsAtMs), assumedCosts: assumptions });
         await db.insert(studies).values({ runId, ownerId: 1, agentId: 3, requestId: fixed.requestId,
           registration: receipt.canonical, registrationHash: receipt.hash, registeredAt: new Date(reg.registeredAtMs) });
-        for (const phaseStart of [fixed.developmentEndsAtMs, fixed.validationEndsAtMs]) {
+        for (const phaseStart of [...(options.includeDevelopment ? [start] : []), fixed.developmentEndsAtMs, fixed.validationEndsAtMs]) {
           for (const [index, exitBid] of [1.0989, 1.1029].entries()) {
             const barAt = phaseStart + index * bar, at = barAt + 1000;
             const origin = { streamId: randomUUID(), symbol: "R_75" as const, epoch: at / 1000 };
@@ -2097,7 +2097,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
               sourceIdentity: "deriv-archive-comparison", coverage: "OBSERVED", setup, baselineOutcome: baseline.outcome,
               challengerOutcome: challenger, evidence: { researchBuild: build, decisionSettingsHash: "d".repeat(64),
                 baseline, quote, derivQuoteOrigin: origin, ...(options.fleet ? { fleetReceipt, fleetPriceOrigin: origin,
-                  input: { signal: { marketEvidence: { source: "deriv_public", sourceIdentity: "deriv-archive-comparison" } } } } : {}) } });
+                  input: { signal: { marketEvidence: { source: "deriv_public", sourceIdentity: "deriv-archive-comparison", lastClosedCandleAt: new Date(barAt).toISOString() } } } } : {}) } });
             await db.insert(outcomes).values({ runId, observationKey, gradeVersion: ATI_DERIV_ARCHIVE_GRADE_VERSION,
               evaluatedAt: new Date(evaluateAt), recordedAt: new Date(evaluateAt + 1), evidence: { ...grade, researchBuild: build } });
           }
@@ -2129,6 +2129,72 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(candidateReview.forward.incumbentCosts.status, "NO_MATCHED_ROUND_TRIP");
       assert.equal(candidateReview.primary.capture.length, 3);
       assert.equal(candidateReview.primary.simulationCosts.basis, "ASSUMED");
+      await researchTest.test("capture recovery is specific to the registered development receipt and its native decision", async () => {
+        const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+        const { tmpdir } = await import("node:os");
+        const { join } = await import("node:path");
+        const { createHash } = await import("node:crypto");
+        const dir = await mkdtemp(join(tmpdir(), "ati-capture-qa-"));
+        const file = join(dir, "capture.json"), old = process.env.ARX_ATI_CAPTURE_RECOVERY_RECEIPTS;
+        const specimen = await studyWithQuoteArchive(base - 32 * 86_400_000, undefined, { fleet: true, includeDevelopment: true });
+        const reg = specimen.registration, first = specimen.dataset.observations[0]!;
+        const anchor = first.fleetDecision!;
+        const key = first.observationKey, settingsHash = anchor.version.decisionSettingsHash, sourceIdentity = first.sourceIdentity!;
+        const identity = { ownerId: 1, agentId: 3, runId: reg.runId, registrationHash: specimen.registrationHash,
+          baselineVersion: reg.definition.baselineVersion, challengerVersion: reg.definition.challengerVersion };
+        const at = new Date(first.recordedAtMs! + 2000).toISOString();
+        const record = {
+          rehearsal: { ...identity, scope: "REGISTERED_SHADOW_CAPTURE_TRANSACTION_RECOVERY", executionAuthority: "NONE", sourceAccess: "READ_ONLY",
+            rehearsalDatabase: "DISPOSABLE_SOCKET_ONLY_COPY", completedAt: at, build, bundleSha256: "f".repeat(64), phase: "DEVELOPMENT",
+            failure: "SIGKILL_DURING_SHADOW_INSERT_AFTER_NATIVE_DECISION_INSERT", interruptedDecisionId: 1,
+            interruptedObservationKey: key, partialCommit: false, restartedObservation: { observationKey: key, decisionId: 2,
+              cycleId: "clone-cycle", settingsHash, sourceIdentity }, observedAttemptsOnRecoveredBar: 2, retainedComparisonsOnBar: 1,
+            repeatedAfterSecondRestart: true, brokerCommands: 0 },
+          independentSourceAnchor: { ...identity, observationKey: key, nativeDecisionId: anchor.decisionId, nativeCycle: anchor.cycleId,
+            revision: build.revision, settingsHash, sourceIdentity, recordedAt: new Date(first.recordedAtMs!).toISOString(), checkedAt: at },
+        };
+        async function install(value: typeof record) {
+          const bytes = JSON.stringify(value);
+          await writeFile(file, bytes);
+          const location = { file, sha256: createHash("sha256").update(bytes).digest("hex") };
+          process.env.ARX_ATI_CAPTURE_RECOVERY_RECEIPTS = JSON.stringify({
+            [specimen.registrationHash]: location, [nativePrimary.registrationHash]: location,
+          });
+        }
+        const receipt = async () => (await readAtiCandidateReview(1, 3, reg.runId))!.recovery.primaryCapture;
+        try {
+          await install(record);
+          const actual = await readAtiCandidateReview(1, 3, reg.runId);
+          assert.equal(actual?.recovery.primaryCapture?.status, "SHADOW_CAPTURE_RESTART_VERIFIED");
+          assert.equal(actual.recovery.brokerRetries, "UNVERIFIED");
+          assert.equal(actual.rollback.candidateRehearsal, null);
+          assert.ok(actual.gaps.includes("BROKER_RETRY_RECOVERY_UNVERIFIED"));
+          assert.equal(actual.status, "EVIDENCE_INCOMPLETE");
+          assert.equal((await readAtiCandidateReview(1, 3, nativeForward.runId))?.recovery.primaryCapture?.status, "RECEIPT_UNVERIFIED");
+          assert.equal(await readAtiCandidateReview(2, 3, reg.runId), null);
+          await writeFile(file, JSON.stringify(record) + "\n");
+          assert.equal((await receipt())?.status, "RECEIPT_UNVERIFIED");
+          await install({ ...record, independentSourceAnchor: { ...record.independentSourceAnchor, nativeCycle: "different-cycle" } });
+          assert.equal((await receipt())?.status, "RECEIPT_UNVERIFIED");
+          await install({ ...record, rehearsal: { ...record.rehearsal, retainedComparisonsOnBar: 2 } });
+          assert.equal((await receipt())?.status, "RECEIPT_UNVERIFIED");
+          const wrongHash = "a".repeat(64);
+          await install({ rehearsal: { ...record.rehearsal, restartedObservation: { ...record.rehearsal.restartedObservation,
+            settingsHash: wrongHash } }, independentSourceAnchor: { ...record.independentSourceAnchor, settingsHash: wrongHash } });
+          assert.equal((await receipt())?.status, "RECEIPT_UNVERIFIED");
+          const late = specimen.dataset.observations.at(-1)!;
+          await install({ rehearsal: { ...record.rehearsal, interruptedObservationKey: late.observationKey, restartedObservation: {
+            ...record.rehearsal.restartedObservation, observationKey: late.observationKey } }, independentSourceAnchor: {
+            ...record.independentSourceAnchor, observationKey: late.observationKey, nativeDecisionId: late.fleetDecision!.decisionId,
+            nativeCycle: late.fleetDecision!.cycleId, recordedAt: new Date(late.recordedAtMs!).toISOString(),
+            checkedAt: new Date(late.recordedAtMs! + 1).toISOString() } });
+          assert.equal((await receipt())?.status, "RECEIPT_UNVERIFIED");
+        } finally {
+          if (old === undefined) delete process.env.ARX_ATI_CAPTURE_RECOVERY_RECEIPTS;
+          else process.env.ARX_ATI_CAPTURE_RECOVERY_RECEIPTS = old;
+          await rm(dir, { recursive: true, force: true });
+        }
+      });
       const fromForward = await readAtiCandidateReview(1, 3, nativeForward.runId);
       assert.deepEqual(fromForward?.research, candidateReview.research);
       assert.equal((await registerAtiResearch(1, 3, { ...specFor(nextBar + 16 * 86_400_000, fleetSpec.market),

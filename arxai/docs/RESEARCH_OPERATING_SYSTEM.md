@@ -324,3 +324,12 @@ The first process was killed after inserting its native decision and before inse
 A separate query on the original collector matched the registration hash, owner, agent, build, strategy versions, decision-settings hash, feed identity and bar against its own native decision. The [rehearsal and source receipt](ati-evidence/v75-m5-registered-capture-recovery-20261124.json) belong to this registered candidate. The exercise establishes recovery of native shadow capture. Broker retry behavior, deployed-strategy rollback and the open study's final performance still require separate evidence.
 
 To repeat on an eligible registered development run, set `DATABASE_URL` to its isolated local research database and run `node artifacts/api-server/scripts/rehearse-ati-registered-capture.mjs <study-directory> <pinned-collector-bundle>`. The command writes its receipt to stdout and removes its private copy on exit.
+
+
+## Candidate review of registered capture recovery
+
+The [11:36 UTC candidate review](ati-evidence/v75-m5-registered-candidate-review-20261124T1136Z.json) credits the primary V75 M5 candidate with verified shadow capture restart. Two capture attempts retained one comparison. The primary study was still open. Broker costs, broker retry recovery, deployed-strategy rollback and an independent forward study each require their own evidence.
+
+The owner-scoped candidate-review endpoint and the registered fleet runner use the same reader. For a local review, run `node --import tsx scripts/run-ati-registered-fleet.ts candidate-review <study-directory>` from the API server with the isolated research database. This command reads the registration and writes the review to stdout.
+
+Operators can pin trusted rehearsal artifacts in the server's `ARX_ATI_CAPTURE_RECOVERY_RECEIPTS` JSON object. Each key is a registration hash. Its value supplies the absolute `file` path and the SHA-256 of the reviewed file bytes in `sha256`. The reader checks the digest, registered owner, agent, strategy versions, build, source and settings. It verifies the bar and native decision from the original development observations. A sealed study must also match the source and settings of its frozen dataset. The primary and forward studies receive credit separately. An absent or unverifiable receipt leaves capture recovery open.

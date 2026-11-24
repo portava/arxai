@@ -1,3 +1,4 @@
+import { readAtiCaptureRehearsal } from "./atiCaptureRecoveryEvidence.js";
 import { DEMOTION_TRIGGERS } from "@workspace/domain/strategy-lifecycle";
 import { readAtiExecutionCosts } from "./atiExecutionCosts.js";
 import { ATI_FLEET_BASELINE, ATI_FLEET_ENGINE } from "./atiFleetDefinition.js";
@@ -84,15 +85,22 @@ export async function readAtiCandidateReview(ownerId: number, agentId: number, r
   }
   const research = await reviewAtiStudyPair(pair, true);
   const reviewedAt = new Date();
-  const [primary, forward] = await Promise.all([
+  const [primary, forward, primaryCapture, forwardCapture] = await Promise.all([
     reviewStudy(pair.parent, research.archiveReplay?.primary ?? null, reviewedAt),
     pair.forward ? reviewStudy(pair.forward, research.archiveReplay?.forward ?? null, reviewedAt) : null,
+    readAtiCaptureRehearsal(pair.parent, reviewedAt),
+    pair.forward ? readAtiCaptureRehearsal(pair.forward, reviewedAt) : null,
   ]);
+  const captureVerified = primaryCapture?.status === "SHADOW_CAPTURE_RESTART_VERIFIED";
+  const recoveryStatus = captureVerified ? "PRIMARY_SHADOW_CAPTURE_RESTART_VERIFIED" as const
+    : primaryCapture || forwardCapture ? "PRIMARY_CAPTURE_RECOVERY_UNVERIFIED" as const : "NO_CANDIDATE_BOUND_RECOVERY_RECEIPT" as const;
   // The native admission stamp identifies the incumbent. Shadow challengers have no broker admission stamp.
   return { scope: "REGISTERED_ATI_CANDIDATE_REVIEW" as const, reviewedAt, executionAuthority: "NONE" as const,
     status: "EVIDENCE_INCOMPLETE" as const, research, primary, forward,
     challengerExecution: { status: "SHADOW_ONLY" as const, observedBrokerCosts: null },
-    recovery: { status: "NO_CANDIDATE_BOUND_RECOVERY_RECEIPT" as const },
+    recovery: { status: recoveryStatus, primaryCapture, forwardCapture, brokerRetries: "UNVERIFIED" as const },
     rollback: { source: "ARX_STRATEGY_LIFECYCLE" as const, triggers: DEMOTION_TRIGGERS, candidateRehearsal: null },
-    gaps: [...research.gaps, "CHALLENGER_BROKER_COSTS_UNAVAILABLE", "CANDIDATE_RECOVERY_UNVERIFIED", "CANDIDATE_ROLLBACK_UNREHEARSED"] };
+    gaps: [...research.gaps, "CHALLENGER_BROKER_COSTS_UNAVAILABLE", ...(captureVerified ? [] : ["CANDIDATE_RECOVERY_UNVERIFIED"]),
+      ...(pair.forward && forwardCapture?.status !== "SHADOW_CAPTURE_RESTART_VERIFIED" ? ["FORWARD_CAPTURE_RECOVERY_UNVERIFIED"] : []),
+      "BROKER_RETRY_RECOVERY_UNVERIFIED", "CANDIDATE_ROLLBACK_UNREHEARSED"] };
 }
