@@ -2383,6 +2383,85 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         assert.equal(await readAtiShadowRun(2, 3, native.runId), null);
         const { readAtiReplication } = await import("../atiResearchLab.js");
         assert.equal(await readAtiReplication(1, 3, native.runId), null, "a fleet pilot cannot satisfy a registered forward study");
+
+        const { compareAtiDemoFleet, replayAtiDemoFleet, bindAtiDemoFleet } = await import("../atiDemoFleetComparison.js");
+        const { fleetDemoPrice } = await import("../atiFleetShadow.js");
+        const { recordMt5Tick } = await import("../../data/providers/mt5Provider.js");
+        const { stableStringify } = await import("@workspace/features/event-chain");
+        const { createHash } = await import("node:crypto");
+        const demoPilot = await startAtiShadowRun(1, 3, nativePilot);
+        assert.ok(demoPilot);
+        const demoRun = (await activeAtiFleetRuns(1, clockAt)).find(row => row.id === demoPilot.runId);
+        assert.ok(demoRun);
+        const demo = await nativeInputs();
+        const target = { ...demo.candidate, outcome: "WAIT" as const, agentKey: "target", rankScore: 75,
+          ownerAgentKey: null, conflictState: "NONE" as const, reason: "Chart unavailable", plannedAction: "Wait" };
+        const peer = { ...target, agentId: 4, agentKey: "peer", outcome: "APPROVED" as const, rankScore: 60 };
+        const alternate = { ...target, outcome: "APPROVED" as const, reason: "Chart confirmed" };
+        const original = [peer, target], production = resolveSupervisor(original).candidates;
+        const pair = compareAtiDemoFleet(original, alternate, production, true);
+        assert.ok(pair.state === "COMPARED");
+        assert.equal(pair.baseline.outcome, "WAIT");
+        assert.equal(pair.challenger.outcome, "APPROVED");
+        assert.equal(pair.changes.find(change => change.after.agentId === 4)?.after.outcome, "ASSIGNED_TO_ANOTHER");
+        assert.equal(original[0]!.ownerAgentKey, null, "the replay cannot change a real candidate");
+        assert.equal(compareAtiDemoFleet(original, alternate, production, false).state, "UNAVAILABLE");
+        assert.equal(compareAtiDemoFleet([peer, target, target], alternate, production, true).state, "UNAVAILABLE");
+        assert.equal(compareAtiDemoFleet(original, alternate, [target], true).state, "UNAVAILABLE");
+        const fx = [{ ...target, symbol: "EURUSD" }, { ...peer, symbol: "GBPUSD" }];
+        const correlated = compareAtiDemoFleet(fx, { ...alternate, symbol: "EURUSD" }, resolveSupervisor(fx).candidates, true);
+        assert.ok(correlated.state === "COMPARED");
+        assert.equal(correlated.changes.find(row => row.after.symbol === "GBPUSD")?.after.conflictState, "CORRELATED");
+        const account = { mode: "DEMO" as const, binding: "a".repeat(64), historyIdentity: "b".repeat(64) };
+        const bridge = { bridgeConnectionId: 7, userId: 1 };
+        const tick = { brokerSymbol: "Volatility 75 Index", bid: 1.1, ask: 1.1001, eaUtcMs: clockAt, brokerTimeMs: clockAt, atiStreamKey: "V75" };
+        recordMt5Tick("V75", { ...tick, eaUtcMs: clockAt-100, brokerTimeMs: clockAt-100, bid: 1.099, atiReceiptId: 321 }, bridge, account);
+        recordMt5Tick("V75", { ...tick, atiReceiptId: 322 }, bridge, account);
+        const routed = await routeQuote("V75", { mt5Writer: { bridgeConnectionId: 7 } });
+        assert.ok(routed.quote);
+        const origin = { receiptId: 322, streamKey: "V75", bridgeConnectionId: 7, brokerSymbol: tick.brokerSymbol,
+          accountBinding: account.binding, historyIdentity: account.historyIdentity, brokerTickAtMs: clockAt, mode: account.mode };
+        const obs = demo.captured.observation;
+        obs.mt5QuoteOrigin = origin;
+        obs.derivQuoteOrigin = null;
+        obs.input.signal.marketEvidence = { ...obs.input.signal.marketEvidence!, source: "mt5_broker" };
+        obs.boundQuote = { bid: tick.bid, ask: tick.ask, observedAt: routed.quote.timestamp };
+        obs.input.currentPrice = routed.quote.last ?? (tick.bid + tick.ask) / 2;
+        const price = fleetDemoPrice(routed, obs, 1);
+        assert.deepEqual(price, { receiptId: 322, price: obs.input.currentPrice });
+        assert.equal(fleetDemoPrice(routed, obs, 2), null);
+        assert.equal(fleetDemoPrice({ ...routed, quote: { ...routed.quote } }, obs, 1), null);
+        assert.equal(fleetDemoPrice(routed, { ...obs, mt5QuoteOrigin: { ...origin, mode: "LIVE" } }, 1), null);
+        assert.equal(fleetDemoPrice(routed, { ...obs, mt5QuoteOrigin: { ...origin, receiptId: 321 } }, 1), null);
+        const chart = { version: "ati-demo-chart-comparison-v1", scope: "PRE_SUPERVISOR", evaluatedAt: clockAt,
+          baseline: { outcome: target.outcome, reason: target.reason }, executionAuthority: "NONE", state: "MEASURED",
+          chartAllowed: true, mode: "DEMO", receiptId: origin.receiptId, brokerSymbol: origin.brokerSymbol, sourceIdentity,
+          candleClosedAt: new Date(slot).toISOString(), candlePrice: tick.bid, priceBasis: "BID", tickAt: obs.boundQuote.observedAt,
+          bid: tick.bid, ask: tick.ask, tolerance: "tight", deviationPct: 0, chartTruthScore: 87, chartReason: null,
+          challenger: { outcome: alternate.outcome, reason: alternate.reason } } as const;
+        obs.demoChartComparison = chart;
+        assert.equal(bindAtiDemoFleet(pair, { ...obs, demoChartComparison: { ...chart, receiptId: 321 } },
+          production[1]!, clockAt, clockAt).state, "UNAVAILABLE");
+        assert.equal(bindAtiDemoFleet(pair, obs, peer, clockAt, clockAt).state, "UNAVAILABLE");
+        assert.equal(bindAtiDemoFleet(pair, obs, production[1]!, clockAt - 10, clockAt - 1).state, "UNAVAILABLE");
+        const read = { observation: obs, priceOrigin: null, demoPrice: price, demoFleetComparison: pair };
+        assert.equal(fleetInputGap(read, 1, clockAt), "PRIMARY_FEED_UNVERIFIED", "the registered public study stays source-locked");
+        assert.equal(fleetInputGap(read, 1, clockAt, true), null);
+        await recordAtiFleetObservation(demoRun, production[1]!, read, clockAt, { ...receipt, cycleStartedAt: clockAt,
+          cycleId: "demo-fleet-cycle", decisionId: 326 }, db);
+        const demoReport = await restarted.readAtiShadowRun(1, 3, demoRun.id);
+        const saved = demoReport?.observations[0];
+        assert.deepEqual(demoReport?.fleetCohorts[0]?.demoFleetChart, { observedBars: 1, comparedBars: 1, unavailableReasons: {},
+          changedOutcomes: 1, baselineEligible: 0, challengerEligible: 1, barsChangingPeerAllocation: 1 });
+        assert.equal(saved?.coverage, "OBSERVED");
+        assert.equal(saved.fleetReceipt.decisionId, 326);
+        assert.equal(saved.baselineOutcome, "WAIT");
+        assert.equal(saved.challengerOutcome, "WAIT", "the registered strategy is distinct from the chart experiment");
+        assert.deepEqual(saved.fleetDemoPrice, price);
+        assert.deepEqual(saved.demoFleetComparison.challenger, pair.challenger);
+        assert.equal(createHash("sha256").update(stableStringify(saved.demoFleetComparison.tape)).digest("hex"), pair.tapeHash);
+        assert.deepEqual(replayAtiDemoFleet(saved.demoFleetComparison.tape)?.changes, pair.changes);
+        assert.equal(await restarted.readAtiShadowRun(2, 3, demoRun.id), null);
       } finally {
         clock.mock.restore();
       }

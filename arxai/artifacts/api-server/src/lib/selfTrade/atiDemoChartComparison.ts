@@ -18,7 +18,7 @@ type Quote = { bid: number; ask: number; observedAt: string };
 // look up a newer quote, write the cached state, or submit either candidate.
 export function compareAtiDemoChart(input: DecisionCandidateInput, baseline: DecisionCandidate,
   originalHandshake: DecisionCandidateInput["handshake"], chart: Chart, quote: Quote | null,
-  origin: AtiMt5QuoteOrigin | null, owner: number, asOf: number) {
+  origin: AtiMt5QuoteOrigin | null, owner: number, asOf: number, onMeasuredCandidate?: (candidate: DecisionCandidate) => void) {
   const base = { version: "ati-demo-chart-comparison-v1", scope: "PRE_SUPERVISOR", evaluatedAt: asOf,
     baseline: { outcome: baseline.outcome, reason: baseline.reason }, executionAuthority: "NONE" } as const;
   const gap = (reason: string) => ({ ...base, state: "UNAVAILABLE" as const, reason, challenger: null });
@@ -51,6 +51,7 @@ export function compareAtiDemoChart(input: DecisionCandidateInput, baseline: Dec
   const handshake = allowed ? originalHandshake : { ...originalHandshake, ready: false,
     blocked: [...originalHandshake.blocked, "CHART_TRUTH_BLOCKED"] };
   const candidate = runDecisionPipeline({ ...input, handshake });
+  onMeasuredCandidate?.(candidate);
   return { ...base, state: "MEASURED" as const, chartAllowed: allowed, mode: origin.mode, receiptId: origin.receiptId,
     brokerSymbol: origin.brokerSymbol, sourceIdentity: signal.sourceIdentity, candleClosedAt: candle.closeTime,
     candlePrice: candle.close, priceBasis: alignment.chartPriceBasis, tickAt: quote.observedAt, bid: quote.bid, ask: quote.ask,

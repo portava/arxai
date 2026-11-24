@@ -44,6 +44,7 @@ import type {
   EleanorMarketEdgeSignal,
 } from "@workspace/domain/signal-intelligence";
 import { logger } from "../logger.js";
+import { compareAtiDemoFleet } from "./atiDemoFleetComparison.js";
 import { compareAtiDemoChart, type AtiDemoChartComparison } from "./atiDemoChartComparison.js";
 import { selfTradeChartConfirmation } from "./selfTradeChartConfirmation.js";
 import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
@@ -51,7 +52,7 @@ import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntel
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
 import { routeQuote } from "../data/marketDataRouter.js";
-import { activeAtiFleetRuns, fleetPriceOrigin, type AtiFleetRead } from "./atiFleetShadow.js";
+import { activeAtiFleetRuns, fleetPriceOrigin, fleetDemoPrice, type AtiFleetRead } from "./atiFleetShadow.js";
 import { atiFleetDecisionVersion } from "./atiStrategyOrigin.js";
 import { freezeAtiDecisionQuote, type AtiDecisionQuote } from "../mt5/atiCostEvidence.js";
 import { captureAtiMarketContext, type AtiMarketContext } from "./atiTradingContext.js";
@@ -176,6 +177,7 @@ async function buildCandidate(
   now: number,
   observe?: (observation: SelfTradeObservationInput) => void,
   captureFleet?: (read: AtiFleetRead) => void,
+  captureDemoFleet = false,
 ): Promise<{ candidate: DecisionCandidate; facts: StoredDecisionFacts }> {
   const evidence: Omit<SelfTradeObservationInput, "input" | "chartConfirmation"> = { boundQuote: null, mt5QuoteOrigin: null, derivQuoteOrigin: null };
   const [signal, htf, quote] = await Promise.all([
@@ -254,12 +256,20 @@ async function buildCandidate(
   const candidate = runDecisionPipeline(input);
   if (observe || captureFleet) {
     const observation: SelfTradeObservationInput = { input, ...evidence, chartConfirmation };
-    if (observe && evidence.mt5QuoteOrigin?.mode === "DEMO") {
-      observation.demoChartComparison = compareAtiDemoChart(input, candidate, handshake, cached, evidence.boundQuote,
-        evidence.mt5QuoteOrigin, effectiveUserId, decidedAt);
+    const fleetRead: AtiFleetRead | null = captureFleet ? { observation, priceOrigin: fleetPriceOrigin(quote) } : null;
+    if ((observe || captureDemoFleet) && evidence.mt5QuoteOrigin?.mode === "DEMO") {
+      try {
+        if (fleetRead) fleetRead.demoPrice = fleetDemoPrice(quote, observation, effectiveUserId);
+        if (observe || fleetRead?.demoPrice) observation.demoChartComparison = compareAtiDemoChart(input, candidate, handshake,
+          cached, evidence.boundQuote, evidence.mt5QuoteOrigin, effectiveUserId, decidedAt, alternate => {
+            if (fleetRead) fleetRead.alternate = alternate;
+          });
+      } catch (err) {
+        logger.warn({ err, agentId: agent.id }, "ATI demo chart observation unavailable");
+      }
     }
     observe?.(observation);
-    captureFleet?.({ observation, priceOrigin: fleetPriceOrigin(quote) });
+    if (fleetRead) captureFleet?.(fleetRead);
   }
   // Log chart gate note for admin diagnostics (DecisionCandidate has no notes field).
   if (chartGateNote) {
@@ -531,6 +541,7 @@ export async function runDecisionCycle(
   const allCandidates: DecisionCandidate[] = [];
   const facts = new Map<string, StoredDecisionFacts>();
   let symbolsEvaluated = 0;
+  let completeCycle = true;
   for (const { agent, settings, ledger } of loaded) {
     const symbols = allowedSymbolsOf(settings);
     if (symbols.length === 0) {
@@ -539,6 +550,7 @@ export async function runDecisionCycle(
     }
     const effectiveUserId = effectiveUserIdFor(agent, callerUserId);
     if (effectiveUserId == null) {
+      completeCycle = false;
       notes.push(`${agent.agentKey}: no user context for market read.`);
       continue;
     }
@@ -546,8 +558,10 @@ export async function runDecisionCycle(
       symbols.map((symbol) =>
         buildCandidate(agent, settings, ledger, symbol, effectiveUserId, governor, handshake, killEngaged, now, undefined,
           subscriptions.some(run => run.agentId === agent.id && run.symbol === symbol)
-            ? read => { fleetReads.set(agent.id, read); } : undefined).catch(
+            ? read => { fleetReads.set(agent.id, read); } : undefined,
+          agent.mode === "SHADOW" && subscriptions.some(run => run.agentId === agent.id && run.symbol === symbol && run.researchSource == null)).catch(
           (err) => {
+            completeCycle = false;
             logger.warn({ err, agentKey: agent.agentKey, symbol }, "self-trade: candidate build failed (skipped)");
             return null;
           },
@@ -564,6 +578,14 @@ export async function runDecisionCycle(
   }
 
   const supervised = resolveSupervisor(allCandidates);
+  for (const read of fleetReads.values()) {
+    if (!read.alternate || !read.demoPrice) continue;
+    try {
+      read.demoFleetComparison = compareAtiDemoFleet(allCandidates, read.alternate, supervised.candidates, completeCycle);
+    } catch (err) {
+      logger.warn({ err, agentId: read.alternate.agentId }, "ATI demo fleet replay unavailable");
+    }
+  }
   // Highest rank first so the feed reads as a priority list.
   supervised.candidates.sort((a, b) => b.rankScore - a.rankScore);
 

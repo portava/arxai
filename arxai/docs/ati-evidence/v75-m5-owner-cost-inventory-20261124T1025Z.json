@@ -1,0 +1,157 @@
+{
+  "scope": "ISOLATED_OWNER_V75_COST_INVENTORY",
+  "inventories": [
+    {
+      "database": "ati_observed_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T10:25:00.000Z",
+      "evidenceAsOf": "2026-11-24T10:25:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_fleet_versioned_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T10:25:00.000Z",
+      "evidenceAsOf": "2026-11-24T10:25:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_shadow_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T10:25:00.000Z",
+      "evidenceAsOf": "2026-11-24T10:25:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_registered_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T10:25:00.000Z",
+      "evidenceAsOf": "2026-11-24T10:25:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    }
+  ]
+}

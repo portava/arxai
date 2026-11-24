@@ -78,7 +78,7 @@ export function buildScoreBreakdown(args: {
 }
 
 /** Sort a copy of the candidates by rank desc (stable on agentId for ties). */
-export function rankCandidates(candidates: DecisionCandidate[]): DecisionCandidate[] {
+export function rankCandidates<T extends Pick<DecisionCandidate, "agentId" | "rankScore">>(candidates: T[]): T[] {
   return [...candidates].sort((a, b) => {
     if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
     return a.agentId - b.agentId;

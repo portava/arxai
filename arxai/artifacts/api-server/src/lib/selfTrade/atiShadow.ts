@@ -1,3 +1,4 @@
+import { bindAtiDemoFleet } from "./atiDemoFleetComparison.js";
 import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import type { DbOrTx } from "./audit.js";
 import { atiDecisionSettingsHash } from "./atiStrategyOrigin.js";
@@ -264,7 +265,7 @@ export async function recordAtiFleetObservation(run: Run, candidate: DecisionCan
       captured.observation.input.agentId !== run.agentId || captured.observation.input.symbol !== run.symbol ||
       receipt.cycleStartedAt < +run.startedAt || availableAt < receipt.cycleStartedAt || availableAt >= +run.endsAt) return;
   const read = { candidate, observation: captured.observation, evaluatedAt: availableAt };
-  const gap = fleetInputGap(captured, run.ownerId, availableAt) ?? (sawObservedFeed(read, run) ? null : "UNVERIFIED_DECISION_QUOTE");
+  const gap = fleetInputGap(captured, run.ownerId, availableAt, run.researchSource == null) ?? (sawObservedFeed(read, run) ? null : "UNVERIFIED_DECISION_QUOTE");
   return storeObservation(run, runScope(run.ownerId, run.agentId, run.id, run.researchSource ? "RESEARCH" : "SHADOW"), identity => {
     if (gap) return {
       runId: run.id, observationKey: `gap:${Math.floor(availableAt / BAR_MS)}`, observedAt: new Date(availableAt),
@@ -274,7 +275,9 @@ export async function recordAtiFleetObservation(run: Run, candidate: DecisionCan
         challengerReason: "Comparison unavailable for this feed." },
     };
     const row = comparison(read, run, identity);
-    return { ...row, evidence: { ...row.evidence, fleetReceipt: receipt, fleetPriceOrigin: captured.priceOrigin } };
+    const demo = row.coverage === "OBSERVED" && run.researchSource == null && captured.demoPrice && captured.observation.mt5QuoteOrigin?.mode === "DEMO";
+    return { ...row, evidence: { ...row.evidence, fleetReceipt: receipt, fleetPriceOrigin: captured.priceOrigin,
+      ...(demo ? { fleetDemoPrice: captured.demoPrice, demoFleetComparison: bindAtiDemoFleet(captured.demoFleetComparison, captured.observation, candidate, receipt.cycleStartedAt, availableAt) } : {}) } };
   }, null, connection);
 }
 
@@ -405,6 +408,8 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     baselineOutcome: observations.baselineOutcome,
     challengerOutcome: observations.challengerOutcome,
     demoChartComparison: sql<CandidateRead["observation"]["demoChartComparison"] | null>`${observations.evidence} -> 'demoChartComparison'`,
+    demoFleetComparison: sql<AtiFleetRead["demoFleetComparison"] | null>`${observations.evidence} -> 'demoFleetComparison'`,
+    fleetDemoPrice: sql<AtiFleetRead["demoPrice"] | null>`${observations.evidence} -> 'fleetDemoPrice'`,
     frozenHandshake: sql<unknown>`${observations.evidence} #> '{input,handshake}'`,
     baselineReason: sql<string | null>`${observations.evidence} #>> '{baseline,reason}'`,
     chartConfirmation: sql<CandidateRead["observation"]["chartConfirmation"] | null>`${observations.evidence} -> 'chartConfirmation'`,
@@ -427,7 +432,7 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
   const native = run.baselineVersion === ATI_FLEET_BASELINE;
   const rows = storedRows.map(({ brokerSymbol, frozenHandshake, ...row }) => {
-    if (atiInstrumentConflict(run.symbol, brokerSymbol)) return { ...row, handshake: null, demoChartComparison: null, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
+    if (atiInstrumentConflict(run.symbol, brokerSymbol)) return { ...row, handshake: null, demoChartComparison: null, demoFleetComparison: null, fleetDemoPrice: null, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
       gradedAt: null, gradeVersion: null, decisionQuote: null, chartConfirmation: null, regimeAssessment: null, counterargument: null, retestPlan: null };
     const parsed = native ? recordedHandshake.safeParse(frozenHandshake) : null;
     return { ...row, handshake: parsed?.success ? parsed.data : null };
@@ -494,11 +499,27 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       const version = first.fleetReceipt!.version;
       const entries = group.filter(row => isAtiEntryDecision(row.baselineOutcome));
       const settled = entries.flatMap(row => row.grade?.state === "SIMULATED_FILL" ? [row.grade] : []);
+      const demoBars = group.filter(row => row.fleetDemoPrice != null);
+      const compared = demoBars.flatMap(row => row.demoFleetComparison?.state === "COMPARED" ? [row.demoFleetComparison] : []);
+      const gaps = new Map<string, number>();
+      for (const row of demoBars) {
+        if (row.demoFleetComparison?.state === "COMPARED") continue;
+        const reason = row.demoFleetComparison?.reason ?? "SUPERVISOR_REPLAY_UNAVAILABLE";
+        gaps.set(reason, (gaps.get(reason) ?? 0) + 1);
+      }
       return {
         version, sourceIdentity: first.fleetSource, symbol: run.symbol, setup: run.setup, timeframe: run.timeframe,
         baselineVersion: run.baselineVersion, challengerVersion: run.challengerVersion, agentId: run.agentId,
         hasVerifiedVersion: version.build.sourceState === "clean" && !!version.build.revision && !!version.decisionSettingsHash,
         decisionBreakdown: summarizeFleetDecisions(group),
+        ...(demoBars.length ? { demoFleetChart: { observedBars: demoBars.length, comparedBars: compared.length,
+          unavailableReasons: Object.fromEntries(gaps),
+          changedOutcomes: compared.filter(c => c.baseline.outcome !== c.challenger.outcome).length,
+          baselineEligible: compared.filter(c => isAtiEntryDecision(c.baseline.outcome)).length,
+          challengerEligible: compared.filter(c => isAtiEntryDecision(c.challenger.outcome)).length,
+          barsChangingPeerAllocation: compared.filter(c => c.changes.some(({ before, after }) =>
+            before.agentId !== run.agentId && (before.outcome !== after.outcome || before.ownerAgentKey !== after.ownerAgentKey))).length,
+        } } : {}),
         matchingBars: group.length, eligibleEntries: entries.length, changedDecisions: group.filter(r => r.baselineOutcome !== r.challengerOutcome).length,
         pending: entries.filter(r => r.grade == null).length, unresolved: entries.filter(r => r.grade?.state === "UNRESOLVED").length,
         unverifiedEntry: entries.filter(r => r.grade?.state === "UNRESOLVED" && r.grade.reason === "ENTRY_UNVERIFIED").length,
@@ -541,13 +562,15 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       pnlRiskBasis: "FROZEN_PLANNED_STOP_DISTANCE",
     } : {}),
     ...(regimeReport ? { regimeReport } : {}),
-    observations: rows.map(({ decisionQuote, handshake, demoChartComparison, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
+    observations: rows.map(({ decisionQuote, handshake, demoChartComparison, demoFleetComparison, fleetDemoPrice, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
       ...row,
       ...(fleetReceipt ? { fleetReceipt, handshake, fleetPrice: fleetPriceOrigin ? {
         symbol: fleetPriceOrigin.symbol, epoch: fleetPriceOrigin.epoch,
       } : null } : {}),
       ...(chartConfirmation ? { chartConfirmation } : {}),
       ...(demoChartComparison ? { demoChartComparison } : {}),
+      ...(fleetDemoPrice ? { fleetDemoPrice } : {}),
+      ...(demoFleetComparison ? { demoFleetComparison } : {}),
       ...(counterargument ? { counterargument } : {}),
       ...(retestPlan ? { retestPlan } : {}),
       ...(regimeAssessment ? { regimeAssessment } : {}),

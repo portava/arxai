@@ -17,24 +17,27 @@ import { rankCandidates } from "./opportunityRanking.js";
 
 const ACTIONABLE = new Set(["APPROVED", "APPROVED_REDUCED", "PREPARE_ONLY"]);
 
-export interface SupervisorResult {
-  candidates: DecisionCandidate[];
+type SupervisorCandidate = Pick<DecisionCandidate, "agentId" | "agentKey" | "symbol" | "outcome" | "side" |
+  "rankScore" | "ownerAgentKey" | "conflictState" | "reason" | "plannedAction"> & { thesis: unknown };
+
+export interface SupervisorResult<T extends SupervisorCandidate = DecisionCandidate> {
+  candidates: T[];
   /** Symbols where a contention was resolved (for audit/notify). */
   contendedSymbols: string[];
 }
 
-export function resolveSupervisor(
-  candidates: DecisionCandidate[],
+export function resolveSupervisor<T extends SupervisorCandidate>(
+  candidates: T[],
   opts?: { measuredCorrelation?: CorrelationLookup },
-): SupervisorResult {
+): SupervisorResult<T> {
   const out = candidates.map((c) => ({ ...c }));
   const contended = new Set<string>();
 
-  const isActionable = (c: DecisionCandidate) =>
+  const isActionable = (c: T) =>
     ACTIONABLE.has(c.outcome) && c.side != null && c.thesis != null;
 
   // ── 1. Same-symbol contention ─────────────────────────────────────────────
-  const bySymbol = new Map<string, DecisionCandidate[]>();
+  const bySymbol = new Map<string, T[]>();
   for (const c of out) {
     if (!isActionable(c)) continue;
     const arr = bySymbol.get(c.symbol) ?? [];
@@ -42,7 +45,7 @@ export function resolveSupervisor(
     bySymbol.set(c.symbol, arr);
   }
 
-  const winners: DecisionCandidate[] = [];
+  const winners: T[] = [];
   for (const [symbol, group] of bySymbol) {
     const ranked = rankCandidates(group);
     const winner = ranked[0]!;
@@ -69,9 +72,9 @@ export function resolveSupervisor(
 
   // ── 2. Cross-symbol correlated concentration (among per-symbol winners) ────
   const rankedWinners = rankCandidates(winners);
-  const accepted: DecisionCandidate[] = [];
+  const accepted: T[] = [];
   for (const w of rankedWinners) {
-    let conflicted: DecisionCandidate | null = null;
+    let conflicted: T | null = null;
     for (const a of accepted) {
       const v = evaluateCorrelationConflict({
         symbolA: w.symbol,
