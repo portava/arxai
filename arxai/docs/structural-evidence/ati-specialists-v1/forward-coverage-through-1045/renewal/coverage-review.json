@@ -1,0 +1,196 @@
+{
+  "study": "ati-specialists-v1-v75-forward-early-discovery-20261124",
+  "planHash": "9503cc83ce4f52aff3101c8db9c3e7a4342ca7d6c09e7e0bb2d27e2c815fb4fd",
+  "engineHash": "4b219cdbb131491807172c2340d8dc77ea85021a694c20ad29ca1d7db6876709",
+  "windowsEndingBy": "2026-11-24T10:45:00.000Z",
+  "planned": 32,
+  "outcomesReplayed": 12,
+  "priced": 9,
+  "unpriced": 3,
+  "unverifiedElapsed": 0,
+  "scheduledAfterCutoff": 20,
+  "maxPricedOnRetainedEvidence": 29,
+  "requiredPriced": 30,
+  "priceCoverageGate": "UNREACHABLE_ON_RETAINED_EVIDENCE",
+  "meanBrier": {
+    "pool": 0.5729758732644342,
+    "incumbent": 0.5867551269010859
+  },
+  "meanAssumedNetPricePoints": {
+    "pool": -67.63698888888919,
+    "incumbent": -20.30438888888845
+  },
+  "pricedDifferentSides": 4,
+  "observedBrokerCosts": null,
+  "executionAuthority": "NONE",
+  "windows": [
+    {
+      "asOf": "2026-11-24T07:45:00.000Z",
+      "file": "20261124T0745-renewal.json.gz",
+      "receiptId": "structural-8c8aca2add7e3a70636498d340394ada5886ada74e2d884129792f60c684d9b7",
+      "archiveSha256": "720d4e47d550713a01340c6089abac1af0c9a54a041adac3bdb8143646238b80",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.6107507702059554,
+      "incumbentBrier": 0.5619554851142676,
+      "assumedNet": {
+        "pool": -10.10399999999936,
+        "incumbent": -9.89600000000064,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:00:00.000Z",
+      "file": "20261124T0800-renewal.json.gz",
+      "receiptId": "structural-a7c190beaedf13e5360e987034a99685580d861254b5b570372825fa5ecb5317",
+      "archiveSha256": "912482477bd0581cf5a9012d02160e273afa3dc91b5c3e62c417dda529448729",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.708313385022735,
+      "incumbentBrier": 0.5619554851142676,
+      "assumedNet": {
+        "pool": -151.30080000000453,
+        "incumbent": -151.30080000000453,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:15:00.000Z",
+      "file": "20261124T0815-renewal.json.gz",
+      "receiptId": "structural-2be99360244fb58f6989eb28286b8684f24bc7dea8d453408926bd6f6c8184d6",
+      "archiveSha256": "ab197e689b135c5aa98d1370afbd120d1e40135c61ad3430ce3596314643e2bf",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.631550298957472,
+      "incumbentBrier": 0.5619554851142676,
+      "assumedNet": {
+        "pool": -333.23949999999604,
+        "incumbent": -333.23949999999604,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:30:00.000Z",
+      "file": "20261124T0830-renewal.json.gz",
+      "receiptId": "structural-18ad303e8b9faced8d634ce5f07b127b5084321d1a1d5a029f9eb90fac2345a0",
+      "archiveSha256": "ee7ee996f28c77e834e73a49dd2a0bad20ab1606282541e693226b4f976a16be",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.798827022376994,
+      "incumbentBrier": 1.00503104413818,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T08:45:00.000Z",
+      "file": "20261124T0845-renewal.json.gz",
+      "receiptId": "structural-0e10f629f557cf22fcbb9af00fbbee08639a619b160b8415a853adf1307503a6",
+      "archiveSha256": "bcf5f25930b9c97218335b0eae1834f332a8334839cb3960c40c6b7dcc370f38",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.532460038519558,
+      "incumbentBrier": 0.5370091594311039,
+      "assumedNet": {
+        "pool": 136.31229999999778,
+        "incumbent": 136.31229999999778,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:00:00.000Z",
+      "file": "20261124T0900-renewal.json.gz",
+      "receiptId": "structural-75f44875a4bf30d02040f0783369d8d8180dd2f03349cdc0715564cc26156212",
+      "archiveSha256": "4f3ec11113a204d57f420a0dc13029534c0c5de7f82a87cdf28af0b37b6eae2d",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.7664887142574653,
+      "incumbentBrier": 0.5742200430433948,
+      "assumedNet": {
+        "pool": -117.20739999999932,
+        "incumbent": -117.20739999999932,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:15:00.000Z",
+      "file": "20261124T0915-renewal.json.gz",
+      "receiptId": "structural-c4c820fd1d2a08b1abfc97470c7125282a69ed59472741cdef8af5356b264b17",
+      "archiveSha256": "50f3b8460aba6d6a43a5cfbcd891ebb87538e30f7ed2db3ecf16bcb09b04485e",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.5994639419437211,
+      "incumbentBrier": 0.5742200430433948,
+      "assumedNet": {
+        "pool": 0,
+        "incumbent": 73.6163000000015,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:30:00.000Z",
+      "file": "20261124T0930-renewal.json.gz",
+      "receiptId": "structural-e92c06460c91c1df074d0b24c7c34ff78688e3b14e882454fbfa409dbe38aa1a",
+      "archiveSha256": "15b756b1fe99da7859c68f7f5b7bb96e7020d37e74fc85a772b4605c369f8629",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.30405967517690574,
+      "incumbentBrier": 0.5212467113693282,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T09:45:00.000Z",
+      "file": "20261124T0945-renewal.json.gz",
+      "receiptId": "structural-ba4c2b65d8121285fc4a641c0d8874890ef0bd7fa5e99793360caf1c12103a5b",
+      "archiveSha256": "a03fe07d350b2765e8315656ec2568a858ba81939b06a23885f90caa1b2bec3c",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.4748783349913863,
+      "incumbentBrier": 0.5212467113693282,
+      "assumedNet": {
+        "pool": 49.425100000000384,
+        "incumbent": 49.425100000000384,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:00:00.000Z",
+      "file": "20261124T1000-renewal.json.gz",
+      "receiptId": "structural-c7216eeea58de92d9d5d7979911cc6208a3e2c11cab16d7190fc07dbb702f83a",
+      "archiveSha256": "f3d0e889dffb0489d27147c4e5724e6104e290f46a932e61503f9610e8269d48",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.7380434588539017,
+      "incumbentBrier": 0.5212467113693282,
+      "assumedNet": {
+        "pool": -189.55050000000483,
+        "incumbent": 169.55050000000483,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:15:00.000Z",
+      "file": "20261124T1015-renewal.json.gz",
+      "receiptId": "structural-2ea045bac07beea8abf82daf40f15d8bcf7ef8438c05cd5420f6596d03fa2de6",
+      "archiveSha256": "ce087c1641f9503931aaf776cff27162029d97de065a77d751290559f7269b66",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.35515559688932236,
+      "incumbentBrier": 0.5504509755782124,
+      "assumedNet": {
+        "pool": 6.931900000003225,
+        "incumbent": 0,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:30:00.000Z",
+      "file": "20261124T1030-renewal.json.gz",
+      "receiptId": "structural-d3737514a27801a62c0687e1bccd72fb44bab64dfec52a3cc91179c03b4e37c8",
+      "archiveSha256": "9f2525efad53d25bffabf0508d608dda6800b3cc445f33ee456fbe3a0f3dac35",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.3557192419777933,
+      "incumbentBrier": 0.5505236681279558,
+      "assumedNet": null
+    }
+  ]
+}

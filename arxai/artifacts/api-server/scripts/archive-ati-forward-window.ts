@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { link, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { pool } from "@workspace/db";
 import { selectAtiSpecialists } from "../src/lib/structural/atiSpecialistReport.js";
 import { structuralRepository } from "../src/lib/structural/repository.js";
@@ -82,7 +82,22 @@ try {
       await link(staged, output);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      assert.ok((await readFile(output)).equals(archive), "The existing archive has different evidence");
+      const original = await readFile(output);
+      if (!original.equals(archive)) {
+        // Early exports also carried the already-scored 1m, 3m and 5m horizons.
+        // Keep their published bytes and verify each extra grade against the stored receipt.
+        const saved = JSON.parse(gunzipSync(original).toString("utf8"));
+        const horizons: number[] = saved.row.scores.map((s: { horizon: number }) => s.horizon);
+        assert.ok(horizons.length > 1 && horizons.includes(15) && horizons.every(h => [1,3,5,15].includes(h)) &&
+          new Set(horizons).size === horizons.length, "The existing archive has different evidence");
+        for (const savedScore of saved.row.scores) {
+          const actual = row.scores.find(s => s.horizon === savedScore.horizon);
+          assert.ok(actual, "Archived score is absent from the stored receipt");
+          assert.deepEqual(savedScore, JSON.parse(JSON.stringify(actual)));
+        }
+        saved.row.scores = saved.row.scores.filter((s: { horizon: number }) => s.horizon === 15);
+        assert.deepEqual(saved, JSON.parse(gunzipSync(archive).toString("utf8")));
+      }
     }
   } finally {
     await rm(temp, { recursive: true, force: true });

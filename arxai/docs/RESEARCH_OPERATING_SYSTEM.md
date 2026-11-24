@@ -226,3 +226,36 @@ dispatch window. A conflict removes the measurement and leaves the original
 command in the denominator. A historical review at an earlier cutoff keeps
 its original result. Current reports use the current settlement fields for
 legacy commands that predate complete event snapshots.
+
+## V75 specialist forward coverage through 10:45 UTC, November 24
+
+The original and renewal cohorts each required 30 priced windows out of 32.
+The offline replay covered every window ending by 10:45 UTC. It matched both
+collectors' scored and priced counts, probability scores, changed-side counts
+and assumed net points. The ongoing studies share market time.
+
+| Collector | Outcomes replayed | Priced | Still scheduled | Maximum priced on retained evidence |
+| --- | ---: | ---: | ---: | ---: |
+| Original | 18 | 0 | 14 | 14 |
+| Early discovery renewal | 12 | 9 | 20 | 29 |
+
+In the renewal cohort, the 08:30, 09:30 and 10:30 UTC windows ended without an
+exit quote on their issuance stream. The last original-stream ticks were
+08:44:50, 09:44:52 and 10:44:54. In the dedicated research database the first
+retained tick on each subsequent stream was four seconds after the scheduled
+exit. The interruption's cause is unverified. The registered rule requires
+entry and exit on the same stream. Even perfect coverage of the remaining
+windows cannot bring either retained cohort to the minimum.
+
+Across the 12 scored renewal windows, the specialist pool's mean Brier score
+was 0.5730 and ARX's was 0.5868. Across the nine priced windows the mean
+simulated net results were −67.64 and −20.30 V75 price points respectively,
+with four different position choices. This comparison uses recorded bid/ask quotes
+and the registered slippage assumption and provides no measured MT5 execution costs.
+The full schedules remain in force for the final reviews.
+
+The [original replay](structural-evidence/ati-specialists-v1/forward-coverage-through-1045/original/coverage-review.json)
+and [renewal replay](structural-evidence/ati-specialists-v1/forward-coverage-through-1045/renewal/coverage-review.json)
+identify each archive and receipt. Run `node artifacts/api-server/scripts/audit-ati-forward-coverage.mjs
+<original|renewal> <saved collector snapshot directory> <archive directory> 2026-11-24T10:45:00.000Z`
+to repeat a review. The script launches the individual window grader offline.

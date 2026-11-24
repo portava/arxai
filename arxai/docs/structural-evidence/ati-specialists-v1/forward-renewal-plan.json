@@ -1,0 +1,39 @@
+{
+  "study": "ati-specialists-v1-v75-forward-early-discovery-20261124",
+  "purpose": "Prospective transport-corrected shadow comparison",
+  "policy": "ati-structural-specialists-m1-15-v1",
+  "costPolicy": "fixed-horizon-bid-ask-v1",
+  "symbol": "V75",
+  "provider": "deriv_public",
+  "start": "2026-11-24T07:45:00.000Z",
+  "plannedWindows": 32,
+  "minutesPerWindow": 15,
+  "lastOutcomeDue": "2026-11-24T15:45:00.000Z",
+  "firstIssueAttemptSecondsAfterBoundary": 3,
+  "latestAttemptSecondsAfterBoundary": 30,
+  "cohorts": [
+    "All scheduled windows",
+    "UP",
+    "DOWN",
+    "UNESTABLISHED"
+  ],
+  "comparisons": [
+    "ARX published probabilities",
+    "Training class frequencies",
+    "Four equal-weight votes",
+    "Each vote alone",
+    "Pool with each vote omitted"
+  ],
+  "reviewConditions": {
+    "minimumPairedProbabilityWindows": 30,
+    "minimumPairedQuoteWindows": 30,
+    "minimumDifferentPositionsVsIncumbent": 5,
+    "minimumStrictGains": "Positive pooled gain against both ARX and frequency for both Brier and mean assumed net price points",
+    "consequence": "Eligible for another independently dated replication"
+  },
+  "missing": "Retain every scheduled window. Never replace a missed or refused forecast, incomplete quote stream or unresolved outcome. Report quantitative results on their respective paired denominators.",
+  "authority": "NONE",
+  "originalStudy": "ati-specialists-v1-v75-forward-20261124",
+  "overlap": "Market windows overlap the original cohort. Keep denominators separate. Overlapping periods cannot serve as an independent replication.",
+  "transportSha256": "7dbba38bdb65a5154366bbd20431e9f0be379da1bb0d6678ee4d7c2643cc06b2"
+}

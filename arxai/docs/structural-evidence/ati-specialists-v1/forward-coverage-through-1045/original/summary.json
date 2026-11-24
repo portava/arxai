@@ -1,0 +1,1275 @@
+{
+  "digest": "ffd9acb7d042cbf030b5edf833d2f230f09763392b1b57580f3ce539273d96d2",
+  "engineDigest": "e718bbd813865a1d572de24e406f2c2bb416b8657385c58bedc0e0f990391203",
+  "checkedAt": 1795517104992,
+  "windows": [
+    {
+      "asOf": 1795500900000,
+      "refusal": null,
+      "receiptId": "structural-aad1a9c9b020dcc5580f1d3046aed84b8320e278b95245d95f024d01d689423a",
+      "attempt": {
+        "attemptAt": 1795500903002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795501800000,
+      "refusal": null,
+      "receiptId": "structural-5fb7d7f482f37671943aa41a3142513a8eb72f7304785673106dcb06be42cc6e",
+      "attempt": {
+        "attemptAt": 1795501802986
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795502700000,
+      "refusal": null,
+      "receiptId": "structural-f1392857be3929cfa5d7f73fd67c1a7d9523aa38f87fe83667b24dedb8f96a1a",
+      "attempt": {
+        "attemptAt": 1795502703001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795503600000,
+      "refusal": null,
+      "receiptId": "structural-bc4f7fa44bd80f39afd821ec362cfa50769cca25ed595f3ce45b8ff36715c52c",
+      "attempt": {
+        "attemptAt": 1795503603002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795504500000,
+      "refusal": null,
+      "receiptId": "structural-ef8e288591f39352a3f486243bfd920e7e8a55a225676306b73da746d4d57315",
+      "attempt": {
+        "attemptAt": 1795504503002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795505400000,
+      "refusal": null,
+      "receiptId": "structural-2d181701a0b55fc90245f7ea34221fecad27f145b3e7f059262440186679dd1a",
+      "attempt": {
+        "attemptAt": 1795505403002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795506300000,
+      "refusal": null,
+      "receiptId": "structural-729b8e615582d8ef9781816c4ca46f5dd62f5d03ac96bb2977340a55cc5c0f5d",
+      "attempt": {
+        "attemptAt": 1795506303002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795507200000,
+      "refusal": null,
+      "receiptId": "structural-8d4d896291071bf7472e9b5cdb8a0fc932b45981ca2dd5e94453a2578d5b60dc",
+      "attempt": {
+        "attemptAt": 1795507203001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795508100000,
+      "refusal": null,
+      "receiptId": "structural-08ce6b5c4b967e836af695af9a830e5f539787774c05f85b0b840918746214d5",
+      "attempt": {
+        "attemptAt": 1795508103004
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795509000000,
+      "refusal": null,
+      "receiptId": "structural-e574c9cea023d2da681d5f0b9cab81e2ca311efb3ce88d68d3a5ebd9602b66a0",
+      "attempt": {
+        "attemptAt": 1795509003001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795509900000,
+      "refusal": null,
+      "receiptId": "structural-56ac453ee690039c2a6ccd8ca033d1f5d33b0f602386164a5607d21336072e94",
+      "attempt": {
+        "attemptAt": 1795509903001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795510800000,
+      "refusal": null,
+      "receiptId": "structural-24d23b52961624910063353bb55edff5c7e2a610cfea7e7db7e00f14beeee2af",
+      "attempt": {
+        "attemptAt": 1795510803003
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795511700000,
+      "refusal": null,
+      "receiptId": "structural-8fb30151b62b14260ee82c030a3c56343a6581120b6ad1067ad2f642037038bc",
+      "attempt": {
+        "attemptAt": 1795511703003
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795512600000,
+      "refusal": null,
+      "receiptId": "structural-a00fa98a6ab398ef33e4e7708805aea1fdc78286256563649682c3a5eaf9df0c",
+      "attempt": {
+        "attemptAt": 1795512603001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795513500000,
+      "refusal": null,
+      "receiptId": "structural-58f0ad2079622e90af5aeb4ec50923cf89bbb4f84db50332048c913e169a27e8",
+      "attempt": {
+        "attemptAt": 1795513503002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795514400000,
+      "refusal": null,
+      "receiptId": "structural-1185a0f630b2129adc270537aa866ee80bd9c48a80809a66d584b11035f16b70",
+      "attempt": {
+        "attemptAt": 1795514403001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795515300000,
+      "refusal": null,
+      "receiptId": "structural-fa1d361ce59763bc15134ebe6a0cdc6727c2b20829377a3d1795e4ad229478dd",
+      "attempt": {
+        "attemptAt": 1795515303002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795516200000,
+      "refusal": null,
+      "receiptId": "structural-a5a395845f72763f75149d1c46d1df9935514ab727a4577356b27cd841e20d4c",
+      "attempt": {
+        "attemptAt": 1795516202992
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795517100000,
+      "refusal": null,
+      "receiptId": "structural-80c0a4cffb67eb14ba70048ed7c04e5bcc124206929ad47bc381bf4b6cbe6998",
+      "attempt": {
+        "attemptAt": 1795517103006
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795518000000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795518900000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795519800000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795520700000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795521600000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795522500000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795523400000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795524300000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795525200000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795526100000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795527000000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795527900000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795528800000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    }
+  ],
+  "offScheduleOrWrongPolicy": 0,
+  "prediction": {
+    "version": "ati-structural-specialists-m1-15-v1",
+    "target": "FIRST_STRUCTURAL_BREAK_15_M1",
+    "executionAuthority": "NONE",
+    "historyLimit": 250,
+    "receiptsRead": 19,
+    "atHistoryLimit": false,
+    "outsideScope": 0,
+    "invalidOriginTime": 0,
+    "cohorts": [
+      {
+        "symbol": "V75",
+        "provider": "deriv_public",
+        "sourceKind": "BROKER_HISTORY",
+        "forecastVersion": "arx-v6.7-implementation-1",
+        "featureVersion": "arx-v6.7-implementation-1:features-1",
+        "eventDefinitionVersion": "arx-v6.7-implementation-1:events-1",
+        "receipts": 19,
+        "anchors": 19,
+        "overlappingOrUpdates": 0,
+        "missingSpecialists": 0,
+        "invalidEvidence": 0,
+        "unresolved": 1,
+        "paired": {
+          "windows": 18,
+          "poolBrier": 0.5696351320826113,
+          "incumbentBrier": 0.5706751755948439,
+          "frequencyBrier": 0.6051028753443527,
+          "gainOverIncumbent": 0.0010400435122326788,
+          "gainOverFrequency": 0.03546774326174142,
+          "specialists": [
+            {
+              "id": "STRUCTURE",
+              "standaloneBrier": 0.5798540945960213,
+              "standaloneGainOverFrequency": 0.025248780748331427,
+              "poolWithoutBrier": 0.5706652352922125,
+              "gainFromIncluding": 0.0010301032096012113
+            },
+            {
+              "id": "MOMENTUM",
+              "standaloneBrier": 0.6104079467203678,
+              "standaloneGainOverFrequency": -0.0053050713760150435,
+              "poolWithoutBrier": 0.5613210751714296,
+              "gainFromIncluding": -0.008314056911181724
+            },
+            {
+              "id": "LIQUIDITY",
+              "standaloneBrier": 0.6026873480198045,
+              "standaloneGainOverFrequency": 0.002415527324548213,
+              "poolWithoutBrier": 0.5654234520639704,
+              "gainFromIncluding": -0.004211680018640825
+            },
+            {
+              "id": "PATTERN",
+              "standaloneBrier": 0.5491360664844985,
+              "standaloneGainOverFrequency": 0.05596680885985413,
+              "poolWithoutBrier": 0.5881913133017489,
+              "gainFromIncluding": 0.018556181219137744
+            }
+          ]
+        },
+        "specialistReliability": [
+          {
+            "id": "STRUCTURE",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 3,
+                "confidence": 0.3815361430816453,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 14,
+                "confidence": 0.4396250898831305,
+                "accuracy": 0.7142857142857143
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 1,
+                "confidence": 0.5712440439608134,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "MOMENTUM",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 2,
+                "confidence": 0.3876790925763799,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 9,
+                "confidence": 0.44688280420119475,
+                "accuracy": 0.5555555555555556
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 6,
+                "confidence": 0.5447629790647653,
+                "accuracy": 0.5
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 1,
+                "confidence": 0.6151230615023948,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "LIQUIDITY",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 11,
+                "confidence": 0.3811328224546473,
+                "accuracy": 0.5454545454545454
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 7,
+                "confidence": 0.41355639634621033,
+                "accuracy": 0.5714285714285714
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "PATTERN",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 4,
+                "confidence": 0.3800102960898789,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 7,
+                "confidence": 0.436617515227146,
+                "accuracy": 0.42857142857142855
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 3,
+                "confidence": 0.511216242360112,
+                "accuracy": 0.3333333333333333
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 1,
+                "confidence": 0.663618507973126,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 3,
+                "confidence": 0.7666573163432512,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          }
+        ],
+        "poolReliability": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 7,
+            "confidence": 0.38394390783698207,
+            "accuracy": 0.7142857142857143
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 7,
+            "confidence": 0.43181412872734987,
+            "accuracy": 0.2857142857142857
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 4,
+            "confidence": 0.5187539704851918,
+            "accuracy": 1
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "byTrend": [
+          {
+            "trend": "UP",
+            "windows": 10,
+            "poolBrier": 0.574562970308003,
+            "incumbentBrier": 0.5492893030596585,
+            "frequencyBrier": 0.596119576446281,
+            "gainOverIncumbent": -0.02527366724834453,
+            "gainOverFrequency": 0.021556606138277895,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": 0.6178066748688026,
+                "standaloneGainOverFrequency": -0.021687098422521478,
+                "poolWithoutBrier": 0.565074713262841,
+                "gainFromIncluding": -0.009488257045162169
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": 0.6533572307729874,
+                "standaloneGainOverFrequency": -0.057237654326706314,
+                "poolWithoutBrier": 0.5529866016805222,
+                "gainFromIncluding": -0.021576368627480903
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": 0.5964793865946616,
+                "standaloneGainOverFrequency": -0.00035981014838056826,
+                "poolWithoutBrier": 0.574714766461761,
+                "gainFromIncluding": 0.00015179615375789934
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": 0.501053759766703,
+                "standaloneGainOverFrequency": 0.09506581667957803,
+                "poolWithoutBrier": 0.6133030410236818,
+                "gainFromIncluding": 0.03874007071567879
+              }
+            ]
+          },
+          {
+            "trend": "DOWN",
+            "windows": 8,
+            "poolBrier": 0.5634753343008713,
+            "incumbentBrier": 0.5974075162638254,
+            "frequencyBrier": 0.6163319989669421,
+            "gainOverIncumbent": 0.03393218196295419,
+            "gainOverFrequency": 0.05285666466607083,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": 0.5324133692550447,
+                "standaloneGainOverFrequency": 0.08391862971189756,
+                "poolWithoutBrier": 0.5776533878289267,
+                "gainFromIncluding": 0.014178053528055436
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": 0.5567213416545931,
+                "standaloneGainOverFrequency": 0.05961065731234905,
+                "poolWithoutBrier": 0.5717391670350636,
+                "gainFromIncluding": 0.008263832734192247
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": 0.6104472998012329,
+                "standaloneGainOverFrequency": 0.00588469916570919,
+                "poolWithoutBrier": 0.5538093090667322,
+                "gainFromIncluding": -0.00966602523413923
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": 0.6092389498817428,
+                "standaloneGainOverFrequency": 0.0070930490851992475,
+                "poolWithoutBrier": 0.5568016536493328,
+                "gainFromIncluding": -0.0066736806515385605
+              }
+            ]
+          },
+          {
+            "trend": "UNESTABLISHED",
+            "windows": 0,
+            "poolBrier": null,
+            "incumbentBrier": null,
+            "frequencyBrier": null,
+            "gainOverIncumbent": null,
+            "gainOverFrequency": null,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "costs": {
+    "version": "ati-structural-specialists-m1-15-v1",
+    "target": "FIRST_STRUCTURAL_BREAK_15_M1",
+    "executionAuthority": "NONE",
+    "historyLimit": 250,
+    "receiptsRead": 19,
+    "atHistoryLimit": false,
+    "outsideScope": 0,
+    "invalidOriginTime": 0,
+    "study": "fixed-horizon-bid-ask-v1",
+    "mode": "PUBLIC_QUOTE_SIMULATION",
+    "unit": "ONE_UNIT_PRICE_POINTS",
+    "costBasis": {
+      "spread": "OBSERVED_BID_ASK",
+      "assumedSlippagePointsPerSide": 1,
+      "assumedOtherCostPoints": 0,
+      "observedBrokerCharges": null
+    },
+    "cohorts": [
+      {
+        "symbol": "V75",
+        "provider": "deriv_public",
+        "sourceKind": "BROKER_HISTORY",
+        "forecastVersion": "arx-v6.7-implementation-1",
+        "featureVersion": "arx-v6.7-implementation-1:features-1",
+        "eventDefinitionVersion": "arx-v6.7-implementation-1:events-1",
+        "receipts": 19,
+        "anchors": 19,
+        "overlappingOrUpdates": 0,
+        "missingSpecialists": 0,
+        "invalidEvidence": 0,
+        "unresolved": 1,
+        "scoredWindows": 18,
+        "pricedWindows": 0,
+        "pool": {
+          "active": 0,
+          "changedSide": 0,
+          "meanAssumedNetPoints": null,
+          "poolGainPoints": null
+        },
+        "incumbent": {
+          "active": 0,
+          "changedSide": 0,
+          "meanAssumedNetPoints": null,
+          "poolGainPoints": null
+        },
+        "frequency": {
+          "active": 0,
+          "changedSide": 0,
+          "meanAssumedNetPoints": null,
+          "poolGainPoints": null
+        },
+        "specialists": [
+          {
+            "id": "STRUCTURE",
+            "alone": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "omitted": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            }
+          },
+          {
+            "id": "MOMENTUM",
+            "alone": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "omitted": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            }
+          },
+          {
+            "id": "LIQUIDITY",
+            "alone": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "omitted": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            }
+          },
+          {
+            "id": "PATTERN",
+            "alone": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "omitted": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            }
+          }
+        ],
+        "gaps": [
+          {
+            "receiptId": "structural-aad1a9c9b020dcc5580f1d3046aed84b8320e278b95245d95f024d01d689423a",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-5fb7d7f482f37671943aa41a3142513a8eb72f7304785673106dcb06be42cc6e",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-f1392857be3929cfa5d7f73fd67c1a7d9523aa38f87fe83667b24dedb8f96a1a",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-bc4f7fa44bd80f39afd821ec362cfa50769cca25ed595f3ce45b8ff36715c52c",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-ef8e288591f39352a3f486243bfd920e7e8a55a225676306b73da746d4d57315",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-2d181701a0b55fc90245f7ea34221fecad27f145b3e7f059262440186679dd1a",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-729b8e615582d8ef9781816c4ca46f5dd62f5d03ac96bb2977340a55cc5c0f5d",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-8d4d896291071bf7472e9b5cdb8a0fc932b45981ca2dd5e94453a2578d5b60dc",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-08ce6b5c4b967e836af695af9a830e5f539787774c05f85b0b840918746214d5",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-e574c9cea023d2da681d5f0b9cab81e2ca311efb3ce88d68d3a5ebd9602b66a0",
+            "reason": "INCOMPLETE_TAPE"
+          },
+          {
+            "receiptId": "structural-56ac453ee690039c2a6ccd8ca033d1f5d33b0f602386164a5607d21336072e94",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-24d23b52961624910063353bb55edff5c7e2a610cfea7e7db7e00f14beeee2af",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-8fb30151b62b14260ee82c030a3c56343a6581120b6ad1067ad2f642037038bc",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-a00fa98a6ab398ef33e4e7708805aea1fdc78286256563649682c3a5eaf9df0c",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-58f0ad2079622e90af5aeb4ec50923cf89bbb4f84db50332048c913e169a27e8",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-1185a0f630b2129adc270537aa866ee80bd9c48a80809a66d584b11035f16b70",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-fa1d361ce59763bc15134ebe6a0cdc6727c2b20829377a3d1795e4ad229478dd",
+            "reason": "TAPE_DISCONTINUITY"
+          },
+          {
+            "receiptId": "structural-a5a395845f72763f75149d1c46d1df9935514ab727a4577356b27cd841e20d4c",
+            "reason": "TAPE_DISCONTINUITY"
+          }
+        ],
+        "byTrend": [
+          {
+            "trend": "UP",
+            "pricedWindows": 0,
+            "pool": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "incumbent": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "frequency": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              }
+            ]
+          },
+          {
+            "trend": "DOWN",
+            "pricedWindows": 0,
+            "pool": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "incumbent": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "frequency": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              }
+            ]
+          },
+          {
+            "trend": "UNESTABLISHED",
+            "pricedWindows": 0,
+            "pool": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "incumbent": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "frequency": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              }
+            ]
+          }
+        ],
+        "witnesses": []
+      }
+    ]
+  },
+  "verdict": "COLLECTING",
+  "executionAuthority": "NONE"
+}
