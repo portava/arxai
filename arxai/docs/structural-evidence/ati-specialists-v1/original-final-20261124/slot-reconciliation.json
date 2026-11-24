@@ -1,0 +1,176 @@
+{
+  "checkedAt": "2026-11-24T14:31:40.783Z",
+  "database": "ati_specialist_forward_v1",
+  "slots": [
+    {
+      "utc": "2026-11-24T06:15:00.000Z",
+      "receiptId": "structural-aad1a9c9b020dcc5580f1d3046aed84b8320e278b95245d95f024d01d689423a",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T06:30:00.000Z",
+      "receiptId": "structural-5fb7d7f482f37671943aa41a3142513a8eb72f7304785673106dcb06be42cc6e",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T06:45:00.000Z",
+      "receiptId": "structural-f1392857be3929cfa5d7f73fd67c1a7d9523aa38f87fe83667b24dedb8f96a1a",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T07:00:00.000Z",
+      "receiptId": "structural-bc4f7fa44bd80f39afd821ec362cfa50769cca25ed595f3ce45b8ff36715c52c",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T07:15:00.000Z",
+      "receiptId": "structural-ef8e288591f39352a3f486243bfd920e7e8a55a225676306b73da746d4d57315",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T07:30:00.000Z",
+      "receiptId": "structural-2d181701a0b55fc90245f7ea34221fecad27f145b3e7f059262440186679dd1a",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T07:45:00.000Z",
+      "receiptId": "structural-729b8e615582d8ef9781816c4ca46f5dd62f5d03ac96bb2977340a55cc5c0f5d",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T08:00:00.000Z",
+      "receiptId": "structural-8d4d896291071bf7472e9b5cdb8a0fc932b45981ca2dd5e94453a2578d5b60dc",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T08:15:00.000Z",
+      "receiptId": "structural-08ce6b5c4b967e836af695af9a830e5f539787774c05f85b0b840918746214d5",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T08:30:00.000Z",
+      "receiptId": "structural-e574c9cea023d2da681d5f0b9cab81e2ca311efb3ce88d68d3a5ebd9602b66a0",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T08:45:00.000Z",
+      "receiptId": "structural-56ac453ee690039c2a6ccd8ca033d1f5d33b0f602386164a5607d21336072e94",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T09:00:00.000Z",
+      "receiptId": "structural-24d23b52961624910063353bb55edff5c7e2a610cfea7e7db7e00f14beeee2af",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T09:15:00.000Z",
+      "receiptId": "structural-8fb30151b62b14260ee82c030a3c56343a6581120b6ad1067ad2f642037038bc",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T09:30:00.000Z",
+      "receiptId": "structural-a00fa98a6ab398ef33e4e7708805aea1fdc78286256563649682c3a5eaf9df0c",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T09:45:00.000Z",
+      "receiptId": "structural-58f0ad2079622e90af5aeb4ec50923cf89bbb4f84db50332048c913e169a27e8",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T10:00:00.000Z",
+      "receiptId": "structural-1185a0f630b2129adc270537aa866ee80bd9c48a80809a66d584b11035f16b70",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T10:15:00.000Z",
+      "receiptId": "structural-fa1d361ce59763bc15134ebe6a0cdc6727c2b20829377a3d1795e4ad229478dd",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T10:30:00.000Z",
+      "receiptId": "structural-a5a395845f72763f75149d1c46d1df9935514ab727a4577356b27cd841e20d4c",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T10:45:00.000Z",
+      "receiptId": "structural-80c0a4cffb67eb14ba70048ed7c04e5bcc124206929ad47bc381bf4b6cbe6998",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T11:00:00.000Z",
+      "receiptId": "structural-379cadbe5903172f5ef0d2d8284aac87cd9f3b998b6a0a36725a6c5b77ec20e1",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T11:15:00.000Z",
+      "receiptId": "structural-a8f8d0ea892578de1ad37ba82efc49f13cdaba80a38448218d1653f939d2c870",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T11:30:00.000Z",
+      "receiptId": "structural-0b5f34a6b9f2e6a4081b8eb4f2479b09f733313cb0a5d1a251e420c182878d99",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T11:45:00.000Z",
+      "receiptId": "structural-35bd36cb2b82c3652c7166f47f3d2c49e00590791a870cd2b7bfb0e34e34e4f7",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T12:00:00.000Z",
+      "receiptId": "structural-cb462912190de5adb867f10b7005e2dd13090a9bc0fb3d5e2e1fe644defbb5fb",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T12:15:00.000Z",
+      "receiptId": "structural-a4ab6bb4115bdb036ab439c49f77d9b76cf6987a128ff902edd3e0e01a81932d",
+      "status": "SCORED"
+    },
+    {
+      "utc": "2026-11-24T12:30:00.000Z",
+      "receiptId": "structural-ea81c4e7a121459334f277adefa671fb41ff635633f431f502f0daacf02e5e28",
+      "status": "ISSUED_WITHOUT_15_MINUTE_OUTCOME"
+    },
+    {
+      "utc": "2026-11-24T12:45:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "utc": "2026-11-24T13:00:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "utc": "2026-11-24T13:15:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "utc": "2026-11-24T13:30:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "utc": "2026-11-24T13:45:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "utc": "2026-11-24T14:00:00.000Z",
+      "status": "NO_ATTEMPT_OR_RECEIPT"
+    }
+  ],
+  "registeredWindows": 32,
+  "counts": {
+    "SCORED": 25,
+    "ISSUED_WITHOUT_15_MINUTE_OUTCOME": 1,
+    "NO_ATTEMPT_OR_RECEIPT": 6
+  },
+  "pricedWindows": 0,
+  "requiredPriced": 30,
+  "meanSimulatedNet": {
+    "pool": null,
+    "incumbent": null
+  },
+  "collectorVerdict": "REVIEW_CONDITIONS_UNMET",
+  "verifiedProbabilityComparison": true,
+  "verifiedScoredReceiptSet": true,
+  "executionAuthority": "NONE"
+}
