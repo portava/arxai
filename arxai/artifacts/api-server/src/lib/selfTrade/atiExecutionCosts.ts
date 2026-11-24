@@ -118,7 +118,12 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
   ]);
   const liveRows = bound || liveCommandIds ? selectedLiveRows
     : [...selectedLiveRows].filter(row => !atiInstrumentConflict(symbol, row.symbol));
-  const [liveEvents, demoAudit] = await Promise.all([
+  const demoCommandIds = demoRows.map(row => row.commandId);
+  const scopeClaims = position?.mode === "DEMO" ? or(
+    ...["originalDeal", "reportedDeal"].map(field => inArray(sql<string>`${security.metadata}->>${field}::text`, position.tickets)),
+    ...["originalPosition", "reportedPosition"].map(field => inArray(sql<string>`${security.metadata}->>${field}::text`, position.positions)),
+  ) : undefined;
+  const [liveEvents, demoAudit, conflicts] = await Promise.all([
     liveRows.length ? db.select({
       id: events.commandId, type: events.eventType, source: events.source,
       sequence: events.sequenceNo, payload: events.payload,
@@ -141,7 +146,19 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
         asOf || options.evidenceAsOf ? known(security.createdAt) : undefined,
         inArray(demo.commandId, demoRows.map((row) => row.commandId)),
       )) : [],
+    demoCommandIds.length || scopeClaims ? db.select({ claim: security.metadata }).from(security).innerJoin(demo, and(
+      eq(demo.userId, security.actorUserId), sql`${security.metadata}->>'commandId' = ${demo.commandId}`,
+      sql`${security.metadata}->'bridgeConnectionId' = to_jsonb(${demo.bridgeConnectionId})`,
+      sql`${security.metadata}->>'atiAccountBinding' = ${demo.brokerRawResult} #>> '{atiCostEvidence,accountBinding}'`,
+    )).where(and(
+      eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_COST_RECEIPT_CONFLICT"), eq(security.status, "TRIGGERED"),
+      eq(demo.routedViaMaster, false), eq(demo.status, "FILLED_DEMO"), inArray(demo.commandType, ["PLACE_MARKET_ORDER", "CLOSE_POSITION"]),
+      asOf || options.evidenceAsOf ? known(security.createdAt) : undefined,
+      or(inArray(demo.commandId, demoCommandIds), position && scopeClaims ? and(scopeClaims,
+        sql`${security.metadata}->>'atiAccountBinding' = ${position.accountBinding}`) : undefined),
+    )) : [],
   ]);
+  const conflictingDemoCommands = new Set(conflicts.map(({ claim }) => claim.commandId));
 
   const eventsByCommand = new Map<number, (typeof liveEvents)[number][]>();
   for (const event of liveEvents) {
@@ -239,6 +256,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       confirmation.decidedAtMs <= +approval.availableAt;
     const asOfStatus = (monitorDispatches || snapshotWindow) && !row.terminalKnown ? "UNVERIFIED_AS_OF_DECISION" : status;
     const result = asOfStatus !== "FILLED_DEMO" ? unresolved("COMMAND_OUTCOME_UNRESOLVED")
+      : conflictingDemoCommands.has(commandId) ? unresolved("CONFLICTING_FILL_REPORTS")
       : raw.atiCostEvidence == null ? unresolved("NO_DEAL_COST_RECEIPT")
       : !dispatch ? unresolved("DISPATCH_OR_BRIDGE_UNVERIFIED")
       : reconcileAtiCostEvidence(raw.atiCostEvidence, {
@@ -258,6 +276,11 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
   const distinctLive = withDistinctDeals(liveResults), distinctDemo = withDistinctDeals(demoResults);
   const disputed = new Set<string>();
   if (position) {
+    for (const { claim } of conflicts) {
+      if (position.mode !== "DEMO" || claim.atiAccountBinding !== position.accountBinding) continue;
+      for (const id of [claim.originalDeal, claim.reportedDeal]) if (typeof id === "string") disputed.add("deal:" + id);
+      for (const id of [claim.originalPosition, claim.reportedPosition]) if (typeof id === "string") disputed.add("position:" + id);
+    }
     const contested = new Set([...distinctLive, ...distinctDemo]
       .filter(row => row.result.state === "UNRESOLVED").map(row => row.commandId));
     const claim = (data: unknown) => {

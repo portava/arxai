@@ -50,6 +50,39 @@ const incoming = costFields.extend({
 const stored = costFields.extend({ accountBinding: z.string().regex(/^[a-f0-9]{64}$/) });
 export type AtiCostEvidence = z.infer<typeof stored>;
 
+// Compare overlapping normalized observations. An omitted charge or quote carries
+// no evidence against a value, and the schema canonicalizes closed-deal lists.
+function knownValuesDisagree(first: unknown, second: unknown): boolean {
+  if (first == null || second == null) return false;
+  if (Array.isArray(first)) {
+    return !Array.isArray(second) || first.length !== second.length || first.some((v, i) => v !== second[i]);
+  }
+  if (typeof first === "object" && typeof second === "object") {
+    const other = second as Record<string, unknown>;
+    return Object.entries(first).some(([key, value]) => knownValuesDisagree(value, other[key]));
+  }
+  return first !== second;
+}
+
+interface DemoFillFacts {
+  order: string | null | undefined;
+  ticket: string | null | undefined;
+  price: number | null | undefined;
+  volume: number | null | undefined;
+}
+
+export function atiDemoReceiptConflict(first: unknown, second: unknown, originalFill: DemoFillFacts, retryFill: DemoFillFacts) {
+  const original = stored.safeParse(first);
+  const retry = stored.safeParse(second);
+  if (!original.success || !retry.success) return null;
+  const a = original.data, b = retry.data;
+  if (a.mode !== "DEMO" || b.mode !== "DEMO" || a.accountBinding !== b.accountBinding) return null;
+  if (!knownValuesDisagree(originalFill, retryFill) &&
+      !knownValuesDisagree({ ...a, leg: a.leg ?? "ENTRY" }, { ...b, leg: b.leg ?? "ENTRY" })) return null;
+  return { atiAccountBinding: a.accountBinding, originalDeal: a.deal, reportedDeal: b.deal,
+    originalPosition: a.positionId ?? null, reportedPosition: b.positionId ?? null };
+}
+
 function adverseChargePriceUnits(amount: number | null, volume: number, valuation: AtiCostEvidence["tickValuation"]) {
   if (amount == null) return null;
   if (amount === 0) return 0;

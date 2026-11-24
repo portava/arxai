@@ -249,6 +249,32 @@ test("reconciler: another bridge's report is NOT_FOUND and writes nothing", asyn
   assert.equal(events[0]?.["eventType"], "DEMO_RECONCILE_REFUSED");
 });
 
+test("reconciler preserves settled volume and retains authenticated demo cost conflicts", async () => {
+  const receipt = { version: 1, accountBinding: "a".repeat(64), mode: "DEMO", order: "701", deal: "702",
+    positionId: "703", symbol: "EURUSD", side: "BUY", volume: 0.02, price: 1.12, brokerFilledAtMs: 10000,
+    currency: "USD", commission: 0, fee: -0.01, swap: null, submissionQuote: null };
+  fakeRow = baseRow({ status: "FILLED_DEMO", fillVolume: 0.02, brokerRawResult: { atiCostEvidence: receipt } });
+  events.length = 0;
+  updates.length = 0;
+  const replay = (patch: Record<string, unknown>, filledVolume = 0.02) => reconcileBrokerResult({
+    userId: 9, bridgeConnectionId: 7, commandId: "dmcmd_1",
+    brokerResult: { status: "FILLED_DEMO", filledVolume, raw: { atiCostEvidence: { ...receipt, ...patch } } },
+  });
+  for (const patch of [{}, { leg: "ENTRY" }, { fee: null }, { swap: 0 }, { accountBinding: "b".repeat(64), fee: 0 }]) {
+    assert.equal((await replay(patch)).reason, "ALREADY_RECONCILED");
+  }
+  assert.equal(events.length, 0);
+  for (const patch of [{ volume: 0.01 }, { price: 1.2 }, { order: "801" }, { deal: "802" }, { commission: -1 }, { fee: 0 }]) {
+    await replay(patch);
+  }
+  await replay({}, 0.01);
+  assert.equal(events.length, 7);
+  assert.ok(events.every(event => event.eventType === "DEMO_COST_RECEIPT_CONFLICT"));
+  assert.deepEqual(events[3]?.metadata, { commandId: "dmcmd_1", bridgeConnectionId: 7, atiAccountBinding: receipt.accountBinding,
+    originalDeal: "702", reportedDeal: "802", originalPosition: "703", reportedPosition: "703" });
+  assert.equal(updates.length, 0);
+});
+
 test("reconciler: a fill arriving after the sweep is recorded and flagged", async () => {
   fakeRow = baseRow({ status: "FAILED", reason: "EXPIRED_DEMO_NO_EA_RESULT" }); updates.length = 0; events.length = 0;
   const r = await reconcileBrokerResult({

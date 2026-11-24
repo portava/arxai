@@ -86,6 +86,29 @@ function clampRaw(raw: Record<string, unknown> | null | undefined): Record<strin
   return out;
 }
 
+async function retainDemoReceiptConflict(row: Mt5DemoCommand, args: ReconcileArgs) {
+  if (row.status !== "FILLED_DEMO" || args.brokerResult.status !== "FILLED_DEMO" ||
+      row.bridgeConnectionId !== args.bridgeConnectionId ||
+      (row.commandType !== "PLACE_MARKET_ORDER" && row.commandType !== "CLOSE_POSITION")) return;
+  const original = (row.brokerRawResult as Record<string, unknown> | null)?.atiCostEvidence;
+  const incoming = args.brokerResult.raw?.atiCostEvidence;
+  if (!original || !incoming) return;
+  const { atiDemoReceiptConflict } = await import("./atiCostEvidence.js");
+  const report = args.brokerResult;
+  const conflict = atiDemoReceiptConflict(original, incoming,
+    { order: row.brokerOrderId, ticket: row.brokerTicket, price: row.fillPrice, volume: row.fillVolume },
+    { order: report.brokerOrderId, ticket: report.brokerTicket, price: report.filledPrice, volume: report.filledVolume });
+  if (!conflict) return;
+  // Acknowledge the replay only after its evidence is durable. The settled
+  // command remains immutable, including its original broker receipt.
+  await recordSecurityEvent({
+    eventType: "DEMO_COST_RECEIPT_CONFLICT", severity: "WARNING", status: "TRIGGERED",
+    actorUserId: args.userId, route: "/api/mt5/demo-command-result", method: "POST",
+    message: "Authenticated demo fill receipts disagree on the same command.",
+    metadata: { commandId: row.commandId, bridgeConnectionId: row.bridgeConnectionId, ...conflict },
+  });
+}
+
 export async function reconcileBrokerResult(args: ReconcileArgs): Promise<ReconcileResult> {
   const row = await loadOwned(args.userId, args.commandId);
   const decision = decideDemoReconcile(row, args.brokerResult.status, args.bridgeConnectionId ?? null);
@@ -118,6 +141,7 @@ export async function reconcileBrokerResult(args: ReconcileArgs): Promise<Reconc
 
   // Idempotent: already in the requested state (re-delivery from EA).
   if (decision.kind === "IDEMPOTENT") {
+    await retainDemoReceiptConflict(row, args);
     return { ok: true, reason: "ALREADY_RECONCILED", command: row };
   }
 
@@ -201,6 +225,11 @@ export async function reconcileBrokerResult(args: ReconcileArgs): Promise<Reconc
     .returning();
 
   if (!updated) {
+    // Another result may have settled the command after our first read.
+    if (args.brokerResult.status === "FILLED_DEMO" && args.brokerResult.raw?.atiCostEvidence) {
+      const settled = await loadOwned(args.userId, args.commandId);
+      if (settled) await retainDemoReceiptConflict(settled, args);
+    }
     return { ok: false, reason: "RACE_LOST", command: row };
   }
 

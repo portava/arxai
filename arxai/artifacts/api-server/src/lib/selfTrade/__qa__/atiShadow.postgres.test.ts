@@ -606,6 +606,43 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal((await read()).reconciledDealCount, 0, "duplicate dispatch witnesses cannot establish a unique command");
     });
 
+    await t.test("conflicting demo fill replays invalidate both deal claims only after receipt", async () => {
+      const { readAtiExecutionCosts, readAtiHistoricalCostSamples } = await import("../atiExecutionCosts.js");
+      const owner = 8421;
+      const auditAt = new Date(fillTime + 100);
+      const sample = { ...costWire, mode: "DEMO" };
+      const cost = atiCostReceiptFromResult({ ...resultWire, atiExecutionCostV1: sample },
+        { ...bridge, accountType: "demo" }, "DEMO");
+      assert.ok(cost);
+      const ids = { commandId: "demo-replay-first", bridgeConnectionId: 22 };
+      const otherDeal = "8842";
+      for (const [commandId, deal] of [[ids.commandId, cost.deal], ["demo-replay-other", otherDeal]]) {
+        await pool.query(`INSERT INTO mt5_demo_commands VALUES ($1,22,$2,'FILLED_DEMO',$3,'PLACE_MARKET_ORDER',false,$4,
+          '801',0.02,1.1003,$5,NULL,$6)`, [commandId, stamp.toISOString(), owner, { symbol: "EURUSD", side: "BUY", lotSize: 0.02 },
+          { ...resultWire, resultDeal: deal, atiCostEvidence: { ...cost, deal } }, new Date(fillTime).toISOString()]);
+        await pool.query("INSERT INTO security_events VALUES ($1,$2,'DEMO_DISPATCH_SENT','ALLOWED',$3)",
+          [{ commandId, bridgeConnectionId: 22, atiAccountBinding: cost.accountBinding }, owner, stamp]);
+      }
+      const claim = { ...ids, atiAccountBinding: cost.accountBinding, originalDeal: cost.deal, reportedDeal: otherDeal };
+      const audit = (actor: number, metadata: Record<string, unknown>, at: Date) =>
+        pool.query("INSERT INTO security_events VALUES ($1,$2,'DEMO_COST_RECEIPT_CONFLICT','TRIGGERED',$3)", [metadata, actor, at]);
+      const read = async (asOf: Date) => (await readAtiExecutionCosts(owner, "EURUSD", stamp, auditAt, asOf)).demo;
+      await audit(owner + 1, claim, stamp);
+      await audit(owner, { ...claim, bridgeConnectionId: 123 }, stamp);
+      await audit(owner, { ...claim, atiAccountBinding: "b".repeat(64) }, stamp);
+      await audit(owner, claim, auditAt);
+      assert.equal((await read(new Date(+auditAt - 1))).reconciledDealCount, 2);
+      const disputed = await read(auditAt);
+      assert.deepEqual(disputed.results.map(r => r.result), [
+        { state: "UNRESOLVED", reason: "CONFLICTING_FILL_REPORTS" }, { state: "UNRESOLVED", reason: "CONFLICTING_DEAL_CLAIM" },
+      ]);
+      assert.equal(disputed.reconciledDealCount, 0);
+      assert.ok(Object.values(disputed.coverage).every(count => count === 0));
+      const origin = { ...mt5QuoteOrigin!, mode: "DEMO" as const, accountBinding: cost.accountBinding, brokerSymbol: "EURUSD", bridgeConnectionId: 22 };
+      assert.equal((await readAtiHistoricalCostSamples(owner, "EURUSD", origin, auditAt)).length, 2);
+      assert.equal((await readAtiHistoricalCostSamples(owner, "EURUSD", origin, new Date(+auditAt + 1))).length, 0);
+    });
+
     await t.test("broker cost reviews keep standard and one-second V75 receipts in their own edition", async () => {
       const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
       const owner = 8077;

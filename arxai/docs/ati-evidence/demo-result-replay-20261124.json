@@ -1,0 +1,43 @@
+{
+  "scope": "SYNTHETIC_DEMO_RECEIPTS_IN_DISPOSABLE_POSTGRES",
+  "verifiedAt": "2026-11-24T12:20:15.094054+00:00",
+  "beforeRevision": "2d91dd99e",
+  "entryPoint": "reconcileBrokerResult",
+  "reader": "readAtiExecutionCosts",
+  "processSequence": [
+    "first fill and exact duplicate",
+    "conflicting fee retry and identical retry",
+    "fresh-process readback"
+  ],
+  "comparison": [
+    {
+      "policy": "baseline",
+      "phase": "verify",
+      "settledRows": 1,
+      "appliedFillEvents": 1,
+      "reconciledDealCount": 1,
+      "conflictCount": 0,
+      "result": "OBSERVED_BROKER_DEAL",
+      "reason": null
+    },
+    {
+      "policy": "revised",
+      "phase": "verify",
+      "settledRows": 1,
+      "appliedFillEvents": 1,
+      "reconciledDealCount": 0,
+      "conflictCount": 1,
+      "result": "UNRESOLVED",
+      "reason": "CONFLICTING_FILL_REPORTS"
+    }
+  ],
+  "concurrentFirstDeliveries": "concurrent first deliveries [ 'FILLED_DEMO', 'RACE_LOST' ]",
+  "brokerOrdersSubmitted": 0,
+  "observedBrokerCostEstimate": null,
+  "brokerRetryEvidence": "UNVERIFIED",
+  "regressionChecks": {
+    "demoReconciliation": 15,
+    "postgresShadowAndResearch": 30,
+    "apiServerTypecheck": "PASS"
+  }
+}
