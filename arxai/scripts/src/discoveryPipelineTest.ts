@@ -75,7 +75,7 @@ const REAL_PORT: ValidationPort = {
   validateFamily(familyKey, trials, chargedTrials) {
     const r = validateFamily(
       familyKey,
-      trials.map((t) => ({ key: t.key, familyKey: t.familyKey, returns: t.returns })),
+      trials,
       {
         cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 },
         pboBlocks: 10,

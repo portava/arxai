@@ -84,6 +84,7 @@ export interface ValidationThresholdsLike {
 
 export interface ValidationCandidateLike {
   key: string;
+  preregHash?: string;
   verdict: "PASS" | "REJECT";
   // Full-precision in the live report; after a JSON/jsonb round trip a NaN
   // becomes null (JSON has no NaN). roundForHash maps null back to the "NaN"
@@ -133,6 +134,7 @@ export function computeReportHash(
     },
     candidates: report.candidates.map((c) => ({
       key: c.key,
+      ...(c.preregHash === undefined ? {} : { preregHash: c.preregHash }),
       verdict: c.verdict,
       oosSharpe: roundForHash(c.oosSharpe),
       dsr: roundForHash(c.dsr),
@@ -172,6 +174,7 @@ export function verifyValidationReport(report: unknown): ReportVerification {
     if (
       !c || typeof c !== "object" ||
       typeof c.key !== "string" ||
+      (c.preregHash !== undefined && (typeof c.preregHash !== "string" || !HEX64.test(c.preregHash))) ||
       (c.verdict !== "PASS" && c.verdict !== "REJECT")
     ) {
       return { ok: false, reason: "REPORT_CANDIDATE_MALFORMED" };
@@ -194,6 +197,8 @@ export function verifyValidationReport(report: unknown): ReportVerification {
 // ── The gate ──────────────────────────────────────────────────────────────────
 /** The subset of a production_edges row the gate reads. */
 export interface EdgeGateView {
+  versionTag?: string;
+  specJson?: unknown;
   status: string;
   preregHash: string | null;
   validationReportJson: unknown;
@@ -227,6 +232,14 @@ export interface PromotionDecision {
    * that field is out of this module's authority (owner-pressed).
    */
   patch: { status: EdgeStatus; promotedAt: Date } | null;
+}
+
+// Stored jsonb contains only JSON values. Emit sorted keys in discovery preRegister order.
+function canonicalSpec(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalSpec).join(",")}]`;
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  const entries = Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalSpec(v)}`).join(",")}}`;
 }
 
 function refuse(from: string, reasons: string[]): PromotionDecision {
@@ -265,11 +278,19 @@ export function evaluatePromotion(
           } else if (edge.reportHash !== report.reportHash) {
             reasons.push("ROW_REPORT_HASH_MISMATCH: row reportHash differs from the embedded report");
           }
-          // A hash-valid report that certifies nothing earns nothing: the
-          // default outcome of research is rejection, and only a PASS verdict
-          // inside the hash-covered candidate set is evidence of an edge.
-          if (!report.candidates.some((c) => c.verdict === "PASS")) {
-            reasons.push("NO_PASSING_CANDIDATE: the verified report contains no PASS verdict");
+          const spec = edge.specJson;
+          if (!spec || typeof spec !== "object" || !("familyKey" in spec) || spec.familyKey !== report.familyKey) {
+            reasons.push("CANDIDATE_FAMILY_MISMATCH: report does not identify the registered family");
+          } else if (createHash("sha256").update(canonicalSpec(spec)).digest("hex") !== edge.preregHash) {
+            reasons.push("PREREG_SPEC_MISMATCH: stored hypothesis differs from the registered specification");
+          }
+          const matches = report.candidates.filter((candidate) => candidate.key === edge.versionTag);
+          if (matches.length !== 1 || !edge.versionTag?.trim()) {
+            reasons.push("CANDIDATE_IDENTITY_UNRESOLVED: expected one report entry for the edge version");
+          } else if (!matches[0]!.preregHash || matches[0]!.preregHash !== edge.preregHash) {
+            reasons.push("CANDIDATE_REGISTRATION_MISMATCH: version lacks a matching hash-covered registration");
+          } else if (matches[0]!.verdict !== "PASS") {
+            reasons.push("NO_PASSING_CANDIDATE: the reviewed version did not pass");
           }
         }
       }

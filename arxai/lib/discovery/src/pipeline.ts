@@ -107,7 +107,7 @@ export interface ValidationPort {
    */
   validateFamily(
     familyKey: string,
-    trials: ReadonlyArray<{ key: string; familyKey: string; returns: number[] }>,
+    trials: ReadonlyArray<{ key: string; familyKey: string; preregHash?: string; returns: number[] }>,
     chargedTrials: number,
   ): {
     candidates: Array<{
@@ -233,7 +233,7 @@ export function runDiscovery(opts: RunDiscoveryOptions): DiscoveryResult {
 
   const validated = validation.validateFamily(
     spec.familyKey,
-    trials.map((t) => ({ key: t.key, familyKey: spec.familyKey, returns: t.oosReturns })),
+    trials.map((t) => ({ key: t.key, familyKey: spec.familyKey, preregHash, returns: t.oosReturns })),
     familySize,
   );
   const byKey = new Map(validated.candidates.map((c) => [c.key, c]));

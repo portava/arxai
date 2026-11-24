@@ -281,3 +281,10 @@ local termination calls, application errors, successful ping and discovery
 responses, and gaps in the two-second V75 tick cadence. The cause of the
 three historical hourly interruptions remains unverified. These transport
 tests contribute no forecast windows or MT5 fills.
+
+
+## Research-to-shadow candidate identity
+
+The research gate requires one passing report entry with the reviewed edge's version tag. Discovery supplies the hypothesis digest to validation. The factory covers that digest in the report hash alongside the variant key and verdict. The gate recomputes the digest of the stored specification and checks the report family. A rejected sibling, a repeated key, a changed hypothesis or an older report without a bound registration cannot qualify the edge. Legacy reports retain their original hash verification.
+
+This offline check establishes candidate identity at research review. A dated preregistration, forward evidence for the candidate, reconciled broker costs and a rehearsal of the running strategy's rollback each require separate evidence.

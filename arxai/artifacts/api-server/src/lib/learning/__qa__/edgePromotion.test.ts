@@ -73,24 +73,29 @@ function mkReport(opts: { pass?: boolean; pbo?: number } = {}): SignedValidation
     candidates: [
       {
         key: "t1",
+        preregHash: PREREG,
         verdict: (opts.pass === false ? "REJECT" : "PASS") as "PASS" | "REJECT",
         oosSharpe: 1.2345678901234,
         dsr: 0.987654321,
         pbo: opts.pbo ?? 0.21,
       },
-      { key: "t2", verdict: "REJECT" as const, oosSharpe: -0.4, dsr: 0.1, pbo: opts.pbo ?? 0.21 },
+      { key: "t2", preregHash: PREREG, verdict: "REJECT" as const, oosSharpe: -0.4, dsr: 0.1, pbo: opts.pbo ?? 0.21 },
     ],
     prevHash: ZERO64,
   };
   return { ...base, reportHash: computeReportHash(base) };
 }
 
-const PREREG = "a".repeat(64);
+const SPEC = { familyKey: "fam_qa", instrument: "V75", rule: "trend", params: { z: 2, a: 1 }, horizon: 5, metric: "return" };
+const discovery = await import(new URL("../../../../../../lib/discovery/src/pipeline.ts", import.meta.url).href);
+const PREREG = discovery.preRegister(SPEC).preregHash;
 
 function shadowReadyEdge(overrides: Partial<EdgeGateView> = {}): EdgeGateView {
   const report = mkReport();
   return mkEdge({
     preregHash: PREREG,
+    versionTag: "t1",
+    specJson: SPEC,
     validationReportJson: report,
     reportHash: report.reportHash,
     ...overrides,
@@ -146,7 +151,7 @@ test("FIDELITY: a report from the real validateFamily verifies; a tampered one r
     "fam_fidelity",
     [
       { key: "a", familyKey: "fam_fidelity", returns: mkReturns() },
-      { key: "b", familyKey: "fam_fidelity", returns: mkReturns() },
+      { key: "b", familyKey: "fam_fidelity", preregHash: PREREG, returns: mkReturns() },
     ],
     { cpcv: { nGroups: 6, p: 2, horizon: 5, embargo: 5 } },
   );
@@ -157,6 +162,10 @@ test("FIDELITY: a report from the real validateFamily verifies; a tampered one r
   // and JSON has no NaN — the verifier must survive an honest round trip.
   const roundTripped = JSON.parse(JSON.stringify(real));
   assert.equal(verifyValidationReport(roundTripped).ok, true, "an honest JSON round trip must still verify");
+
+  assert.equal(roundTripped.candidates[1].preregHash, PREREG);
+  roundTripped.candidates[1].preregHash = ZERO64;
+  assert.equal(verifyValidationReport(roundTripped).ok, false);
 
   // Tamper with one verdict → the restated report must refuse.
   const tampered = JSON.parse(JSON.stringify(real));
@@ -235,6 +244,31 @@ test("RESEARCH→SHADOW: each requirement violated individually refuses", () => 
     assert.equal(d.allowed, false, `${label} must refuse`);
     assert.equal(d.patch, null, `${label} must produce no patch`);
     assert.ok(d.reasons.some((r) => expected.test(r)), `${label}: reasons ${JSON.stringify(d.reasons)}`);
+  }
+});
+
+test("research evidence belongs to exactly one passing version and registration", () => {
+  const report = mkReport();
+  const check = (edge: Partial<EdgeGateView>, pattern: RegExp) => {
+    const decision = evaluatePromotion(shadowReadyEdge(edge), fullEvidence(), NOW);
+    assert.equal(decision.patch, null);
+    assert.match(decision.reasons.join(" "), pattern);
+  };
+  check({ versionTag: "t2" }, /NO_PASSING_CANDIDATE/);
+  check({ versionTag: "absent" }, /IDENTITY_UNRESOLVED/);
+  check({ versionTag: undefined }, /IDENTITY_UNRESOLVED/);
+  check({ specJson: { ...SPEC, familyKey: "other" } }, /FAMILY_MISMATCH/);
+  check({ specJson: { ...SPEC, horizon: 6 } }, /PREREG_SPEC_MISMATCH/);
+  const [target] = report.candidates;
+  for (const [candidates, reason] of [
+    [[target!, target!], /IDENTITY_UNRESOLVED/],
+    [[{ ...target!, preregHash: ZERO64 }], /REGISTRATION_MISMATCH/],
+    [report.candidates.map(({ preregHash, ...legacy }) => legacy), /REGISTRATION_MISMATCH/],
+  ] as const) {
+    const amended = { ...report, candidates: [...candidates] };
+    amended.reportHash = computeReportHash(amended);
+    assert.equal(verifyValidationReport(amended).ok, true);
+    check({ validationReportJson: amended, reportHash: amended.reportHash }, reason);
   }
 });
 

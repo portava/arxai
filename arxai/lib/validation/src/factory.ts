@@ -47,6 +47,7 @@ export interface TrialResult {
   /** Stable identifier of the strategy variant. */
   key: string;
   familyKey: string;
+  preregHash?: string;
   /** Per-observation returns over the whole track. */
   returns: number[];
 }
@@ -56,6 +57,7 @@ export type ValidationVerdict = "PASS" | "REJECT";
 export interface CandidateReport {
   key: string;
   familyKey: string;
+  preregHash?: string;
   verdict: ValidationVerdict;
   observedSharpe: number;
   oosSharpe: number;
@@ -134,6 +136,13 @@ export function validateFamily(
     return finalise(familyKey, 0, thresholds, [], prevHash, "NO_TRIALS");
   }
 
+  for (const trial of trials) {
+    if (trial.preregHash !== undefined &&
+        (trial.familyKey !== familyKey || !trial.key.trim() || !/^[0-9a-f]{64}$/.test(trial.preregHash))) {
+      throw new Error("Invalid registered trial identity");
+    }
+  }
+
   const inSampleSharpes = trials.map((t) => sharpe(t.returns));
   const trialSharpeSd = opts.trialSharpeSd ?? stdev(inSampleSharpes);
 
@@ -173,6 +182,7 @@ export function validateFamily(
     return {
       key: t.key,
       familyKey: t.familyKey,
+      ...(t.preregHash === undefined ? {} : { preregHash: t.preregHash }),
       verdict: vetoes.length === 0 ? "PASS" : "REJECT",
       observedSharpe,
       oosSharpe,
@@ -207,6 +217,7 @@ function finalise(
     thresholds,
     candidates: candidates.map((c) => ({
       key: c.key,
+      ...(c.preregHash === undefined ? {} : { preregHash: c.preregHash }),
       verdict: c.verdict,
       oosSharpe: round(c.oosSharpe),
       dsr: round(c.dsr),
