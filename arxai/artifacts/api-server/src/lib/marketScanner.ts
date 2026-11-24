@@ -1077,8 +1077,12 @@ export function computeFinalRead(
         ? `The retest of ${levelText} failed. Look for a new ${opp.timeframe} pullback.`
         : `Three ${opp.timeframe} candles closed without a retest of ${levelText}. Look for a new pullback.`);
     } else if (level != null) {
+      const barsLeft = trigger?.retestBarsLeft;
+      const deadline = barsLeft === 1 ? `On the next ${opp.timeframe} candle`
+        : barsLeft ? `Within the next ${barsLeft} ${opp.timeframe} candles`
+        : `Within three ${opp.timeframe} candles of the break`;
       const instruction = trigger?.confirmed || trigger?.pendingRetestLevel != null
-        ? `Watch the next three bars from the break for a closed ${opp.timeframe} candle to touch ${priceText(level)} and close ${buy ? "above" : "below"} it.`
+        ? `${deadline}, watch for price to touch ${priceText(level)} and close ${buy ? "above" : "below"} it.`
         : `The candle after the break did not hold a retest of ${priceText(level)}. Skip this entry and look for a new pullback.`;
       confirmations.unshift(instruction);
       reasons.push(instruction);
@@ -1657,7 +1661,8 @@ export function driftPullbackTrigger(
     ...(retestLevel !== undefined ? { retestLevel } : {}),
     ...(closedRetest && reclaimed === null ? { closedRetest } : {}),
     ...(previousBreakLevel !== undefined ? { previousBreakLevel } : {}),
-    ...(pendingRetest && !reclaimed ? { pendingRetestLevel: pendingRetest.level } : {}),
+    ...(pendingRetest && reclaimed === null ? { pendingRetestLevel: pendingRetest.level } : {}),
+    ...(pendingRetest ? { retestBarsLeft: pendingRetest.expires - barIndex } : {}),
     ...(followThroughLevel !== undefined ? { followThroughLevel } : {}) };
 }
 

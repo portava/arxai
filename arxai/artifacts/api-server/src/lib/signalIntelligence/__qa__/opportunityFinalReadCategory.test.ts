@@ -133,9 +133,9 @@ test("a drift watch needs an aligned entry trigger and a spent pullback cannot f
   assert.equal(read([pullback, redAbove]).label, "WAIT_FOR_CONFIRMATION");
   const greenBelow = { open: 96, high: 99, low: 95, close: 98 };
   assert.deepEqual(driftPullbackTrigger([reclaim, greenBelow], "SELL"),
-    { side: "SELL", level: 100, confirmed: true });
+    { side: "SELL", level: 100, confirmed: true, retestBarsLeft: 3 });
   assert.deepEqual(driftPullbackTrigger([reclaim, { ...pullback, close: 99 }], "SELL"),
-    { side: "SELL", level: 100, confirmed: true });
+    { side: "SELL", level: 100, confirmed: true, retestBarsLeft: 3 });
 });
 
 test("an aligned confirmed pattern can use one retest bar while an unrelated line forms", () => {
@@ -222,6 +222,10 @@ test("an invalid or expired retest is a skipped setup on either side", () => {
       const bars = [pull,broken,...after];
       return computeFinalRead({...row,driftTrigger:driftPullbackTrigger(buy?bars:bars.map(mirror),side)});
     };
+    assert.match(read().headline, /within the next 3 .*candles/i);
+    assert.match(read(away).headline, /within the next 2 .*candles/i);
+    assert.match(read(away,away).headline, /on the next .*candle/i);
+    assert.match(read(away,away).headline, buy ? /touch 103 and close above/ : /touch 97 and close below/);
     assert.equal(read(away,away).label, "WAIT_FOR_CONFIRMATION");
     const invalid = read(away,failed);
     assert.equal(invalid.label,"NO_TRADE");
