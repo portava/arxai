@@ -393,3 +393,16 @@ test("a next-minute candle received just before its start preserves the availabl
   f.setNow(epoch * 1000);
   assert.equal((await f.client.getCandles("R_75", 60, 60)).at(-1)?.epoch, epoch);
 });
+
+test("a dated candle cursor can cross a closed session while the newest window stays current", async t => {
+  const f=fixture(); t.after(()=>f.client.stop());
+  await f.client.getCandles("R_75",60,200);
+  await f.client.getCandles("R_75",60,200,epoch-3600);
+  const requests=f.sockets[0]!.sent.filter(r=>r.ticks_history);
+  assert.equal(requests[0]!.adjust_start_time,undefined);
+  assert.equal(requests[1]!.end,epoch-3600);
+  assert.equal(requests[1]!.adjust_start_time,1);
+  const payload={ticks_history:"R_75",style:"candles",granularity:60,count:10,end:epoch-3600};
+  assert.throws(()=>assertPublicDataRequest({...payload,adjust_start_time:2}));
+  assert.throws(()=>assertPublicDataRequest({...payload,end:"latest",adjust_start_time:1}));
+});

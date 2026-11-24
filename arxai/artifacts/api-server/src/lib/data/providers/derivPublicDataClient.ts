@@ -13,7 +13,7 @@ const DISCOVERY_MS = 300_000;
 const ACTION_KEYS: Record<string, readonly string[]> = {
   ping: ["ping"], time: ["time"], active_symbols: ["active_symbols"],
   ticks: ["ticks", "subscribe"],
-  ticks_history: ["ticks_history", "end", "style", "granularity", "count"],
+  ticks_history: ["ticks_history", "end", "style", "granularity", "count", "adjust_start_time"],
   forget: ["forget"],
 };
 
@@ -28,6 +28,8 @@ export function assertPublicDataRequest(payload: Record<string, unknown>): void 
   if ((action === "ticks" || action === "ticks_history") && (typeof payload[action] !== "string" || !/^\w{2,30}$/.test(payload[action] as string))) throw ERROR("DERIV_PUBLIC_INVALID_REQUEST");
   if (action === "ticks" && payload.subscribe !== undefined && payload.subscribe !== 1) throw ERROR("DERIV_PUBLIC_INVALID_REQUEST");
   if (action === "forget" && (typeof payload.forget !== "string" || payload.forget.length > 256 || !payload.forget)) throw ERROR("DERIV_PUBLIC_INVALID_REQUEST");
+  if (action === "ticks_history" && payload.adjust_start_time !== undefined &&
+      (payload.adjust_start_time !== 1 || payload.end === "latest")) throw ERROR("DERIV_PUBLIC_INVALID_REQUEST");
   if (action === "ticks_history" && (payload.style !== "candles" || ![60,120,180,300,600,900,1800,3600,7200,14400,28800,86400].includes(payload.granularity as number) || !Number.isInteger(payload.count) || (payload.count as number) < 1 || (payload.count as number) > 5000 || !(payload.end === "latest" || (Number.isInteger(payload.end) && (payload.end as number) > 0)))) throw ERROR("DERIV_PUBLIC_INVALID_REQUEST");
 }
 
@@ -379,7 +381,9 @@ export class DerivPublicDataClient {
     // Panels request small windows of different lengths (probe, heat, chart,
     // Eleanor). Share one bounded current window without multiplying requests.
     // Historical pagination keeps its exact endpoint and requested count.
-    const payload = { ticks_history: symbol, style: "candles", granularity,
+    // A historical cursor can land on a weekend. Ask for the previous session
+    // while keeping every returned bar inside the original end boundary.
+    const payload = { ticks_history: symbol, style: "candles", granularity, ...(end !== undefined ? { adjust_start_time: 1 } : {}),
       count: end === undefined ? Math.max(256, requestedCount) : requestedCount, end: end ?? "latest" };
     assertPublicDataRequest(payload);
     const requestedAt = this.now();
@@ -403,7 +407,7 @@ export class DerivPublicDataClient {
       if (echo && echo.ticks_history !== undefined && echo.ticks_history !== symbol) throw ERROR("DERIV_PUBLIC_SYMBOL_MISMATCH");
       // req_id binds the response to a request, but contradictory provider
       // metadata must never relabel a different timeframe/history range.
-      for (const field of ["style", "granularity", "count", "end"] as const) {
+      for (const field of ["style", "granularity", "count", "end", "adjust_start_time"] as const) {
         if (echo && echo[field] !== undefined && echo[field] !== payload[field]) throw ERROR("DERIV_PUBLIC_HISTORY_REQUEST_MISMATCH");
       }
       const receivedAt = this.now();
