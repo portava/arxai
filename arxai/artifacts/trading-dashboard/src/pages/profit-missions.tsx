@@ -2153,13 +2153,12 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
         </span>
       </div>
       <p className="text-sm text-muted-foreground">{r.headline}</p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>Trades: {m.totalTrades}</span>
-        <span>Win rate: {(m.winRate * 100).toFixed(1)}%</span>
+      {m.totalTrades > 0 && <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>{m.winningTrades} wins / {m.totalTrades} scored trades</span>
         <span>{r.isVerified ? `Expectancy: ${m.expectancyR.toFixed(2)}R` : "R metrics: see evidence and coverage below"}</span>
         <span>Max DD: {m.maxDrawdownPct.toFixed(1)}%</span>
         <span>{r.evidence?.source === "generated_prices" ? "Gross P/L (price units)" : "Reported P/L (units and costs unverified)"}: {m.netProfitLoss.toFixed(2)}</span>
-      </div>
+      </div>}
       <div className="space-y-1 text-xs text-muted-foreground" data-testid={`test-evidence-notes-${r.id}`}>
         {r.notes.map((note, index) => <p key={index}>{note}</p>)}
       </div>

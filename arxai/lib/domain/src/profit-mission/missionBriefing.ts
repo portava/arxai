@@ -89,14 +89,19 @@ export interface EndOfDayReview {
   observations: string[];
 }
 
+function closedTradeLine(label: string, trades: ClosedTradeAggregate): string {
+  if (trades.totalTrades === 0) return `${label}: No closed trades. Win rate unavailable.`;
+  const winPct = 100 * trades.winningTrades / trades.totalTrades;
+  return `${label}: ${trades.totalTrades} (${trades.winningTrades}W / ${trades.losingTrades}L, ${winPct.toFixed(0)}% win).`;
+}
+
 export function buildEndOfDayReview(
   state: MissionBriefingState,
   today: ClosedTradeAggregate,
   nowMs: number,
 ): EndOfDayReview {
-  const winRate = today.totalTrades > 0 ? (today.winningTrades / today.totalTrades) * 100 : 0;
   const lines: string[] = [
-    `Trades today: ${today.totalTrades} (${today.winningTrades}W / ${today.losingTrades}L, ${winRate.toFixed(0)}% win).`,
+    closedTradeLine("Trades today", today),
     `Net result today: ${today.netPnl}.`,
     `Best: ${today.bestTradePnl}; worst: ${today.worstTradePnl}.`,
     `Progress now: ${progressPct(state).toFixed(1)}% of the goal.`,
@@ -135,13 +140,12 @@ export function buildMissionReport(
   const reached = state.currentValue >= state.targetAmount;
   const ended = state.status === "completed" || state.status === "failed" || state.status === "cancelled";
   const outcome: MissionReport["outcome"] = reached ? "reached" : ended ? "fell_short" : "in_progress";
-  const winRate = overall.totalTrades > 0 ? (overall.winningTrades / overall.totalTrades) * 100 : 0;
   const netResult = state.currentValue - state.startingAmount;
 
   const lines: string[] = [
     `Final status: ${state.status}.`,
     `Account moved from ${state.startingAmount} to ${state.currentValue} (net ${netResult >= 0 ? "+" : ""}${netResult}).`,
-    `Trades: ${overall.totalTrades} (${overall.winningTrades}W / ${overall.losingTrades}L, ${winRate.toFixed(0)}% win).`,
+    closedTradeLine("Trades", overall),
     `Net realised across the mission: ${overall.netPnl}.`,
   ];
   const lessons: string[] = [];

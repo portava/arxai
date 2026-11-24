@@ -130,16 +130,19 @@ export function summarizeMissionTest(input: MissionTestSummaryInput): MissionTes
   if (sufficient) notes.push("Minimum sample threshold met; this does not establish statistical significance or a validated edge.");
   const warn = sampleWarning(input.kind, sampleSize);
   if (warn) notes.push(warn);
-  if (!positiveEdge) {
+  if (sampleSize > 0 && !positiveEdge) {
     notes.push("No positive edge in this sample — expectancy and profit factor must both clear breakeven.");
   }
   notes.push("Past results are an estimate only and do not predict future outcomes; losses are possible.");
 
-  const winPct = (m.winRate * 100).toFixed(1);
-  const headline =
-    `${label} — ${input.strategyKey} on ${input.symbol} ${input.timeframe}: ` +
-    `${sampleSize} trades, ${winPct}% win rate, expectancy ${m.expectancyR.toFixed(2)}R, ` +
-    `profit factor ${m.profitFactor.toFixed(2)}, max drawdown ${m.maxDrawdownPct.toFixed(1)}%.`;
+  const subject = `${label} — ${input.strategyKey} on ${input.symbol} ${input.timeframe}`;
+  const profitFactor = m.losingTrades > 0
+    ? `profit factor ${m.profitFactor.toFixed(2)}`
+    : "profit factor unavailable (no gross losses)";
+  const headline = sampleSize > 0
+    ? `${subject}: ${sampleSize} trades, ${m.winningTrades} won (${(100 * m.winningTrades / sampleSize).toFixed(1)}% win rate), ` +
+      `expectancy ${m.expectancyR.toFixed(2)}R, ${profitFactor}, max drawdown ${m.maxDrawdownPct.toFixed(1)}%.`
+    : `${subject}: No scored trades. Win rate and expectancy are unavailable.`;
 
   return {
     kind: input.kind,

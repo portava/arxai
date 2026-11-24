@@ -128,3 +128,14 @@ test("Mission diagnostics retain the requested bar length and disclose the old o
   assert.match(result.notes.join(" "),/Requested M30.*generated M1/);
   assert.equal(saved.timeframe,"M30");
 });
+
+test("Mission reports distinguish an empty sample, all losses, and no gross losses", () => {
+  const project = (totalTrades: number, wins: number, losses: number) =>
+    projectMissionTestResult(row({ metrics: { ...strong, totalTrades, winningTrades: wins, losingTrades: losses,
+      winRate: totalTrades === 0 ? 0 : wins / totalTrades, profitFactor: losses === 0 ? 999 : 0 } })).headline;
+  assert.match(project(0, 0, 0), /No scored trades/);
+  assert.doesNotMatch(project(0, 0, 0), /[0-9]%|999/);
+  assert.match(project(4, 0, 4), /0 won \(0\.0% win rate\)/);
+  assert.match(project(4, 3, 0), /3 won \(75\.0% win rate\).*no gross losses/);
+  assert.doesNotMatch(project(4, 3, 0), /999/);
+});
