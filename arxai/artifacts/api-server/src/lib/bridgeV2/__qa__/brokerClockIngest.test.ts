@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { bridgeV2 } from "@workspace/domain";
 import { __feedMarketDataStoreForTests as feed } from "../ingest.js";
 import { routeQuote } from "../../data/marketDataRouter.js";
-import { freezeAtiDecisionQuote } from "../../mt5/atiCostEvidence.js";
+import { freezeAtiDecisionQuote, freezeAtiDemoConfirmationQuote } from "../../mt5/atiCostEvidence.js";
 
 const fold = (messageType: string, payload: unknown, freshnessVerdict: string | null,
   bridge: { bridgeConnectionId: number; userId: number } | null, eaCreatedAtEpochMs: number | null) =>
@@ -123,4 +123,26 @@ test("ATI freezes only the fresh routed quote bounded by ticks from the same ver
   push(-200, 1.1002, { ...account, binding: "2".repeat(64) });
   assert.equal(freezeAtiDecisionQuote(read, BRIDGE.userId, now), null);
   assert.equal(freezeAtiDecisionQuote(await quote(), BRIDGE.userId, now), null);
+});
+
+test("demo confirmation freezes the exact broker edition from its authenticated owner and bridge", () => {
+  const now = Date.now(), symbol = "Volatility 75 (1s) Index";
+  const confirm = (who = BRIDGE.userId, bridge = BRIDGE.bridgeConnectionId, at = Date.now()) =>
+    freezeAtiDemoConfirmationQuote(symbol, who, bridge, at);
+  function push(ms: number, ask: number, mode: "DEMO" | "LIVE") {
+    feed({ messageType: "TICK", freshnessVerdict: "FRESH", bridge: BRIDGE, eaCreatedAtEpochMs: now + ms,
+      payload: { symbol: "V75_1S", brokerSymbol: symbol, bid: 100, ask, brokerTimeEpochMs: now + ms + H },
+      atiAccount: { binding: "3".repeat(64), mode } });
+  }
+  push(-900, 101, "LIVE"); push(-800, 102, "LIVE");
+  assert.equal(confirm(), null);
+  push(-700, 103, "DEMO");
+  assert.equal(confirm(), null);
+  push(-600, 104, "DEMO");
+  assert.equal(confirm()?.ask, 104);
+  assert.equal(confirm()?.mode, "DEMO");
+  assert.equal(confirm(BRIDGE.userId + 1), null);
+  assert.equal(confirm(BRIDGE.userId, BRIDGE.bridgeConnectionId + 1), null);
+  assert.equal(confirm(BRIDGE.userId, BRIDGE.bridgeConnectionId, now + 60_000), null);
+  assert.equal(freezeAtiDemoConfirmationQuote("Volatility 75 Index", BRIDGE.userId, BRIDGE.bridgeConnectionId, now), null);
 });

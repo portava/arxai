@@ -118,7 +118,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
   ]);
   const liveRows = bound || liveCommandIds ? selectedLiveRows
     : [...selectedLiveRows].filter(row => !atiInstrumentConflict(symbol, row.symbol));
-  const [liveEvents, demoDispatches] = await Promise.all([
+  const [liveEvents, demoAudit] = await Promise.all([
     liveRows.length ? db.select({
       id: events.commandId, type: events.eventType, source: events.source,
       sequence: events.sequenceNo, payload: events.payload,
@@ -129,12 +129,17 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
         : inArray(events.eventType, ["DISPATCH_SENT", "RESULT_LIVE_FILLED", "RESULT_LIVE_PARTIALLY_FILLED", "LATE_RESULT_RETAINED"]),
       asOf || options.evidenceAsOf ? and(known(events.receivedAt), known(events.occurredAt)) : undefined,
     )) : [],
-    demoRows.length ? db.select({ metadata: security.metadata, availableAt: security.createdAt })
-      .from(security).where(and(
-        eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"),
-        eq(security.status, "ALLOWED"), gte(security.createdAt, from),
+    demoRows.length ? db.select({ metadata: security.metadata, availableAt: security.createdAt, type: security.eventType })
+      .from(security).innerJoin(demo, and(
+        eq(demo.userId, security.actorUserId), sql`${security.metadata}->>'commandId' = ${demo.commandId}`,
+        sql`${security.metadata}->'bridgeConnectionId' = to_jsonb(${demo.bridgeConnectionId})`,
+      )).where(and(
+        eq(security.actorUserId, ownerId), eq(security.status, "ALLOWED"),
+        or(and(eq(security.eventType, "DEMO_DISPATCH_SENT"), gte(security.createdAt, from)),
+          and(eq(security.eventType, "DEMO_COMMAND_APPROVED"),
+            sql`${security.createdAt} <= (${demo.sentAt} AT TIME ZONE 'UTC')`)),
         asOf || options.evidenceAsOf ? known(security.createdAt) : undefined,
-        inArray(sql<string>`${security.metadata}->>'commandId'`, demoRows.map((row) => row.commandId)),
+        inArray(demo.commandId, demoRows.map((row) => row.commandId)),
       )) : [],
   ]);
 
@@ -144,13 +149,12 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
     if (list) list.push(event);
     else eventsByCommand.set(event.id, [event]);
   }
-  const demoBindingsByCommand = new Map<string, { bindings: Set<unknown>; availableAt: Date }>();
-  for (const { metadata, availableAt } of demoDispatches) {
-    const key = JSON.stringify([metadata.commandId, metadata.bridgeConnectionId]);
-    const dispatch = demoBindingsByCommand.get(key) ?? { bindings: new Set(), availableAt };
-    dispatch.bindings.add(metadata.atiAccountBinding);
-    if (availableAt < dispatch.availableAt) dispatch.availableAt = availableAt;
-    demoBindingsByCommand.set(key, dispatch);
+  const demoConfirmations = new Map<string, (typeof demoAudit)[number] | null>();
+  const demoDispatches = new Map<string, (typeof demoAudit)[number] | null>();
+  for (const event of demoAudit) {
+    const records = event.type === "DEMO_DISPATCH_SENT" ? demoDispatches : demoConfirmations;
+    const commandId = String(event.metadata.commandId);
+    records.set(commandId, records.has(commandId) ? null : event);
   }
   const stampedEntries: string[] = [];
   for (const row of liveRows) {
@@ -226,21 +230,27 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
     const exit = row.commandType === "CLOSE_POSITION";
     const raw = object(row.raw);
     const facts = object(row.payload);
-    const dispatch = demoBindingsByCommand.get(JSON.stringify([commandId, row.bridge]));
-    const bindings = dispatch?.bindings;
-    const accountBinding = bindings?.values().next().value;
+    const dispatch = demoDispatches.get(commandId);
+    const accountBinding = dispatch?.metadata.atiAccountBinding;
+    const approval = demoConfirmations.get(commandId);
+    const confirmation = object(approval?.metadata.atiConfirmationQuote);
+    const confirmationKnown = approval && approval.metadata.commandType === row.commandType &&
+      approval.metadata.result === "APPROVED" && typeof confirmation.decidedAtMs === "number" &&
+      confirmation.decidedAtMs <= +approval.availableAt;
     const asOfStatus = (monitorDispatches || snapshotWindow) && !row.terminalKnown ? "UNVERIFIED_AS_OF_DECISION" : status;
     const result = asOfStatus !== "FILLED_DEMO" ? unresolved("COMMAND_OUTCOME_UNRESOLVED")
       : raw.atiCostEvidence == null ? unresolved("NO_DEAL_COST_RECEIPT")
-      : bindings?.size !== 1 ? unresolved("DISPATCH_OR_BRIDGE_UNVERIFIED")
+      : !dispatch ? unresolved("DISPATCH_OR_BRIDGE_UNVERIFIED")
       : reconcileAtiCostEvidence(raw.atiCostEvidence, {
+        decision: confirmationKnown && sentAt ? { quote: confirmation, ownerId, bridgeConnectionId: row.bridge, dispatchedAtMs: +sentAt } : undefined,
         mode: "DEMO", accountBinding, order: row.order ?? raw.resultOrder, deal: raw.resultDeal,
         symbol: facts.symbol, side: tradeSide(facts.side, exit),
         volume: row.volume, price: row.price, requestedVolume: numberOrNull(facts.lotSize),
         exit: exit ? { targetTicket: ticketString(facts.ticket ?? facts.positionTicket), filledPositionTicket: row.brokerTicket } : undefined,
       });
-    const availableAt = row.terminalAt && dispatch && (!monitorDispatches || (row.terminalAt < until && bindings?.size === 1)) ? new Date(Math.max(+row.terminalAt, +dispatch.availableAt)) : null;
-    return { commandId, sentAt, status: asOfStatus, entryStrategy: null, decisionBenchmarkSource: null, leg: exit ? "EXIT" as const : "ENTRY" as const, result, availableAt,
+    const availableAt = row.terminalAt && dispatch && (!monitorDispatches || row.terminalAt < until) ? new Date(Math.max(+row.terminalAt, +dispatch.availableAt)) : null;
+    return { commandId, sentAt, status: asOfStatus, entryStrategy: null,
+      decisionBenchmarkSource: result.state === "OBSERVED_BROKER_DEAL" && result.decisionQuote ? "DEMO_COMMAND_CONFIRMATION" as const : null, leg: exit ? "EXIT" as const : "ENTRY" as const, result, availableAt,
       dealKey: result.state === "OBSERVED_BROKER_DEAL" ? JSON.stringify([accountBinding, result.deal]) : null,
       instrumentWitness: result.state === "OBSERVED_BROKER_DEAL" && typeof accountBinding === "string" && typeof facts.symbol === "string"
         ? { mode: "DEMO" as const, accountBinding, brokerSymbol: facts.symbol } : null };

@@ -3,7 +3,8 @@ import { z } from "zod/v4";
 import { nativeAccountBinding } from "../brokerHub/nativeAccountReport.js";
 import { QUOTE_FRESH_TTL_MS } from "../data/freshness.js";
 import type { MarketQuoteResult } from "../data/marketDataRouter.js";
-import { atiMt5QuoteAccount } from "../data/providers/mt5Provider.js";
+import { resolveArxMarket } from "@workspace/domain/market";
+import { atiMt5QuoteAccount, readMt5Quote } from "../data/providers/mt5Provider.js";
 
 const ticket = z.string().refine((value) =>
   /^[1-9]\d{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n);
@@ -58,7 +59,7 @@ function adverseChargePriceUnits(amount: number | null, volume: number, valuatio
   return Number.isFinite(result) ? result : null;
 }
 const decisionQuote = z.object({
-  mode: z.literal("LIVE"),
+  mode: z.enum(["LIVE", "DEMO"]),
   ownerId: z.number().int().positive(),
   bridgeConnectionId: z.number().int().positive(),
   accountBinding: z.string().regex(/^[a-f0-9]{64}$/),
@@ -75,21 +76,35 @@ export function freezeAtiDecisionQuote(read: MarketQuoteResult | null, ownerId: 
   if (!read?.ok || !read.quote || read.primaryProvider !== "mt5_broker" || !read.tickTimeObserved ||
       read.provenance?.source !== "LIVE_TICK" || read.provenance.delayed !== false ||
       read.provenance.userId !== ownerId || read.quote.brokerSymbol !== read.provenance.brokerSymbol) return null;
-  const account = atiMt5QuoteAccount(read.quote);
+  return boundQuote(read.quote, ownerId, read.provenance.bridgeConnectionId, decidedAtMs, "LIVE");
+}
+
+function boundQuote(quote: NonNullable<MarketQuoteResult["quote"]>, ownerId: number, bridgeConnectionId: number | null,
+  decidedAtMs: number, mode: "LIVE" | "DEMO"): AtiDecisionQuote | null {
+  const account = atiMt5QuoteAccount(quote);
+  if (account?.mode !== mode) return null;
   const parsed = decisionQuote.safeParse({
-    mode: account?.mode,
-    accountBinding: account?.binding,
-    ownerId,
-    bridgeConnectionId: read.provenance.bridgeConnectionId,
-    brokerSymbol: read.quote.brokerSymbol,
-    bid: read.quote.bid,
-    ask: read.quote.ask,
-    brokerTickAtMs: read.quote.brokerClockMs,
-    observedAtMs: Date.parse(read.quote.timestamp),
-    decidedAtMs,
+    mode, accountBinding: account.binding, ownerId, bridgeConnectionId, brokerSymbol: quote.brokerSymbol,
+    bid: quote.bid, ask: quote.ask, brokerTickAtMs: quote.brokerClockMs,
+    observedAtMs: Date.parse(quote.timestamp), decidedAtMs,
   });
   if (!parsed.success || !validDecisionQuote(parsed.data)) return null;
   return parsed.data;
+}
+
+/** Capture the user's confirmation from the local authenticated writer cache, before approval is persisted. */
+export function freezeAtiDemoConfirmationQuote(symbol: unknown, ownerId: number, bridgeId: number | null, confirmedAt: number) {
+  if (typeof symbol !== "string" || !symbol || bridgeId == null) return null;
+  const canonical = resolveArxMarket(symbol)?.canonicalSymbol;
+  const keys = new Set([symbol, ...(canonical ? [canonical] : [])]);
+  for (const key of keys) {
+    const read = readMt5Quote(key, { bridgeConnectionId: bridgeId, now: confirmedAt });
+    if (read?.userId !== ownerId || read.bridgeConnectionId !== bridgeId || !read.tickTimeObserved ||
+        read.receivedAtMs == null || read.receivedAtMs > confirmedAt || read.quote.brokerSymbol !== symbol) continue;
+    const quote = boundQuote(read.quote, ownerId, bridgeId, confirmedAt, "DEMO");
+    if (quote) return quote;
+  }
+  return null;
 }
 
 function validDecisionQuote(q: AtiDecisionQuote) {

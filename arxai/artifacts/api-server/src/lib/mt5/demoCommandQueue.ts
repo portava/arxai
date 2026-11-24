@@ -48,6 +48,7 @@ import {
   checkMasterExposure,
   buildArxOrderComment,
 } from "./masterBridgeRouting.js";
+import { freezeAtiDemoConfirmationQuote } from "./atiCostEvidence.js";
 import { recordSecurityEvent } from "../security/events.js";
 import { cancelPendingTicket, normaliseDemoPendingPayload } from "./demoPendingOrder.js";
 import { selectExpirableSentRows } from "./demoBridgeContract.js";
@@ -472,6 +473,8 @@ export async function confirmCommand(args: {
   });
 
   const now = new Date();
+  const confirmationQuote = row.commandType === "PLACE_MARKET_ORDER" && !row.routedViaMaster
+    ? freezeAtiDemoConfirmationQuote((row.payload as Record<string, unknown> | null)?.symbol, args.userId, row.bridgeConnectionId, +now) : null;
   const approved = await transitionTo(row, "DEMO_APPROVED", {
     confirmedAt: now,
     approvedAt: now,
@@ -496,6 +499,7 @@ export async function confirmCommand(args: {
         bridgeConnectionId: row.bridgeConnectionId,
         canDispatchToMt5: false,
         safetyGateSnapshot: snapshot,
+        ...(confirmationQuote && { atiConfirmationQuote: confirmationQuote }),
         result: "APPROVED",
         reason: "USER_CONFIRMED",
       },

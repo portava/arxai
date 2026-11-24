@@ -568,6 +568,44 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
     assert.ok(trace.rows.every((row) => !JSON.stringify(row.payload).includes(bridge.accountNumber)));
     assert.equal(JSON.stringify(brokerExits).includes(liveCost.accountBinding), false);
 
+    await t.test("demo costs measure the unique server confirmation known before dispatch", async () => {
+      const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
+      const owner = 8190, commandId = "confirmed-demo-cost";
+      const frozen = { ...decision, mode: "DEMO", ownerId: owner, bridgeConnectionId: 22 };
+      const cost = atiCostReceiptFromResult({ ...resultWire, atiExecutionCostV1: { ...costWire, mode: "DEMO" } },
+        { ...bridge, accountType: "demo" }, "DEMO");
+      assert.ok(cost);
+      const payload = { symbol: "EURUSD", side: "BUY", lotSize: 0.02, atiConfirmationQuote: frozen };
+      await pool.query(`INSERT INTO mt5_demo_commands VALUES ($1,22,$2,'FILLED_DEMO',$3,'PLACE_MARKET_ORDER',false,$4,
+        '801',0.02,1.1003,$5,NULL,$6)`, [commandId, stamp.toISOString(), owner, payload, { ...resultWire, atiCostEvidence: cost }, new Date(fillTime).toISOString()]);
+      const audit = (kind: string, actor: number, metadata: Record<string, unknown>, at: Date | string) =>
+        pool.query("INSERT INTO security_events VALUES ($1,$2,$3,'ALLOWED',$4)", [metadata, actor, kind, at]);
+      const ids = { commandId, bridgeConnectionId: 22 };
+      const dispatch = { ...ids, atiAccountBinding: cost.accountBinding };
+      const approval = { ...ids, commandType: "PLACE_MARKET_ORDER", result: "APPROVED", atiConfirmationQuote: frozen };
+      const read = async () => (await readAtiExecutionCosts(owner, "EURUSD", stamp, new Date(fillTime + 1), new Date(fillTime))).demo;
+      await audit("DEMO_DISPATCH_SENT", owner, dispatch, stamp);
+      const before = new Date(+stamp - 50);
+      await audit("DEMO_COMMAND_APPROVED", owner + 1, approval, before);
+      await audit("DEMO_COMMAND_APPROVED", owner, { ...approval, bridgeConnectionId: 23 }, before);
+      await audit("DEMO_COMMAND_APPROVED", owner, approval, stamp.toISOString().replace("Z", "001Z"));
+      assert.equal((await read()).coverage.movementBeforeSubmission, 0, "payload, other owner, rebound bridge and late approvals cannot supply a price");
+      await audit("DEMO_COMMAND_APPROVED", owner, approval, before);
+      const measured = await read();
+      assert.equal(measured.coverage.movementBeforeSubmission, 1);
+      const row = measured.results[0]!;
+      assert.equal(row.decisionBenchmarkSource, "DEMO_COMMAND_CONFIRMATION");
+      assert.equal(row.entryStrategy, null);
+      assert.equal(row.result.state, "OBSERVED_BROKER_DEAL");
+      assert.ok(Math.abs(row.result.adverseMovementBeforeSubmissionPriceUnits! - 0.0002) < 1e-12);
+      await audit("DEMO_COMMAND_APPROVED", owner, approval, before);
+      const ambiguous = await read();
+      assert.equal(ambiguous.reconciledDealCount, 1);
+      assert.equal(ambiguous.coverage.movementBeforeSubmission, 0);
+      await audit("DEMO_DISPATCH_SENT", owner, dispatch, stamp);
+      assert.equal((await read()).reconciledDealCount, 0, "duplicate dispatch witnesses cannot establish a unique command");
+    });
+
     await t.test("broker cost reviews keep standard and one-second V75 receipts in their own edition", async () => {
       const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
       const owner = 8077;
