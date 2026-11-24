@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import type { DecisionCandidateInput } from "@workspace/domain/self-trade";
 import { ATI_FLEET_ENGINE as fleetEngine, cleanFleetVersion } from "./atiFleetDefinition.js";
 import { getBuildIdentity } from "../startup/buildIdentity.js";
+import { atiInstrumentConflict } from "./atiBrokerInstrument.js";
 import { entrySymbolMatches, entrySnapshotHash } from "./entryAuthority.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -63,7 +64,7 @@ export function atiVerifiedAdmission(ownerId: number, row: Command, stamped: unk
 }
 
 export function atiEntryStrategy(verified: ReturnType<typeof atiVerifiedAdmission>, accountBinding: string) {
-  if (!verified) return null;
+  if (!verified || atiInstrumentConflict(verified.decision.symbol, verified.brokerSymbol)) return null;
   const { ownerId, brokerSymbol, agent, decision, executionId, admissionHash } = verified;
   const parsed = cleanFleetVersion.safeParse(decision.scoreBreakdown.atiFleetDecisionV1);
   if (!parsed.success) return null;

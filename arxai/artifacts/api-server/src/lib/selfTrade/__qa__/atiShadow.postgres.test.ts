@@ -526,6 +526,47 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
     assert.ok(trace.rows.every((row) => !JSON.stringify(row.payload).includes(bridge.accountNumber)));
     assert.equal(JSON.stringify(brokerExits).includes(liveCost.accountBinding), false);
 
+    await t.test("broker cost reviews keep standard and one-second V75 receipts in their own edition", async () => {
+      const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
+      const owner = 8077;
+      const names = ["Volatility 75 Index", "Volatility 75 (1s) Index"];
+      for (const [index, symbol] of names.entries()) {
+        const commandId = "v75-demo-" + index, order = String(8200 + index), deal = String(8300 + index);
+        const terminal = { ...resultWire, resultOrder: order, resultDeal: deal };
+        const cost = atiCostReceiptFromResult({ ...terminal, atiExecutionCostV1: { ...costWire, symbol, mode: "DEMO", order, deal } },
+          { ...bridge, accountType: "demo" }, "DEMO");
+        assert.ok(cost);
+        await pool.query(`INSERT INTO mt5_demo_commands VALUES ($1,22,$2,'FILLED_DEMO',$3,'PLACE_MARKET_ORDER',false,$4,
+          $5,0.02,1.1003,$6,NULL,$7)`, [commandId, stamp.toISOString(), owner, { symbol, side: "BUY", lotSize: 0.02 },
+          order, { ...terminal, atiCostEvidence: cost }, new Date(fillTime).toISOString()]);
+        await pool.query("INSERT INTO security_events VALUES ($1,$2,'DEMO_DISPATCH_SENT','ALLOWED',$3)",
+          [{ commandId, bridgeConnectionId: 22, atiAccountBinding: cost.accountBinding }, owner, stamp]);
+        const history = withHistoryOrder(String(8400 + index), String(8500 + index));
+        await ingestHistory({ ...history, symbol, atiTriggeredExit: { ...history.atiTriggeredExit,
+          order: { ...history.atiTriggeredExit.order, symbol } } }, { owner, bridgeId: 88 });
+      }
+      const wrongName = names[1]!;
+      await pool.query(`INSERT INTO arx_live_commands VALUES
+        (8077,'wrong-edition',88,$1,'PLACE_LIVE_MARKET_ORDER',$2,'SENT_TO_MT5',$3,'BUY',$4,NULL,NULL,NULL,0.02,NULL,NULL)`,
+        [owner,stamp,wrongName,{ selfTradeSymbolBinding: { requestedSymbol: "V75", brokerSymbol: wrongName } }]);
+      await pool.query("INSERT INTO execution_events VALUES (8077,'DISPATCH_SENT','arx',1,$1,$2,$2)",
+        [{commandId:"wrong-edition",bridgeConnectionId:88,atiAccountBinding:liveCost.accountBinding},stamp]);
+      const reviewed = (key: string) => readAtiExecutionCosts(owner, key, stamp, new Date(fillTime + 1000), new Date(fillTime + 2000));
+      const regular = await reviewed("V75"), fast = await reviewed("V75_1S");
+      for (const [index, report] of [regular, fast].entries()) {
+        assert.deepEqual(report.demo.results.map(r => r.commandId), ["v75-demo-" + index]);
+        assert.equal(report.demo.reconciledDealCount, 1);
+        assert.equal(report.demo.results[0]?.entryStrategy, null, "a demo receipt alone cannot identify a bot decision");
+        assert.deepEqual(report.brokerTriggeredExits.live.results.map(r => r.deal), [String(8400 + index)]);
+      }
+      assert.equal(regular.live.commandCount, 0);
+      assert.equal(fast.live.commandCount, 1);
+      assert.equal((await reviewed("Volatility 75")).demo.commandCount, 0, "a partial broker name is not an exact lookup");
+      const { atiInstrumentConflict } = await import("../atiBrokerInstrument.js");
+      assert.equal(atiInstrumentConflict("V75", wrongName), true);
+      assert.equal(atiInstrumentConflict("V75_1S", names[0]!), true);
+    });
+
     await t.test("native position history joins exact entry, commanded partial close and protective exit", async () => {
       const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
       const symbol = "EURCHF", positionId = "990001", positionTicket = "999001";

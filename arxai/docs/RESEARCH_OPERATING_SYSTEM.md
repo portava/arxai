@@ -122,3 +122,12 @@ had an unverified fleet price source. All 14 records matched their stored
 native decisions. Two fresh processes reproduced the report and coverage
 byte for byte at 09:37:20 UTC. Zero entries qualified for grading.
 [Native fleet capture-end report](ati-evidence/v75-m5-owner-fleet-20261124T093720Z.json).
+
+ATI looks up canonical synthetic instruments using their exact MT5 catalog
+names. V75 includes Volatility 75 Index and R_75. V75_1S includes Volatility
+75 (1s) Index and 1HZ75V. A report requested by a native name stays exact.
+A saved command mapping that names a different known instrument cannot
+credit that fill to the requested strategy. Position histories, duplicate
+claims and cost calibration still use their original broker symbol and
+account. A DEMO command can supply measured costs while its originating
+bot decision remains unknown.

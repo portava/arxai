@@ -2,6 +2,7 @@ import { and, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { bridgeV2EventsTable as history, db } from "@workspace/db";
 import { bridgeV2 } from "@workspace/domain";
 
+import { atiBrokerNames } from "./atiBrokerInstrument.js";
 import { exactAtiLotUnits } from "./atiRoundTrips.js";
 
 const extension = bridgeV2.atiTriggeredExitTraceSchema;
@@ -19,7 +20,8 @@ const unresolved = (reason: string) => ({ state: "UNRESOLVED" as const, reason }
 
 export async function readAtiTriggeredExits(ownerId: number, symbol: string, from: Date, until: Date,
   instrumentWitnesses: InstrumentWitness[], positionScope?: AtiPositionScope, evidenceUntil = until) {
-  const names = new Set([symbol, ...instrumentWitnesses.map(({ brokerSymbol }) => brokerSymbol)]);
+  const exactNames = new Set(positionScope ? [positionScope.brokerSymbol] : atiBrokerNames(symbol));
+  const names = new Set([...exactNames, ...instrumentWitnesses.map(({ brokerSymbol }) => brokerSymbol)]);
   const witnessed = new Set(instrumentWitnesses.map((w) => identity(w.mode, w.accountBinding, w.brokerSymbol)));
   const fields = { receivedAtMs: history.serverReceivedAtEpochMs, payload: history.payload };
   const rows = await db.select(fields).from(history).where(and(
@@ -41,7 +43,7 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
       const parsed = dealHistory.safeParse(row.payload);
       if (!parsed.success) continue;
       const deal = parsed.data, t = deal.atiTriggeredExit;
-      if (deal.symbol !== symbol && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
+      if (!exactNames.has(deal.symbol) && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
       const key = identity(t.mode, t.accountBinding);
       const group = groups.get(key) ?? { mode: t.mode, account: t.accountBinding, orders: new Set(), tickets: new Set() };
       group.orders.add(t.orderTicket);
@@ -78,7 +80,7 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     const deal = parsed.data;
     const t = deal.atiTriggeredExit;
     const afterWindow = row.receivedAtMs != null && row.receivedAtMs >= +until;
-    if (!positionScope && !afterWindow && deal.symbol !== symbol && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
+    if (!positionScope && !afterWindow && !exactNames.has(deal.symbol) && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
     const key = identity(t.mode, t.accountBinding, deal.dealTicket);
     const prior = deals.get(key);
     if (prior) {

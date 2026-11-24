@@ -8,6 +8,7 @@ import { reconcileAtiCostEvidence } from "../mt5/atiCostEvidence.js";
 import type { AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiPositionKey, atiRoundTrips, reportAtiEntryStrategies, type AtiPositionLeg } from "./atiRoundTrips.js";
 import { atiEntryStrategy, atiVerifiedAdmission } from "./atiStrategyOrigin.js";
+import { atiBrokerNames, atiInstrumentConflict } from "./atiBrokerInstrument.js";
 import { readAtiTriggeredExits, type AtiPositionScope } from "./atiTriggeredExits.js";
 
 function object(value: unknown): Record<string, unknown> {
@@ -66,7 +67,8 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
     sql`${security.metadata}->>'bridgeConnectionId' = ${String(history.bridgeConnectionId)}`,
     sql`${security.metadata}->>'atiAccountBinding' = ${history.accountBinding}`, known(security.createdAt),
   ))) : undefined;
-  const [liveRows, demoRows] = await Promise.all([
+  const catalogNames = atiBrokerNames(symbol);
+  const [selectedLiveRows, demoRows] = await Promise.all([
     bound?.mode === "DEMO" ? [] : db.select({
       id: live.id, commandId: live.commandId, agentId: live.selfTradeAgentId, decisionId: live.selfTradeDecisionId, bridge: live.bridgeConnectionId,
       sentAt: live.sentToMt5At, status: live.status, symbol: live.symbol, side: live.side,
@@ -82,7 +84,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       eq(live.userId, ownerId), inArray(live.commandType, ["PLACE_LIVE_MARKET_ORDER", "CLOSE_LIVE_POSITION"]),
       liveCommandIds ? inArray(live.commandId, liveCommandIds)
       : history ? and(eq(live.symbol, history.brokerSymbol), eq(live.bridgeConnectionId, history.bridgeConnectionId))
-        : position ? undefined : or(eq(live.symbol, symbol), sql`${live.payload} #>> '{selfTradeSymbolBinding,requestedSymbol}' = ${symbol}`),
+        : position ? undefined : or(inArray(live.symbol, catalogNames), sql`${live.payload} #>> '{selfTradeSymbolBinding,requestedSymbol}' = ${symbol}`),
       monitorDispatches ? boundLiveDispatch : eligibleLiveReceipt,
       snapshotWindow ? exists(db.select({ id: events.commandId }).from(events).where(and(eq(events.commandId, live.id),
         eq(events.source, "arx"), eq(events.eventType, "DISPATCH_SENT"),
@@ -98,7 +100,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       volume: demo.fillVolume, price: demo.fillPrice, raw: demo.brokerRawResult,
     }).from(demo).where(and(
       eq(demo.userId, ownerId), inArray(demo.commandType, ["PLACE_MARKET_ORDER", "CLOSE_POSITION"]),
-      eq(demo.routedViaMaster, false), position ? undefined : sql`${demo.payload} ->> 'symbol' = ${bound?.brokerSymbol ?? symbol}`,
+      eq(demo.routedViaMaster, false), position ? undefined : inArray(sql<string>`${demo.payload} ->> 'symbol'`, bound ? [bound.brokerSymbol] : catalogNames),
       history ? eq(demo.bridgeConnectionId, history.bridgeConnectionId) : undefined,
       snapshotWindow ? exists(db.select({ id: security.actorUserId }).from(security).where(and(
         eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"), eq(security.status, "ALLOWED"),
@@ -111,6 +113,8 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       gte(demo.sentAt, from), lt(demo.sentAt, dispatchUntil), options.evidenceAsOf ? lte(demo.sentAt, options.evidenceAsOf) : undefined,
     )),
   ]);
+  const liveRows = bound || liveCommandIds ? selectedLiveRows
+    : [...selectedLiveRows].filter(row => !atiInstrumentConflict(symbol, row.symbol));
   const [liveEvents, demoDispatches] = await Promise.all([
     liveRows.length ? db.select({
       id: events.commandId, type: events.eventType, source: events.source,
