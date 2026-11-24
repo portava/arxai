@@ -1,3 +1,4 @@
+import { advanceBarOpen, normalizeChartTimeframe, timeframeMs as chartTimeframeMs } from "./data/chart/timeframes.js";
 // (P) Build P fix — strategy registry + deterministic candle generator.
 //
 // Architect findings addressed:
@@ -52,13 +53,14 @@ export function runSingleStrategy(
   return noTradeFilter(raw, candles, minConfidence);
 }
 
-// Bar spacing in milliseconds keyed by timeframe.
-const TF_MS: Record<string, number> = {
-  M1: 60_000, M5: 5 * 60_000, M15: 15 * 60_000,
-  H1: 60 * 60_000, H4: 4 * 60 * 60_000, D1: 24 * 60 * 60_000,
-};
+function supportedTimeframe(value: string) {
+  const timeframe = normalizeChartTimeframe(value);
+  if (!timeframe) throw new Error("UNSUPPORTED_BACKTEST_TIMEFRAME");
+  return timeframe;
+}
+
 export function timeframeMs(tf: string): number {
-  return TF_MS[tf] ?? TF_MS["M1"]!;
+  return chartTimeframeMs(supportedTimeframe(tf));
 }
 
 // ── Seeded RNG (mulberry32) — deterministic, fast, well-distributed ────────
@@ -121,13 +123,14 @@ export function generateDeterministicCandles(opts: {
   const { symbol, count, timeframe } = opts;
   // Default anchor is a stable past instant — explicitly NOT Date.now().
   const baseTimeMs = opts.baseTimeMs ?? Date.UTC(2024, 0, 1, 0, 0, 0);
-  const stepMs = timeframeMs(timeframe);
+  const interval = supportedTimeframe(timeframe);
+  const stepMs = chartTimeframeMs(interval);
   const rng = mulberry32(hashSeed(`${opts.seed}|${symbol}|${count}|${timeframe}`));
   let price = BASE_PRICES[symbol] ?? 1.0;
   const vol = VOLATILITIES[symbol] ?? 0.008;
   // Larger timeframes ⇒ more intra-bar movement. Scale linearly with sqrt(steps),
   // capped to avoid runaway prices on D1.
-  const tfScale = Math.min(4, Math.sqrt(stepMs / TF_MS["M1"]!));
+  const tfScale = Math.min(4, Math.sqrt(stepMs / 60_000));
   const candles: Candle[] = [];
   for (let i = 0; i < count; i++) {
     const open = price;
@@ -137,7 +140,7 @@ export function generateDeterministicCandles(opts: {
     const low  = Math.min(open, close) - rng() * price * vol * tfScale * 0.5;
     const volume = Math.floor(rng() * 500 + 100);
     candles.push({
-      time: new Date(baseTimeMs + i * stepMs).toISOString(),
+      time: new Date(advanceBarOpen(baseTimeMs, interval, i)).toISOString(),
       open, high, low, close, volume,
     });
     price = close;

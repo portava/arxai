@@ -80,11 +80,17 @@ export function projectMissionTestResult(row: StoredMissionTestResult) {
   const parsed = readMissionMetrics(blob.metrics);
   const metrics = parsed ?? { ...EMPTY_METRICS };
   const kind: MissionTestKind = row.kind === "FORWARD" ? "FORWARD" : "BACKTEST";
+  const experiment = blob.experiment as { engine?: string } | null | undefined;
+  // The v1 generator silently used M1 for every string outside its six exact codes.
+  const legacyMinute = kind === "BACKTEST" && experiment?.engine === "generated-price-diagnostic-v1" &&
+    !["M1", "M5", "M15", "H1", "H4", "D1"].includes(row.timeframe);
+  const timeframe = legacyMinute ? "M1" : row.timeframe;
   const summary = summarizeMissionTest({
-    kind, strategyKey: row.strategyKey, symbol: row.symbol, timeframe: row.timeframe, metrics,
+    kind, strategyKey: row.strategyKey, symbol: row.symbol, timeframe, metrics,
     evidence: blob.evidence as MissionTestEvidence | undefined,
   });
   const notes = [...summary.notes];
+  if (legacyMinute) notes.push(`Requested ${row.timeframe}. The stored diagnostic generated M1 candles.`);
   let headline = summary.headline;
   let warning = summary.sampleWarning;
   if (!parsed) notes.unshift("Stored metrics are incomplete or invalid; they cannot be used as trading evidence.");
@@ -111,7 +117,7 @@ export function projectMissionTestResult(row: StoredMissionTestResult) {
   }
   return {
     id: row.id, missionId: row.missionId, kind,
-    strategyKey: row.strategyKey, symbol: row.symbol, timeframe: row.timeframe,
+    strategyKey: row.strategyKey, symbol: row.symbol, timeframe,
     label: summary.label, sampleSize: summary.sampleSize, sampleWarning: warning,
     isVerified: false, metrics, headline, notes,
     promotionEligible: summary.promotionEligible, evidence: summary.evidence,

@@ -1031,6 +1031,9 @@ function sendTestingFailure(res: import("express").Response, r: Extract<TestingL
     case "not_found":
       res.status(404).json({ error: "Mission not found" });
       return;
+    case "unknown_timeframe":
+      res.status(400).json({ error: "Unknown backtest timeframe", allowed: r.allowed });
+      return;
     case "unknown_strategy":
       res.status(400).json({ error: "Unknown strategy", allowed: r.allowed });
       return;

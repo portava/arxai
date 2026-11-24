@@ -112,3 +112,16 @@ test("zero matching forward outcomes stays an empty record and cannot be attribu
   assert.equal(r.result.sampleSize, 0); assert.equal(r.result.metrics.netProfitLoss, 0); assert.equal(r.result.promotionEligible, false);
   assert.deepEqual(await aggregateMissionForward({ userId: 11, missionId: 1 }), { ok: false, kind: "not_found" });
 });
+
+test("Mission persists canonical intervals and refuses unknown intervals before writing", async () => {
+  const args={userId:10,missionId:1,strategyId:"trendContinuation",symbol:"EURUSD",timeframe:"30m",candleCount:250};
+  const saved=await runMissionBacktest(args);
+  assert.equal(saved.ok,true);
+  if(!saved.ok)return;
+  assert.equal(saved.result.timeframe,"M30");
+  const invalid=await runMissionBacktest({...args,timeframe:"misspelled"});
+  assert.ok(!invalid.ok && invalid.kind==="unknown_timeframe");
+  const rows=await db.select().from(results);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0]!.timeframe,"M30");
+});

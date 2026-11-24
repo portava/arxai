@@ -1,3 +1,4 @@
+import { CHART_TIMEFRAMES, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 // ── Profit Mission Phase 9 — Testing Lab service (backtest + forward) ─────────
 //
 // SAFETY / SCOPE:
@@ -37,7 +38,6 @@ import {
   generateDeterministicCandles,
   runSingleStrategy,
   isKnownStrategyId,
-  timeframeMs,
   type StrategyId,
 } from "./backtestStrategyRegistry.js";
 import type { Candle } from "./strategyEngine.js";
@@ -74,6 +74,7 @@ export interface MissionTestResultDto {
 
 export type TestingLabFailure =
   | { ok: false; kind: "not_found" }
+  | { ok: false; kind: "unknown_timeframe"; allowed: readonly string[] }
   | { ok: false; kind: "unknown_strategy"; allowed: readonly string[] }
   | { ok: false; kind: "focus_blocked"; envelope: ReturnType<typeof arxFocusBlockedEnvelope> };
 
@@ -161,17 +162,20 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
     return { ok: false, kind: "focus_blocked", envelope: arxFocusBlockedEnvelope(args.symbol) };
   }
 
+  const timeframe = normalizeChartTimeframe(args.timeframe);
+  if (!timeframe) return { ok: false, kind: "unknown_timeframe", allowed: CHART_TIMEFRAMES };
+
   const strategyId = args.strategyId as StrategyId;
   const candleCount = Math.min(5000, Math.max(50, Math.trunc(args.candleCount ?? 500)));
   const minConfidence = Math.min(100, Math.max(0, Math.trunc(args.minConfidence ?? 60)));
   const initialBalance = args.initialBalance && args.initialBalance > 0
     ? args.initialBalance
     : (mission.startingAmount > 0 ? mission.startingAmount : 10_000);
-  const seed = args.seed ?? `${strategyId}|${args.symbol}|${args.timeframe}`;
+  const seed = args.seed ?? `${strategyId}|${args.symbol}|${timeframe}`;
   const baseTimeMs = Date.UTC(2024, 0, 1, 0, 0, 0);
 
   const candles: Candle[] = generateDeterministicCandles({
-    symbol: args.symbol, count: candleCount, timeframe: args.timeframe, seed, baseTimeMs,
+    symbol: args.symbol, count: candleCount, timeframe, seed, baseTimeMs,
   });
   const signalFn = (window: BacktestCandle[]): BacktestSignal => {
     const sig = runSingleStrategy(strategyId, args.symbol, window as Candle[], minConfidence);
@@ -185,19 +189,16 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
   const metrics = backtestToMissionMetrics(sim.metrics, sim.trades, initialBalance);
   const summary = summarizeMissionTest({
     kind: "BACKTEST", strategyKey: strategyId, symbol: args.symbol,
-    timeframe: args.timeframe, metrics, evidence: GENERATED_PRICE_EVIDENCE,
+    timeframe, metrics, evidence: GENERATED_PRICE_EVIDENCE,
   });
-
-  // Anchor timeframe so the backtest window stays deterministic for the seed.
-  void timeframeMs(args.timeframe);
 
   const result = await persistTestResult({
     userId: args.userId, missionId: args.missionId, kind: "BACKTEST",
-    strategyKey: strategyId, symbol: args.symbol, timeframe: args.timeframe, metrics, summary,
+    strategyKey: strategyId, symbol: args.symbol, timeframe, metrics, summary,
     experiment: {
-      version: 1, engine: "generated-price-diagnostic-v1", strategyId,
+      version: 2, engine: "generated-price-diagnostic-v2", strategyId,
       seed, baseTimeMs, candleCount, minConfidence, initialBalance,
-      symbol: args.symbol, timeframe: args.timeframe,
+      symbol: args.symbol, timeframe,
       costs: "not_modelled", chronologicalHoldout: "not_performed", pnlUnit: "price_units",
     },
   });

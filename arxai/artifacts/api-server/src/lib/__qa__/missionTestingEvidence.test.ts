@@ -112,3 +112,19 @@ test("drawdown uses the peak at each loss, never starting balance or a later hig
   const metrics = backtestToMissionMetrics(raw, [], 100);
   assert.equal(metrics.maxDrawdownPct, 50);
 });
+
+test("Mission diagnostics retain the requested bar length and disclose the old one-minute fallback", async () => {
+  const { generateDeterministicCandles } = await import("../backtestStrategyRegistry.js");
+  const bars = (timeframe: string) => generateDeterministicCandles({symbol:"V75",timeframe,count:3,seed:"interval-evidence"});
+  for(const [tf, minutes] of [["M30",30],["15m",15],["H2",120]] as const) {
+    const sample = bars(tf);
+    assert.equal(Date.parse(sample[1]!.time)-Date.parse(sample[0]!.time), minutes*60_000);
+  }
+  assert.deepEqual(bars("MN1").map(b => b.time.slice(0,10)), ["2024-01-01","2024-02-01","2024-03-01"]);
+  assert.throws(() => bars("typo"), /UNSUPPORTED_BACKTEST_TIMEFRAME/);
+  const saved = { ...row({metrics:strong,evidence:GENERATED_PRICE_EVIDENCE,experiment:{engine:"generated-price-diagnostic-v1"}}),timeframe:"M30" };
+  const result = projectMissionTestResult(saved);
+  assert.equal(result.timeframe,"M1");
+  assert.match(result.notes.join(" "),/Requested M30.*generated M1/);
+  assert.equal(saved.timeframe,"M30");
+});
