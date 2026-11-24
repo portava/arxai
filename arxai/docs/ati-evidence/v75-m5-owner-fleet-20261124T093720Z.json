@@ -1,0 +1,1365 @@
+{
+  "scope": "ISOLATED_OBSERVED_PUBLIC_FEED_SHADOW_PILOT",
+  "profile": "ATLAS",
+  "funding": "RESEARCH_LEDGER_ONLY",
+  "studyStage": "CAPTURE_ENDED",
+  "dispatchesAndGradingReviewedAt": "2026-11-24T09:37:20.000Z",
+  "report": {
+    "id": "5e2f983a-81e8-48fd-8152-5734414336e8",
+    "agentId": 1,
+    "symbol": "V75",
+    "timeframe": "M5",
+    "setup": "TREND_CONTINUATION",
+    "baselineVersion": "self-trade-owner-fleet-supervised-v1",
+    "challengerVersion": "skip-timeframe-conflict-v1",
+    "assumedCosts": {
+      "feePerFillPriceUnits": 0,
+      "adverseSlippagePerFillPriceUnits": 1
+    },
+    "startedAt": "2026-11-24T08:37:14.292Z",
+    "endsAt": "2026-11-24T09:37:14.292Z",
+    "asOf": "2026-11-24T09:37:20.000Z",
+    "executionAuthority": "NONE",
+    "decisionScope": "OWNER_FLEET_AFTER_SUPERVISION",
+    "captureMode": "PERSISTED_OWNER_FLEET_CYCLES",
+    "outcomeEvaluation": "SIMULATED_FILLS_ON_OBSERVED_VENUE_QUOTES",
+    "fleetCohorts": [
+      {
+        "version": {
+          "build": {
+            "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+            "sourceState": "clean"
+          },
+          "engine": "SELF_TRADE_FLEET_DECISION",
+          "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+        },
+        "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+        "symbol": "V75",
+        "setup": "TREND_CONTINUATION",
+        "timeframe": "M5",
+        "baselineVersion": "self-trade-owner-fleet-supervised-v1",
+        "challengerVersion": "skip-timeframe-conflict-v1",
+        "agentId": 1,
+        "hasVerifiedVersion": true,
+        "matchingBars": 13,
+        "eligibleEntries": 0,
+        "changedDecisions": 0,
+        "pending": 0,
+        "unresolved": 0,
+        "unverifiedEntry": 0,
+        "quoteSideOnly": {
+          "settledPairs": 0,
+          "baseline": {
+            "settledTrades": 0,
+            "totalR": null,
+            "expectancyR": null,
+            "closedEquityDrawdownR": null
+          },
+          "challenger": {
+            "settledTrades": 0,
+            "totalR": null,
+            "expectancyR": null,
+            "closedEquityDrawdownR": null
+          },
+          "pairedDifferenceR": null,
+          "lossesAvoided": 0,
+          "winnersSkipped": 0
+        },
+        "withAssumedCosts": {
+          "settledPairs": 0,
+          "baseline": {
+            "settledTrades": 0,
+            "totalR": null,
+            "expectancyR": null,
+            "closedEquityDrawdownR": null
+          },
+          "challenger": {
+            "settledTrades": 0,
+            "totalR": null,
+            "expectancyR": null,
+            "closedEquityDrawdownR": null
+          },
+          "pairedDifferenceR": null,
+          "lossesAvoided": 0,
+          "winnersSkipped": 0
+        }
+      }
+    ],
+    "executionCosts": {
+      "source": "MT5_BROKER_RESULT_RECEIPTS",
+      "scope": "OWNER_INSTRUMENT_ATTESTED_DISPATCH_WINDOW_AS_OF",
+      "brokerTriggeredExits": {
+        "source": "MT5_DEAL_HISTORY_RECEIPTS",
+        "scope": "OWNER_INSTRUMENT_RECEIPT_WINDOW",
+        "brokerFillClock": "BROKER_SERVER",
+        "historyRowsWithoutVerifiedAccount": 0,
+        "duplicateReceipts": 0,
+        "live": {
+          "distinctDeals": 0,
+          "reconciledDeals": 0,
+          "coverage": {
+            "movementFromTrigger": 0,
+            "commission": 0,
+            "fees": 0,
+            "swap": 0
+          },
+          "results": []
+        },
+        "demo": {
+          "distinctDeals": 0,
+          "reconciledDeals": 0,
+          "coverage": {
+            "movementFromTrigger": 0,
+            "commission": 0,
+            "fees": 0,
+            "swap": 0
+          },
+          "results": []
+        }
+      },
+      "live": {
+        "roundTrips": {
+          "positions": [],
+          "dealsWithoutPositionId": 0,
+          "reconciled": 0,
+          "scope": "POSITIONS_OBSERVED_IN_WINDOW_LIFETIME_RECEIPTS_AS_OF_END",
+          "receiptWindowEndExclusive": "2026-11-24T09:37:14.292Z",
+          "byEntryStrategy": [],
+          "entryAttributionCoverage": {
+            "reconciledPositions": 0,
+            "attributed": 0,
+            "missingEntryStrategy": 0,
+            "mixedEntryStrategies": 0
+          }
+        },
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "exits": {
+          "commandCount": 0,
+          "reconciledDealCount": 0
+        },
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        },
+        "results": []
+      },
+      "demo": {
+        "roundTrips": {
+          "positions": [],
+          "dealsWithoutPositionId": 0,
+          "reconciled": 0,
+          "scope": "POSITIONS_OBSERVED_IN_WINDOW_LIFETIME_RECEIPTS_AS_OF_END",
+          "receiptWindowEndExclusive": "2026-11-24T09:37:14.292Z",
+          "byEntryStrategy": [],
+          "entryAttributionCoverage": {
+            "reconciledPositions": 0,
+            "attributed": 0,
+            "missingEntryStrategy": 0,
+            "mixedEntryStrategies": 0
+          }
+        },
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "exits": {
+          "commandCount": 0,
+          "reconciledDealCount": 0
+        },
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        },
+        "results": []
+      }
+    },
+    "measuredCostProfile": null,
+    "simulations": {
+      "quoteSideOnly": {
+        "settledPairs": 0,
+        "baseline": {
+          "settledTrades": 0,
+          "totalR": null,
+          "expectancyR": null,
+          "closedEquityDrawdownR": null
+        },
+        "challenger": {
+          "settledTrades": 0,
+          "totalR": null,
+          "expectancyR": null,
+          "closedEquityDrawdownR": null
+        },
+        "pairedDifferenceR": null,
+        "lossesAvoided": 0,
+        "winnersSkipped": 0
+      },
+      "withAssumedCosts": {
+        "settledPairs": 0,
+        "baseline": {
+          "settledTrades": 0,
+          "totalR": null,
+          "expectancyR": null,
+          "closedEquityDrawdownR": null
+        },
+        "challenger": {
+          "settledTrades": 0,
+          "totalR": null,
+          "expectancyR": null,
+          "closedEquityDrawdownR": null
+        },
+        "pairedDifferenceR": null,
+        "lossesAvoided": 0,
+        "winnersSkipped": 0
+      },
+      "withMeasuredSlippage": null,
+      "withMeasuredCosts": null
+    },
+    "counts": {
+      "observations": 14,
+      "paired": 13,
+      "different": 0,
+      "noObservedFeed": 1,
+      "sourceChanged": 0,
+      "ungraded": 0,
+      "unresolved": 0
+    },
+    "observations": [
+      {
+        "observationKey": "bar:1795509300000",
+        "observedAt": "2026-11-24T08:37:17.728Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795509434298_7264517c",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 1,
+          "cycleStartedAt": 1795509434298
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795509436
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45214.3941,
+          "bid": 45206.3941,
+          "observedAt": "2026-11-24T08:37:16.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795509600000",
+        "observedAt": "2026-11-24T08:40:29.941Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795509627861_86242450",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 7,
+          "cycleStartedAt": 1795509627861
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795509628
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45118.292,
+          "bid": 45110.292,
+          "observedAt": "2026-11-24T08:40:28.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795509900000",
+        "observedAt": "2026-11-24T08:45:21.771Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795509919723_b31109c6",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 16,
+          "cycleStartedAt": 1795509919723
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795509920
+        },
+        "chartConfirmation": {
+          "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45206.3679,
+          "bid": 45198.3679,
+          "observedAt": "2026-11-24T08:45:20.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795510200000",
+        "observedAt": "2026-11-24T08:50:11.394Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795510209045_68272f51",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 25,
+          "cycleStartedAt": 1795510209045
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795510210
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45191.9259,
+          "bid": 45183.9259,
+          "observedAt": "2026-11-24T08:50:10.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795510500000",
+        "observedAt": "2026-11-24T08:55:02.409Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "Market data stale",
+        "challengerReason": "Market data stale",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795510499678_b0b9e838",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 34,
+          "cycleStartedAt": 1795510499678
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795510500
+        },
+        "chartConfirmation": {
+          "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45210.5162,
+          "bid": 45202.5162,
+          "observedAt": "2026-11-24T08:55:00.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795510800000",
+        "observedAt": "2026-11-24T09:00:25.000Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795510822403_9db35461",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 44,
+          "cycleStartedAt": 1795510822403
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795510824
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45396.1556,
+          "bid": 45388.1556,
+          "observedAt": "2026-11-24T09:00:24.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795511100000",
+        "observedAt": "2026-11-24T09:05:15.457Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795511112852_d2a61a49",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 53,
+          "cycleStartedAt": 1795511112852
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795511114
+        },
+        "chartConfirmation": {
+          "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45337.9311,
+          "bid": 45329.9311,
+          "observedAt": "2026-11-24T09:05:14.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795511400000",
+        "observedAt": "2026-11-24T09:10:05.081Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795511402458_87b83039",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 62,
+          "cycleStartedAt": 1795511402458
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795511404
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45360.3687,
+          "bid": 45352.3687,
+          "observedAt": "2026-11-24T09:10:04.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795511700000",
+        "observedAt": "2026-11-24T09:15:26.363Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "Market data stale",
+        "challengerReason": "Market data stale",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795511724305_d645ded4",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 72,
+          "cycleStartedAt": 1795511724305
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795511724
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45281.9738,
+          "bid": 45273.9738,
+          "observedAt": "2026-11-24T09:15:24.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "gap:5985039",
+        "observedAt": "2026-11-24T09:19:12.460Z",
+        "coverage": "NO_OBSERVED_FEED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "DENIED",
+        "challengerOutcome": "UNOBSERVED",
+        "baselineReason": null,
+        "challengerReason": "Comparison unavailable for this feed.",
+        "feedGapReason": "FLEET_PRICE_ORIGIN_UNVERIFIED",
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795511950177_f99762bd",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 79,
+          "cycleStartedAt": 1795511950177
+        },
+        "fleetPrice": null,
+        "decisionQuote": null
+      },
+      {
+        "observationKey": "bar:1795512000000",
+        "observedAt": "2026-11-24T09:20:16.731Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795512014480_06c2359c",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 81,
+          "cycleStartedAt": 1795512014480
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795512016
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45200.2753,
+          "bid": 45192.2753,
+          "observedAt": "2026-11-24T09:20:16.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795512300000",
+        "observedAt": "2026-11-24T09:25:07.782Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795512304759_4a6d6c57",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 90,
+          "cycleStartedAt": 1795512304759
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795512306
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45199.8372,
+          "bid": 45191.8372,
+          "observedAt": "2026-11-24T09:25:06.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795512600000",
+        "observedAt": "2026-11-24T09:30:29.163Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795512627157_3fe69440",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 100,
+          "cycleStartedAt": 1795512627157
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795512628
+        },
+        "chartConfirmation": {
+          "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45350.6172,
+          "bid": 45342.6172,
+          "observedAt": "2026-11-24T09:30:28.000Z",
+          "spreadPriceUnits": 8
+        }
+      },
+      {
+        "observationKey": "bar:1795512900000",
+        "observedAt": "2026-11-24T09:35:19.438Z",
+        "coverage": "OBSERVED",
+        "setup": "TREND_CONTINUATION",
+        "baselineOutcome": "WAIT",
+        "challengerOutcome": "WAIT",
+        "baselineReason": "System readiness handshake not green",
+        "challengerReason": "System readiness handshake not green",
+        "feedGapReason": null,
+        "grade": null,
+        "gradeVersion": null,
+        "gradedAt": null,
+        "fleetReceipt": {
+          "cycleId": "cycle_1795512917479_d9f270d5",
+          "version": {
+            "build": {
+              "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+              "sourceState": "clean"
+            },
+            "engine": "SELF_TRADE_FLEET_DECISION",
+            "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+          },
+          "decisionId": 109,
+          "cycleStartedAt": 1795512917479
+        },
+        "fleetPrice": {
+          "symbol": "R_75",
+          "epoch": 1795512918
+        },
+        "chartConfirmation": {
+          "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+          "allowed": false
+        },
+        "decisionQuote": {
+          "ask": 45402.4851,
+          "bid": 45394.4851,
+          "observedAt": "2026-11-24T09:35:18.000Z",
+          "spreadPriceUnits": 8
+        }
+      }
+    ]
+  },
+  "captureCoverage": {
+    "policy": "ati-shadow-capture-monitor-v1",
+    "runId": "5e2f983a-81e8-48fd-8152-5734414336e8",
+    "symbol": "V75",
+    "baselineVersion": "self-trade-owner-fleet-supervised-v1",
+    "challengerVersion": "skip-timeframe-conflict-v1",
+    "timeframe": "M5",
+    "asOf": "2026-11-24T09:37:20.000Z",
+    "captureMode": "PERSISTED_OWNER_FLEET_CYCLES",
+    "executionAuthority": "NONE",
+    "slots": [
+      {
+        "startsAt": 1795509434292,
+        "endsAt": 1795509600000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795509600000,
+        "endsAt": 1795509900000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795509900000,
+        "endsAt": 1795510200000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795510200000,
+        "endsAt": 1795510500000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795510500000,
+        "endsAt": 1795510800000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795510800000,
+        "endsAt": 1795511100000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795511100000,
+        "endsAt": 1795511400000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795511400000,
+        "endsAt": 1795511700000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795511700000,
+        "endsAt": 1795512000000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 2,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 1
+      },
+      {
+        "startsAt": 1795512000000,
+        "endsAt": 1795512300000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795512300000,
+        "endsAt": 1795512600000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795512600000,
+        "endsAt": 1795512900000,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      },
+      {
+        "startsAt": 1795512900000,
+        "endsAt": 1795513034292,
+        "complete": true,
+        "state": "OBSERVED",
+        "reads": 1,
+        "observed": 1,
+        "sourceChanged": 0,
+        "unavailable": 0
+      }
+    ],
+    "missingCompletedSlots": 0,
+    "lastSavedReceiptAt": 1795512919439,
+    "grading": {
+      "eligible": 0,
+      "waitingForGrade": 0,
+      "overdueObservationKeys": [],
+      "unresolvedGrades": 0
+    }
+  },
+  "nativeDecisions": [
+    {
+      "decisionId": 1,
+      "agentId": 1,
+      "cycleId": "cycle_1795509434298_7264517c",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795509434298.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795509300000",
+      "decisionRecordedAt": "2026-11-24T03:37:17.726298-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 7,
+      "agentId": 1,
+      "cycleId": "cycle_1795509627861_86242450",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795509627861.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795509600000",
+      "decisionRecordedAt": "2026-11-24T03:40:29.939942-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 16,
+      "agentId": 1,
+      "cycleId": "cycle_1795509919723_b31109c6",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795509919723.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795509900000",
+      "decisionRecordedAt": "2026-11-24T03:45:21.770153-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 25,
+      "agentId": 1,
+      "cycleId": "cycle_1795510209045_68272f51",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795510209045.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795510200000",
+      "decisionRecordedAt": "2026-11-24T03:50:11.393367-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 34,
+      "agentId": 1,
+      "cycleId": "cycle_1795510499678_b0b9e838",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "Market data stale",
+      "cycleStartedAt": 1795510499678.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795510500000",
+      "decisionRecordedAt": "2026-11-24T03:55:02.408357-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 44,
+      "agentId": 1,
+      "cycleId": "cycle_1795510822403_9db35461",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795510822403.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795510800000",
+      "decisionRecordedAt": "2026-11-24T04:00:24.999209-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 53,
+      "agentId": 1,
+      "cycleId": "cycle_1795511112852_d2a61a49",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795511112852.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795511100000",
+      "decisionRecordedAt": "2026-11-24T04:05:15.455314-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 62,
+      "agentId": 1,
+      "cycleId": "cycle_1795511402458_87b83039",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795511402458.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795511400000",
+      "decisionRecordedAt": "2026-11-24T04:10:05.079877-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 72,
+      "agentId": 1,
+      "cycleId": "cycle_1795511724305_d645ded4",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "Market data stale",
+      "cycleStartedAt": 1795511724305.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795511700000",
+      "decisionRecordedAt": "2026-11-24T04:15:26.361728-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 79,
+      "agentId": 1,
+      "cycleId": "cycle_1795511950177_f99762bd",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "DENIED",
+      "reason": "No protective stop \u2014 risk cannot be defined",
+      "cycleStartedAt": 1795511950177.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "gap:5985039",
+      "decisionRecordedAt": "2026-11-24T04:19:12.459224-05:00",
+      "sourceIdentity": null,
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 81,
+      "agentId": 1,
+      "cycleId": "cycle_1795512014480_06c2359c",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795512014480.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795512000000",
+      "decisionRecordedAt": "2026-11-24T04:20:16.731067-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 90,
+      "agentId": 1,
+      "cycleId": "cycle_1795512304759_4a6d6c57",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795512304759.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795512300000",
+      "decisionRecordedAt": "2026-11-24T04:25:07.780557-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 100,
+      "agentId": 1,
+      "cycleId": "cycle_1795512627157_3fe69440",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795512627157.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795512600000",
+      "decisionRecordedAt": "2026-11-24T04:30:29.16202-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    },
+    {
+      "decisionId": 109,
+      "agentId": 1,
+      "cycleId": "cycle_1795512917479_d9f270d5",
+      "symbol": "V75",
+      "timeframe": "M5",
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "reason": "System readiness handshake not green",
+      "cycleStartedAt": 1795512917479.0,
+      "version": {
+        "build": {
+          "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+          "sourceState": "clean"
+        },
+        "engine": "SELF_TRADE_FLEET_DECISION",
+        "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+      },
+      "observationKey": "bar:1795512900000",
+      "decisionRecordedAt": "2026-11-24T04:35:19.437352-05:00",
+      "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+      "handshake": {
+        "key": "handshake_readiness",
+        "label": "Handshake network",
+        "detail": "Blocked: CHART_TRUTH_BLOCKED.",
+        "status": "FAIL",
+        "blocking": false
+      }
+    }
+  ],
+  "offlineReplaySha256": {
+    "shadow-report": "34382f372d0d5228f954b13685074f8633ead2aa55870f3a4689fb6420a6c67c",
+    "capture-coverage": "f2f5a0078eb1c31838dac81aaa1b75a320f3c38d0cbb101d8091f0215b6fdf70"
+  },
+  "matchingSetupChartConfirmationReasons": {
+    "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.": 9,
+    "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.": 4
+  }
+}

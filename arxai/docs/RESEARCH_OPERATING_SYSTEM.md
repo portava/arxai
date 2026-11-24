@@ -113,3 +113,12 @@ isolated V75 study databases inspected, the owner had zero attested DEMO
 or LIVE dispatches, triggered deals or reconciled positions from midnight
 through the review cutoff. Real broker costs for that sample are unknown.
 [Candidate review and isolated MT5 inventory](ati-evidence/v75-m5-candidate-review-20261124T0928Z.json).
+
+The native V75 fleet pilot finished capture at 09:37:14 UTC. Each of the
+13 M5 slots contained an observed trend-continuation decision. Both versions
+waited on all 13. Nine chart checks lacked broker-price alignment and four
+lacked cached chart intelligence. One additional read in an observed slot
+had an unverified fleet price source. All 14 records matched their stored
+native decisions. Two fresh processes reproduced the report and coverage
+byte for byte at 09:37:20 UTC. Zero entries qualified for grading.
+[Native fleet capture-end report](ati-evidence/v75-m5-owner-fleet-20261124T093720Z.json).
