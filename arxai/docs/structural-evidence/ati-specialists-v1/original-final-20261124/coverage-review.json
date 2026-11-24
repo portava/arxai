@@ -9,9 +9,22 @@
   "unpriced": 25,
   "unverifiedElapsed": 7,
   "scheduledAfterCutoff": 0,
-  "maxPricedOnRetainedEvidence": 7,
+  "maxPricedOnRetainedEvidence": 0,
   "requiredPriced": 30,
   "priceCoverageGate": "UNREACHABLE_ON_RETAINED_EVIDENCE",
+  "missedIssuances": 6,
+  "finalSchedule": {
+    "collectorVerdict": "REVIEW_CONDITIONS_UNMET",
+    "issued": 26,
+    "scored": 25,
+    "collectorPriced": 0,
+    "allScoresReplayed": true,
+    "dispositions": {
+      "UNPRICED": 25,
+      "ISSUED_WITHOUT_VERIFIED_SCORE": 1,
+      "NO_ATTEMPT_OR_RECEIPT": 6
+    }
+  },
   "meanBrier": {
     "pool": 0.6023302798798452,
     "incumbent": 0.6005331837716094
@@ -24,7 +37,7 @@
   "observedBrokerCosts": null,
   "executionAuthority": "NONE",
   "comparisons": {
-    "verifiedAgainstCollector": false,
+    "verifiedAgainstCollector": true,
     "replayed": {
       "probability": {
         "windows": 25,
@@ -1017,7 +1030,8 @@
       "poolBrier": 0.6705239721396622,
       "incumbentBrier": 0.5765267071378003,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T06:30:00.000Z",
@@ -1029,7 +1043,8 @@
       "poolBrier": 0.4565903465854086,
       "incumbentBrier": 0.5131137526319596,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T06:45:00.000Z",
@@ -1041,7 +1056,8 @@
       "poolBrier": 0.3708972565198403,
       "incumbentBrier": 0.5765267071378003,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T07:00:00.000Z",
@@ -1053,7 +1069,8 @@
       "poolBrier": 0.700580310952813,
       "incumbentBrier": 0.5131137526319596,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T07:15:00.000Z",
@@ -1065,7 +1082,8 @@
       "poolBrier": 0.5531478863852253,
       "incumbentBrier": 0.5131137526319596,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T07:30:00.000Z",
@@ -1077,7 +1095,8 @@
       "poolBrier": 0.5953921954248911,
       "incumbentBrier": 0.5375718515194056,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T07:45:00.000Z",
@@ -1089,7 +1108,8 @@
       "poolBrier": 0.6114885946698405,
       "incumbentBrier": 0.5615328701286272,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T08:00:00.000Z",
@@ -1101,7 +1121,8 @@
       "poolBrier": 0.6982863667753894,
       "incumbentBrier": 0.5615328701286272,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T08:15:00.000Z",
@@ -1113,7 +1134,8 @@
       "poolBrier": 0.6326058707306549,
       "incumbentBrier": 0.5615328701286272,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T08:30:00.000Z",
@@ -1125,7 +1147,8 @@
       "poolBrier": 0.8005117024841388,
       "incumbentBrier": 1.0046821311963512,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T08:45:00.000Z",
@@ -1137,7 +1160,8 @@
       "poolBrier": 0.5475191550583816,
       "incumbentBrier": 0.5215110076867415,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T09:00:00.000Z",
@@ -1149,7 +1173,8 @@
       "poolBrier": 0.7780778715760607,
       "incumbentBrier": 0.5738654829648144,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T09:15:00.000Z",
@@ -1161,7 +1186,8 @@
       "poolBrier": 0.5957284255665877,
       "incumbentBrier": 0.5738654829648144,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T09:30:00.000Z",
@@ -1173,7 +1199,8 @@
       "poolBrier": 0.3030551482540579,
       "incumbentBrier": 0.5215110076867415,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T09:45:00.000Z",
@@ -1185,7 +1212,8 @@
       "poolBrier": 0.47350565895235186,
       "incumbentBrier": 0.5215110076867415,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T10:00:00.000Z",
@@ -1197,7 +1225,8 @@
       "poolBrier": 0.7438158550252993,
       "incumbentBrier": 0.5394667108357956,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T10:15:00.000Z",
@@ -1209,7 +1238,8 @@
       "poolBrier": 0.3496735566016975,
       "incumbentBrier": 0.5394667108357956,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T10:30:00.000Z",
@@ -1221,7 +1251,8 @@
       "poolBrier": 0.3720322037847011,
       "incumbentBrier": 0.5617084847726277,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T10:45:00.000Z",
@@ -1233,7 +1264,8 @@
       "poolBrier": 0.5906128271852555,
       "incumbentBrier": 0.5394667108357956,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T11:00:00.000Z",
@@ -1245,7 +1277,8 @@
       "poolBrier": 0.7438165245808334,
       "incumbentBrier": 0.9999928607749002,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T11:15:00.000Z",
@@ -1257,7 +1290,8 @@
       "poolBrier": 0.49995266092340046,
       "incumbentBrier": 0.5498090609656248,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T11:30:00.000Z",
@@ -1269,7 +1303,8 @@
       "poolBrier": 0.6952828062234353,
       "incumbentBrier": 0.5498090609656248,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T11:45:00.000Z",
@@ -1281,7 +1316,8 @@
       "poolBrier": 0.8295422705949724,
       "incumbentBrier": 0.5503354837968466,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T12:00:00.000Z",
@@ -1293,7 +1329,8 @@
       "poolBrier": 0.8263676841548416,
       "incumbentBrier": 1.0019541952786226,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T12:15:00.000Z",
@@ -1305,49 +1342,63 @@
       "poolBrier": 0.6192498458463878,
       "incumbentBrier": 0.5498090609656248,
       "attribution": null,
-      "assumedNet": null
+      "assumedNet": null,
+      "finalDisposition": "UNPRICED"
     },
     {
       "asOf": "2026-11-24T12:30:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": "structural-ea81c4e7a121459334f277adefa671fb41ff635633f431f502f0daacf02e5e28",
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "ISSUED_WITHOUT_VERIFIED_SCORE"
     },
     {
       "asOf": "2026-11-24T12:45:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     },
     {
       "asOf": "2026-11-24T13:00:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     },
     {
       "asOf": "2026-11-24T13:15:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     },
     {
       "asOf": "2026-11-24T13:30:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     },
     {
       "asOf": "2026-11-24T13:45:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     },
     {
       "asOf": "2026-11-24T14:00:00.000Z",
       "state": "UNVERIFIED",
       "receiptId": null,
-      "attribution": null
+      "attribution": null,
+      "finalDisposition": "NO_ATTEMPT_OR_RECEIPT",
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
     }
   ]
 }

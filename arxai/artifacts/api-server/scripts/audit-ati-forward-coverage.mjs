@@ -1,5 +1,6 @@
 // Regrade elapsed scheduled slots from archived receipts without a database or a feed.
 import assert from "node:assert/strict";
+import { missedIssuance, reconcileFinalCoverage } from "./ati-forward-final-coverage.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -86,7 +87,26 @@ for (const [index, slot] of snapshot.windows.entries()) {
 const reviewed = windows.filter(w => w.state !== "UNVERIFIED");
 const priced = reviewed.flatMap(w => w.assumedNet ? [w.assumedNet] : []);
 const unpriced = reviewed.filter(w => w.state === "UNPRICED").length;
-const maxPriced = plan.plannedWindows - unpriced;
+const final = cutoff === end && snapshot.checkedAt >= end + 15_000 &&
+  ["REPLICATION_CANDIDATE", "REVIEW_CONDITIONS_UNMET"].includes(snapshot.verdict)
+  ? reconcileFinalCoverage(snapshot, windows) : null;
+// The sealed collector makes at most one attempt per scheduled boundary.
+const atSnapshotBoundary = snapshot.checkedAt < cutoff + step || cutoff === end;
+let missedIssuances = 0;
+if (atSnapshotBoundary) {
+  for (const [index, window] of windows.entries()) {
+    const reason = missedIssuance(snapshot.windows[index]);
+    if (reason) {
+      assert.equal(window.state, "UNVERIFIED");
+      window.issuanceGap = reason;
+      missedIssuances++;
+    }
+  }
+}
+const maxPriced = final ? final.collectorPriced : plan.plannedWindows - unpriced - missedIssuances;
+const requiredPriced = plan.reviewConditions.minimumPairedQuoteWindows;
+const priceCoverageGate = maxPriced < requiredPriced ? "UNREACHABLE_ON_RETAINED_EVIDENCE"
+  : priced.length >= requiredPriced ? "MET_ON_REPLAY" : "STILL_POSSIBLE";
 function mean(values) {
   assert.ok(values.every(Number.isFinite));
   return values.length ? values.reduce((a,b) => a+b, 0) / values.length : null;
@@ -128,9 +148,8 @@ if (options.includes("--comparisons")) {
     input: JSON.stringify({ archiveDir: resolve(archiveDir), windows: reviewed, digest, engineDigest: engine.engineDigest }),
     encoding: "utf8", timeout: 60_000,
   }));
-  const atSnapshotBoundary = snapshot.checkedAt < cutoff + step || cutoff === end;
   let verifiedAgainstCollector = false;
-  if (atSnapshotBoundary && replayed && reviewed.length === windows.length) {
+  if (atSnapshotBoundary && replayed && (reviewed.length === windows.length || final?.allScoresReplayed)) {
     assert.equal(snapshot.prediction.cohorts.length, 1);
     assert.equal(snapshot.costs.cohorts.length, 1);
     const forecast = snapshot.prediction.cohorts[0], costs = snapshot.costs.cohorts[0];
@@ -148,8 +167,7 @@ if (options.includes("--comparisons")) {
 console.log(JSON.stringify({ study: plan.study, planHash: digest, engineHash: engine.engineDigest,
   windowsEndingBy: through, planned: plan.plannedWindows, outcomesReplayed: reviewed.length, priced: priced.length,
   unpriced, unverifiedElapsed: windows.length - reviewed.length, scheduledAfterCutoff: plan.plannedWindows - windows.length,
-  maxPricedOnRetainedEvidence: maxPriced, requiredPriced: plan.reviewConditions.minimumPairedQuoteWindows,
-  priceCoverageGate: maxPriced < plan.reviewConditions.minimumPairedQuoteWindows ? "UNREACHABLE_ON_RETAINED_EVIDENCE" : "STILL_POSSIBLE",
+  maxPricedOnRetainedEvidence: maxPriced, requiredPriced, priceCoverageGate, ...(missedIssuances && { missedIssuances }), ...(final && { finalSchedule: final }),
   meanBrier: { pool: mean(reviewed.map(w => w.poolBrier)), incumbent: mean(reviewed.map(w => w.incumbentBrier)) },
   meanAssumedNetPricePoints: { pool: mean(priced.map(w => w.pool)), incumbent: mean(priced.map(w => w.incumbent)) },
   pricedDifferentSides: priced.filter(w => w.differentSide).length, observedBrokerCosts: null, executionAuthority: "NONE", ...(comparisons && { comparisons }),

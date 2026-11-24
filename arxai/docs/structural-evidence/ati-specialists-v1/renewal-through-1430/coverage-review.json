@@ -1,0 +1,1595 @@
+{
+  "study": "ati-specialists-v1-v75-forward-early-discovery-20261124",
+  "planHash": "9503cc83ce4f52aff3101c8db9c3e7a4342ca7d6c09e7e0bb2d27e2c815fb4fd",
+  "engineHash": "4b219cdbb131491807172c2340d8dc77ea85021a694c20ad29ca1d7db6876709",
+  "windowsEndingBy": "2026-11-24T14:30:00Z",
+  "planned": 32,
+  "outcomesReplayed": 20,
+  "priced": 14,
+  "unpriced": 6,
+  "unverifiedElapsed": 7,
+  "scheduledAfterCutoff": 5,
+  "maxPricedOnRetainedEvidence": 19,
+  "requiredPriced": 30,
+  "priceCoverageGate": "UNREACHABLE_ON_RETAINED_EVIDENCE",
+  "missedIssuances": 7,
+  "meanBrier": {
+    "pool": 0.6088889812210951,
+    "incumbent": 0.616730281113164
+  },
+  "meanAssumedNetPricePoints": {
+    "pool": -44.13470000000026,
+    "incumbent": -22.443878571428545
+  },
+  "pricedDifferentSides": 8,
+  "observedBrokerCosts": null,
+  "executionAuthority": "NONE",
+  "comparisons": {
+    "verifiedAgainstCollector": false,
+    "replayed": {
+      "probability": {
+        "windows": 20,
+        "poolBrier": 0.6088889812210951,
+        "incumbentBrier": 0.616730281113164,
+        "frequencyBrier": 0.6317729855371901,
+        "gainOverIncumbent": 0.007841299892068934,
+        "gainOverFrequency": 0.02288400431609497,
+        "specialists": [
+          {
+            "id": "STRUCTURE",
+            "standaloneBrier": 0.6304664097413913,
+            "standaloneGainOverFrequency": 0.0013065757957988172,
+            "poolWithoutBrier": 0.6078560279196211,
+            "gainFromIncluding": -0.0010329533014739405
+          },
+          {
+            "id": "MOMENTUM",
+            "standaloneBrier": 0.6019336322487256,
+            "standaloneGainOverFrequency": 0.02983935328846433,
+            "poolWithoutBrier": 0.616329203356281,
+            "gainFromIncluding": 0.007440222135185875
+          },
+          {
+            "id": "LIQUIDITY",
+            "standaloneBrier": 0.6414148192764983,
+            "standaloneGainOverFrequency": -0.009641833739308164,
+            "poolWithoutBrier": 0.6029323884605942,
+            "gainFromIncluding": -0.005956592760500953
+          },
+          {
+            "id": "PATTERN",
+            "standaloneBrier": 0.6265375194564593,
+            "standaloneGainOverFrequency": 0.005235466080730544,
+            "poolWithoutBrier": 0.6156379113521837,
+            "gainFromIncluding": 0.0067489301310885265
+          }
+        ]
+      },
+      "probabilityByTrend": [
+        {
+          "trend": "UP",
+          "windows": 11,
+          "poolBrier": 0.6058694133229678,
+          "incumbentBrier": 0.5905708790675117,
+          "frequencyBrier": 0.6188838279489106,
+          "gainOverIncumbent": -0.01529853425545607,
+          "gainOverFrequency": 0.013014414625942872,
+          "specialists": [
+            {
+              "id": "STRUCTURE",
+              "standaloneBrier": 0.6608630491850959,
+              "standaloneGainOverFrequency": -0.041979221236185235,
+              "poolWithoutBrier": 0.5952635229827071,
+              "gainFromIncluding": -0.010605890340260528
+            },
+            {
+              "id": "MOMENTUM",
+              "standaloneBrier": 0.6051369808699946,
+              "standaloneGainOverFrequency": 0.013746847078915936,
+              "poolWithoutBrier": 0.610040778085054,
+              "gainFromIncluding": 0.0041713647620862234
+            },
+            {
+              "id": "LIQUIDITY",
+              "standaloneBrier": 0.6398285606151437,
+              "standaloneGainOverFrequency": -0.02094473266623308,
+              "poolWithoutBrier": 0.5994372411203093,
+              "gainFromIncluding": -0.006432172202658414
+            },
+            {
+              "id": "PATTERN",
+              "standaloneBrier": 0.591453534455292,
+              "standaloneGainOverFrequency": 0.027430293493618696,
+              "poolWithoutBrier": 0.6269366079742066,
+              "gainFromIncluding": 0.021067194651239008
+            }
+          ]
+        },
+        {
+          "trend": "DOWN",
+          "windows": 9,
+          "poolBrier": 0.6125795642076953,
+          "incumbentBrier": 0.6487028836134061,
+          "frequencyBrier": 0.6475264003673095,
+          "gainOverIncumbent": 0.036123319405710605,
+          "gainOverFrequency": 0.034946836159614206,
+          "specialists": [
+            {
+              "id": "STRUCTURE",
+              "standaloneBrier": 0.5933149615324189,
+              "standaloneGainOverFrequency": 0.054211438834890435,
+              "poolWithoutBrier": 0.6232468672869605,
+              "gainFromIncluding": 0.010667303079265222
+            },
+            {
+              "id": "MOMENTUM",
+              "standaloneBrier": 0.598018428378286,
+              "standaloneGainOverFrequency": 0.049507971989023486,
+              "poolWithoutBrier": 0.6240150564655584,
+              "gainFromIncluding": 0.01143549225786323
+            },
+            {
+              "id": "LIQUIDITY",
+              "standaloneBrier": 0.6433535798625983,
+              "standaloneGainOverFrequency": 0.004172820504711177,
+              "poolWithoutBrier": 0.6072042352098311,
+              "gainFromIncluding": -0.005375328997864057
+            },
+            {
+              "id": "PATTERN",
+              "standaloneBrier": 0.6694179455689979,
+              "standaloneGainOverFrequency": -0.021891545201688307,
+              "poolWithoutBrier": 0.6018283932585999,
+              "gainFromIncluding": -0.010751170949095397
+            }
+          ]
+        },
+        {
+          "trend": "UNESTABLISHED",
+          "windows": 0,
+          "poolBrier": null,
+          "incumbentBrier": null,
+          "frequencyBrier": null,
+          "gainOverIncumbent": null,
+          "gainOverFrequency": null,
+          "specialists": [
+            {
+              "id": "STRUCTURE",
+              "standaloneBrier": null,
+              "standaloneGainOverFrequency": null,
+              "poolWithoutBrier": null,
+              "gainFromIncluding": null
+            },
+            {
+              "id": "MOMENTUM",
+              "standaloneBrier": null,
+              "standaloneGainOverFrequency": null,
+              "poolWithoutBrier": null,
+              "gainFromIncluding": null
+            },
+            {
+              "id": "LIQUIDITY",
+              "standaloneBrier": null,
+              "standaloneGainOverFrequency": null,
+              "poolWithoutBrier": null,
+              "gainFromIncluding": null
+            },
+            {
+              "id": "PATTERN",
+              "standaloneBrier": null,
+              "standaloneGainOverFrequency": null,
+              "poolWithoutBrier": null,
+              "gainFromIncluding": null
+            }
+          ]
+        }
+      ],
+      "poolReliability": [
+        {
+          "lower": 0,
+          "upper": 0.1,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "n": 7,
+          "confidence": 0.38247974116912264,
+          "accuracy": 0.2857142857142857
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "n": 10,
+          "confidence": 0.4274310197151506,
+          "accuracy": 0.4
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "n": 3,
+          "confidence": 0.5257385148246664,
+          "accuracy": 1
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.9,
+          "upper": 1,
+          "n": 0,
+          "confidence": null,
+          "accuracy": null
+        }
+      ],
+      "specialistReliability": [
+        {
+          "id": "STRUCTURE",
+          "bins": [
+            {
+              "lower": 0,
+              "upper": 0.1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.1,
+              "upper": 0.2,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.2,
+              "upper": 0.3,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.3,
+              "upper": 0.4,
+              "n": 2,
+              "confidence": 0.3867930692972007,
+              "accuracy": 0.5
+            },
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 14,
+              "confidence": 0.44117032278694274,
+              "accuracy": 0.7142857142857143
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 4,
+              "confidence": 0.5504154734316304,
+              "accuracy": 0
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.7,
+              "upper": 0.8,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.8,
+              "upper": 0.9,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.9,
+              "upper": 1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            }
+          ]
+        },
+        {
+          "id": "MOMENTUM",
+          "bins": [
+            {
+              "lower": 0,
+              "upper": 0.1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.1,
+              "upper": 0.2,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.2,
+              "upper": 0.3,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.3,
+              "upper": 0.4,
+              "n": 3,
+              "confidence": 0.3943653852432461,
+              "accuracy": 0.3333333333333333
+            },
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 10,
+              "confidence": 0.43986772450018574,
+              "accuracy": 0.2
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 6,
+              "confidence": 0.5473729156882747,
+              "accuracy": 0.8333333333333334
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 1,
+              "confidence": 0.6151278917656933,
+              "accuracy": 1
+            },
+            {
+              "lower": 0.7,
+              "upper": 0.8,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.8,
+              "upper": 0.9,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.9,
+              "upper": 1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            }
+          ]
+        },
+        {
+          "id": "LIQUIDITY",
+          "bins": [
+            {
+              "lower": 0,
+              "upper": 0.1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.1,
+              "upper": 0.2,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.2,
+              "upper": 0.3,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.3,
+              "upper": 0.4,
+              "n": 12,
+              "confidence": 0.3806090682684371,
+              "accuracy": 0.5833333333333334
+            },
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 8,
+              "confidence": 0.42633032029046586,
+              "accuracy": 0.375
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.7,
+              "upper": 0.8,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.8,
+              "upper": 0.9,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.9,
+              "upper": 1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            }
+          ]
+        },
+        {
+          "id": "PATTERN",
+          "bins": [
+            {
+              "lower": 0,
+              "upper": 0.1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.1,
+              "upper": 0.2,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.2,
+              "upper": 0.3,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.3,
+              "upper": 0.4,
+              "n": 6,
+              "confidence": 0.3841580329296666,
+              "accuracy": 0
+            },
+            {
+              "lower": 0.4,
+              "upper": 0.5,
+              "n": 8,
+              "confidence": 0.4455412192602928,
+              "accuracy": 0.125
+            },
+            {
+              "lower": 0.5,
+              "upper": 0.6,
+              "n": 3,
+              "confidence": 0.5219981484784414,
+              "accuracy": 0.3333333333333333
+            },
+            {
+              "lower": 0.6,
+              "upper": 0.7,
+              "n": 1,
+              "confidence": 0.677038912500423,
+              "accuracy": 1
+            },
+            {
+              "lower": 0.7,
+              "upper": 0.8,
+              "n": 2,
+              "confidence": 0.7624499421048649,
+              "accuracy": 1
+            },
+            {
+              "lower": 0.8,
+              "upper": 0.9,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            },
+            {
+              "lower": 0.9,
+              "upper": 1,
+              "n": 0,
+              "confidence": null,
+              "accuracy": null
+            }
+          ]
+        }
+      ],
+      "economics": {
+        "pricedWindows": 14,
+        "pool": {
+          "active": 13,
+          "changedSide": 0,
+          "meanAssumedNetPoints": -44.13470000000026,
+          "poolGainPoints": 0
+        },
+        "incumbent": {
+          "active": 10,
+          "changedSide": 8,
+          "meanAssumedNetPoints": -22.443878571428545,
+          "poolGainPoints": -21.690821428571716
+        },
+        "frequency": {
+          "active": 12,
+          "changedSide": 9,
+          "meanAssumedNetPoints": -54.9359642857141,
+          "poolGainPoints": 10.801264285713842
+        },
+        "specialists": [
+          {
+            "id": "STRUCTURE",
+            "alone": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -4.629650000001026,
+              "poolGainPoints": -39.50504999999924
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -106.24122142857075,
+              "poolGainPoints": 62.106521428570495
+            }
+          },
+          {
+            "id": "MOMENTUM",
+            "alone": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -74.70012142857169,
+              "poolGainPoints": 30.565421428571426
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -59.07505000000102,
+              "poolGainPoints": 14.940350000000763
+            }
+          },
+          {
+            "id": "LIQUIDITY",
+            "alone": {
+              "active": 14,
+              "changedSide": 6,
+              "meanAssumedNetPoints": 20.304492857143487,
+              "poolGainPoints": -64.43919285714375
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 1,
+              "meanAssumedNetPoints": -38.87639285714301,
+              "poolGainPoints": -5.25830714285725
+            }
+          },
+          {
+            "id": "PATTERN",
+            "alone": {
+              "active": 14,
+              "changedSide": 7,
+              "meanAssumedNetPoints": -101.0391928571423,
+              "poolGainPoints": 56.90449285714203
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -4.629650000001026,
+              "poolGainPoints": -39.50504999999924
+            }
+          }
+        ],
+        "byTrend": [
+          {
+            "trend": "UP",
+            "pricedWindows": 8,
+            "pool": {
+              "active": 8,
+              "changedSide": 0,
+              "meanAssumedNetPoints": -15.065975000000435,
+              "poolGainPoints": 0
+            },
+            "incumbent": {
+              "active": 4,
+              "changedSide": 6,
+              "meanAssumedNetPoints": -33.44784999999956,
+              "poolGainPoints": 18.381874999999127
+            },
+            "frequency": {
+              "active": 7,
+              "changedSide": 7,
+              "meanAssumedNetPoints": -67.98961249999957,
+              "poolGainPoints": 52.92363749999913
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -15.039975000000595,
+                  "poolGainPoints": -0.02599999999983993
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -132.954424999999,
+                  "poolGainPoints": 117.88844999999856
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -124.89627500000006,
+                  "poolGainPoints": 109.83029999999962
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -29.509550000001582,
+                  "poolGainPoints": 14.443575000001147
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 29.847650000000613,
+                  "poolGainPoints": -44.91362500000105
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": -15.065975000000435,
+                  "poolGainPoints": 0
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 4,
+                  "meanAssumedNetPoints": -72.41652499999964,
+                  "poolGainPoints": 57.3505499999992
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -15.039975000000595,
+                  "poolGainPoints": -0.02599999999983993
+                }
+              }
+            ]
+          },
+          {
+            "trend": "DOWN",
+            "pricedWindows": 6,
+            "pool": {
+              "active": 5,
+              "changedSide": 0,
+              "meanAssumedNetPoints": -82.89300000000003,
+              "poolGainPoints": 0
+            },
+            "incumbent": {
+              "active": 6,
+              "changedSide": 2,
+              "meanAssumedNetPoints": -7.771916666667191,
+              "poolGainPoints": -75.12108333333283
+            },
+            "frequency": {
+              "active": 5,
+              "changedSide": 2,
+              "meanAssumedNetPoints": -37.53110000000015,
+              "poolGainPoints": -45.36189999999988
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 9.250783333331734,
+                  "poolGainPoints": -92.14378333333177
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -70.62361666666645,
+                  "poolGainPoints": -12.269383333333584
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -7.771916666667191,
+                  "poolGainPoints": -75.12108333333283
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -98.49571666666695,
+                  "poolGainPoints": 15.602716666666916
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 4,
+                  "meanAssumedNetPoints": 7.580283333333985,
+                  "poolGainPoints": -90.47328333333401
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -70.62361666666645,
+                  "poolGainPoints": -12.269383333333584
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 3,
+                  "meanAssumedNetPoints": -139.20274999999916,
+                  "poolGainPoints": 56.309749999999134
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 9.250783333331734,
+                  "poolGainPoints": -92.14378333333177
+                }
+              }
+            ]
+          },
+          {
+            "trend": "UNESTABLISHED",
+            "pricedWindows": 0,
+            "pool": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "incumbent": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "frequency": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "unit": "ONE_UNIT_PRICE_POINTS",
+      "costBasis": {
+        "spread": "OBSERVED_BID_ASK",
+        "assumedSlippagePointsPerSide": 1,
+        "assumedOtherCostPoints": 0,
+        "observedBrokerCharges": null
+      }
+    }
+  },
+  "costAttribution": {
+    "mode": "PUBLIC_QUOTE_SIMULATION",
+    "unit": "MEAN_PRICE_POINTS_PER_PAIRED_WINDOW",
+    "observedBrokerCharges": null,
+    "probabilityByPriceCoverage": {
+      "priced": {
+        "windows": 14,
+        "pool": 0.6393769595932796,
+        "incumbent": 0.616580290900096,
+        "incumbentMinusPool": -0.022796668693183503
+      },
+      "unpriced": {
+        "windows": 6,
+        "pool": 0.5377503650193316,
+        "incumbent": 0.6170802582769895,
+        "incumbentMinusPool": 0.07932989325765795
+      }
+    },
+    "allPriced": {
+      "pairedWindows": 14,
+      "grossMidpoint": {
+        "pool": -34.84898571428597,
+        "incumbent": -15.301021428571403,
+        "poolMinusIncumbent": -19.547964285714574
+      },
+      "spread": {
+        "pool": 7.428571428571429,
+        "incumbent": 5.714285714285714,
+        "poolMinusIncumbent": 1.7142857142857142
+      },
+      "assumedSlippage": {
+        "pool": 1.8571428571428572,
+        "incumbent": 1.4285714285714286,
+        "poolMinusIncumbent": 0.42857142857142855
+      },
+      "assumedOtherCosts": {
+        "pool": 0,
+        "incumbent": 0,
+        "poolMinusIncumbent": 0
+      },
+      "assumedNet": {
+        "pool": -44.13470000000026,
+        "incumbent": -22.443878571428545,
+        "poolMinusIncumbent": -21.690821428571716
+      }
+    },
+    "sameSide": {
+      "pairedWindows": 6,
+      "grossMidpoint": {
+        "pool": -111.00670000000052,
+        "incumbent": -111.00670000000052,
+        "poolMinusIncumbent": 0
+      },
+      "spread": {
+        "pool": 8,
+        "incumbent": 8,
+        "poolMinusIncumbent": 0
+      },
+      "assumedSlippage": {
+        "pool": 2,
+        "incumbent": 2,
+        "poolMinusIncumbent": 0
+      },
+      "assumedOtherCosts": {
+        "pool": 0,
+        "incumbent": 0,
+        "poolMinusIncumbent": 0
+      },
+      "assumedNet": {
+        "pool": -121.00670000000052,
+        "incumbent": -121.00670000000052,
+        "poolMinusIncumbent": 0
+      }
+    },
+    "changedSide": {
+      "pairedWindows": 8,
+      "grossMidpoint": {
+        "pool": 22.26929999999993,
+        "incumbent": 56.47823750000043,
+        "poolMinusIncumbent": -34.2089375000005
+      },
+      "spread": {
+        "pool": 7,
+        "incumbent": 4,
+        "poolMinusIncumbent": 3
+      },
+      "assumedSlippage": {
+        "pool": 1.75,
+        "incumbent": 1,
+        "poolMinusIncumbent": 0.75
+      },
+      "assumedOtherCosts": {
+        "pool": 0,
+        "incumbent": 0,
+        "poolMinusIncumbent": 0
+      },
+      "assumedNet": {
+        "pool": 13.51929999999993,
+        "incumbent": 51.47823750000043,
+        "poolMinusIncumbent": -37.9589375000005
+      }
+    }
+  },
+  "windows": [
+    {
+      "asOf": "2026-11-24T07:45:00.000Z",
+      "file": "20261124T0745-renewal.json.gz",
+      "receiptId": "structural-8c8aca2add7e3a70636498d340394ada5886ada74e2d884129792f60c684d9b7",
+      "archiveSha256": "720d4e47d550713a01340c6089abac1af0c9a54a041adac3bdb8143646238b80",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.6107507702059554,
+      "incumbentBrier": 0.5619554851142676,
+      "attribution": {
+        "pool": {
+          "side": "SHORT",
+          "grossMidpoint": -0.10399999999935972,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -10.10399999999936
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 0.10399999999935972,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -9.89600000000064
+        }
+      },
+      "assumedNet": {
+        "pool": -10.10399999999936,
+        "incumbent": -9.89600000000064,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:00:00.000Z",
+      "file": "20261124T0800-renewal.json.gz",
+      "receiptId": "structural-a7c190beaedf13e5360e987034a99685580d861254b5b570372825fa5ecb5317",
+      "archiveSha256": "912482477bd0581cf5a9012d02160e273afa3dc91b5c3e62c417dda529448729",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.708313385022735,
+      "incumbentBrier": 0.5619554851142676,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": -141.30080000000453,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -151.30080000000453
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": -141.30080000000453,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -151.30080000000453
+        }
+      },
+      "assumedNet": {
+        "pool": -151.30080000000453,
+        "incumbent": -151.30080000000453,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:15:00.000Z",
+      "file": "20261124T0815-renewal.json.gz",
+      "receiptId": "structural-2be99360244fb58f6989eb28286b8684f24bc7dea8d453408926bd6f6c8184d6",
+      "archiveSha256": "ab197e689b135c5aa98d1370afbd120d1e40135c61ad3430ce3596314643e2bf",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.631550298957472,
+      "incumbentBrier": 0.5619554851142676,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": -323.23949999999604,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -333.23949999999604
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": -323.23949999999604,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -333.23949999999604
+        }
+      },
+      "assumedNet": {
+        "pool": -333.23949999999604,
+        "incumbent": -333.23949999999604,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T08:30:00.000Z",
+      "file": "20261124T0830-renewal.json.gz",
+      "receiptId": "structural-18ad303e8b9faced8d634ce5f07b127b5084321d1a1d5a029f9eb90fac2345a0",
+      "archiveSha256": "ee7ee996f28c77e834e73a49dd2a0bad20ab1606282541e693226b4f976a16be",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.798827022376994,
+      "incumbentBrier": 1.00503104413818,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T08:45:00.000Z",
+      "file": "20261124T0845-renewal.json.gz",
+      "receiptId": "structural-0e10f629f557cf22fcbb9af00fbbee08639a619b160b8415a853adf1307503a6",
+      "archiveSha256": "bcf5f25930b9c97218335b0eae1834f332a8334839cb3960c40c6b7dcc370f38",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.532460038519558,
+      "incumbentBrier": 0.5370091594311039,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 146.31229999999778,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 136.31229999999778
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 146.31229999999778,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 136.31229999999778
+        }
+      },
+      "assumedNet": {
+        "pool": 136.31229999999778,
+        "incumbent": 136.31229999999778,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:00:00.000Z",
+      "file": "20261124T0900-renewal.json.gz",
+      "receiptId": "structural-75f44875a4bf30d02040f0783369d8d8180dd2f03349cdc0715564cc26156212",
+      "archiveSha256": "4f3ec11113a204d57f420a0dc13029534c0c5de7f82a87cdf28af0b37b6eae2d",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.7664887142574653,
+      "incumbentBrier": 0.5742200430433948,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": -107.20739999999932,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -117.20739999999932
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": -107.20739999999932,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -117.20739999999932
+        }
+      },
+      "assumedNet": {
+        "pool": -117.20739999999932,
+        "incumbent": -117.20739999999932,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:15:00.000Z",
+      "file": "20261124T0915-renewal.json.gz",
+      "receiptId": "structural-c4c820fd1d2a08b1abfc97470c7125282a69ed59472741cdef8af5356b264b17",
+      "archiveSha256": "50f3b8460aba6d6a43a5cfbcd891ebb87538e30f7ed2db3ecf16bcb09b04485e",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.5994639419437211,
+      "incumbentBrier": 0.5742200430433948,
+      "attribution": {
+        "pool": {
+          "side": "FLAT",
+          "grossMidpoint": 0,
+          "spread": 0,
+          "assumedSlippage": 0,
+          "assumedOtherCosts": 0,
+          "assumedNet": 0
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 83.6163000000015,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 73.6163000000015
+        }
+      },
+      "assumedNet": {
+        "pool": 0,
+        "incumbent": 73.6163000000015,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T09:30:00.000Z",
+      "file": "20261124T0930-renewal.json.gz",
+      "receiptId": "structural-e92c06460c91c1df074d0b24c7c34ff78688e3b14e882454fbfa409dbe38aa1a",
+      "archiveSha256": "15b756b1fe99da7859c68f7f5b7bb96e7020d37e74fc85a772b4605c369f8629",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.30405967517690574,
+      "incumbentBrier": 0.5212467113693282,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T09:45:00.000Z",
+      "file": "20261124T0945-renewal.json.gz",
+      "receiptId": "structural-ba4c2b65d8121285fc4a641c0d8874890ef0bd7fa5e99793360caf1c12103a5b",
+      "archiveSha256": "a03fe07d350b2765e8315656ec2568a858ba81939b06a23885f90caa1b2bec3c",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.4748783349913863,
+      "incumbentBrier": 0.5212467113693282,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 59.425100000000384,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 49.425100000000384
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 59.425100000000384,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 49.425100000000384
+        }
+      },
+      "assumedNet": {
+        "pool": 49.425100000000384,
+        "incumbent": 49.425100000000384,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:00:00.000Z",
+      "file": "20261124T1000-renewal.json.gz",
+      "receiptId": "structural-c7216eeea58de92d9d5d7979911cc6208a3e2c11cab16d7190fc07dbb702f83a",
+      "archiveSha256": "f3d0e889dffb0489d27147c4e5724e6104e290f46a932e61503f9610e8269d48",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.7380434588539017,
+      "incumbentBrier": 0.5212467113693282,
+      "attribution": {
+        "pool": {
+          "side": "SHORT",
+          "grossMidpoint": -179.55050000000483,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -189.55050000000483
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 179.55050000000483,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 169.55050000000483
+        }
+      },
+      "assumedNet": {
+        "pool": -189.55050000000483,
+        "incumbent": 169.55050000000483,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:15:00.000Z",
+      "file": "20261124T1015-renewal.json.gz",
+      "receiptId": "structural-2ea045bac07beea8abf82daf40f15d8bcf7ef8438c05cd5420f6596d03fa2de6",
+      "archiveSha256": "ce087c1641f9503931aaf776cff27162029d97de065a77d751290559f7269b66",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.35515559688932236,
+      "incumbentBrier": 0.5504509755782124,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 16.931900000003225,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 6.931900000003225
+        },
+        "incumbent": {
+          "side": "FLAT",
+          "grossMidpoint": 0,
+          "spread": 0,
+          "assumedSlippage": 0,
+          "assumedOtherCosts": 0,
+          "assumedNet": 0
+        }
+      },
+      "assumedNet": {
+        "pool": 6.931900000003225,
+        "incumbent": 0,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T10:30:00.000Z",
+      "file": "20261124T1030-renewal.json.gz",
+      "receiptId": "structural-d3737514a27801a62c0687e1bccd72fb44bab64dfec52a3cc91179c03b4e37c8",
+      "archiveSha256": "9f2525efad53d25bffabf0508d608dda6800b3cc445f33ee456fbe3a0f3dac35",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.3557192419777933,
+      "incumbentBrier": 0.5505236681279558,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T10:45:00.000Z",
+      "file": "20261124T1045-renewal.json.gz",
+      "receiptId": "structural-c9d052bbb5591ab2d739bb708ce9cc5f02679d3439c63c98b737c2ca10df590f",
+      "archiveSha256": "00851422a6264767bf366dfee0836635b8cfef51669e1a47279ca8261412cf17",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.5912917301923843,
+      "incumbentBrier": 0.5504509755782124,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 439.3211999999985,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 429.3211999999985
+        },
+        "incumbent": {
+          "side": "FLAT",
+          "grossMidpoint": 0,
+          "spread": 0,
+          "assumedSlippage": 0,
+          "assumedOtherCosts": 0,
+          "assumedNet": 0
+        }
+      },
+      "assumedNet": {
+        "pool": 429.3211999999985,
+        "incumbent": 0,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T11:00:00.000Z",
+      "file": "20261124T1100-renewal.json.gz",
+      "receiptId": "structural-4716ee1f1c716d8315664cd2cd96c0439abe5d4be3b88fb40e452c1d0dbd5bef",
+      "archiveSha256": "5fafe3ace3dba80ee475ff5c7788e50c536ddf9d1d64a5bd9a8e36a478f5229d",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.743426651509313,
+      "incumbentBrier": 1.000102068457474,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 32.23259999999573,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 22.232599999995728
+        },
+        "incumbent": {
+          "side": "FLAT",
+          "grossMidpoint": 0,
+          "spread": 0,
+          "assumedSlippage": 0,
+          "assumedOtherCosts": 0,
+          "assumedNet": 0
+        }
+      },
+      "assumedNet": {
+        "pool": 22.232599999995728,
+        "incumbent": 0,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T11:15:00.000Z",
+      "file": "20261124T1115-renewal.json.gz",
+      "receiptId": "structural-2ea74fb9c59ac67070b354bf4b2abf3a026419268ef131b0f4fe7f131732065b",
+      "archiveSha256": "22fb268fddcd81ec437646c3e36143525ceac3b6506bede8b931932a84bace33",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.5211801991789268,
+      "incumbentBrier": 0.5504509755782124,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": 57.87830000000395,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 47.87830000000395
+        },
+        "incumbent": {
+          "side": "FLAT",
+          "grossMidpoint": 0,
+          "spread": 0,
+          "assumedSlippage": 0,
+          "assumedOtherCosts": 0,
+          "assumedNet": 0
+        }
+      },
+      "assumedNet": {
+        "pool": 47.87830000000395,
+        "incumbent": 0,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T11:30:00.000Z",
+      "file": "20261124T1130-renewal.json.gz",
+      "receiptId": "structural-5980eee817bf8c7815122f7ce7b26bc37717d8c92ee2016cf30e9e8bcff0f1f2",
+      "archiveSha256": "421073b99ffc9dc5b44e38d2cccf3e14daaeccf388aca9a939bc32f0cc86165f",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.6878738202598295,
+      "incumbentBrier": 0.5418933753421579,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T11:45:00.000Z",
+      "file": "20261124T1145-renewal.json.gz",
+      "receiptId": "structural-6ccfa71930d5de7515f48b2a7091fbd0007bf21f20efec1b1de50131848a4c02",
+      "archiveSha256": "4f5c630580eea79e0e309b5b95ad75d8495141c843a9a0d85d7fa5e8c8895031",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.8326572122297556,
+      "incumbentBrier": 0.5530920162112547,
+      "attribution": {
+        "pool": {
+          "side": "LONG",
+          "grossMidpoint": -300.02990000000136,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -310.02990000000136
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": -300.02990000000136,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -310.02990000000136
+        }
+      },
+      "assumedNet": {
+        "pool": -310.02990000000136,
+        "incumbent": -310.02990000000136,
+        "differentSide": false
+      }
+    },
+    {
+      "asOf": "2026-11-24T12:00:00.000Z",
+      "file": "20261124T1200-renewal.json.gz",
+      "receiptId": "structural-0c5bcbcd72f7fb791d3951496ce5ad90a53ac74a7fedc0ea3a9be35453aba50a",
+      "archiveSha256": "42962c02658f7821dada467c3fd2568057973515016243f40445b07a3324eb70",
+      "state": "PRICED",
+      "gap": null,
+      "poolBrier": 0.8456171015540156,
+      "incumbentBrier": 1.0137679375986246,
+      "attribution": {
+        "pool": {
+          "side": "SHORT",
+          "grossMidpoint": -188.55509999999776,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": -198.55509999999776
+        },
+        "incumbent": {
+          "side": "LONG",
+          "grossMidpoint": 188.55509999999776,
+          "spread": 8,
+          "assumedSlippage": 2,
+          "assumedOtherCosts": 0,
+          "assumedNet": 178.55509999999776
+        }
+      },
+      "assumedNet": {
+        "pool": -198.55509999999776,
+        "incumbent": 178.55509999999776,
+        "differentSide": true
+      }
+    },
+    {
+      "asOf": "2026-11-24T12:15:00.000Z",
+      "file": "20261124T1215-renewal.json.gz",
+      "receiptId": "structural-09da84a1dd84b515fae161a30e213f9501e85852e0a82e325d9deeb91bd3a172",
+      "archiveSha256": "609e2b1841da7c38c19303ef83cc1e74c2532a79d82fb5cdba59a9cbab1a348d",
+      "state": "UNPRICED",
+      "gap": "NO_ISSUANCE_QUOTE",
+      "poolBrier": 0.6180462793264697,
+      "incumbentBrier": 0.5418933753421579,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T12:30:00.000Z",
+      "file": "20261124T1230-renewal.json.gz",
+      "receiptId": "structural-7aa1b276a727c3f112d8d1bc489ba7f456f40a6bd81cb4887338aea247039abe",
+      "archiveSha256": "6a75e5fe4f4e47e43f4fc4dd1e74536bc8e64b804f6568da2d97369fbfbbb48f",
+      "state": "UNPRICED",
+      "gap": "INCOMPLETE_TAPE",
+      "poolBrier": 0.4619761509979977,
+      "incumbentBrier": 0.5418933753421579,
+      "attribution": null,
+      "assumedNet": null
+    },
+    {
+      "asOf": "2026-11-24T12:45:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T13:00:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T13:15:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T13:30:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T13:45:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T14:00:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    },
+    {
+      "asOf": "2026-11-24T14:15:00.000Z",
+      "state": "UNVERIFIED",
+      "receiptId": null,
+      "attribution": null,
+      "issuanceGap": "NO_ATTEMPT_OR_RECEIPT"
+    }
+  ]
+}

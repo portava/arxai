@@ -11,13 +11,18 @@ type Simulation = { settledPairs: number; baseline: { totalR: number | null }; c
 type Charges = { currency: string; commission: number | null; fee: number | null; swap: number | null };
 type Deal = { commandId: string; deal: string; spread: number | null; movement: number | null; slippage: number | null; charges: Charges | null };
 type CostReview = { commandCount: number; reconciledDealCount: number; triggeredExits: number; deals: Deal[] };
+type DecisionGroup = {
+  bars: number; baselineOutcome: string; baselineReason: string | null; challengerOutcome: string; challengerReason: string | null;
+  handshake: { ready: boolean; blocked: string[]; degraded: string[] } | null;
+  chartConfirmation: { allowed: boolean; reason?: string | null } | null;
+};
 type Report = Run & {
   agentId: number; asOf: string; endsAt: string; decisionScope: string; baselineVersion: string; eligibleEntries: number;
   counts: { observations: number; paired: number; different: number; ungraded: number; unresolved: number; sourceChanged: number; noObservedFeed: number };
   simulations: { quoteSideOnly: Simulation; withAssumedCosts: Simulation | null; withMeasuredSlippage: Simulation | null; withMeasuredCosts: Simulation | null };
   assumedCosts: { adverseSlippagePerFillPriceUnits: number; feePerFillPriceUnits: number } | null;
   fleetCohorts?: { revision: string | null; settings: string | null; source: string | null; verified: boolean; matchingBars: number;
-    eligibleEntries: number; settledPairs: number; pairedDifferenceR: number | null }[];
+    eligibleEntries: number; settledPairs: number; pairedDifferenceR: number | null; decisionBreakdown?: DecisionGroup[] }[];
   costs: { demo: CostReview; live: CostReview };
 };
 
@@ -47,6 +52,28 @@ function BrokerCosts({ label, review }: { label: string; review: CostReview }) {
   </section>;
 }
 
+function DecisionBreakdown({ rows }: { rows: DecisionGroup[] }) {
+  return <details className="mt-1">
+    <summary className="cursor-pointer">Decision reasons</summary>
+    <Table><TableHeader><TableRow>{["Bars", "Current bot", "Challenger", "Readiness", "Chart confirmation"].map(label =>
+      <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+      <TableBody>{rows.map((row, i) => <TableRow key={i}>
+        <TableCell>{row.bars}</TableCell>
+        <TableCell>{row.baselineOutcome}<p>{row.baselineReason ?? "Reason unavailable"}</p></TableCell>
+        <TableCell>{row.challengerOutcome}<p>{row.challengerReason ?? "Reason unavailable"}</p></TableCell>
+        <TableCell>{row.handshake ? <>
+          {row.handshake.ready ? "Ready" : "Not ready"}
+          {row.handshake.blocked.map(code => <p key={code}>Blocked · {code}</p>)}
+          {row.handshake.degraded.map(code => <p key={code}>Degraded · {code}</p>)}
+        </> : "Unknown"}</TableCell>
+        <TableCell>{row.chartConfirmation ? <>
+          {row.chartConfirmation.allowed ? "Allowed" : "Blocked"}<p>{row.chartConfirmation.reason}</p>
+        </> : "Unknown"}</TableCell>
+      </TableRow>)}</TableBody>
+    </Table>
+  </details>;
+}
+
 export function AtiShadowResult({ report, fullUrl }: { report: Report; fullUrl: string }) {
   const { counts, simulations } = report;
   const bases: [string, Simulation | null][] = [
@@ -65,6 +92,7 @@ export function AtiShadowResult({ report, fullUrl }: { report: Report; fullUrl: 
       <ul className="mt-2 space-y-2 text-sm">{report.fleetCohorts.map((c, i) => <li key={i}>
         <p className="break-all">{c.verified ? "Verified version" : "Unverified version"} · Build {c.revision ?? "unknown"} · Settings {c.settings ?? "unknown"} · Feed {c.source ?? "unknown"}</p>
         <p>{c.matchingBars} matching bars · {c.eligibleEntries} eligible entries · {c.settledPairs} settled pairs · Quote-side paired difference {format(c.pairedDifferenceR)} R</p>
+        {!!c.decisionBreakdown?.length && <DecisionBreakdown rows={c.decisionBreakdown} />}
       </li>)}</ul></details>}
     <section className="space-y-1"><h5 className="font-medium">Simulated returns</h5>
       {report.eligibleEntries === 0 ? <p className="text-sm">No eligible entries. This run has no return comparison.</p> :

@@ -43,3 +43,22 @@ test("renders negative paired performance, observed zero charges and unknown fie
   expect(within(row).getByText("0 USD")).toBeTruthy(); expect(within(row).getByText("-0.02 USD")).toBeTruthy();
   expect(within(row).getAllByText("Unknown")).toHaveLength(2);
 });
+test("retains both decisions and the recorded chart-readiness reason for each fleet group", async () => {
+  const pilot = { ...report, fleetCohorts: [{ revision: "v1", settings: "abc", source: "deriv_public", verified: true,
+    matchingBars: 3, eligibleEntries: 0, settledPairs: 0, pairedDifferenceR: null, decisionBreakdown: [
+      { bars: 2, baselineOutcome: "WAIT", baselineReason: "Market data stale", challengerOutcome: "WAIT", challengerReason: "Market data stale",
+        handshake: { ready: false, blocked: ["CHART_TRUTH_BLOCKED"], degraded: [] }, chartConfirmation: { allowed: false, reason: "Broker alignment unavailable" } },
+      { bars: 1, baselineOutcome: "WAIT", baselineReason: null, challengerOutcome: "BLOCKED", challengerReason: "Conflicting timeframe",
+        handshake: null, chartConfirmation: null },
+    ] }] };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("?asOf=") ? ok(pilot) : ok({ runs: [run], asOf, next: null })));
+  render(panel(new QueryClient()));
+  fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
+  fireEvent.click(await screen.findByText(/Fleet evidence by build/));
+  fireEvent.click(screen.getByText("Decision reasons"));
+  const first = within(screen.getByText("Broker alignment unavailable").closest("tr")!);
+  expect(first.getByText("2")).toBeTruthy(); expect(first.getAllByText("Market data stale")).toHaveLength(2);
+  expect(first.getByText("Blocked · CHART_TRUTH_BLOCKED")).toBeTruthy();
+  const second = within(screen.getByText("Conflicting timeframe").closest("tr")!);
+  expect(second.getAllByText("Unknown")).toHaveLength(2); expect(second.getByText("Reason unavailable")).toBeTruthy();
+});
