@@ -12,7 +12,7 @@ type Charges = { currency: string; commission: number | null; fee: number | null
 const benchmarkLabels = {
   DEMO_COMMAND_CONFIRMATION: "Demo approval", VERIFIED_ENTRY_ADMISSION: "Verified entry decision", LINKED_DECISION_RECORD: "Linked decision",
 } as const;
-type Deal = { order?: string; leg?: "ENTRY" | "EXIT"; filledLots?: number; remainingLots?: number;
+type Deal = { fillVsReferenceMid?: number | null; order?: string; leg?: "ENTRY" | "EXIT"; filledLots?: number; remainingLots?: number;
   benchmark?: { source: keyof typeof benchmarkLabels; observedAtMs: number; spread: number } | null; commandId: string; deal: string; spread: number | null; movement: number | null; slippage: number | null; charges: Charges | null };
 type CostReview = { commandCount: number; reconciledDealCount: number; triggeredExits: number; deals: Deal[] };
 type PriceBenchmark = { coveredLots: number | null; eligibleLots: number | null; volumeWeightedMeanPriceUnits: number | null };
@@ -60,16 +60,16 @@ function BrokerCosts({ label, review }: { label: string; review: CostReview }) {
     <h5 className="text-sm font-medium">{label} account</h5>
     <p className="text-sm text-muted-foreground">{review.commandCount} dispatched commands · {review.reconciledDealCount} reconciled command deals · {review.triggeredExits} reconciled broker-triggered exits</p>
     {review.deals.length > 0 ? <details><summary className="cursor-pointer text-sm">Command deal costs</summary>
-      <Table><TableHeader><TableRow>{["Deal", "Filled / remaining lots", "Reference quote", "Reference spread¹", "Submission spread¹", "Movement to submission¹", "Slippage¹", "Commission", "Fees", "Swap"].map(s => <TableHead key={s}>{s}</TableHead>)}</TableRow></TableHeader>
+      <Table><TableHeader><TableRow>{["Deal", "Filled / remaining lots", "Reference quote", "Reference spread¹", "Submission spread¹", "Movement to submission¹", "Slippage¹", "Fill vs reference midpoint¹", "Commission", "Fees", "Swap"].map(s => <TableHead key={s}>{s}</TableHead>)}</TableRow></TableHeader>
         <TableBody>{review.deals.map(d => <TableRow key={d.commandId}><TableCell><span>{d.deal}</span>
           {d.order && <div className="text-xs text-muted-foreground">{d.leg === "EXIT" ? "Exit" : "Entry"} · Order {d.order}</div>}</TableCell>
           <TableCell>{format(d.filledLots)} / {format(d.remainingLots)}</TableCell>
           <TableCell>{d.benchmark ? <>{benchmarkLabels[d.benchmark.source]}
             <div className="text-xs text-muted-foreground">{new Date(d.benchmark.observedAtMs).toISOString()}</div></> : "Unrecorded"}</TableCell>
           <TableCell>{format(d.benchmark?.spread)}</TableCell><TableCell>{format(d.spread)}</TableCell>
-          <TableCell>{format(d.movement)}</TableCell><TableCell>{format(d.slippage)}</TableCell><TableCell>{charge(d, "commission")}</TableCell>
+          <TableCell>{format(d.movement)}</TableCell><TableCell>{format(d.slippage)}</TableCell><TableCell>{format(d.fillVsReferenceMid)}</TableCell><TableCell>{charge(d, "commission")}</TableCell>
           <TableCell>{charge(d, "fee")}</TableCell><TableCell>{charge(d, "swap")}</TableCell></TableRow>)}</TableBody></Table>
-      <p className="text-xs text-muted-foreground">¹ Price units. Positive movement and slippage are adverse.</p>
+      <p className="text-xs text-muted-foreground">¹ Price units. Positive values are adverse. Fill versus midpoint combines half the reference spread, movement to submission and slippage. Cash charges are shown separately.</p>
     </details> : <p className="text-xs text-muted-foreground">Command execution costs are unknown.</p>}
   </section>;
 }

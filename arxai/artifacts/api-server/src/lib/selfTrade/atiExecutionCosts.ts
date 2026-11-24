@@ -4,7 +4,7 @@ import {
   mt5DemoCommandsTable as demo, securityEventsTable as security,
   selfTradeDecisionsTable as decisions, selfTradeAgentExecutionsTable as executions,
 } from "@workspace/db";
-import { reconcileAtiCostEvidence } from "../mt5/atiCostEvidence.js";
+import { fillVsReferenceMid, reconcileAtiCostEvidence } from "../mt5/atiCostEvidence.js";
 import type { AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiPositionKey, atiRoundTrips, reportAtiEntryStrategies, type AtiPositionLeg } from "./atiRoundTrips.js";
 import { atiEntryStrategy, atiVerifiedAdmission } from "./atiStrategyOrigin.js";
@@ -390,8 +390,7 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
           submissionSpreadPriceUnits: result.spreadPriceUnits,
           adverseMovementBeforeSubmissionPriceUnits: result.adverseMovementBeforeSubmissionPriceUnits,
           adverseSlippagePriceUnits: result.adverseSlippagePriceUnits,
-          adverseFillVsDecisionMidPriceUnits: result.decisionQuote
-            ? (result.fillPrice - (result.decisionQuote.ask + result.decisionQuote.bid) / 2) * (result.side === "BUY" ? 1 : -1) : null,
+          adverseFillVsDecisionMidPriceUnits: fillVsReferenceMid(result),
         } });
     }
     for (const { accountBinding, brokerSymbol, order, deal, result } of triggered.results) {

@@ -41,7 +41,7 @@ test("owner-scoped report opens on demand at a fixed cutoff and clears on identi
 });
 test("renders negative paired performance, observed zero charges and unknown fields independently", async () => {
   const result = { ...report, eligibleEntries: 2, simulations: { ...report.simulations, quoteSideOnly: { settledPairs: 2, baseline: { totalR: 1 }, challenger: { totalR: -1 }, pairedDifferenceR: -2 } },
-    costs: { ...report.costs, demo: { ...costs, commandCount: 2, reconciledDealCount: 1, deals: [{ commandId: "A", deal: "42", order: "71", leg: "ENTRY", filledLots: 0.02, remainingLots: 0.01, benchmark: { source: "DEMO_COMMAND_CONFIRMATION", observedAtMs: Date.parse(asOf), spread: 0.04 }, spread: 0.1, movement: 0.03, slippage: 0,
+    costs: { ...report.costs, demo: { ...costs, commandCount: 2, reconciledDealCount: 1, deals: [{ commandId: "A", deal: "42", order: "71", leg: "ENTRY", filledLots: 0.02, remainingLots: 0.01, benchmark: { source: "DEMO_COMMAND_CONFIRMATION", observedAtMs: Date.parse(asOf), spread: 0.04 }, spread: 0.1, movement: 0.03, slippage: 0, fillVsReferenceMid: 0.05,
       charges: { currency: "USD", commission: 0, fee: -0.02, swap: null } }] } } };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("?asOf=") ? ok(result) : ok({ runs: [run], asOf, next: null })));
   render(panel(new QueryClient())); fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
@@ -54,6 +54,7 @@ test("renders negative paired performance, observed zero charges and unknown fie
   expect(within(row).getByText("Entry · Order 71")).toBeTruthy();
   expect(within(row).getByText("0.02 / 0.01")).toBeTruthy();
   expect(within(row).getByText("0.04")).toBeTruthy();
+  expect(within(row).getByText("0.05")).toBeTruthy();
   expect(within(row).getAllByText("Unknown")).toHaveLength(1);
 });
 test("retains both decisions and the recorded chart-readiness reason for each fleet group", async () => {

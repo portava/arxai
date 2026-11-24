@@ -260,3 +260,10 @@ export function reconcileAtiCostEvidence(raw: unknown, expected: Reference) {
     adverseChargesPriceUnits: chargesPriceUnits,
   } as const;
 }
+
+/** Signed fill shortfall per price unit, from the reconciled reference quote midpoint. */
+export function fillVsReferenceMid(deal: Extract<ReturnType<typeof reconcileAtiCostEvidence>, { state: "OBSERVED_BROKER_DEAL" }>) {
+  if (!deal.decisionQuote) return null;
+  const midpoint = (deal.decisionQuote.bid + deal.decisionQuote.ask) / 2;
+  return (deal.fillPrice - midpoint) * (deal.side === "BUY" ? 1 : -1);
+}

@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { atiShadowRunsTable as runs, atiShadowObservationsTable as observations, bridgeV2EventsTable as ticks, db } from "@workspace/db";
 import type { readAtiShadowRun } from "./atiShadow.js";
 import { atiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
+import { fillVsReferenceMid } from "../mt5/atiCostEvidence.js";
 import { matchAtiDecisionTick } from "./atiMt5QuoteReplay.js";
 import { isAtiEntryDecision } from "./atiShadowGrading.js";
 
@@ -67,7 +68,7 @@ export function summarizeAtiShadowReport(report: ShadowReport) {
         spread: result.decisionQuote.ask - result.decisionQuote.bid,
       } : null,
       spread: result.spreadPriceUnits, movement: result.adverseMovementBeforeSubmissionPriceUnits,
-      slippage: result.adverseSlippagePriceUnits, charges: result.charges,
+      slippage: result.adverseSlippagePriceUnits, fillVsReferenceMid: fillVsReferenceMid(result), charges: result.charges,
     }] : []);
     return { commandCount, reconciledDealCount, coverage, deals,
       triggeredExits: executionCosts.brokerTriggeredExits[mode].reconciledDeals };

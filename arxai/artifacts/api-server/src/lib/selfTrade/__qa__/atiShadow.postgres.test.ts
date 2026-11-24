@@ -642,6 +642,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(displayed.benchmark?.spread, frozen.ask - frozen.bid);
       assert.equal(displayed.order, row.result.order);
       assert.equal(displayed.filledLots, row.result.volume);
+      assert.ok(displayed.fillVsReferenceMid != null && displayed.movement != null && displayed.slippage != null && displayed.benchmark);
+      assert.ok(Math.abs(displayed.fillVsReferenceMid - (displayed.benchmark.spread / 2 + displayed.movement + displayed.slippage)) < 1e-12);
       assert.equal(row.entryStrategy, null);
       assert.ok(Math.abs(row.result.adverseMovementBeforeSubmissionPriceUnits! - 0.0002) < 1e-12);
       await audit("DEMO_COMMAND_APPROVED", owner, approval, before);
@@ -650,6 +652,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(ambiguous.coverage.movementBeforeSubmission, 0);
       assert.equal(summarized(ambiguous).benchmark, null);
       assert.equal(summarized(ambiguous).movement, null);
+      assert.equal(summarized(ambiguous).fillVsReferenceMid, null);
       assert.equal(summarized(ambiguous).spread, displayed.spread);
       await audit("DEMO_DISPATCH_SENT", owner, dispatch, stamp);
       assert.equal((await read()).reconciledDealCount, 0, "duplicate dispatch witnesses cannot establish a unique command");
