@@ -313,3 +313,14 @@ An in-window stop-loss or take-profit deal now carries its order's earlier fills
 The isolated PostgreSQL regression reproduced the former error on a 0.02-lot order. A 0.02-lot fill before the window left no volume for the 0.01-lot in-window fill. The corrected reader withholds the latter's costs. The suite also covers a contradictory receipt on another order, an earlier receipt that supplies missing order history and a later contradiction that stays invisible at the earlier cutoff.
 
 The four [isolated V75 owner inventories](ati-evidence/v75-m5-owner-cost-inventory-20261124T1124Z.json) returned zero attested dispatches and reconciled deals in both DEMO and LIVE through the 11:24 UTC review. Broker costs remain unmeasured. The native shadow pilot reproduced both archived file hashes at its original cutoff.
+
+
+## Registered V75 shadow collector restart
+
+The V75 M5 collector recovered a previously uncommitted bar during the registered study's development phase. The rehearsal used the candidate's pinned executable and a disposable, socket-only PostgreSQL copy. The original database was accessed read-only. The copy held one research user, one SHADOW agent and no MT5 connection.
+
+The first process was killed after inserting its native decision and before inserting the bar's shadow observation in the same transaction. A database session witnessed the interrupted decision ID and bar key. After disconnect, the decision, observation, cycle-audit and attempt counts matched the pre-commit snapshot. The interrupted decision ID and observation key were absent. A fresh process then captured the same bar from public V75 quotes. A second restart attempted the bar again. Two distinct committed capture attempts left exactly one comparison pointing to the first successful native decision. Broker command counts stayed at zero.
+
+A separate query on the original collector matched the registration hash, owner, agent, build, strategy versions, decision-settings hash, feed identity and bar against its own native decision. The [rehearsal and source receipt](ati-evidence/v75-m5-registered-capture-recovery-20261124.json) belong to this registered candidate. The exercise establishes recovery of native shadow capture. Broker retry behavior, deployed-strategy rollback and the open study's final performance still require separate evidence.
+
+To repeat on an eligible registered development run, set `DATABASE_URL` to its isolated local research database and run `node artifacts/api-server/scripts/rehearse-ati-registered-capture.mjs <study-directory> <pinned-collector-bundle>`. The command writes its receipt to stdout and removes its private copy on exit.
