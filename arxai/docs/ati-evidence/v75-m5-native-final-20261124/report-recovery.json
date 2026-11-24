@@ -1,0 +1,17 @@
+{
+  "scope": "OBSERVED_FLEET_REPORT_RECOVERY",
+  "executionAuthority": "NONE",
+  "databaseAccess": "READ_ONLY",
+  "runId": "5e2f983a-81e8-48fd-8152-5734414336e8",
+  "asOf": "2026-11-24T10:37:14.312Z",
+  "pinnedRevision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+  "reportSha256": "103d604fe5eec1df1d839ff7b999c255a25c589002bed5ca5d6fe7241a4bb250",
+  "coverageSha256": "319a370e714c83c582437e22ceee197a2a8b69852d0e808bb306773287020729",
+  "paired": 13,
+  "interruption": "SIGKILL_AFTER_COVERAGE_RENAME",
+  "mixedPairRejected": true,
+  "restoredByteForByte": true,
+  "alteredReportRejected": true,
+  "concurrentPublicationsVerified": true,
+  "automaticCutoffReplayed": true
+}

@@ -3,24 +3,29 @@
 import { setTimeout as wait } from "node:timers/promises";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 
 const [operation, directoryArg, cutoffArg] = process.argv.slice(2);
-const fleet = operation === "capture-fleet" || operation === "report-fleet" || operation === "verify-fleet";
+const fleet = ["capture-fleet", "report-fleet", "verify-fleet", "recover-fleet"].includes(operation ?? "");
 const action = fleet ? operation!.split("-")[0] : operation;
 const url = new URL(process.env.DATABASE_URL ?? "");
 const versioned = fleet && url.pathname === "/ati_observed_fleet_versioned_v1";
 if (url.hostname !== "localhost" || (!versioned && url.pathname !== (fleet ? "/ati_observed_fleet_v1" : "/ati_observed_shadow_v1")) ||
     !url.searchParams.get("host")?.startsWith("/")) throw new Error("DEDICATED_LOCAL_DB_REQUIRED");
-if (!directoryArg || !["capture","report","verify"].includes(action ?? "") || (action === "verify" && (!fleet || !cutoffArg)) || process.argv.length > 5 || (action === "capture" && cutoffArg))
-  throw new Error("Use capture, report, capture-fleet, report-fleet or verify-fleet with the report directory. Verification requires the original UTC cutoff.");
-const cutoff = cutoffArg ? new Date(cutoffArg) : undefined;
-if (cutoff && (!cutoffArg?.endsWith("Z") || !Number.isFinite(+cutoff) || +cutoff > Date.now()))
-  throw new Error("ELAPSED_UTC_CUTOFF_REQUIRED");
+if (!directoryArg || !["capture","report","capture-fleet","report-fleet","verify-fleet","recover-fleet"].includes(operation ?? "") ||
+    process.argv.length > 5 || ((action === "capture" || action === "recover") && cutoffArg !== undefined))
+  throw new Error("Use capture, report, capture-fleet, report-fleet, verify-fleet or recover-fleet with the report directory.");
+function elapsedCutoff(value: unknown) {
+  if (typeof value !== "string" || !value.endsWith("Z")) throw new Error("ELAPSED_UTC_CUTOFF_REQUIRED");
+  const at = new Date(value);
+  if (!Number.isFinite(+at) || +at > Date.now()) throw new Error("ELAPSED_UTC_CUTOFF_REQUIRED");
+  return at;
+}
+const cutoff = cutoffArg === undefined ? undefined : elapsedCutoff(cutoffArg);
 if (action === "capture" && process.env.ARX_DERIV_PUBLIC_DATA_ENABLED !== "true") throw new Error("PUBLIC_FEED_REQUIRED");
 const directory = resolve(directoryArg);
-if (action !== "verify") await mkdir(directory, { recursive: true });
+if (action === "capture" || action === "report") await mkdir(directory, { recursive: true });
 const { pool } = await import("@workspace/db");
 const { startAtiShadowRun, appendAtiShadowObservation, gradeAtiShadowRun, readAtiShadowRun } = await import("../src/lib/selfTrade/atiShadow.js");
 const { readAtiCaptureOperations } = await import("../src/lib/selfTrade/atiCaptureOperations.js");
@@ -62,25 +67,42 @@ try {
       throw new Error("REGISTERED_FLEET_BUILD_REQUIRED");
     }
   }
-  async function publish() {
-    const report = await readAtiShadowRun(ownerId, agentId, id, cutoff);
-    if (!report) throw new Error("PILOT_REPORT_UNAVAILABLE");
-    // Write the complete report atomically so a second process can read it during capture.
-    const path = join(directory, "shadow-report.json"), tmp = path + "." + process.pid;
-    await writeFile(tmp, JSON.stringify(report, null, 2)); await rename(tmp, path);
-    const ops = await readAtiCaptureOperations(ownerId, agentId, id, cutoff ?? new Date());
-    const coverage = join(directory, "capture-coverage.json");
-    await writeFile(coverage + "." + process.pid, JSON.stringify(ops, null, 2));
-    await rename(coverage + "." + process.pid, coverage);
-    console.log(JSON.stringify({ runId: id, report: path, ...report.counts }));
+  const reportPath = join(directory, "shadow-report.json"), coveragePath = join(directory, "capture-coverage.json");
+
+  // Capture, manual publication and recovery can share an output directory.
+  // PostgreSQL releases this session lock even when a writer is killed between renames.
+  const publicationKey = "ATI_SHADOW_PUBLICATION:" + await realpath(directory);
+  async function withPublicationLock(work: () => Promise<void>) {
+    await lock.query("select pg_advisory_lock(hashtextextended($1,0))", [publicationKey]);
+    try { await work(); }
+    finally { await lock.query("select pg_advisory_unlock(hashtextextended($1,0))", [publicationKey]); }
   }
-  async function verifyFleet(at: Date) {
-    const [savedReport, savedCoverage, report, coverage] = await Promise.all([
-      readFile(join(directory, "shadow-report.json")), readFile(join(directory, "capture-coverage.json")),
+
+  async function publish() {
+    const at = cutoff ?? new Date();
+    // A native fleet report and its coverage share one replayable knowledge cutoff.
+    const report = await readAtiShadowRun(ownerId, agentId, id, fleet ? at : cutoff);
+    const coverage = await readAtiCaptureOperations(ownerId, agentId, id, at);
+    if (!report || !coverage) throw new Error("PILOT_REPORT_UNAVAILABLE");
+    const reportTmp = reportPath + "." + process.pid, coverageTmp = coveragePath + "." + process.pid;
+    await Promise.all([writeFile(reportTmp, JSON.stringify(report, null, 2)), writeFile(coverageTmp, JSON.stringify(coverage, null, 2))]);
+    // The report records the last committed cutoff. A restart can rebuild coverage from it.
+    await rename(coverageTmp, coveragePath);
+    await rename(reportTmp, reportPath);
+    console.log(JSON.stringify({ runId: id, asOf: at, report: reportPath, ...report.counts }));
+  }
+  async function verifyFleet() {
+    const savedReport = await readFile(reportPath);
+    const document = JSON.parse(savedReport.toString());
+    const at = cutoff ?? elapsedCutoff(document?.asOf);
+    const [report, coverage] = await Promise.all([
       readAtiShadowRun(ownerId, agentId, id, at), readAtiCaptureOperations(ownerId, agentId, id, at),
     ]);
-    if (!report || !coverage || !isDeepStrictEqual(JSON.parse(savedReport.toString()), JSON.parse(JSON.stringify(report))) ||
-        !isDeepStrictEqual(JSON.parse(savedCoverage.toString()), JSON.parse(JSON.stringify(coverage))))
+    if (!report || !coverage || !isDeepStrictEqual(document, JSON.parse(JSON.stringify(report))))
+      throw new Error("SAVED_REPORT_OR_COVERAGE_MISMATCH");
+    const replayedCoverage = JSON.stringify(coverage, null, 2);
+    const savedCoverage = action === "recover" ? Buffer.from(replayedCoverage) : await readFile(coveragePath);
+    if (action !== "recover" && !isDeepStrictEqual(JSON.parse(savedCoverage.toString()), JSON.parse(replayedCoverage)))
       throw new Error("SAVED_REPORT_OR_COVERAGE_MISMATCH");
     // Match the independently persisted supervisor row. A feed miss still has a
     // real native receipt, but carries no scored baseline or challenger reason.
@@ -127,6 +149,14 @@ try {
     if (population.rows.reduce((n, r) => n + r.represented, 0) !== decisions.size) throw new Error("NATIVE_POPULATION_MISMATCH");
     const unrepresentedEntries = population.rows.reduce((n, r) => n +
       (r.setup === report.setup && isAtiEntryDecision(r.outcome) ? r.cycles - r.represented : 0), 0);
+    if (action === "recover") {
+      if (!savedReport.equals(await readFile(reportPath))) throw new Error("PUBLISHED_REPORT_CHANGED");
+      const tmp = coveragePath + "." + process.pid;
+      await writeFile(tmp, savedCoverage);
+      await rename(tmp, coveragePath);
+      if (!savedCoverage.equals(await readFile(coveragePath)) || !savedReport.equals(await readFile(reportPath)))
+        throw new Error("PUBLISHED_REPORT_CHANGED");
+    }
     console.log(JSON.stringify({ runId: id, asOf: at, state: decisions.size ? "REPRODUCED" : "NO_NATIVE_RECEIPTS",
       nativeCycleOutcomes: population.rows, unrepresentedEntries,
       nativeReceipts: decisions.size, paired: report.counts.paired, pinnedRevision,
@@ -139,8 +169,8 @@ try {
     if (agents.rows.length !== 1 || agents.rows[0].id !== agentId || agents.rows[0].mode !== "SHADOW")
       throw new Error("DEDICATED_SHADOW_FLEET_REQUIRED");
   }
-  if (action === "verify" && cutoff) await verifyFleet(cutoff);
-  else if (action === "report") await publish();
+  if (action === "verify" || action === "recover") await withPublicationLock(verifyFleet);
+  else if (action === "report") await withPublicationLock(publish);
   else {
     for (;;) {
       if (Date.now() < end) {
@@ -152,7 +182,7 @@ try {
         }
       }
       await gradeAtiShadowRun(ownerId, agentId, id);
-      await publish();
+      await withPublicationLock(publish);
       if (Date.now() >= end + ATI_SHADOW_HOLD_WINDOW_MS) break;
       await wait(Math.min(30_000, Math.max(100, end + ATI_SHADOW_HOLD_WINDOW_MS - Date.now())));
     }

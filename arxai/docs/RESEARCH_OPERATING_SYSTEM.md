@@ -183,3 +183,28 @@ commission, fee and swap across positions where every deal reports all three.
 Its coverage counts those positions. A fully reported zero has positive coverage.
 An empty intersection has zero coverage and a null amount. Each component has
 its own coverage. Spread and slippage are reported in price units separately.
+
+## Recovering a V75 pilot report
+
+The fleet publisher saves one UTC evidence cutoff in both output files. It
+replaces the coverage file first and the decision report last. The decision
+report identifies the last committed cutoff. Publishers and the verifier
+serialize access to the same output directory within the pilot database.
+
+Use `verify-fleet <directory>` to check a saved pair. After an interruption,
+`recover-fleet <directory>` reads the committed report, independently verifies
+its native decisions and build against the pilot database, and reconstructs its
+coverage. If the first decision report was never committed, use
+`report-fleet <directory> <original UTC cutoff>` to rebuild both files.
+
+The [recovery rehearsal](ati-evidence/v75-m5-native-final-20261124/report-recovery.json)
+used disposable copies of the verified V75 archive and read-only database access.
+It killed a writer between renames, verified rejection of the mixed pair, then
+restored both original file hashes. Concurrent publishers also produced a
+verifiable pair. This evidence covers report publication for the named pilot.
+Broker reconnects, order retries and strategy rollback require their own evidence.
+
+To repeat the rehearsal from `artifacts/api-server`, build with
+`node build.mjs --ati-shadow-study` and run
+`node scripts/rehearse-ati-report-recovery.mjs <verified archive directory>`
+with the isolated pilot's `DATABASE_URL`.
