@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import type { StoredForecast } from "./service.js";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline";
 const { createStructuralForecastRouter } = await import("../../routes/structuralForecasts.js");
 
@@ -24,4 +25,29 @@ test("HTTP forecast routes enforce authentication, symbol validation and user id
     const failure = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "V75", userId: 999 }) });
     assert.equal(failure.status, 503); assert.deepEqual(await failure.json(), { ok: false, saved: false, reason: "FORECAST_UNAVAILABLE" });
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test("history and same-candle reissues expose only published paper instructions", async () => {
+  const archived = { id: "old", issuedAt: 1000, scores: [], forecast: {
+    paperInstruction: { action: "BUY", reference: 100, stop: 99, target: 102, reason: "Breakout" },
+    horizons: [{ minutes: 15, probabilities: [.6,.3,.1] }],
+  }} as unknown as StoredForecast;
+  const published = { ...archived, id: "issued", paperPublishedAt: 1001 };
+  const app = express();
+  app.use(express.json(), (req, _res, next) => { req.authUser = { id: 17 } as NonNullable<typeof req.authUser>; next(); });
+  app.use(createStructuralForecastRouter({ async issue() { return archived; }, async history() { return [archived, published]; } }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => server.once("listening", resolve));
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  const url = `http://127.0.0.1:${address.port}/me/structural/forecasts`;
+  try {
+    const { forecasts } = await (await fetch(url + "?symbol=V75")).json() as { forecasts: StoredForecast[] };
+    assert.equal(forecasts[0]?.forecast.paperInstruction?.action, "HOLD");
+    assert.deepEqual(forecasts[1], published);
+    const again = await (await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: "V75" }) })).json() as StoredForecast;
+    assert.deepEqual(again.forecast.paperInstruction, forecasts[0]?.forecast.paperInstruction);
+    assert.deepEqual(again.forecast.horizons, archived.forecast.horizons);
+    assert.equal(archived.forecast.paperInstruction?.action, "BUY");
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
