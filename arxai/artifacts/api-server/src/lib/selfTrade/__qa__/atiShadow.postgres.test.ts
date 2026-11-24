@@ -664,6 +664,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(cohort.triggerMovement.coveredFills, 1);
       assert.deepEqual(cohort.signedDealCharges[0]?.swap, { coveredPositions: 0, signedCashOnCoveredPositions: null });
       assert.deepEqual(cohort.signedDealCharges[0]?.fee, { coveredPositions: 1, signedCashOnCoveredPositions: -0.1 });
+      assert.deepEqual(cohort.signedDealCharges[0]?.combinedDealCharges, { coveredPositions: 0, signedCashOnCoveredPositions: null });
       // Freeze the dispatch cohort at the second dispatch. The review clock advances independently.
       const endOfEntryWindow = new Date(+stamp + 2);
       const reviewEntryWindow = (knownAt: number, owner = 1) =>

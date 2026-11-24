@@ -175,3 +175,11 @@ The verifier reports a digest for each saved document, the number of native eval
 The one-hour capture ended at 09:37:14 UTC and the final grading window closed at 10:37:14 UTC. All 13 five-minute calendar slots had a saved read. The baseline and challenger both waited on all 13 paired trend-continuation bars. One additional receipt had an unverified feed. The underlying supervisor evaluated the instrument 112 times during capture, recording 111 waits and one denial. No eligible entry was omitted from the shadow report. There were zero eligible grades, zero pending grades and zero reconciled DEMO or LIVE deals. Both strategy returns and the paired return difference are unavailable.
 
 Two independent fixed-cutoff readbacks produced identical report and coverage bytes. The pinned collector build reproduced the saved observations, slot coverage, grade counts and simulation totals. The native-record verifier matched all 14 receipts. In a disposable copy of the database it rejected a changed supervisor reason even with both saved report files intact. [Final shadow report](ati-evidence/v75-m5-native-final-20261124/shadow-report.json) · [Capture coverage](ati-evidence/v75-m5-native-final-20261124/capture-coverage.json) · [Verification](ati-evidence/v75-m5-native-final-20261124/verification.json)
+
+## Measured deal charges by entry strategy
+
+Within each entry strategy and currency, `combinedDealCharges` sums the signed
+commission, fee and swap across positions where every deal reports all three.
+Its coverage counts those positions. A fully reported zero has positive coverage.
+An empty intersection has zero coverage and a null amount. Each component has
+its own coverage. Spread and slippage are reported in price units separately.

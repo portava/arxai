@@ -15,17 +15,27 @@ export interface AtiPositionLeg {
   entryStrategy?: AtiEntryStrategy | null; commandId: string | null; closedPositionDealTickets: string[] | null; charges: Charge | null; benchmark: FillBenchmark;
 }
 
-// Compare lot quantities in the decimal units carried by the receipts, including scientific notation.
-function decimalLots(volume: number) {
-  const [mantissa, exponent = "0"] = String(volume).split("e");
-  const [whole, fraction = ""] = mantissa!.split(".");
-  return { coefficient: BigInt(whole! + fraction), places: fraction.length - Number(exponent) };
+// Align the decimal representations carried by the terminal receipts, including scientific notation.
+function decimalUnits(values: readonly number[]) {
+  const decimals = values.map(value => {
+    const [mantissa, exponent = "0"] = String(value).split("e");
+    const [whole, fraction = ""] = mantissa!.split(".");
+    return { coefficient: BigInt(whole! + fraction), places: fraction.length - Number(exponent) };
+  });
+  const places = decimals.reduce((max, decimal) => Math.max(max, decimal.places), 0);
+  const units = decimals.map(decimal => decimal.coefficient * 10n ** BigInt(places - decimal.places));
+  return { places, units };
 }
 
 export function exactAtiLotUnits(volumes: readonly number[]) {
-  const lots = volumes.map(decimalLots);
-  const places = lots.reduce((max, lot) => Math.max(max, lot.places), 0);
-  return lots.map(lot => lot.coefficient * 10n ** BigInt(places - lot.places));
+  return decimalUnits(volumes).units;
+}
+
+function signedCashTotal(values: readonly number[]) {
+  if (!values.length || !values.every(Number.isFinite)) return null;
+  const { units, places } = decimalUnits(values);
+  const total = Number(`${units.reduce((sum, n) => sum + n, 0n)}e-${places}`);
+  return Number.isFinite(total) ? total : null;
 }
 
 export function atiPositionKey(mode: Mode, accountBinding: string, positionId: string) {
@@ -65,8 +75,7 @@ function assessPosition(mode: Mode, legs: AtiPositionLeg[], duplicates: Set<stri
   const sameCurrency = !!currency && ordered.every(row => row.charges?.currency === currency);
   function signedAmount(field: "commission" | "fee" | "swap") {
     if (!sameCurrency || !ordered.every(row => row.charges?.[field] != null)) return null;
-    const amount = ordered.reduce((sum, row) => sum + row.charges![field]!, 0);
-    return Number.isFinite(amount) ? amount : null;
+    return signedCashTotal(ordered.map(row => row.charges![field]!));
   }
   const positionKey = atiPositionKey(mode, last.accountBinding, last.positionId);
   return { positionKey, brokerSymbol: last.brokerSymbol, positionId: last.positionId,
@@ -135,13 +144,20 @@ export function reportAtiEntryStrategies(input: Position[]) {
     const entry = commands.filter(row => row.leg === "ENTRY");
     const currencies = [...new Set(group.flatMap(p => p.charges ? [p.charges.currency] : []))].sort();
     const signedDealCharges = currencies.map(currency => {
-      const same = group.flatMap(p => p.charges?.currency === currency ? [p.charges] : []);
-      function cash(field: "commission" | "fee" | "swap") {
-        const known = same.flatMap(row => row[field] == null ? [] : [row[field]]);
-        const sum = known.reduce((total, n) => total + n, 0);
-        return { coveredPositions: known.length, signedCashOnCoveredPositions: known.length && Number.isFinite(sum) ? sum : null };
+      const same = group.filter(p => p.charges?.currency === currency);
+      function cash(...fields: Array<"commission" | "fee" | "swap">) {
+        const amounts: number[] = [];
+        let coveredPositions = 0;
+        for (const position of same) {
+          const values = position.deals.flatMap(deal => fields.map(field => deal.charges![field]));
+          if (!values.every((value): value is number => value !== null && Number.isFinite(value))) continue;
+          coveredPositions++;
+          for (const value of values) amounts.push(value);
+        }
+        return { coveredPositions, signedCashOnCoveredPositions: signedCashTotal(amounts) };
       }
-      return { currency, positionsInCurrency: same.length, commission: cash("commission"), fee: cash("fee"), swap: cash("swap") };
+      return { currency, positionsInCurrency: same.length, commission: cash("commission"), fee: cash("fee"),
+        swap: cash("swap"), combinedDealCharges: cash("commission", "fee", "swap") };
     });
     return { cohortKey, strategy, positionKeys: group.map(p => p.positionKey), closedPositions: group.length,
       decisionToFill: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseFillVsDecisionMidPriceUnits : null),

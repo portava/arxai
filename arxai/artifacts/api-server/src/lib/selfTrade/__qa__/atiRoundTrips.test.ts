@@ -60,10 +60,11 @@ test("missing or extra deals, conflicting closure lists, reversals and ambiguous
 });
 
 
+const strategy = { engine: "SELF_TRADE_FLEET_DECISION", revision: "a".repeat(40), agentId: 3, agentKey: "atlas",
+  symbol: "EURUSD", timeframe: "M5", setup: "TREND_CONTINUATION", decisionSettingsHash: "0".repeat(64) } as const;
+const witness = { strategy, cohortKey: "1".repeat(64), decisionId: 9, executionId: 10, admissionHash: "2".repeat(64) };
+
 test("every opening fill must identify the same fleet strategy before any position costs enter its cohort", () => {
-  const strategy = { engine: "SELF_TRADE_FLEET_DECISION", revision: "a".repeat(40), agentId: 3, agentKey: "atlas",
-    symbol: "EURUSD", timeframe: "M5", setup: "TREND_CONTINUATION", decisionSettingsHash: "0".repeat(64) } as const;
-  const witness = { strategy, cohortKey: "1".repeat(64), decisionId: 9, executionId: 10, admissionHash: "2".repeat(64) };
   const first = { ...entry, volume: 0.1, entryStrategy: witness };
   const increased = { ...entry, deal: "604", order: "504", brokerFilledAtMs: 1001, volume: 0.2,
     entryStrategy: { ...witness, decisionId: 19, executionId: 20 } };
@@ -79,4 +80,34 @@ test("every opening fill must identify the same fleet strategy before any positi
     strategy: { ...strategy, setup: "REVERSAL" } } }).positions[0]?.attribution, "MULTIPLE_ENTRY_STRATEGIES");
   assert.deepEqual(report({ ...increased, entryStrategy: null }).byEntryStrategy, []);
   assert.deepEqual(reportAtiEntryStrategies(atiRoundTrips("LIVE", [first], 0).positions).byEntryStrategy, []);
+});
+
+test("combined charges cover only positions with all three charges on every deal in one currency", () => {
+  type Charges = NonNullable<AtiPositionLeg["charges"]>;
+  const zero: Charges = { currency: "USD", commission: 0, fee: 0, swap: 0 };
+  function pair(positionId: string, opening: Charges, closing: Charges): AtiPositionLeg[] {
+    const tickets = [positionId + "1", positionId + "2"];
+    return [{ ...entry, deal: tickets[0]!, positionId, entryStrategy: witness, charges: opening },
+      { ...final, deal: tickets[1]!, positionId, volume: entry.volume, closedPositionDealTickets: tickets, charges: closing }];
+  }
+  function cohort(legs: AtiPositionLeg[]) {
+    return reportAtiEntryStrategies(atiRoundTrips("DEMO", legs, 0).positions).byEntryStrategy[0]!;
+  }
+  const partials = [...pair("1", zero, { ...zero, fee: null, commission: 1 }),
+    ...pair("2", { ...zero, commission: null, fee: -0.3 }, { ...zero, swap: -2 })];
+  const first = cohort(partials).signedDealCharges[0]!;
+  assert.deepEqual(first.commission, { coveredPositions: 1, signedCashOnCoveredPositions: 1 });
+  assert.deepEqual(first.fee, { coveredPositions: 1, signedCashOnCoveredPositions: -0.3 });
+  assert.deepEqual(first.swap, { coveredPositions: 2, signedCashOnCoveredPositions: -2 });
+  assert.deepEqual(first.combinedDealCharges, { coveredPositions: 0, signedCashOnCoveredPositions: null });
+  const eur = { ...zero, currency: "EUR" };
+  const measured = cohort([...partials, ...pair("3", { ...zero, fee: -0.1 },
+    { ...zero, commission: -0.2, swap: 0.00000001 }), ...pair("4", eur, eur), ...pair("5", zero, eur)]);
+  assert.equal(measured.closedPositions, 5);
+  assert.equal(measured.positionsWithoutSingleChargeCurrency, 1);
+  const [euros, dollars] = measured.signedDealCharges;
+  assert.equal(euros?.currency, "EUR");
+  assert.deepEqual(euros?.combinedDealCharges, { coveredPositions: 1, signedCashOnCoveredPositions: 0 });
+  assert.equal(dollars?.positionsInCurrency, 3);
+  assert.deepEqual(dollars?.combinedDealCharges, { coveredPositions: 1, signedCashOnCoveredPositions: -0.29999999 });
 });
