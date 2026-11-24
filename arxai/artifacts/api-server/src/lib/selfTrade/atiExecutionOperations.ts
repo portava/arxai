@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { and, asc, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import {
   atiShadowRunsTable as runs,
@@ -324,7 +325,8 @@ export async function readAtiExecutionOperations(
     executionAuthority: "NONE",
   };
   const origin = atiMt5QuoteOrigin.safeParse(item.origin);
-  if (item.coverage !== "OBSERVED" || !item.identity || item.source !== "mt5_broker" || !origin.success)
+  if (item.coverage !== "OBSERVED" || !item.identity || item.source !== "mt5_broker" || !origin.success ||
+      atiInstrumentConflict(item.symbol, origin.data.brokerSymbol))
     return { ...scope, state: "NO_BOUND_MT5_SOURCE", feed: null, execution: null };
   const o = origin.data,
     split = new Date(+asOf - day),

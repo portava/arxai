@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import type { DbOrTx } from "./audit.js";
 import { atiDecisionSettingsHash } from "./atiStrategyOrigin.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -65,7 +66,8 @@ function sawObservedFeed(read: CandidateRead, run: Run) {
       origin.symbol !== run.symbol || origin.timeframe !== run.timeframe ||
       !evidenceMatches(origin, origin, read.evaluatedAt, run.ownerId) ||
       !isCurrentBuild(signal.generatedAt, read.evaluatedAt)) return false;
-  if (origin.source === "mt5_broker" && !read.observation.mt5QuoteOrigin) return false;
+  const mt5 = read.observation.mt5QuoteOrigin;
+  if (origin.source === "mt5_broker" && (!mt5 || atiInstrumentConflict(run.symbol, mt5.brokerSymbol))) return false;
   const quoteAge = read.evaluatedAt - Date.parse(boundQuote.observedAt);
   return Number.isFinite(quoteAge) && quoteAge >= 0 && classifyQuoteFreshness(quoteAge).fresh &&
     Number.isFinite(boundQuote.bid) && Number.isFinite(boundQuote.ask) && boundQuote.bid > 0 && boundQuote.ask > boundQuote.bid;
@@ -152,7 +154,8 @@ function comparison(read: CandidateRead, run: Run, sourceIdentity: string | null
       chartConfirmation: read.observation.chartConfirmation,
       mt5QuoteOrigin: read.observation.mt5QuoteOrigin ?? null,
       ...(derivOrigin !== undefined ? { derivQuoteOrigin: retainedDerivOrigin } : {}),
-      feedGapReason: !observed && origin?.source === "mt5_broker" && !mt5Origin ? "MT5_REPLAY_ORIGIN_UNVERIFIED" : null,
+      feedGapReason: atiInstrumentConflict(run.symbol, mt5Origin?.brokerSymbol) ? "MT5_INSTRUMENT_MISMATCH"
+        : !observed && origin?.source === "mt5_broker" && !mt5Origin ? "MT5_REPLAY_ORIGIN_UNVERIFIED" : null,
       baseline,
       challengerReason,
       ...(counterargument ? { counterargument } : {}),
@@ -369,7 +372,8 @@ export async function gradeAtiShadowRun(ownerId: number, agentId: number, runId:
 export async function readAtiShadowRun(ownerId: number, agentId: number, runId: string, asOf?: Date) {
   const [run] = await db.select().from(runs).where(runScope(ownerId, agentId, runId)).limit(1);
   if (!run || (asOf && run.startedAt > asOf)) return null;
-  const rows = await db.select({
+  const storedRows = await db.select({
+    brokerSymbol: sql<string | null>`${observations.evidence} #>> '{mt5QuoteOrigin,brokerSymbol}'`,
     observationKey: observations.observationKey,
     observedAt: observations.observedAt,
     coverage: observations.coverage,
@@ -395,10 +399,15 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     lte(outcomes.recordedAt, asOf)) : undefined)).where(and(eq(observations.runId, runId),
       asOf ? and(lte(observations.observedAt, asOf), lte(observations.recordedAt, asOf)) : undefined))
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
+  const rows = storedRows.map(({ brokerSymbol, ...row }) => atiInstrumentConflict(run.symbol, brokerSymbol)
+    ? { ...row, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
+      gradedAt: null, gradeVersion: null, decisionQuote: null, chartConfirmation: null, regimeAssessment: null, counterargument: null, retestPlan: null }
+    : row);
   const native = run.baselineVersion === ATI_FLEET_BASELINE;
   if (asOf && !rows.length && !native) return null;
   const storedProfile = run.measuredCostProfile as AtiMeasuredCostProfile | null;
-  const measuredCostProfile = !asOf || rows.some(row => row.coverage === "OBSERVED" && +row.observedAt === storedProfile?.availableBeforeMs)
+  const measuredCostProfile = !atiInstrumentConflict(run.symbol, storedProfile?.brokerSymbol) &&
+    (!asOf || rows.some(row => row.coverage === "OBSERVED" && +row.observedAt === storedProfile?.availableBeforeMs))
     ? storedProfile : null;
   const paired = rows.filter((row) => row.coverage === "OBSERVED" && row.setup === run.setup);
   const eligible = paired.filter((row) => isAtiEntryDecision(row.baselineOutcome));

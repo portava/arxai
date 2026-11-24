@@ -131,3 +131,9 @@ credit that fill to the requested strategy. Position histories, duplicate
 claims and cost calibration still use their original broker symbol and
 account. A DEMO command can supply measured costs while its originating
 bot decision remains unknown.
+
+## MT5 instrument checks for shadow evidence
+
+ATI compares the requested market with the broker symbol on the captured quote before it credits feed coverage or grades a simulated entry. For example, a decision on Volatility 75 Index cannot use Volatility 75 (1s) Index ticks, even when every archived tick repeats that same incorrect mapping. Owner, account, mode and quote continuity checks still apply.
+
+When older observations carry a known conflicting broker symbol, the shadow report retains the decision and shows a feed gap. Trading Memory withholds the replay and its costs, Guardian reports the instrument mismatch, and operations excludes that observation from eligible grades and broker cost monitoring. Newly sealed research datasets retain the gap and exclude the stored fill. Already sealed datasets preserve their original contents, and reproduction still requires the archived inputs to pass the instrument check.

@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { createHash } from "node:crypto";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { bridgeV2EventsTable as events, db } from "@workspace/db";
@@ -79,7 +80,7 @@ export function gradeAtiMt5Replay(rows: readonly Row[], origin: AtiMt5QuoteOrigi
   const unverified = { state: "UNVERIFIED" as const };
   const key = normalizeSymbolKey(symbol);
   const index = rows.findIndex((row) => row.id === origin.receiptId);
-  if (index < 1 || !quote) return unverified;
+  if (index < 1 || !quote || atiInstrumentConflict(symbol, origin.brokerSymbol)) return unverified;
   const anchor = readTick(rows[index]!, origin, key);
   const before = readTick(rows[index - 1]!, origin, key);
   if (!anchor || !before || !continues(before, anchor) || repeats(before, anchor) ||

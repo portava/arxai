@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { and, asc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import {
   atiShadowRunsTable as runs,
@@ -23,8 +24,9 @@ export async function readAtiCaptureOperations(owner: number, agent: number, run
     )
     .limit(1);
   if (!run) return null;
-  const records = await db
+  const stored = await db
     .select({
+      brokerSymbol: sql<string | null>`${observations.evidence} #>> '{mt5QuoteOrigin,brokerSymbol}'`,
       key: observations.observationKey,
       at: observations.observedAt,
       recorded: observations.recordedAt,
@@ -57,6 +59,8 @@ export async function readAtiCaptureOperations(owner: number, agent: number, run
       ),
     )
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
+  const records = stored.map(row => atiInstrumentConflict(run.symbol, row.brokerSymbol)
+    ? { ...row, coverage: "NO_OBSERVED_FEED" } : row);
   const step = atiShadowDefinition.barMs;
   const floor = (ms: number) => Math.floor(ms / step) * step;
   const bySlot = new Map<number, typeof records>();

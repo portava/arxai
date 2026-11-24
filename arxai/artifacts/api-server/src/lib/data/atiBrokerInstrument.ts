@@ -9,7 +9,8 @@ export function atiBrokerNames(symbol: string) {
 }
 
 /** A saved broker mapping cannot override a known difference in instrument identity. */
-export function atiInstrumentConflict(requested: string, broker: string) {
+export function atiInstrumentConflict(requested: string, broker: unknown) {
+  if (typeof broker !== "string") return false;
   const market = resolveArxMarket(requested), native = resolveArxMarket(broker);
   return market != null && native != null && market.canonicalSymbol !== native.canonicalSymbol;
 }

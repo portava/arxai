@@ -2,7 +2,7 @@ import { and, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { bridgeV2EventsTable as history, db } from "@workspace/db";
 import { bridgeV2 } from "@workspace/domain";
 
-import { atiBrokerNames } from "./atiBrokerInstrument.js";
+import { atiBrokerNames } from "../data/atiBrokerInstrument.js";
 import { exactAtiLotUnits } from "./atiRoundTrips.js";
 
 const extension = bridgeV2.atiTriggeredExitTraceSchema;

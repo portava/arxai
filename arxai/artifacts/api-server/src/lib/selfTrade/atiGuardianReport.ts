@@ -5,6 +5,7 @@ import { resolveDerivSymbol } from "../data/providers/derivProvider.js";
 import { atiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
 import { atiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { gradeAtiDerivReplay, loadAtiDerivReplayQuotes } from "./atiDerivQuoteReplay.js";
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { gradeAtiMt5Replay, loadAtiMt5ReplayQuotes, type AtiMt5ReplayQuote } from "./atiMt5QuoteReplay.js";
 import { selectAtiMeasuredCosts, measuredRoundTripCosts, type AtiMeasuredCostProfile } from "./atiMeasuredCosts.js";
 import { ATI_SHADOW_HOLD_WINDOW_MS, frozenAtiBracket, isAtiEntryDecision, type AtiAssumedCosts } from "./atiShadowGrading.js";
@@ -27,6 +28,8 @@ export async function readAtiGuardianComparison(owner: number, agent: number, ru
   const base = { runId, observationKey, asOf: asOf.toISOString(), symbol: run.symbol, setup: run.setup, timeframe: run.timeframe,
     baselineVersion: run.baselineVersion, source: source ?? null, mode: source === "mt5_broker" && mt5.success ? mt5.data.mode : null,
     policy: guardianComparisonPolicy, evidenceBasis: "SIMULATED_QUOTE_SIDES", executionAuthority: "NONE" };
+  if (source === "mt5_broker" && mt5.success && atiInstrumentConflict(run.symbol, mt5.data.brokerSymbol))
+    return { ...base, state: "UNRESOLVED", reason: "MT5_INSTRUMENT_MISMATCH" };
   if (observation.coverage !== "OBSERVED" || !observation.sourceIdentity)
     return { ...base, state: "UNRESOLVED", reason: observation.coverage === "OBSERVED" ? "SOURCE_IDENTITY_UNVERIFIED" : observation.coverage };
   if (run.setup !== observation.setup || !isAtiEntryDecision(observation.baselineOutcome))

@@ -562,7 +562,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(regular.live.commandCount, 0);
       assert.equal(fast.live.commandCount, 1);
       assert.equal((await reviewed("Volatility 75")).demo.commandCount, 0, "a partial broker name is not an exact lookup");
-      const { atiInstrumentConflict } = await import("../atiBrokerInstrument.js");
+      const { atiInstrumentConflict } = await import("../../data/atiBrokerInstrument.js");
       assert.equal(atiInstrumentConflict("V75", wrongName), true);
       assert.equal(atiInstrumentConflict("V75_1S", names[0]!), true);
     });
@@ -936,6 +936,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       mt5QuoteOrigin = captureAtiMt5QuoteOrigin(routedCandles, routedQuote, 1);
       assert.ok(mt5QuoteOrigin, JSON.stringify(routedCandles.provenance));
       assert.equal(captureAtiMt5QuoteOrigin(routedCandles, routedQuote, 2), null);
+      assert.equal(captureAtiMt5QuoteOrigin({ ...routedCandles, symbol: "V75" }, routedQuote, 1), null);
+      assert.equal(captureAtiMt5QuoteOrigin(routedCandles, { ...routedQuote, symbol: "V75_1S" }, 1), null);
       assert.equal(captureAtiMt5QuoteOrigin({ ...routedCandles, candles: routedCandles.candles.map((candle) => ({ ...candle })) }, routedQuote, 1), null);
 
       const priorDispatch = new Date(slot - 2000);
@@ -1009,6 +1011,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.deepEqual((await readAtiHistoricalCostSamples(1, "EURUSD", { ...mt5QuoteOrigin, mode: "DEMO", bridgeConnectionId: 22 },
         new Date(clockAt))).map(({ commandId }) => commandId), ["demo-history"]);
 
+      assert.deepEqual(await readAtiHistoricalCostSamples(1, "V75", { ...mt5QuoteOrigin, mode: "DEMO", bridgeConnectionId: 22 },
+        new Date(clockAt)), [], "an exact account receipt cannot calibrate a different instrument");
       const mt5 = await startAtiShadowRun(1, 3, pilot);
       assert.ok(mt5);
       const { readAtiExecutionOperations, assessAtiDispatches } = await import("../atiExecutionOperations.js");
@@ -1169,6 +1173,12 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const plan = { action: "BUY", reference: 1.1001, stop: 1.099, target: 1.102, reason: "Fixture" } as const;
       const gradeArchive = (rows: typeof archive) => gradeAtiMt5Replay(rows, mt5QuoteOrigin!, frozenQuote, "EURUSD", plan,
         slot + 1000, clockAt, slot + 15000);
+      const asV75 = (native: string) => gradeAtiMt5Replay(archive.map(r => ({ ...r,
+        payload: { ...(r.payload as object), symbol: "V75", brokerSymbol: native } })),
+        { ...mt5QuoteOrigin!, brokerSymbol: native }, frozenQuote, "V75", plan, slot + 1000, clockAt, slot + 15000);
+      assert.equal(asV75("Volatility 75 Index").state, "TARGET");
+      assert.equal(asV75("Volatility 75 (1s) Index").state, "UNVERIFIED",
+        "even a consistent archive and origin cannot settle the other instrument's decision");
       assert.equal(gradeArchive(archive.filter((row) => row.sequence !== 4)).state, "UNVERIFIED", "a dropped sample blocks replay");
       assert.equal(gradeArchive(archive.map((row) => row.sequence === 4 ? { ...row, verdict: "RESET" } : row)).state, "UNVERIFIED");
       assert.equal(gradeArchive(archive.map((row) => row.sequence === 4
@@ -1510,7 +1520,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       }
     });
 
-    await t.test("Research Lab seals one prospective, owner-bound holdout and verifies its replay", async () => {
+    await t.test("Research Lab seals one prospective, owner-bound holdout and verifies its replay", async researchTest => {
       const { registerAtiResearch, readAtiResearch, listAtiResearch, sealAtiResearch, replayAtiResearchObservation } =
         await import("../atiResearchLab.js");
       const { ATI_WALK_FORWARD_VERSION, canonicalResearch, evaluateAtiResearch, researchRegistration, researchPhases, atiResearchInput } =
@@ -1872,9 +1882,25 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       await db.insert(outcomes).values({ runId: archiveId, observationKey: archiveKey, gradeVersion: ATI_MT5_GRADE_VERSION,
         evaluatedAt: new Date(gradeAt), recordedAt: new Date(gradeAt + 1), evidence: { ...simulated, researchBuild: build } });
       assert.equal((await replayAtiResearchObservation(1, 3, archiveId, archiveKey))?.status, "STUDY_NOT_SEALED");
+      // Older builds could persist a fill even when the saved MT5 instrument disagreed with the run.
+      const [storedDecision] = await db.select().from(observations).where(eq(observations.runId, archiveId));
+      const [storedGrade] = await db.select().from(outcomes).where(eq(outcomes.runId, archiveId));
+      assert.ok(storedDecision && storedGrade);
+      const legacyKey = `bar:${decisionAt + bar}`;
+      const wrongNative = "Volatility 75 (1s) Index";
+      await db.insert(observations).values({ ...storedDecision, observationKey: legacyKey,
+        observedAt: new Date(decisionAt + bar), recordedAt: new Date(decisionAt + bar + 1),
+        evidence: { ...storedDecision.evidence as object, mt5QuoteOrigin: { ...mt5Origin, brokerSymbol: wrongNative } } });
+      await db.insert(outcomes).values({ ...storedGrade, observationKey: legacyKey,
+        evaluatedAt: new Date(gradeAt + bar), recordedAt: new Date(gradeAt + bar + 1) });
       const archiveSeal = await sealAtiResearch(1, 3, archiveId);
       assert.ok(archiveSeal?.status === "SEALED");
       assert.ok(archiveSeal.dataset.observations[0]?.mt5ReplayProof);
+      const legacySealed = archiveSeal.dataset.observations.find(row => row.observationKey === legacyKey);
+      assert.equal(legacySealed?.coverage, "NO_OBSERVED_FEED");
+      assert.equal(legacySealed.sourceIdentity, null);
+      assert.equal(legacySealed.evidence, null);
+      assert.equal(legacySealed.mt5ReplayProof, undefined);
       const reproduced = await replayAtiResearchObservation(1, 3, archiveId, archiveKey);
       assert.ok(reproduced?.status === "REPRODUCED");
       assert.deepEqual(reproduced.grade, simulated);
@@ -1886,6 +1912,42 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       await pool.query("DELETE FROM bridge_v2_events WHERE bridge_connection_id = $1 AND user_id = 1", [fixtureBridge]);
       assert.equal((await replayAtiResearchObservation(1, 3, archiveId, archiveKey))?.status, "ARCHIVE_UNAVAILABLE");
       assert.deepEqual(await readAtiResearch(1, 3, archiveId), archiveSeal, "archive changes cannot rewrite the sealed dataset");
+
+      await researchTest.test("a legacy mismatched MT5 fill is withheld from ordinary reports, memory, Guardian and operations", async () => {
+        const { readAtiCaptureOperations } = await import("../atiCaptureOperations.js");
+        const { readAtiExecutionOperations } = await import("../atiExecutionOperations.js");
+        const { readAtiGuardianComparison } = await import("../atiGuardianReport.js");
+        const [ordinary] = await db.select().from(runs).where(eq(runs.id, witness.runId));
+        const [grade] = await db.select().from(outcomes).where(eq(outcomes.runId, witness.runId));
+        assert.ok(ordinary && grade && witness.observationKey === grade.observationKey);
+        const legacyId = randomUUID();
+        await db.insert(runs).values({ ...ordinary, id: legacyId, symbol: "V75" });
+        await db.insert(observations).values({ ...witness, runId: legacyId,
+          evidence: { ...facts, mt5QuoteOrigin: { ...previous, brokerSymbol: wrongNative } } });
+        await db.insert(outcomes).values({ ...grade, runId: legacyId });
+        const cutoff = new Date(Math.max(+grade.evaluatedAt, +grade.recordedAt!, +witness.observedAt, +witness.recordedAt!) + 1);
+        const report = await readAtiShadowRun(1, 3, legacyId, cutoff);
+        assert.equal(report?.counts.noObservedFeed, 1);
+        assert.equal(report.counts.paired, 0);
+        assert.equal(report.observations[0]?.grade, null);
+        assert.equal(report.observations[0]?.decisionQuote, null);
+        assert.equal(report.observations[0]?.feedGapReason, "MT5_INSTRUMENT_MISMATCH");
+        assert.equal(report.measuredCostProfile, null);
+        const episode = (await readAtiShadowMemory(1, 3, { symbol: "V75", asOf: cutoff, limit: 50 }))
+          .episodes.find(row => row.runId === legacyId);
+        assert.ok(episode);
+        assert.ok(episode.evidenceGaps.includes("MT5_INSTRUMENT_MISMATCH"));
+        assert.equal(episode.outcome.state, "FEED_GAP");
+        assert.equal(episode.outcome.availableAt, null);
+        assert.equal(episode.outcome.replay, null);
+        assert.equal(episode.entry.quote, null);
+        const ops = await readAtiCaptureOperations(1, 3, legacyId, cutoff);
+        assert.equal(ops?.grading.eligible, 0);
+        assert.ok(ops.slots.some(slot => slot.unavailable === 1 && slot.observed === 0));
+        assert.equal((await readAtiExecutionOperations(1, 3, legacyId, witness.observationKey, cutoff))?.state, "NO_BOUND_MT5_SOURCE");
+        const guardian = await readAtiGuardianComparison(1, 3, legacyId, witness.observationKey, cutoff);
+        assert.ok(guardian && "reason" in guardian && guardian.reason === "MT5_INSTRUMENT_MISMATCH");
+      });
 
       const [derivObservation] = await db.select().from(observations).where(eq(observations.runId, archivedDerivId));
       const [derivOutcome] = await db.select().from(outcomes).where(eq(outcomes.runId, archivedDerivId));

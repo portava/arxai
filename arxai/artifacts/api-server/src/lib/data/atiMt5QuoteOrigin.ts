@@ -2,6 +2,8 @@ import { z } from "zod/v4";
 import type { MarketCandlesResult, MarketQuoteResult } from "./marketDataRouter.js";
 import { atiMt5QuoteAccount, mt5CandlesMatchHistory } from "./providers/mt5Provider.js";
 
+import { atiInstrumentConflict } from "./atiBrokerInstrument.js";
+
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const atiMt5QuoteOrigin = z.object({
   receiptId: z.number().int().positive(),
@@ -23,7 +25,8 @@ export function captureAtiMt5QuoteOrigin(candles: MarketCandlesResult, quote: Ma
       quote.tickTimeObserved !== true || !cp || !qp || cp.userId !== ownerId || qp.userId !== ownerId ||
       qp.source !== "LIVE_TICK" || qp.delayed !== false ||
       cp.bridgeConnectionId !== qp.bridgeConnectionId || cp.brokerSymbol !== qp.brokerSymbol ||
-      qp.brokerSymbol !== quote.quote.brokerSymbol) return null;
+      qp.brokerSymbol !== quote.quote.brokerSymbol || !qp.brokerSymbol ||
+      atiInstrumentConflict(candles.symbol, qp.brokerSymbol) || atiInstrumentConflict(quote.symbol, qp.brokerSymbol)) return null;
   const account = atiMt5QuoteAccount(quote.quote);
   if (!account?.historyIdentity || !cp.sourceId.endsWith(`:${account.historyIdentity}`) ||
       !mt5CandlesMatchHistory(candles.candles, account.historyIdentity)) return null;

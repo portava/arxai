@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { and, desc, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { atiShadowObservationsTable as observations, atiShadowOutcomesTable as outcomes,
   atiShadowRunsTable as runs, db } from "@workspace/db";
@@ -23,7 +24,7 @@ export function atiDecisionWarnings(checks: unknown) {
 type ShadowFacts = {
   input?: { signal?: EleanorMarketEdgeSignal };
   baseline?: DecisionCandidate;
-  mt5QuoteOrigin?: { mode?: "LIVE" | "DEMO" };
+  mt5QuoteOrigin?: { mode?: "LIVE" | "DEMO"; brokerSymbol?: string };
   quote?: { observedAt: string; bid: number; ask: number };
   challengerReason?: string;
   chartConfirmation?: import("./decisionEngine.js").SelfTradeObservationInput["chartConfirmation"];
@@ -62,12 +63,13 @@ export async function readAtiShadowMemory(ownerId: number, agentId: number, filt
     const context = signal ? captureAtiMarketContext(signal, ownerId, +row.observedAt) : null;
     const plan = facts.baseline?.thesis ?? null;
     const warnings = atiDecisionWarnings(facts.baseline?.checks);
-    const released = row.outcomeRecordedAt ? outcome : null;
+    const mismatched = atiInstrumentConflict(row.symbol, facts.mt5QuoteOrigin?.brokerSymbol);
+    const released = row.outcomeRecordedAt && !mismatched ? outcome : null;
     const settled = released?.state === "SIMULATED_FILL" ? released : null;
     const retest = released?.state === "RETEST_COMPARISON" ? released : null;
     const guardian = released?.state === "GUARDIAN_COMPARISON" ? released : null;
     const path = settled?.observedPath;
-    const feedGap = row.coverage !== "OBSERVED";
+    const feedGap = mismatched || row.coverage !== "OBSERVED";
     const eligible = !feedGap && row.setup === row.configuredSetup && isAtiEntryDecision(row.baselineOutcome);
     const outcomeState = feedGap ? "FEED_GAP" : !eligible ? "NO_BASELINE_ENTRY"
       : guardian ? guardian.state : retest ? "RETEST_COMPARISON" : settled ? "SIMULATED_FILL" : released ? "UNRESOLVED" : outcome ? "GRADE_AVAILABILITY_UNVERIFIED" : "AWAITING_GRADE";
@@ -86,8 +88,8 @@ export async function readAtiShadowMemory(ownerId: number, agentId: number, filt
         ...(facts.chartConfirmation ? { chartConfirmation: facts.chartConfirmation } : {}),
         warnings, quote: quote ? { ...quote, spreadPriceUnits: quote.ask - quote.bid } : null },
       expected: { plan, trajectory: null, ...(facts.retestPlan ? { retestPlan: facts.retestPlan } : {}) },
-      outcome: { state: outcomeState, availableAt: at(row.outcomeRecordedAt), gradeVersion: row.gradeVersion,
-        reason: released?.state === "UNRESOLVED" ? released.reason : settled?.exitReason ?? facts.feedGapReason ?? null,
+      outcome: { state: outcomeState, availableAt: mismatched ? null : at(row.outcomeRecordedAt), gradeVersion: mismatched ? null : row.gradeVersion,
+        reason: mismatched ? "MT5_INSTRUMENT_MISMATCH" : released?.state === "UNRESOLVED" ? released.reason : settled?.exitReason ?? facts.feedGapReason ?? null,
         replay: settled,
         ...(guardian ? { guardian } : {}),
         ...(retest ? { retest } : {}),
@@ -98,7 +100,7 @@ export async function readAtiShadowMemory(ownerId: number, agentId: number, filt
         ...(outcome && !row.outcomeRecordedAt ? ["GRADE_AVAILABILITY_UNVERIFIED"] : []),
         ...(!context && !feedGap ? ["MARKET_CONTEXT_UNAVAILABLE"] : []),
         ...(plan ? ["FORECAST_TRAJECTORY_UNAVAILABLE"] : []),
-        ...(feedGap ? [row.coverage] : []),
+        ...(feedGap ? [mismatched ? "MT5_INSTRUMENT_MISMATCH" : row.coverage] : []),
         ...(settled && !settled.observedPath ? ["EXCURSION_PATH_UNAVAILABLE"] : []),
       ],
     };

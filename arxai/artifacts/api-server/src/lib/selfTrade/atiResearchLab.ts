@@ -1,3 +1,4 @@
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { atiResearchSealsTable as seals, atiResearchStudiesTable as studies, atiShadowObservationsTable as observations,
@@ -442,7 +443,8 @@ function counterargumentFrom(evidence: unknown) {
 
 async function readCutoffDataset(reader: Pick<typeof db, "select">, run: Run, registration: Registration, registrationHash: string) {
   const cutoff = new Date(registration.gradeCutoffMs);
-  const rows = await reader.select({
+  const storedRows = await reader.select({
+    brokerSymbol: sql<string | null>`${observations.evidence} #>> '{mt5QuoteOrigin,brokerSymbol}'`,
     ...replayColumns, fleetDecision: matchedFleetReceipt(registration),
     observationKey: observations.observationKey, recordedAt: observations.recordedAt,
     coverage: observations.coverage, setup: observations.setup, baseline: observations.baselineOutcome,
@@ -458,6 +460,8 @@ async function readCutoffDataset(reader: Pick<typeof db, "select">, run: Run, re
       lt(observations.observedAt, run.endsAt), lt(observations.recordedAt, cutoff)))
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
 
+  const rows = storedRows.map(row => atiInstrumentConflict(run.symbol, row.brokerSymbol)
+    ? { ...row, coverage: "NO_OBSERVED_FEED", sourceIdentity: null, grade: null } : row);
   const fleetReceipts = new Map<string, NonNullable<AtiResearchDataset["observations"][number]["fleetDecision"]>>();
   const decisionIds = new Set<number>(), repeatedIds = new Set<number>();
   if (run.baselineVersion === ATI_FLEET_BASELINE) {

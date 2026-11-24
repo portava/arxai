@@ -8,7 +8,7 @@ import { reconcileAtiCostEvidence } from "../mt5/atiCostEvidence.js";
 import type { AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiPositionKey, atiRoundTrips, reportAtiEntryStrategies, type AtiPositionLeg } from "./atiRoundTrips.js";
 import { atiEntryStrategy, atiVerifiedAdmission } from "./atiStrategyOrigin.js";
-import { atiBrokerNames, atiInstrumentConflict } from "./atiBrokerInstrument.js";
+import { atiBrokerNames, atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { readAtiTriggeredExits, type AtiPositionScope } from "./atiTriggeredExits.js";
 
 function object(value: unknown): Record<string, unknown> {
@@ -313,6 +313,7 @@ export async function readAtiDispatchWindow(ownerId: number, origin: AtiMt5Quote
 }
 
 export async function readAtiHistoricalCostSamples(ownerId: number, symbol: string, origin: AtiMt5QuoteOrigin, before: Date) {
+  if (atiInstrumentConflict(symbol, origin.brokerSymbol)) return [];
   const rows = await readCommandCosts(ownerId, symbol, new Date(0), before, { history: origin });
   const samples = await checkAccountDealClaims(ownerId, origin.mode === "LIVE" ? rows.liveResults : rows.demoResults, origin.mode, before);
   return samples.flatMap(({ commandId, availableAt, instrumentWitness, result }) =>

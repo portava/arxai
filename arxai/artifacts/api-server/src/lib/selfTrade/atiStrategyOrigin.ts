@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 import type { DecisionCandidateInput } from "@workspace/domain/self-trade";
 import { ATI_FLEET_ENGINE as fleetEngine, cleanFleetVersion } from "./atiFleetDefinition.js";
 import { getBuildIdentity } from "../startup/buildIdentity.js";
-import { atiInstrumentConflict } from "./atiBrokerInstrument.js";
+import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import { entrySymbolMatches, entrySnapshotHash } from "./entryAuthority.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
