@@ -1,0 +1,20 @@
+{
+  "scope": "OFFLINE_V75_PUBLIC_TRANSPORT_BEHAVIOR",
+  "registeredRenewalTransportSha256": "7dbba38bdb65a5154366bbd20431e9f0be379da1bb0d6678ee4d7c2643cc06b2",
+  "candidateTransportSha256": "43aa0f71494ca200c83c49871328fb30502f936baf4f91c7a5f10c47cef0eb7c",
+  "before": {
+    "rateLimitedRenewal": "SOCKET_TERMINATED",
+    "timedOutRenewal": "SOCKET_TERMINATED",
+    "reconnectWithFailedWarmup": "TICK_SUBSCRIPTION_NOT_RESTORED_BY_HEARTBEAT"
+  },
+  "after": {
+    "rateLimitedOrTimedOutRenewal": "SAME_SUBSCRIPTION_AND_STREAM_ID",
+    "expiredDiscovery": "QUOTES_WITHHELD",
+    "successfulRenewal": "QUOTES_RESUME",
+    "failedPing": "SOCKET_TERMINATED",
+    "reconnectWithFailedWarmup": "ONE_SUBSCRIPTION_RESTORED_ON_NEW_SOCKET"
+  },
+  "transportTestsPassed": 41,
+  "actualHourlyCloseCause": "UNVERIFIED",
+  "executionAuthority": "NONE"
+}

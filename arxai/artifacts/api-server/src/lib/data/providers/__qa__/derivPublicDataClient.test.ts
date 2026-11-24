@@ -185,6 +185,122 @@ test("expired discovery is refreshed by subscribed reads before ticks regain rea
   assert.equal(f.client.isActiveSymbolsLoaded(), true); assert.equal(f.client.hasRecentTick(), false);
 });
 
+async function waitForHeartbeat(check: () => boolean) {
+  for (let i = 0; i < 250 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.ok(check(), "Heartbeat did not reach the expected state");
+}
+
+for (const failure of ["RATE_LIMIT", "TIMEOUT"] as const) {
+  test(`a responsive socket retains its subscription across a transient discovery ${failure}`, async t => {
+    let requests = 0, retry = false, rejectPing = false;
+    const f = fixture({ pingMs: 5, requestMs: 40, reply: (socket, request) => {
+      if (request.ping && rejectPing) {
+        socket.respond(request, { error: { code: "ServiceUnavailable" } });
+        return true;
+      }
+      if (!request.active_symbols || ++requests === 1 || retry) return false;
+      if (failure === "RATE_LIMIT") socket.respond(request, { error: { code: "RateLimit" } });
+      return true;
+    } });
+    t.after(() => f.client.stop());
+    await f.client.subscribeTicks("R_75");
+    const socket = f.sockets[0]!, started = f.now();
+    const observed: number[] = [], streamIds: Array<string | undefined> = [];
+    f.client.onTick(tick => {
+      observed.push(tick.quote);
+      const quote = { timestamp: new Date(tick.epoch * 1000).toISOString(), bid: tick.bid, ask: tick.ask };
+      transferAtiDerivQuoteFrame(tick, quote);
+      streamIds.push(publicDerivQuoteOrigin(quote)?.streamId);
+    });
+    function push(quote: number) {
+      socket.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: Math.floor(f.now() / 1000),
+        quote, bid: quote - 0.1, ask: quote + 0.1 }, subscription: { id: "sub-R_75" } }));
+    }
+    f.setNow(started + 270_000);
+    await waitForHeartbeat(() => f.client.getActiveSymbolsError() != null || socket.terminated);
+    assert.equal(socket.terminated, false);
+    push(101);
+    f.setNow(started + 301_000);
+    push(102);
+    assert.deepEqual(observed, [101]);
+    assert.equal(f.client.getCachedTick("R_75"), null);
+    retry = true;
+    await waitForHeartbeat(() => f.client.isActiveSymbolsLoaded());
+    push(103);
+    assert.deepEqual(observed, [101, 103]);
+    assert.ok(streamIds[0]);
+    assert.equal(streamIds[1], streamIds[0]);
+    assert.equal(f.sockets.length, 1);
+    assert.equal(socket.sent.filter(r => r.ticks === "R_75").length, 1);
+    rejectPing = true;
+    await waitForHeartbeat(() => socket.terminated);
+    assert.equal(f.client.isConnected(), false);
+  });
+}
+
+test("a reconnect with failed warmup resumes the requested tick stream on a later heartbeat", async t => {
+  let failDiscovery = false;
+  const f = fixture({ pingMs: 10, reconnectMs: 2, reply: (socket, request) => {
+    if (!request.active_symbols || !failDiscovery) return false;
+    socket.respond(request, { error: { code: "RateLimit" } });
+    return true;
+  } });
+  t.after(() => f.client.stop());
+  await f.client.subscribeTicks("R_75");
+  failDiscovery = true;
+  f.sockets[0]!.terminate();
+  await waitForHeartbeat(() => f.sockets.length === 2 && f.client.getActiveSymbolsError() != null);
+  assert.equal(f.client.getCachedTick("R_75"), null);
+  failDiscovery = false;
+  await waitForHeartbeat(() => f.client.getCachedTick("R_75")?.quote === 123);
+  assert.equal(f.sockets.length, 2);
+  assert.equal(f.sockets[1]!.sent.filter(r => r.ticks === "R_75").length, 1);
+});
+
+for (const renewal of ["OPEN", "SUSPENDED", "DELAYED"] as const) {
+  test(`heartbeat renews valid discovery and obeys a ${renewal} response`, async t => {
+    let notify!: (request: Message) => void;
+    const nextRequest = new Promise<Message>(resolve => { notify = resolve; });
+    let requests = 0;
+    const f = fixture({ pingMs: 5, reply: (_socket, request) => {
+      if (!request.active_symbols || ++requests === 1) return false;
+      notify(request);
+      return true;
+    } });
+    t.after(() => f.client.stop());
+    await f.client.subscribeTicks("R_75");
+    const received: number[] = [];
+    f.client.onTick(tick => received.push(tick.quote));
+    const startedAt = f.now(), socket = f.sockets[0]!;
+    function push(quote: number) {
+      socket.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: Math.floor(f.now() / 1000), quote },
+        subscription: { id: "sub-R_75" } }));
+    }
+    f.setNow(startedAt + 270_000);
+    // Hold the renewal response to verify both sides of the hard expiry.
+    const timeout = setTimeout(() => notify({}), 500);
+    const request = await nextRequest;
+    clearTimeout(timeout);
+    assert.ok(request.active_symbols, "heartbeat must renew while the current snapshot is valid");
+    push(101);
+    assert.deepEqual(received, [101]);
+    if (renewal === "DELAYED") {
+      f.setNow(startedAt + 301_000);
+      push(102);
+      assert.deepEqual(received, [101]);
+    }
+    socket.respond(request, { active_symbols: known.map(s => ({
+      underlying_symbol: s.derivId, underlying_symbol_name: s.displayName, market: "synthetic_index",
+      exchange_is_open: 1, is_trading_suspended: s.derivId === "R_75" && renewal === "SUSPENDED" ? 1 : 0,
+    })) });
+    await settle();
+    f.setNow(startedAt + 303_000);
+    push(103);
+    assert.deepEqual(received, renewal === "SUSPENDED" ? [101] : [101, 103]);
+    assert.equal(requests, 2);
+  });
+}
+
 test("half-open ping timeout clears readiness and starts bounded reconnect", async t => {
   const f = fixture({ requestMs: 10, pingMs: 10, reconnectMs: 60_000, reply: (_s,r) => !!r.ping });
   t.after(() => f.client.stop()); await f.client.subscribeTicks("R_75");

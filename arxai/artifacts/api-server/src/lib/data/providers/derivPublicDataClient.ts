@@ -12,6 +12,8 @@ export const derivPublicDataEnabled = () => process.env.ARX_DERIV_PUBLIC_DATA_EN
 const ERROR = (code: string) => new Error(code);
 const FRESH_MS = 30_000;
 const DISCOVERY_MS = 300_000;
+// Give discovery two normal heartbeats to renew before the existing snapshot expires.
+const DISCOVERY_RENEW_AHEAD_MS = 60_000;
 const ACTION_KEYS: Record<string, readonly string[]> = {
   ping: ["ping"], time: ["time"], active_symbols: ["active_symbols"],
   ticks: ["ticks", "subscribe"],
@@ -206,12 +208,7 @@ export class DerivPublicDataClient {
         if (finished || generation !== this.generation || this.stopped || !this.configured()) { ws.terminate(); return; }
         opened = true; clearTimeout(timeout); this.connected = true; this.connectedAt = this.now(); this.opening = null; this.lastError = null;
         resolve();
-        this.pingTimer = setInterval(() => {
-          // A half-open socket must not retain a connected badge indefinitely.
-          void this.request({ ping: 1 }).then(() => this.discover()).catch(() => {
-            if (generation === this.generation) this.disconnect?.();
-          });
-        }, this.options.pingMs ?? 30_000);
+        this.pingTimer = setInterval(() => { void this.heartbeat(generation); }, this.options.pingMs ?? 30_000);
         this.pingTimer.unref?.();
         void this.warmup(generation);
       });
@@ -223,6 +220,26 @@ export class DerivPublicDataClient {
     // Synchronous factory failure must not poison all later connection attempts.
     void opening.catch(() => { if (this.opening === opening) this.opening = null; });
     return opening;
+  }
+
+  private async heartbeat(generation: number) {
+    try {
+      await this.request({ ping: 1 });
+    } catch {
+      if (generation === this.generation) this.disconnect?.();
+      return;
+    }
+    if (generation !== this.generation || !this.isConnected()) return;
+    try {
+      await this.discover(DISCOVERY_RENEW_AHEAD_MS);
+      await this.restoreSubscriptions(generation);
+    } catch (error) {
+      // The ping succeeded. Retry a transient discovery failure on the next heartbeat.
+      // isSymbolAvailable still checks the original expiry on each released tick.
+      const transient = error instanceof Error && ["DERIV_PUBLIC_REQUEST_TIMEOUT", "DERIV_PUBLIC_RateLimit",
+        "DERIV_PUBLIC_RATE_LIMITED", "DERIV_PUBLIC_BUSY"].includes(error.message);
+      if (!transient && generation === this.generation) this.disconnect?.();
+    }
   }
 
   private requireSession(generation: number): void {
@@ -320,8 +337,8 @@ export class DerivPublicDataClient {
     for (const listener of this.listeners) { try { listener(tick); } catch { /* observers do not own transport */ } }
     return tick;
   }
-  private async discover(): Promise<void> {
-    if (this.isActiveSymbolsLoaded()) return;
+  private async discover(renewAheadMs = 0): Promise<void> {
+    if (this.isActiveSymbolsLoaded() && this.getLastDiscoveryAgeMs()! <= DISCOVERY_MS - renewAheadMs) return;
     if (this.discoveryPromise) return this.discoveryPromise;
     const work = (async () => {
       await this.open();
@@ -342,11 +359,18 @@ export class DerivPublicDataClient {
     try { await work; } catch (err) { this.discoveryError = (err as Error).message; throw err; }
     finally { if (this.discoveryPromise === work) this.discoveryPromise = null; }
   }
+  private async restoreSubscriptions(generation: number) {
+    for (const symbol of this.desired) {
+      if (generation !== this.generation || !this.isConnected()) return;
+      if (!this.subscriptions.has(symbol) && this.isSymbolAvailable(symbol))
+        await this.subscribeTicks(symbol).catch(() => {});
+    }
+  }
   private async warmup(generation: number) {
     this.warmupAt = this.now();
     try {
       await this.discover();
-      for (const symbol of this.desired) { if (generation !== this.generation) return; await this.subscribeTicks(symbol).catch(() => {}); }
+      await this.restoreSubscriptions(generation);
       if (generation === this.generation) this.warmedAt = this.now();
     } catch { /* diagnostic state carries discovery error; on-demand reads retry */ }
   }

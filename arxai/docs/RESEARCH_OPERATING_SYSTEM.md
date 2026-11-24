@@ -259,3 +259,25 @@ and [renewal replay](structural-evidence/ati-specialists-v1/forward-coverage-thr
 identify each archive and receipt. Run `node artifacts/api-server/scripts/audit-ati-forward-coverage.mjs
 <original|renewal> <saved collector snapshot directory> <archive directory> 2026-11-24T10:45:00.000Z`
 to repeat a review. The script launches the individual window grader offline.
+
+## Public V75 quote continuity
+
+The registered early-renewal collector closed its socket when an instrument-list
+refresh timed out or returned a rate limit, even after its heartbeat ping
+succeeded. In a separate reconnect rehearsal, a failed initial instrument-list
+request left the desired subscription idle after discovery recovered.
+
+The local candidate retries transient discovery failures on subsequent
+heartbeats. The original discovery expiry and suspension checks still govern
+every tick. After a reconnect, the heartbeat restores missing subscriptions
+for available instruments. A failed ping closes the connection. The tests
+verified that a transient refresh error retains the same stream ID, an expired
+snapshot suppresses quotes and recovery subscribes once on the new socket.
+[Transport regression evidence](structural-evidence/ati-specialists-v1/transport-recovery-fixtures.json)
+
+A separate 65-minute public-feed probe started at 11:04:22 UTC on November 24,
+using the registered renewal transport. It records WebSocket close codes,
+local termination calls, application errors, successful ping and discovery
+responses, and gaps in the two-second V75 tick cadence. The cause of the
+three historical hourly interruptions remains unverified. These transport
+tests contribute no forecast windows or MT5 fills.
