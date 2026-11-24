@@ -15,6 +15,8 @@ import { evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js"
 import { ATI_FLEET_BASELINE, ATI_FLEET_CAPTURE, ATI_FLEET_SCOPE, ATI_FLEET_SYMBOL, fleetInputGap,
   type AtiFleetRead, type AtiFleetReceipt } from "./atiFleetShadow.js";
 import { canObserveSelfTradeAgent, observeSelfTradeCandidate } from "./decisionEngine.js";
+import { costsForEntryDecisions } from "./atiMatchedExecutionCosts.js";
+import { cleanFleetVersion } from "./atiFleetDefinition.js";
 import { readAtiExecutionCosts } from "./atiExecutionCosts.js";
 import { atiMt5QuoteOrigin, type AtiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiDerivQuoteOrigin, flushAtiDerivQuotes, retainAtiDerivQuotes, type AtiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
@@ -445,7 +447,12 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
   const paired = rows.filter((row) => row.coverage === "OBSERVED" && row.setup === run.setup);
   const eligible = paired.filter((row) => isAtiEntryDecision(row.baselineOutcome));
   const nativeGroups = new Map<string, typeof paired>();
+  const decisionOccurrences = new Map<number, number>();
   if (native) {
+    for (const row of rows) {
+      const id = row.fleetReceipt?.decisionId;
+      if (id != null) decisionOccurrences.set(id, (decisionOccurrences.get(id) ?? 0) + 1);
+    }
     for (const row of paired) {
       const version = row.fleetReceipt?.version;
       if (!version || !row.fleetSource) continue;
@@ -498,6 +505,13 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       const first = group[0]!;
       const version = first.fleetReceipt!.version;
       const entries = group.filter(row => isAtiEntryDecision(row.baselineOutcome));
+      const verified = cleanFleetVersion.safeParse(version);
+      const entryIds = new Set(entries.flatMap(row => {
+        const id = row.fleetReceipt?.decisionId;
+        return id != null && Number.isSafeInteger(id) && id > 0 && decisionOccurrences.get(id) === 1 ? [id] : [];
+      }));
+      const identity = verified.success ? { agentId: run.agentId, revision: verified.data.build.revision, symbol: run.symbol,
+        timeframe: run.timeframe, setup: run.setup, decisionSettingsHash: verified.data.decisionSettingsHash } : null;
       const settled = entries.flatMap(row => row.grade?.state === "SIMULATED_FILL" ? [row.grade] : []);
       const demoBars = group.filter(row => row.fleetDemoPrice != null);
       const compared = demoBars.flatMap(row => row.demoFleetComparison?.state === "COMPARED" ? [row.demoFleetComparison] : []);
@@ -510,7 +524,12 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       return {
         version, sourceIdentity: first.fleetSource, symbol: run.symbol, setup: run.setup, timeframe: run.timeframe,
         baselineVersion: run.baselineVersion, challengerVersion: run.challengerVersion, agentId: run.agentId,
-        hasVerifiedVersion: version.build.sourceState === "clean" && !!version.build.revision && !!version.decisionSettingsHash,
+        hasVerifiedVersion: verified.success,
+        observedIncumbentCosts: identity ? {
+          capturedEntryDecisions: entryIds.size, entriesWithoutUniqueDecision: entries.length - entryIds.size,
+          demo: costsForEntryDecisions(executionCosts.demo.roundTrips.positions, entryIds, identity),
+          live: costsForEntryDecisions(executionCosts.live.roundTrips.positions, entryIds, identity),
+        } : null,
         decisionBreakdown: summarizeFleetDecisions(group),
         ...(demoBars.length ? { demoFleetChart: { observedBars: demoBars.length, comparedBars: compared.length,
           unavailableReasons: Object.fromEntries(gaps),

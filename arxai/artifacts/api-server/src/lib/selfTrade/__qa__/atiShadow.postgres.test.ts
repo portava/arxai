@@ -714,7 +714,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(atiInstrumentConflict("V75_1S", names[0]!), true);
     });
 
-    await t.test("native position history joins exact entry, commanded partial close and protective exit", async () => {
+    await t.test("native position history joins exact entry, commanded partial close and protective exit", async (positionTest) => {
       const { readAtiExecutionCosts } = await import("../atiExecutionCosts.js");
       const symbol = "EURCHF", positionId = "990001", positionTicket = "999001";
       const read = (owner = 1, from = stamp, until = new Date(+stamp + 60_000)) => readAtiExecutionCosts(owner, symbol, from, until);
@@ -831,6 +831,45 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(+closedLater.live.roundTrips.receiptWindowEndExclusive, fillTime + 7003);
       assert.deepEqual((await reviewEntryWindow(fillTime + 7002, 2)).live.roundTrips.positions, []);
       assert.deepEqual(await reviewEntryWindow(fillTime + 7000), pendingEntry, "replaying the earlier cutoff keeps the fill pending");
+
+      await positionTest.test("ordinary shadow review matches actual incumbent costs to its frozen entry decisions", async () => {
+        const { ATI_FLEET_BASELINE } = await import("../atiFleetDefinition.js");
+        const { summarizeAtiShadowReport } = await import("../atiShadowReports.js");
+        const id = randomUUID(), observedAt = new Date(+stamp - 1);
+        await pool.query(`INSERT INTO ati_shadow_runs
+          (id,owner_id,agent_id,symbol,timeframe,setup,baseline_version,challenger_version,started_at,ends_at)
+          VALUES ($1,1,3,$2,'M5','TREND_CONTINUATION',$3,'challenger',$4,$5)`,
+          [id, symbol, ATI_FLEET_BASELINE, observedAt, endOfEntryWindow]);
+        const observe = async (key: string, decisionId: number, settingsHash: string, recordedAt: Date) => {
+          const receipt = { decisionId, version: { ...version, decisionSettingsHash: settingsHash } };
+          await pool.query(`INSERT INTO ati_shadow_observations
+            (run_id,observation_key,observed_at,source_identity,coverage,setup,baseline_outcome,challenger_outcome,evidence,recorded_at)
+            VALUES($1,$2,$3,'fixture-feed','OBSERVED','TREND_CONTINUATION','APPROVED','WAIT',$4,$5)`,
+            [id,key,observedAt,{fleetReceipt:receipt},recordedAt]);
+        };
+        await observe("matching",7001,version.decisionSettingsHash,observedAt);
+        await observe("unrelated",7100,"d".repeat(64),observedAt);
+        async function review(at: number) {
+          const report = await readAtiShadowRun(1,3,id,new Date(at));
+          assert.ok(report);
+          return summarizeAtiShadowReport(report).fleetCohorts!;
+        }
+        const completeAt = fillTime + 7002;
+        const reviewed = await review(completeAt);
+        const matching = reviewed.find(c => c.settings === version.decisionSettingsHash)!.observedIncumbentCosts!;
+        assert.deepEqual(matching.live.byEntryStrategy,[cohort]);
+        assert.equal(matching.capturedEntryDecisions,1);
+        assert.equal(matching.demo.reconciledPositions,0);
+        assert.equal(reviewed.find(c => c.settings !== version.decisionSettingsHash)!.observedIncumbentCosts!.live.reconciledPositions,0);
+        assert.equal((await review(fillTime + 7001)).find(c => c.settings === version.decisionSettingsHash)!
+          .observedIncumbentCosts!.live.reconciledPositions,0);
+        await observe("duplicate",7001,"e".repeat(64),new Date(completeAt + 1));
+        const disputed = await review(completeAt + 1);
+        assert.ok(disputed.every(c => c.observedIncumbentCosts?.live.reconciledPositions === 0));
+        assert.equal(disputed.find(c => c.settings === version.decisionSettingsHash)!.observedIncumbentCosts!.entriesWithoutUniqueDecision,1);
+        assert.deepEqual(await review(completeAt),reviewed);
+        assert.equal(await readAtiShadowRun(2,3,id),null);
+      });
 
       const reviewTriggerWindow = (knownAt: number) => readAtiExecutionCosts(1, symbol,
         new Date(fillTime + 18), new Date(fillTime + 19), new Date(knownAt));

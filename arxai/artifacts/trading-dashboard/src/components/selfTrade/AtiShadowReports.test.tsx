@@ -62,3 +62,27 @@ test("retains both decisions and the recorded chart-readiness reason for each fl
   const second = within(screen.getByText("Conflicting timeframe").closest("tr")!);
   expect(second.getAllByText("Unknown")).toHaveLength(2); expect(second.getByText("Reason unavailable")).toBeTruthy();
 });
+test("separates the incumbent's reconciled broker costs by account mode and sample coverage", async () => {
+  const metric = { coveredLots: 0, eligibleLots: 0.03, volumeWeightedMeanPriceUnits: null };
+  const missingCash = { coveredPositions: 0, signedCashOnCoveredPositions: null };
+  const scope = { decisionsWithLinkedOpeningFill: 0, reconciledPositions: 0, unresolvedPositionsWithLinkedEntry: 0,
+    positionsWithOtherOpeningDecisions: 0, byEntryStrategy: [] };
+  const group = { cohortKey: "123456789abc", closedPositions: 1, decisionSpread: metric, movementBeforeSubmission: metric,
+    submissionSpread: metric, commandSlippage: { ...metric, coveredLots: 0.03, volumeWeightedMeanPriceUnits: 0 },
+    triggerMovement: metric, signedDealCharges: [{ currency: "USD", positionsInCurrency: 1,
+      fee: { coveredPositions: 1, signedCashOnCoveredPositions: -0.1 }, commission: { coveredPositions: 1, signedCashOnCoveredPositions: 0 }, swap: missingCash }] };
+  const costs = { capturedEntryDecisions: 2, entriesWithoutUniqueDecision: 1, demo: scope,
+    live: { ...scope, decisionsWithLinkedOpeningFill: 1, reconciledPositions: 1, byEntryStrategy: [group] } };
+  const pilot = { ...report, fleetCohorts: [{ verified: true, matchingBars: 3, eligibleEntries: 3, observedIncumbentCosts: costs }] };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("?asOf=") ? ok(pilot) : ok({ runs: [run], asOf, next: null })));
+  render(panel(new QueryClient())); fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
+  fireEvent.click(await screen.findByText(/Fleet evidence by build/));
+  fireEvent.click(screen.getByText("Broker costs for captured current-bot entries"));
+  const demo = within(screen.getByText("Demo matched positions").closest("section")!);
+  const live = within(screen.getByText("Live matched positions").closest("section")!);
+  expect(demo.getByText("Round-trip costs are unknown.")).toBeTruthy();
+  expect(live.getByText("commission 0 USD (1/1 positions) · fee -0.1 USD (1/1 positions) · swap unknown (0/1 positions)")).toBeTruthy();
+  const slippage = within(live.getByText("Command slippage").closest("tr")!);
+  expect(slippage.getByText("0")).toBeTruthy(); expect(slippage.getByText("0.03 / 0.03")).toBeTruthy();
+  expect(within(live.getByText("Entry decision spread").closest("tr")!).getByText("Unknown")).toBeTruthy();
+});

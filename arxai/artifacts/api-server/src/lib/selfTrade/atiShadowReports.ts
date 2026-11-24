@@ -37,6 +37,7 @@ export function summarizeAtiShadowReport(report: ShadowReport) {
   return { id, agentId, symbol, timeframe, setup, startedAt, endsAt, asOf, baselineVersion, challengerVersion,
     fleetCohorts: report.fleetCohorts?.map(c => ({ revision: c.version.build.revision, settings: c.version.decisionSettingsHash,
       source: c.sourceIdentity, verified: c.hasVerifiedVersion, matchingBars: c.matchingBars, eligibleEntries: c.eligibleEntries,
+      observedIncumbentCosts: c.observedIncumbentCosts,
       decisionBreakdown: c.decisionBreakdown, settledPairs: c.quoteSideOnly.settledPairs, pairedDifferenceR: c.quoteSideOnly.pairedDifferenceR })),
     decisionScope, counts, eligibleEntries, simulations, assumedCosts, costs: { demo: costs("demo"), live: costs("live") } };
 }

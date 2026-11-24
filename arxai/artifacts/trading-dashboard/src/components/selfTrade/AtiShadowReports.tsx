@@ -11,6 +11,16 @@ type Simulation = { settledPairs: number; baseline: { totalR: number | null }; c
 type Charges = { currency: string; commission: number | null; fee: number | null; swap: number | null };
 type Deal = { commandId: string; deal: string; spread: number | null; movement: number | null; slippage: number | null; charges: Charges | null };
 type CostReview = { commandCount: number; reconciledDealCount: number; triggeredExits: number; deals: Deal[] };
+type PriceBenchmark = { coveredLots: number | null; eligibleLots: number | null; volumeWeightedMeanPriceUnits: number | null };
+type CashBenchmark = { coveredPositions: number; signedCashOnCoveredPositions: number | null };
+type StrategyCosts = {
+  cohortKey: string; closedPositions: number; decisionSpread: PriceBenchmark; movementBeforeSubmission: PriceBenchmark;
+  submissionSpread: PriceBenchmark; commandSlippage: PriceBenchmark; triggerMovement: PriceBenchmark;
+  signedDealCharges: { currency: string; positionsInCurrency: number; commission: CashBenchmark; fee: CashBenchmark; swap: CashBenchmark }[];
+};
+type MatchedCosts = { decisionsWithLinkedOpeningFill: number; reconciledPositions: number; unresolvedPositionsWithLinkedEntry: number;
+  positionsWithOtherOpeningDecisions: number; byEntryStrategy: StrategyCosts[] };
+type IncumbentCosts = { capturedEntryDecisions: number; entriesWithoutUniqueDecision: number; demo: MatchedCosts; live: MatchedCosts };
 type DecisionGroup = {
   bars: number; baselineOutcome: string; baselineReason: string | null; challengerOutcome: string; challengerReason: string | null;
   handshake: { ready: boolean; blocked: string[]; degraded: string[] } | null;
@@ -22,7 +32,7 @@ type Report = Run & {
   simulations: { quoteSideOnly: Simulation; withAssumedCosts: Simulation | null; withMeasuredSlippage: Simulation | null; withMeasuredCosts: Simulation | null };
   assumedCosts: { adverseSlippagePerFillPriceUnits: number; feePerFillPriceUnits: number } | null;
   fleetCohorts?: { revision: string | null; settings: string | null; source: string | null; verified: boolean; matchingBars: number;
-    eligibleEntries: number; settledPairs: number; pairedDifferenceR: number | null; decisionBreakdown?: DecisionGroup[] }[];
+    eligibleEntries: number; settledPairs: number; pairedDifferenceR: number | null; observedIncumbentCosts?: IncumbentCosts | null; decisionBreakdown?: DecisionGroup[] }[];
   costs: { demo: CostReview; live: CostReview };
 };
 
@@ -50,6 +60,41 @@ function BrokerCosts({ label, review }: { label: string; review: CostReview }) {
       <p className="text-xs text-muted-foreground">¹ Price units. Positive movement and slippage are adverse.</p>
     </details> : <p className="text-xs text-muted-foreground">Command execution costs are unknown.</p>}
   </section>;
+}
+
+function MatchedBrokerCosts({ costs }: { costs: IncumbentCosts }) {
+  return <details className="mt-1">
+    <summary className="cursor-pointer">Broker costs for captured current-bot entries</summary>
+    <p>{costs.capturedEntryDecisions} distinct entry decisions · {costs.entriesWithoutUniqueDecision} entries without a unique decision</p>
+    {(["demo", "live"] as const).map(mode => {
+      const scoped = costs[mode];
+      return <section key={mode} className="my-2 space-y-1">
+        <h6 className="font-medium">{mode === "demo" ? "Demo" : "Live"} matched positions</h6>
+        <p>{scoped.decisionsWithLinkedOpeningFill} decisions linked to opening fills · {scoped.reconciledPositions} reconciled round trips</p>
+        {!!(scoped.unresolvedPositionsWithLinkedEntry || scoped.positionsWithOtherOpeningDecisions) && <p>
+          {scoped.unresolvedPositionsWithLinkedEntry} unresolved positions · {scoped.positionsWithOtherOpeningDecisions} positions with other opening decisions
+        </p>}
+        {!scoped.byEntryStrategy.length && <p className="text-muted-foreground">Round-trip costs are unknown.</p>}
+        {scoped.byEntryStrategy.map(group => <div key={group.cohortKey} className="space-y-1">
+          <p>{group.closedPositions} closed positions · Account and instrument group {group.cohortKey.slice(0, 12)}</p>
+          <Table><TableHeader><TableRow><TableHead>Benchmark</TableHead><TableHead>Lot-weighted mean in price units</TableHead>
+            <TableHead>Covered / eligible lots</TableHead></TableRow></TableHeader><TableBody>
+            {([["Entry decision spread", group.decisionSpread], ["Entry movement before submission", group.movementBeforeSubmission],
+              ["Command submission spread", group.submissionSpread], ["Command slippage", group.commandSlippage],
+              ["Protective exit movement from trigger", group.triggerMovement]] as const).map(([label, metric]) =>
+              <TableRow key={label}><TableCell>{label}</TableCell><TableCell>{format(metric.volumeWeightedMeanPriceUnits)}</TableCell>
+                <TableCell>{format(metric.coveredLots)} / {format(metric.eligibleLots)}</TableCell></TableRow>)}
+          </TableBody></Table>
+          {group.signedDealCharges.length ? group.signedDealCharges.map(c => <p key={c.currency}>
+            {(["commission", "fee", "swap"] as const).map(field => {
+              const metric = c[field];
+              return `${field} ${metric.signedCashOnCoveredPositions == null ? "unknown" : format(metric.signedCashOnCoveredPositions) + " " + c.currency} (${metric.coveredPositions}/${group.closedPositions} positions)`;
+            }).join(" · ")}
+          </p>) : <p>Charge currency and amounts are unknown.</p>}
+        </div>)}
+      </section>;
+    })}
+  </details>;
 }
 
 function DecisionBreakdown({ rows }: { rows: DecisionGroup[] }) {
@@ -92,6 +137,7 @@ export function AtiShadowResult({ report, fullUrl }: { report: Report; fullUrl: 
       <ul className="mt-2 space-y-2 text-sm">{report.fleetCohorts.map((c, i) => <li key={i}>
         <p className="break-all">{c.verified ? "Verified version" : "Unverified version"} · Build {c.revision ?? "unknown"} · Settings {c.settings ?? "unknown"} · Feed {c.source ?? "unknown"}</p>
         <p>{c.matchingBars} matching bars · {c.eligibleEntries} eligible entries · {c.settledPairs} settled pairs · Quote-side paired difference {format(c.pairedDifferenceR)} R</p>
+        {c.observedIncumbentCosts && <MatchedBrokerCosts costs={c.observedIncumbentCosts} />}
         {!!c.decisionBreakdown?.length && <DecisionBreakdown rows={c.decisionBreakdown} />}
       </li>)}</ul></details>}
     <section className="space-y-1"><h5 className="font-medium">Simulated returns</h5>

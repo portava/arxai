@@ -1,44 +1,14 @@
 import { readAtiCaptureRehearsal } from "./atiCaptureRecoveryEvidence.js";
 import { DEMOTION_TRIGGERS } from "@workspace/domain/strategy-lifecycle";
 import { readAtiExecutionCosts } from "./atiExecutionCosts.js";
-import { ATI_FLEET_BASELINE, ATI_FLEET_ENGINE } from "./atiFleetDefinition.js";
+import { ATI_FLEET_BASELINE } from "./atiFleetDefinition.js";
 import { readAtiDevelopmentCapture, readAtiStudyPair, reviewAtiStudyPair } from "./atiResearchLab.js";
-import { reportAtiEntryStrategies } from "./atiRoundTrips.js";
+import { costsForEntryDecisions, type AtiReviewedPositions, type AtiEntryIdentity } from "./atiMatchedExecutionCosts.js";
 
 type StudyPair = NonNullable<Awaited<ReturnType<typeof readAtiStudyPair>>>;
 type Replay = NonNullable<Awaited<ReturnType<typeof reviewAtiStudyPair>>["archiveReplay"]>["primary"];
-type Positions = Awaited<ReturnType<typeof readAtiExecutionCosts>>["live"]["roundTrips"]["positions"];
-type EntryIdentity = { agentId: number; revision: string; symbol: string; timeframe: string; setup: string; decisionSettingsHash: string };
-
-/** Every opening fill must belong to a reproduced study decision, including scale-ins. */
-export function incumbentStudyCosts(positions: Positions, decisions: ReadonlySet<number>, identity: EntryIdentity) {
-  const matched: Positions = [];
-  const linked = new Set<number>();
-  const reconciled = new Set<number>();
-  let unresolvedPositionsWithLinkedEntry = 0, positionsWithOtherOpeningDecisions = 0;
-  for (const position of positions) {
-    const entries = position.deals.filter(row => row.leg === "ENTRY");
-    const scoped = entries.flatMap(row => {
-      const admission = row.entryStrategy;
-      if (!admission || !decisions.has(admission.decisionId)) return [];
-      const strategy = admission.strategy;
-      return strategy.engine === ATI_FLEET_ENGINE && strategy.revision === identity.revision &&
-        strategy.agentId === identity.agentId && strategy.symbol === identity.symbol && strategy.timeframe === identity.timeframe &&
-        strategy.setup === identity.setup && strategy.decisionSettingsHash === identity.decisionSettingsHash ? [admission.decisionId] : [];
-    });
-    if (!scoped.length) continue;
-    for (const id of scoped) linked.add(id);
-    if (position.state !== "OBSERVED_BROKER_ROUND_TRIP") unresolvedPositionsWithLinkedEntry++;
-    else if (position.attribution !== "VERIFIED_ENTRY_STRATEGY" || scoped.length !== entries.length) positionsWithOtherOpeningDecisions++;
-    else {
-      matched.push(position);
-      for (const id of scoped) reconciled.add(id);
-    }
-  }
-  return { reproducedDecisions: decisions.size, decisionsWithLinkedOpeningFill: linked.size,
-    decisionsWithReconciledPosition: reconciled.size, reconciledPositions: matched.length,
-    unresolvedPositionsWithLinkedEntry, positionsWithOtherOpeningDecisions,
-    byEntryStrategy: reportAtiEntryStrategies(matched).byEntryStrategy };
+export function incumbentStudyCosts(positions: AtiReviewedPositions, decisions: ReadonlySet<number>, identity: AtiEntryIdentity) {
+  return { reproducedDecisions: decisions.size, ...costsForEntryDecisions(positions, decisions, identity) };
 }
 
 async function reviewStudy(study: StudyPair["parent"], replay: Replay, reviewedAt: Date) {
