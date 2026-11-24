@@ -9,7 +9,7 @@ import { atiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
 import { atiDerivQuoteOrigin } from "../data/atiDerivQuotes.js";
 import { getBuildIdentity } from "../startup/buildIdentity.js";
 import { ATI_DERIV_ARCHIVE_GRADE_VERSION, ATI_MT5_GRADE_VERSION, ATI_RETEST_GRADE_VERSION,
-  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, timeframeConflictOutcome, type AtiShadowGrade } from "./atiShadowGrading.js";
+  ATI_SHADOW_DECISION_SCOPE, atiShadowDefinition, gradeAtiShadowPair, isAtiEntryDecision, timeframeConflictOutcome, type AtiShadowGrade } from "./atiShadowGrading.js";
 import { loadAtiMt5ReplayQuotes, type AtiMt5ReplayQuote } from "./atiMt5QuoteReplay.js";
 import { loadAtiDerivReplayQuotes } from "./atiDerivQuoteReplay.js";
 import { selectAtiMeasuredCosts, type AtiMeasuredCostProfile } from "./atiMeasuredCosts.js";
@@ -91,6 +91,73 @@ export async function readAtiDevelopmentRecoveryAnchor(registration: Registratio
   const native = fleetResearchReceipt.safeParse(row?.native);
   if (!row?.recordedAt || !row.closedBar || key !== `bar:${Date.parse(row.closedBar)}` || !native.success) return null;
   return { ...native.data, sourceIdentity: row.sourceIdentity, recordedAtMs: +row.recordedAt };
+}
+
+/** Verify paired decisions on completed development bars without reading outcome or holdout rows. */
+export async function readAtiDevelopmentCapture(ownerId: number, agentId: number, runId: string, asOf: Date) {
+  const [owned] = await db.select({ study: studies, run: runs }).from(runs)
+    .innerJoin(studies, and(eq(studies.runId, runs.id), studyScope(ownerId, agentId)))
+    .where(runScope(ownerId, agentId, runId)).limit(1);
+  if (!owned) return null;
+  const registration = verifyRegistration(owned.study, owned.run);
+  const { spec, definition, build } = registration;
+  if (definition.baselineVersion !== ATI_FLEET_BASELINE || definition.challengerVersion !== atiShadowDefinition.challengerVersion ||
+      spec.market.source !== "deriv_public" || !Number.isFinite(+asOf) || +asOf > Date.now() || +asOf < registration.registeredAtMs) return null;
+  const completedSlots = Math.max(0, Math.floor((Math.min(+asOf, spec.developmentEndsAtMs) - spec.startsAtMs) / definition.barMs));
+  const end = spec.startsAtMs + completedSlots * definition.barMs;
+  const rows = await db.select({ key: observations.observationKey, at: observations.observedAt, coverage: observations.coverage,
+    source: observations.sourceIdentity, baseline: replayColumns.baselinePlan, challenger: observations.challengerOutcome,
+    closedBar: sql<string | null>`${observations.evidence} #>> '{input,signal,marketEvidence,lastClosedCandleAt}'`,
+    native: matchedFleetReceipt(registration),
+  }).from(observations).where(and(
+    eq(observations.runId, registration.runId),
+    gte(observations.observedAt, new Date(spec.startsAtMs)), lt(observations.observedAt, new Date(end)),
+    lt(observations.recordedAt, new Date(end)), sql`${observations.recordedAt} >= ${observations.observedAt}`,
+  )).orderBy(asc(observations.observedAt), asc(observations.observationKey));
+  const parsed = rows.map(row => fleetResearchReceipt.safeParse(row.native));
+  const seen = new Set<number>(), repeated = new Set<number>();
+  for (const receipt of parsed) {
+    if (!receipt.success) continue;
+    if (seen.has(receipt.data.decisionId)) repeated.add(receipt.data.decisionId);
+    seen.add(receipt.data.decisionId);
+  }
+  const verified = new Map<number, { nativeId: number; setup: string; baseline: string; challenger: string; source: string; settings: string }>();
+  let noFeed = 0, changedSource = 0, unverified = 0, comparisonMismatches = 0;
+  let first: { source: string; settings: string } | undefined;
+  for (const [i, row] of rows.entries()) {
+    if (row.coverage === "NO_OBSERVED_FEED") { noFeed++; continue; }
+    if (row.coverage === "SOURCE_CHANGED") { changedSource++; continue; }
+    const slot = Math.floor(+row.at / definition.barMs) * definition.barMs;
+    const receipt = parsed[i]!;
+    if (row.coverage !== "OBSERVED" || !row.source || !receipt.success || repeated.has(receipt.data.decisionId) ||
+        !row.closedBar || row.key !== `bar:${slot}` || Date.parse(row.closedBar) !== slot || !row.baseline ||
+        !Array.isArray(row.baseline.checks) || row.baseline.checks.some(check => !check || typeof check.key !== "string" || typeof check.status !== "string") ||
+        receipt.data.version.build.revision !== build.revision || build.sourceState !== "clean") {
+      unverified++; continue;
+    }
+    const settings = receipt.data.version.decisionSettingsHash;
+    first ??= { source: row.source, settings };
+    if (row.source !== first.source || settings !== first.settings) { unverified++; continue; }
+    const challenger = row.baseline.setup === spec.setup ? timeframeConflictOutcome(row.baseline) : row.baseline.outcome;
+    if (challenger !== row.challenger) { comparisonMismatches++; continue; }
+    verified.set(slot, { nativeId: receipt.data.decisionId, setup: row.baseline.setup, baseline: row.baseline.outcome, challenger, source: row.source, settings });
+  }
+  const missingSlotStarts = Array.from({ length: completedSlots }, (_, i) => spec.startsAtMs + i * definition.barMs)
+    .filter(slot => !verified.has(slot));
+  const pairs = [...verified.values()];
+  const matching = pairs.filter(row => row.setup === spec.setup);
+  const counts = new Map<string, { baseline: string; challenger: string; bars: number }>();
+  for (const { baseline, challenger } of pairs) {
+    const key = JSON.stringify([baseline, challenger]), count = counts.get(key);
+    if (count) count.bars++;
+    else counts.set(key, { baseline, challenger, bars: 1 });
+  }
+  return { scope: "DEVELOPMENT_CAPTURE_ONLY" as const, runId, registrationHash: owned.study.registrationHash, specHash: canonicalResearch(spec).hash,
+    completedThroughMs: end, completedSlots, verifiedPairs: verified.size, missingSlotStarts,
+    matchingSetupPairs: matching.length, eligibleEntryPairs: matching.filter(row => isAtiEntryDecision(row.baseline)).length,
+    changedDecisions: pairs.filter(row => row.baseline !== row.challenger).length, decisionCounts: [...counts.values()],
+    additionalEvidence: { noObservedFeed: noFeed, changedSource, unverifiedObservations: unverified, comparisonMismatches },
+    pairedDecisionHash: canonicalResearch([...verified.entries()]).hash };
 }
 
 function replayInputHash(row: ReplayInput, venue: "deriv_public" | "mt5_broker") {

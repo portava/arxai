@@ -2,7 +2,7 @@ import { readAtiCaptureRehearsal } from "./atiCaptureRecoveryEvidence.js";
 import { DEMOTION_TRIGGERS } from "@workspace/domain/strategy-lifecycle";
 import { readAtiExecutionCosts } from "./atiExecutionCosts.js";
 import { ATI_FLEET_BASELINE, ATI_FLEET_ENGINE } from "./atiFleetDefinition.js";
-import { readAtiStudyPair, reviewAtiStudyPair } from "./atiResearchLab.js";
+import { readAtiDevelopmentCapture, readAtiStudyPair, reviewAtiStudyPair } from "./atiResearchLab.js";
 import { reportAtiEntryStrategies } from "./atiRoundTrips.js";
 
 type StudyPair = NonNullable<Awaited<ReturnType<typeof readAtiStudyPair>>>;
@@ -42,7 +42,13 @@ export function incumbentStudyCosts(positions: Positions, decisions: ReadonlySet
 }
 
 async function reviewStudy(study: StudyPair["parent"], replay: Replay, reviewedAt: Date) {
-  if (study.status !== "SEALED") return { status: "AWAITING_SEAL" as const };
+  if (study.status !== "SEALED") {
+    const { baselineVersion } = study.registration.definition;
+    const capture = baselineVersion === ATI_FLEET_BASELINE ? await readAtiDevelopmentCapture(
+      study.registration.ownerId, study.registration.agentId, study.registration.runId, reviewedAt,
+    ) : null;
+    return { status: "AWAITING_SEAL" as const, ...(capture && { developmentCapture: capture }) };
+  }
   const { registration, dataset } = study;
   const capture = study.result.phases.map(phase => ({
     phase: phase.name, expectedSlots: phase.expectedSlots, observedSlots: phase.observedSlots,

@@ -1,0 +1,13 @@
+{
+  "study": "v75-public-session-handoff-20261124",
+  "symbol": "R_75",
+  "transportSha256": "7dbba38bdb65a5154366bbd20431e9f0be379da1bb0d6678ee4d7c2643cc06b2",
+  "openAt": { "original": "2026-11-24T12:12:00Z", "replacement": "2026-11-24T12:59:30Z" },
+  "windowStarts": ["2026-11-24T12:45:00Z", "2026-11-24T13:00:00Z"],
+  "minutesPerWindow": 15,
+  "issueDelayMs": 3000,
+  "latestIssueDelayMs": 5000,
+  "acceptance": "The original session must price the first window. The replacement session must price the second under the existing full-tape grader, beginning from its own issuance anchor. Also grade the second window independently on the original session and record its close events. Failure or missing evidence stays in the result.",
+  "scope": "PUBLIC_QUOTE_CAPTURE_REHEARSAL",
+  "executionAuthority": "NONE"
+}

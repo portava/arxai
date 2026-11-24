@@ -2167,7 +2167,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(candidateReview.forward.incumbentCosts.status, "NO_MATCHED_ROUND_TRIP");
       assert.equal(candidateReview.primary.capture.length, 3);
       assert.equal(candidateReview.primary.simulationCosts.basis, "ASSUMED");
-      await researchTest.test("capture recovery is specific to the registered development receipt and its native decision", async () => {
+      await researchTest.test("capture recovery is specific to the registered development receipt and its native decision", async captureTest => {
         const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
         const { tmpdir } = await import("node:os");
         const { join } = await import("node:path");
@@ -2176,6 +2176,37 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         const file = join(dir, "capture.json"), old = process.env.ARX_ATI_CAPTURE_RECOVERY_RECEIPTS;
         const specimen = await studyWithQuoteArchive(base - 32 * 86_400_000, undefined, { fleet: true, includeDevelopment: true });
         const reg = specimen.registration, first = specimen.dataset.observations[0]!;
+        await captureTest.test("development capture reproduces decisions at a fixed cutoff and excludes later phases", async () => {
+          const { readAtiDevelopmentCapture } = await import("../atiResearchLab.js");
+          const read = (ms: number) => readAtiDevelopmentCapture(1, 3, reg.runId, new Date(ms));
+          const end = reg.spec.developmentEndsAtMs, bar = reg.definition.barMs;
+          assert.equal((await read(reg.spec.startsAtMs + bar - 1))?.completedSlots, 0);
+          const early = await read(reg.spec.startsAtMs + bar);
+          assert.equal(early?.verifiedPairs, 1);
+          assert.equal(early.changedDecisions, 1);
+          const final = await read(end);
+          assert.ok(final);
+          assert.equal(final.verifiedPairs, 2);
+          assert.equal(final.missingSlotStarts.length, final.completedSlots - 2);
+          assert.deepEqual(await read(reg.spec.holdoutEndsAtMs), final);
+          assert.equal(await readAtiDevelopmentCapture(2, 3, reg.runId, new Date(end)), null);
+          assert.equal(await read(Date.now() + 60_000), null);
+          await pool.query("UPDATE ati_shadow_observations SET challenger_outcome='APPROVED' WHERE run_id=$1 AND observation_key=$2",
+            [reg.runId, first.observationKey]);
+          const corrupt = await read(end);
+          assert.equal(corrupt?.verifiedPairs, 1);
+          assert.equal(corrupt.additionalEvidence.comparisonMismatches, 1);
+          assert.notEqual(corrupt.pairedDecisionHash, final.pairedDecisionHash);
+          await pool.query("UPDATE ati_shadow_observations SET challenger_outcome=$3 WHERE run_id=$1 AND observation_key=$2",
+            [reg.runId, first.observationKey, first.challenger]);
+          await pool.query("UPDATE ati_shadow_observations SET recorded_at=$3 WHERE run_id=$1 AND observation_key=$2",
+            [reg.runId, first.observationKey, new Date(reg.spec.startsAtMs + bar)]);
+          assert.equal((await read(reg.spec.startsAtMs + bar))?.verifiedPairs, 0, "an observation recorded at the exclusive cutoff stays out");
+          assert.equal((await read(reg.spec.startsAtMs + 2 * bar))?.verifiedPairs, 2);
+          await pool.query("UPDATE ati_shadow_observations SET recorded_at=$3 WHERE run_id=$1 AND observation_key=$2",
+            [reg.runId, first.observationKey, new Date(first.recordedAtMs!)]);
+          assert.deepEqual(await read(reg.spec.startsAtMs + bar), early);
+        });
         const anchor = first.fleetDecision!;
         const key = first.observationKey, settingsHash = anchor.version.decisionSettingsHash, sourceIdentity = first.sourceIdentity!;
         const identity = { ownerId: 1, agentId: 3, runId: reg.runId, registrationHash: specimen.registrationHash,

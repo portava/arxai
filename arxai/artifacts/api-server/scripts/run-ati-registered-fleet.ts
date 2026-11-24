@@ -3,9 +3,11 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
-const [action, directoryArg] = process.argv.slice(2);
-if (!directoryArg || process.argv.length !== 4 || (action !== "capture" && action !== "report" && action !== "candidate-review")) {
-  throw new Error("Use capture, report or candidate-review followed by the directory containing study-input.json");
+const [action, directoryArg, cutoffArg] = process.argv.slice(2);
+const developmentRead = action === "development-capture";
+if (!directoryArg || (developmentRead ? process.argv.length !== 5 : process.argv.length !== 4) ||
+    (!developmentRead && action !== "capture" && action !== "report" && action !== "candidate-review")) {
+  throw new Error("Pass capture, report or candidate-review and the study directory, or development-capture <study directory> <UTC cutoff>");
 }
 const url = new URL(process.env.DATABASE_URL ?? "");
 if (url.hostname !== "localhost" || url.pathname !== "/ati_registered_fleet_v1" || !url.searchParams.get("host")?.startsWith("/")) {
@@ -22,7 +24,7 @@ const directory = resolve(directoryArg);
 const spec = atiResearchInput.parse(JSON.parse(await readFile(join(directory, "study-input.json"), "utf8")));
 if (spec.baselineVersion !== ATI_FLEET_BASELINE) throw new Error("REGISTERED_FLEET_BASELINE_REQUIRED");
 const connection = await pool.connect();
-try {
+async function run() {
   if (action === "capture" && !(await connection.query("select pg_try_advisory_lock(20261124, 746) as ok")).rows[0]?.ok) {
     throw new Error("CAPTURE_ALREADY_RUNNING");
   }
@@ -43,6 +45,15 @@ try {
     [owner, agent, spec.requestId]);
   if (existing.rowCount !== 1) throw new Error("REGISTRATION_UNAVAILABLE");
   const id = String(existing.rows[0].run_id);
+  if (developmentRead) {
+    if (!cutoffArg?.endsWith("Z")) throw new Error("UTC_CUTOFF_REQUIRED");
+    const { readAtiDevelopmentCapture } = await import("../src/lib/selfTrade/atiResearchLab.js");
+    const capture = await readAtiDevelopmentCapture(owner, agent, id, new Date(cutoffArg));
+    if (!capture) throw new Error("DEVELOPMENT_CAPTURE_UNAVAILABLE");
+    if (capture.specHash !== canonicalResearch(spec).hash) throw new Error("REGISTRATION_MISMATCH");
+    console.log(JSON.stringify(capture, null, 2));
+    return;
+  }
   const study = await readAtiResearch(owner, agent, id);
   if (!study || canonicalResearch(study.registration.spec).hash !== canonicalResearch(spec).hash) throw new Error("REGISTRATION_MISMATCH");
   if (action === "capture" && study.registration.build.revision !== build.revision) throw new Error("REGISTERED_BUILD_REQUIRED");
@@ -83,6 +94,9 @@ try {
     await publish(sealed);
     console.log(JSON.stringify({ runId: id, status: sealed.status, verdict: sealed.result.verdict, datasetHash: sealed.datasetHash }));
   }
+}
+try {
+  await run();
 } finally {
   connection.release();
   await pool.end();
