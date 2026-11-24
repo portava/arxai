@@ -47,7 +47,7 @@ import { logger } from "../logger.js";
 import { compareAtiDemoFleet } from "./atiDemoFleetComparison.js";
 import { compareAtiDemoChart, type AtiDemoChartComparison } from "./atiDemoChartComparison.js";
 import { selfTradeChartConfirmation } from "./selfTradeChartConfirmation.js";
-import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
+import { selfTradeDecisionChart } from "./selfTradeDecisionChart.js";
 import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
@@ -191,8 +191,8 @@ async function buildCandidate(
     observe ? Promise.resolve(null) : routeQuote(symbol).catch(() => null),
   ]);
 
-  const cached = getCachedIntelligenceContext(symbol, PRIMARY_TF, 300) ?? getCachedIntelligenceContext(symbol, PRIMARY_TF, 200);
-  const chartConfirmation = selfTradeChartConfirmation(cached?.state ?? null);
+  const { cached, state: decisionChartState } = await selfTradeDecisionChart(symbol, PRIMARY_TF, effectiveUserId);
+  const chartConfirmation = selfTradeChartConfirmation(decisionChartState);
   const { allowed: chartGateAllowed, reason: chartGateNote } = chartConfirmation;
 
   // When the chart gate blocks, inject CHART_TRUTH_BLOCKED into the advisory
