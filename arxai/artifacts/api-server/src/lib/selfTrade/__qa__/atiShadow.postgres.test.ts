@@ -632,13 +632,25 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(measured.coverage.movementBeforeSubmission, 1);
       const row = measured.results[0]!;
       assert.equal(row.decisionBenchmarkSource, "DEMO_COMMAND_CONFIRMATION");
-      assert.equal(row.entryStrategy, null);
       assert.equal(row.result.state, "OBSERVED_BROKER_DEAL");
+      const { summarizeAtiShadowReport } = await import("../atiShadowReports.js");
+      const summarized = (demo: typeof measured) => summarizeAtiShadowReport({ ...report,
+        executionCosts: { ...report.executionCosts, demo } }).costs.demo.deals[0]!;
+      const displayed = summarized(measured);
+      assert.equal(displayed.benchmark?.source, "DEMO_COMMAND_CONFIRMATION");
+      assert.equal(displayed.benchmark?.observedAtMs, frozen.observedAtMs);
+      assert.equal(displayed.benchmark?.spread, frozen.ask - frozen.bid);
+      assert.equal(displayed.order, row.result.order);
+      assert.equal(displayed.filledLots, row.result.volume);
+      assert.equal(row.entryStrategy, null);
       assert.ok(Math.abs(row.result.adverseMovementBeforeSubmissionPriceUnits! - 0.0002) < 1e-12);
       await audit("DEMO_COMMAND_APPROVED", owner, approval, before);
       const ambiguous = await read();
       assert.equal(ambiguous.reconciledDealCount, 1);
       assert.equal(ambiguous.coverage.movementBeforeSubmission, 0);
+      assert.equal(summarized(ambiguous).benchmark, null);
+      assert.equal(summarized(ambiguous).movement, null);
+      assert.equal(summarized(ambiguous).spread, displayed.spread);
       await audit("DEMO_DISPATCH_SENT", owner, dispatch, stamp);
       assert.equal((await read()).reconciledDealCount, 0, "duplicate dispatch witnesses cannot establish a unique command");
     });
@@ -1358,6 +1370,30 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(replay.exitReason, "TARGET");
       assert.equal(replay.mt5Replay?.source, "SAMPLED_MT5_BID_ASK");
       assert.equal(replay.mt5Replay?.decisionReceiptId, mt5QuoteOrigin.receiptId);
+      const { readAtiShadowDecisionSpreads } = await import("../atiShadowReports.js");
+      assert.ok(mt5Report);
+      const anchoredReport = mt5Report;
+      const spreadReview = (owner = 1) => readAtiShadowDecisionSpreads(owner, anchoredReport);
+      const decisionReceiptId = mt5QuoteOrigin.receiptId;
+      const { rows: [originalTick] } = await pool.query("select created_at::text as stamp from bridge_v2_events where id=$1", [decisionReceiptId]);
+      const setStamp = (stamp: string | Date) => pool.query("update bridge_v2_events set created_at=$2 where id=$1", [decisionReceiptId, stamp]);
+      try {
+        const decisionAt = anchoredReport.observations[0]!.observedAt;
+        await setStamp(new Date(+decisionAt + 1));
+        assert.equal((await spreadReview()).samples.length, 0, "a receipt stored after the decision cannot establish the spread");
+        await setStamp(new Date(+decisionAt - 1));
+        const quoted = await spreadReview();
+        assert.equal(quoted.samples.length, 1);
+        assert.equal(quoted.samples[0]?.mode, "LIVE");
+        assert.equal(quoted.samples[0]?.receiptId, mt5QuoteOrigin.receiptId);
+        assert.equal(quoted.samples[0]?.spread, quoted.samples[0]!.ask - quoted.samples[0]!.bid);
+        assert.equal((await spreadReview(2)).samples.length, 0);
+        const alteredQuote = { ...anchoredReport, observations: anchoredReport.observations.map(o =>
+          ({ ...o, decisionQuote: o.decisionQuote && { ...o.decisionQuote, bid: o.decisionQuote.bid - 0.001 } })) };
+        assert.equal((await readAtiShadowDecisionSpreads(1, alteredQuote)).samples.length, 0);
+      } finally {
+        await setStamp(originalTick.stamp);
+      }
       assert.equal(replay.mt5Replay?.entryObservedAt, slot + 1810);
       assert.equal(replay.mt5Replay?.samples, 2);
       assert.equal(replay.mt5Replay?.mode, "LIVE");

@@ -56,6 +56,16 @@ function readTick(row: Row, origin: AtiMt5QuoteOrigin, symbol: string) {
 }
 type Tick = NonNullable<ReturnType<typeof readTick>>;
 
+/** A single quoted spread needs an exact decision receipt. Replay also needs a continuous price path. */
+export function matchAtiDecisionTick(row: Row, origin: AtiMt5QuoteOrigin, quote: AtiMt5ReplayQuote,
+  symbol: string, decisionAt: number) {
+  if (row.id !== origin.receiptId || atiInstrumentConflict(symbol, origin.brokerSymbol)) return null;
+  const tick = readTick(row, origin, normalizeSymbolKey(symbol));
+  return tick && tick.bid === quote.bid && tick.ask === quote.ask && tick.capturedAt === Date.parse(quote.observedAt) &&
+    tick.brokerTimeEpochMs === origin.brokerTickAtMs && tick.receivedAt <= decisionAt &&
+    decisionAt - tick.capturedAt <= QUOTE_FRESH_TTL_MS ? tick : null;
+}
+
 function continues(previous: Tick, next: Tick) {
   return next.verdict === "IN_ORDER" && next.sequence === previous.sequence + 1 &&
     next.capturedAt >= previous.capturedAt && next.capturedAt - previous.capturedAt <= QUOTE_FRESH_TTL_MS &&
@@ -80,13 +90,10 @@ export function gradeAtiMt5Replay(rows: readonly Row[], origin: AtiMt5QuoteOrigi
   const unverified = { state: "UNVERIFIED" as const };
   const key = normalizeSymbolKey(symbol);
   const index = rows.findIndex((row) => row.id === origin.receiptId);
-  if (index < 1 || !quote || atiInstrumentConflict(symbol, origin.brokerSymbol)) return unverified;
-  const anchor = readTick(rows[index]!, origin, key);
+  if (index < 1 || !quote) return unverified;
+  const anchor = matchAtiDecisionTick(rows[index]!, origin, quote, symbol, decisionAt);
   const before = readTick(rows[index - 1]!, origin, key);
-  if (!anchor || !before || !continues(before, anchor) || repeats(before, anchor) ||
-      anchor.bid !== quote.bid || anchor.ask !== quote.ask || anchor.capturedAt !== Date.parse(quote.observedAt) ||
-      anchor.brokerTimeEpochMs !== origin.brokerTickAtMs || anchor.receivedAt > decisionAt ||
-      decisionAt - anchor.capturedAt > QUOTE_FRESH_TTL_MS) return unverified;
+  if (!anchor || !before || !continues(before, anchor) || repeats(before, anchor)) return unverified;
 
   const entryDeadline = entryPolicy?.band ? expiresAt : Math.min(decisionAt + QUOTE_FRESH_TTL_MS, expiresAt);
   let previous = anchor;

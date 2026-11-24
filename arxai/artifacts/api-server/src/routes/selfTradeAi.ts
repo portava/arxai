@@ -26,7 +26,7 @@ import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
-import { listAtiShadowRuns, summarizeAtiShadowReport } from "../lib/selfTrade/atiShadowReports.js";
+import { listAtiShadowRuns, readAtiShadowDecisionSpreads, summarizeAtiShadowReport } from "../lib/selfTrade/atiShadowReports.js";
 import { appendAtiShadowObservation, gradeAtiShadowRun, readAtiShadowRun, startAtiShadowRun } from "../lib/selfTrade/atiShadow.js";
 import { readAtiPortfolioRisk } from "../lib/selfTrade/atiPortfolioReport.js";
 import { readAtiCaptureOperations } from "../lib/selfTrade/atiCaptureOperations.js";
@@ -220,7 +220,9 @@ router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId", requireUser, asyn
   if (asOf && +asOf > Date.now()) { err(res, 400, "INVALID_INPUT", "Choose an elapsed shadow report cutoff."); return; }
   const report = await readAtiShadowRun(req.authUser!.id, params.data.id, params.data.runId, asOf);
   if (!report) { err(res, 404, "NOT_FOUND", "Shadow run not found."); return; }
-  res.json(query.data.view === "summary" ? summarizeAtiShadowReport(report) : report);
+  res.json(query.data.view === "summary" ? {
+    ...summarizeAtiShadowReport(report), decisionSpreads: await readAtiShadowDecisionSpreads(req.authUser!.id, report),
+  } : report);
 });
 
 router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/operations", requireUser, async (req, res) => {

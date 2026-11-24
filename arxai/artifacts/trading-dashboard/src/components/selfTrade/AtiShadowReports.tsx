@@ -9,7 +9,11 @@ type Run = { id: string; startedAt: string; symbol: string; timeframe: string; s
 type Page = { runs: Run[]; next: string | null; asOf: string };
 type Simulation = { settledPairs: number; baseline: { totalR: number | null }; challenger: { totalR: number | null }; pairedDifferenceR: number | null };
 type Charges = { currency: string; commission: number | null; fee: number | null; swap: number | null };
-type Deal = { commandId: string; deal: string; spread: number | null; movement: number | null; slippage: number | null; charges: Charges | null };
+const benchmarkLabels = {
+  DEMO_COMMAND_CONFIRMATION: "Demo approval", VERIFIED_ENTRY_ADMISSION: "Verified entry decision", LINKED_DECISION_RECORD: "Linked decision",
+} as const;
+type Deal = { order?: string; leg?: "ENTRY" | "EXIT"; filledLots?: number; remainingLots?: number;
+  benchmark?: { source: keyof typeof benchmarkLabels; observedAtMs: number; spread: number } | null; commandId: string; deal: string; spread: number | null; movement: number | null; slippage: number | null; charges: Charges | null };
 type CostReview = { commandCount: number; reconciledDealCount: number; triggeredExits: number; deals: Deal[] };
 type PriceBenchmark = { coveredLots: number | null; eligibleLots: number | null; volumeWeightedMeanPriceUnits: number | null };
 type CashBenchmark = { coveredPositions: number; signedCashOnCoveredPositions: number | null };
@@ -28,6 +32,8 @@ type DecisionGroup = {
 };
 type Report = Run & {
   agentId: number; asOf: string; endsAt: string; decisionScope: string; baselineVersion: string; eligibleEntries: number;
+  decisionSpreads?: { matchingBars: number; samples: { receiptId: number; mode: "DEMO" | "LIVE"; brokerSymbol: string;
+    decisionAt: string; outcome: string; bid: number; ask: number; spread: number }[] };
   setupCoverage?: { noSetup: number; otherSetup: number };
   counts: { observations: number; paired: number; different: number; ungraded: number; unresolved: number; sourceChanged: number; noObservedFeed: number };
   simulations: { quoteSideOnly: Simulation; withAssumedCosts: Simulation | null; withMeasuredSlippage: Simulation | null; withMeasuredCosts: Simulation | null };
@@ -54,13 +60,33 @@ function BrokerCosts({ label, review }: { label: string; review: CostReview }) {
     <h5 className="text-sm font-medium">{label} account</h5>
     <p className="text-sm text-muted-foreground">{review.commandCount} dispatched commands · {review.reconciledDealCount} reconciled command deals · {review.triggeredExits} reconciled broker-triggered exits</p>
     {review.deals.length > 0 ? <details><summary className="cursor-pointer text-sm">Command deal costs</summary>
-      <Table><TableHeader><TableRow>{["Deal", "Spread¹", "Pre-submission movement¹", "Slippage¹", "Commission", "Fees", "Swap"].map(s => <TableHead key={s}>{s}</TableHead>)}</TableRow></TableHeader>
-        <TableBody>{review.deals.map(d => <TableRow key={d.commandId}><TableCell>{d.deal}</TableCell><TableCell>{format(d.spread)}</TableCell>
+      <Table><TableHeader><TableRow>{["Deal", "Filled / remaining lots", "Reference quote", "Reference spread¹", "Submission spread¹", "Movement to submission¹", "Slippage¹", "Commission", "Fees", "Swap"].map(s => <TableHead key={s}>{s}</TableHead>)}</TableRow></TableHeader>
+        <TableBody>{review.deals.map(d => <TableRow key={d.commandId}><TableCell><span>{d.deal}</span>
+          {d.order && <div className="text-xs text-muted-foreground">{d.leg === "EXIT" ? "Exit" : "Entry"} · Order {d.order}</div>}</TableCell>
+          <TableCell>{format(d.filledLots)} / {format(d.remainingLots)}</TableCell>
+          <TableCell>{d.benchmark ? <>{benchmarkLabels[d.benchmark.source]}
+            <div className="text-xs text-muted-foreground">{new Date(d.benchmark.observedAtMs).toISOString()}</div></> : "Unrecorded"}</TableCell>
+          <TableCell>{format(d.benchmark?.spread)}</TableCell><TableCell>{format(d.spread)}</TableCell>
           <TableCell>{format(d.movement)}</TableCell><TableCell>{format(d.slippage)}</TableCell><TableCell>{charge(d, "commission")}</TableCell>
           <TableCell>{charge(d, "fee")}</TableCell><TableCell>{charge(d, "swap")}</TableCell></TableRow>)}</TableBody></Table>
       <p className="text-xs text-muted-foreground">¹ Price units. Positive movement and slippage are adverse.</p>
     </details> : <p className="text-xs text-muted-foreground">Command execution costs are unknown.</p>}
   </section>;
+}
+
+function DecisionSpreads({ review }: { review: NonNullable<Report["decisionSpreads"]> }) {
+  const recent = review.samples.slice(-20).reverse();
+  return <details><summary className="cursor-pointer text-sm">MT5 quotes at decision time · {review.samples.length} of {review.matchingBars} matching bars</summary>
+    {recent.length > 0 ? <>
+      <p className="text-xs text-muted-foreground">Quotes include waits. Spreads are in instrument price units.{review.samples.length > recent.length && " Showing the latest 20."}</p>
+      <Table><TableHeader><TableRow>{["Decision time", "Account", "Instrument", "Current bot", "Bid", "Ask", "Quoted spread"].map(label =>
+        <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+        <TableBody>{recent.map(sample => <TableRow key={sample.decisionAt + "/" + sample.receiptId}><TableCell>{time(sample.decisionAt)}</TableCell>
+          <TableCell>{sample.mode}</TableCell><TableCell>{sample.brokerSymbol}</TableCell><TableCell>{sample.outcome}</TableCell>
+          <TableCell>{format(sample.bid)}</TableCell><TableCell>{format(sample.ask)}</TableCell><TableCell>{format(sample.spread)}</TableCell>
+        </TableRow>)}</TableBody></Table>
+    </> : <p className="text-xs text-muted-foreground">No matching bar has a verified MT5 quote receipt.</p>}
+  </details>;
 }
 
 function MatchedBrokerCosts({ costs }: { costs: IncumbentCosts }) {
@@ -80,7 +106,7 @@ function MatchedBrokerCosts({ costs }: { costs: IncumbentCosts }) {
           <p>{group.closedPositions} closed positions · Account and instrument group {group.cohortKey.slice(0, 12)}</p>
           <Table><TableHeader><TableRow><TableHead>Benchmark</TableHead><TableHead>Lot-weighted mean in price units</TableHead>
             <TableHead>Covered / eligible lots</TableHead></TableRow></TableHeader><TableBody>
-            {([["Entry decision spread", group.decisionSpread], ["Entry movement before submission", group.movementBeforeSubmission],
+            {([[mode === "demo" ? "Entry approval spread" : "Entry decision spread", group.decisionSpread], [mode === "demo" ? "Entry approval to submission" : "Entry movement before submission", group.movementBeforeSubmission],
               ["Command submission spread", group.submissionSpread], ["Command slippage", group.commandSlippage],
               ["Protective exit movement from trigger", group.triggerMovement]] as const).map(([label, metric]) =>
               <TableRow key={label}><TableCell>{label}</TableCell><TableCell>{format(metric.volumeWeightedMeanPriceUnits)}</TableCell>
@@ -135,7 +161,8 @@ export function AtiShadowResult({ report, fullUrl }: { report: Report; fullUrl: 
       <p className="text-sm">{counts.observations} observations · {counts.paired} matching pairs · {report.eligibleEntries} eligible baseline entries · {counts.different} changed decisions</p>
       {report.setupCoverage && (report.setupCoverage.noSetup > 0 || report.setupCoverage.otherSetup > 0) &&
         <p className="text-sm text-muted-foreground">Observed outside this setup · {report.setupCoverage.noSetup} with no setup · {report.setupCoverage.otherSetup} with another setup</p>}
-      <p className="text-sm text-muted-foreground">{counts.noObservedFeed} missing feed · {counts.sourceChanged} changed source · {counts.ungraded} pending · {counts.unresolved} unresolved</p></section>
+      <p className="text-sm text-muted-foreground">{counts.noObservedFeed} missing feed · {counts.sourceChanged} changed source · {counts.ungraded} pending · {counts.unresolved} unresolved</p>
+      {report.decisionSpreads && <DecisionSpreads review={report.decisionSpreads} />}</section>
     {report.fleetCohorts && report.fleetCohorts.length > 0 && <details><summary className="cursor-pointer text-sm">Fleet evidence by build, settings and feed ({report.fleetCohorts.length})</summary>
       <ul className="mt-2 space-y-2 text-sm">{report.fleetCohorts.map((c, i) => <li key={i}>
         <p className="break-all">{c.verified ? "Verified version" : "Unverified version"} · Build {c.revision ?? "unknown"} · Settings {c.settings ?? "unknown"} · Feed {c.source ?? "unknown"}</p>

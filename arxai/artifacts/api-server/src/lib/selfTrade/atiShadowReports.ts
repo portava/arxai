@@ -1,7 +1,9 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { atiShadowRunsTable as runs, db } from "@workspace/db";
+import { atiShadowRunsTable as runs, atiShadowObservationsTable as observations, bridgeV2EventsTable as ticks, db } from "@workspace/db";
 import type { readAtiShadowRun } from "./atiShadow.js";
+import { atiMt5QuoteOrigin } from "../data/atiMt5QuoteOrigin.js";
+import { matchAtiDecisionTick } from "./atiMt5QuoteReplay.js";
 import { isAtiEntryDecision } from "./atiShadowGrading.js";
 
 export async function listAtiShadowRuns(ownerId: number, agentId: number, before?: string) {
@@ -20,6 +22,34 @@ export async function listAtiShadowRuns(ownerId: number, agentId: number, before
 
 type ShadowReport = NonNullable<Awaited<ReturnType<typeof readAtiShadowRun>>>;
 
+/** Join only decisions already released by the canonical report at its knowledge cutoff. */
+export async function readAtiShadowDecisionSpreads(ownerId: number, report: ShadowReport) {
+  const matching = new Map(report.observations.filter(o => o.coverage === "OBSERVED" && o.setup === report.setup)
+    .map(o => [o.observationKey, o]));
+  const samples: { receiptId: number; mode: "DEMO" | "LIVE"; brokerSymbol: string; decisionAt: Date;
+    outcome: string; bid: number; ask: number; spread: number }[] = [];
+  if (!matching.size) return { matchingBars: 0, samples };
+  const receiptId = sql`${observations.evidence} #>> '{mt5QuoteOrigin,receiptId}'`;
+  const rows = await db.select({ key: observations.observationKey, origin: sql<unknown>`${observations.evidence} -> 'mt5QuoteOrigin'`,
+    id: ticks.id, sequence: ticks.sequence, verdict: ticks.sequenceVerdict, receivedAt: ticks.serverReceivedAtEpochMs,
+    capturedAt: ticks.eaCreatedAtEpochMs, payload: ticks.payload, bridge: ticks.bridgeConnectionId, stream: ticks.streamKey,
+  }).from(observations).innerJoin(runs, eq(runs.id, observations.runId)).innerJoin(ticks, and(
+    sql`${ticks.id} = CASE WHEN (${receiptId}) ~ '^[1-9][0-9]{0,9}$' THEN (${receiptId})::bigint END`,
+    eq(ticks.userId, ownerId), eq(ticks.protocolVersion, 2), eq(ticks.messageType, "TICK"), eq(ticks.accepted, true),
+    sql`${ticks.createdAt} <= ${observations.observedAt}`,
+  )).where(and(eq(runs.ownerId, ownerId), eq(runs.agentId, report.agentId), eq(runs.id, report.id), isNull(runs.researchSource),
+    eq(observations.coverage, "OBSERVED"), eq(observations.setup, report.setup),
+    report.asOf && lte(observations.observedAt, report.asOf), report.asOf && lte(observations.recordedAt, report.asOf))).orderBy(observations.observedAt, observations.observationKey);
+  for (const row of rows) {
+    const bar = matching.get(row.key), origin = atiMt5QuoteOrigin.safeParse(row.origin);
+    if (!bar?.decisionQuote || !origin.success || row.bridge !== origin.data.bridgeConnectionId || row.stream !== origin.data.streamKey) continue;
+    const tick = matchAtiDecisionTick(row, origin.data, bar.decisionQuote, report.symbol, +bar.observedAt);
+    if (tick) samples.push({ receiptId: tick.id, mode: origin.data.mode, brokerSymbol: tick.brokerSymbol,
+      decisionAt: bar.observedAt, outcome: bar.baselineOutcome, bid: tick.bid, ask: tick.ask, spread: tick.ask - tick.bid });
+  }
+  return { matchingBars: matching.size, samples };
+}
+
 export function summarizeAtiShadowReport(report: ShadowReport) {
   const { id, agentId, symbol, timeframe, setup, startedAt, endsAt, asOf, baselineVersion,
     challengerVersion, counts, simulations, executionCosts, decisionScope, assumedCosts } = report;
@@ -29,8 +59,14 @@ export function summarizeAtiShadowReport(report: ShadowReport) {
   const noSetup = outsideSetup.filter(row => row.setup === "NONE").length;
   function costs(mode: "demo" | "live") {
     const { commandCount, reconciledDealCount, coverage, results } = executionCosts[mode];
-    const deals = results.flatMap(({ commandId, result }) => result.state === "OBSERVED_BROKER_DEAL" ? [{
-      commandId, deal: result.deal, spread: result.spreadPriceUnits, movement: result.adverseMovementBeforeSubmissionPriceUnits,
+    const deals = results.flatMap(({ commandId, decisionBenchmarkSource, result }) => result.state === "OBSERVED_BROKER_DEAL" ? [{
+      commandId, deal: result.deal, order: result.order, leg: result.leg, filledLots: result.volume,
+      remainingLots: result.remainingRequestedVolume,
+      benchmark: result.decisionQuote && decisionBenchmarkSource ? {
+        source: decisionBenchmarkSource, observedAtMs: result.decisionQuote.observedAtMs,
+        spread: result.decisionQuote.ask - result.decisionQuote.bid,
+      } : null,
+      spread: result.spreadPriceUnits, movement: result.adverseMovementBeforeSubmissionPriceUnits,
       slippage: result.adverseSlippagePriceUnits, charges: result.charges,
     }] : []);
     return { commandCount, reconciledDealCount, coverage, deals,

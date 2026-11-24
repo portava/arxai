@@ -12,6 +12,8 @@ const simulation = { settledPairs: 0, baseline: { totalR: null }, challenger: { 
 const costs = { commandCount: 0, reconciledDealCount: 0, triggeredExits: 0, deals: [] };
 const report = { ...run, agentId: 9, asOf, endsAt: asOf, baselineVersion: "current-v1", eligibleEntries: 0, assumedCosts: null,
   setupCoverage: { noSetup: 1, otherSetup: 2 },
+  decisionSpreads: { matchingBars: 13, samples: [{ receiptId: 23, mode: "DEMO", brokerSymbol: "Volatility 75 Index", decisionAt: asOf,
+    outcome: "WAIT", bid: 40200, ask: 40215.78, spread: 15.78 }] },
   counts: { observations: 17, paired: 13, different: 0, sourceChanged: 0, noObservedFeed: 1, ungraded: 0, unresolved: 0 },
   simulations: { quoteSideOnly: simulation, withAssumedCosts: null, withMeasuredCosts: null, withMeasuredSlippage: null },
   costs: { demo: costs, live: costs } };
@@ -25,6 +27,11 @@ test("owner-scoped report opens on demand at a fixed cutoff and clears on identi
   fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
   await screen.findByText("No eligible entries. This run has no return comparison.");
   expect(screen.getByText(/1 with no setup · 2 with another setup/)).toBeTruthy();
+  fireEvent.click(screen.getByText(/MT5 quotes at decision time · 1 of 13 matching bars/));
+  const quoteRow = screen.getByText("Volatility 75 Index").closest("tr")!;
+  expect(within(quoteRow).getByText("DEMO")).toBeTruthy();
+  expect(within(quoteRow).getByText("WAIT")).toBeTruthy();
+  expect(within(quoteRow).getByText("15.78")).toBeTruthy();
   expect(screen.getAllByText("Command execution costs are unknown.")).toHaveLength(2);
   expect(screen.getByRole("link", { name: /full report/ }).getAttribute("href")).toBe(`/api/self-trade-ai/agents/9/ati-shadow-runs/${run.id}?asOf=${encodeURIComponent(asOf)}`);
   expect(get.mock.calls.map(([url]) => url)).toEqual(["/api/self-trade-ai/agents/9/ati-shadow-runs", `/api/self-trade-ai/agents/9/ati-shadow-runs/${run.id}?asOf=${encodeURIComponent(asOf)}&view=summary`]);
@@ -34,7 +41,7 @@ test("owner-scoped report opens on demand at a fixed cutoff and clears on identi
 });
 test("renders negative paired performance, observed zero charges and unknown fields independently", async () => {
   const result = { ...report, eligibleEntries: 2, simulations: { ...report.simulations, quoteSideOnly: { settledPairs: 2, baseline: { totalR: 1 }, challenger: { totalR: -1 }, pairedDifferenceR: -2 } },
-    costs: { ...report.costs, demo: { ...costs, commandCount: 2, reconciledDealCount: 1, deals: [{ commandId: "A", deal: "42", spread: 0.1, movement: null, slippage: 0,
+    costs: { ...report.costs, demo: { ...costs, commandCount: 2, reconciledDealCount: 1, deals: [{ commandId: "A", deal: "42", order: "71", leg: "ENTRY", filledLots: 0.02, remainingLots: 0.01, benchmark: { source: "DEMO_COMMAND_CONFIRMATION", observedAtMs: Date.parse(asOf), spread: 0.04 }, spread: 0.1, movement: 0.03, slippage: 0,
       charges: { currency: "USD", commission: 0, fee: -0.02, swap: null } }] } } };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("?asOf=") ? ok(result) : ok({ runs: [run], asOf, next: null })));
   render(panel(new QueryClient())); fireEvent.click(screen.getByRole("button", { name: /ATI shadow reports/ }));
@@ -43,7 +50,11 @@ test("renders negative paired performance, observed zero charges and unknown fie
   fireEvent.click(screen.getByText("Command deal costs"));
   const row = screen.getByText("42").closest("tr")!;
   expect(within(row).getByText("0 USD")).toBeTruthy(); expect(within(row).getByText("-0.02 USD")).toBeTruthy();
-  expect(within(row).getAllByText("Unknown")).toHaveLength(2);
+  expect(within(row).getByText("Demo approval")).toBeTruthy();
+  expect(within(row).getByText("Entry · Order 71")).toBeTruthy();
+  expect(within(row).getByText("0.02 / 0.01")).toBeTruthy();
+  expect(within(row).getByText("0.04")).toBeTruthy();
+  expect(within(row).getAllByText("Unknown")).toHaveLength(1);
 });
 test("retains both decisions and the recorded chart-readiness reason for each fleet group", async () => {
   const pilot = { ...report, fleetCohorts: [{ revision: "v1", settings: "abc", source: "deriv_public", verified: true,
