@@ -34,6 +34,23 @@ test("the public quote monitor identifies exactly the observed outage and respec
   assert.equal(during?.state, "IMPAIRED");
   assert.deepEqual(during?.timeline?.gaps, []);
   assert.equal(during?.timeline?.overdueTailTicks, 6);
+  const deadline = gap.afterEpoch * 1000 + 5000;
+  const beforeDeadline = await diagnoseAtiQuoteStream(present.row, deadline - 1, load);
+  assert.equal(beforeDeadline?.timeline?.interruption, null);
+  const atDeadline = await diagnoseAtiQuoteStream(present.row, deadline, load, async (last, cutoff) => {
+    assert.equal(last.epoch, gap.afterEpoch);
+    assert.equal(cutoff, deadline);
+    return null;
+  });
+  assert.equal(atDeadline?.timeline?.interruption?.firstOverdueAt, deadline);
+  assert.equal(atDeadline?.timeline?.interruption?.firstOtherPublicRelease, null);
+  const other = { streamId: "037ca701-352b-44cb-b3f6-ab35f8fee6cd", epoch: gap.afterEpoch + 2,
+    releasedAt: deadline - 1 };
+  const elsewhere = await diagnoseAtiQuoteStream(present.row, deadline, load, async () => other);
+  assert.deepEqual(elsewhere?.timeline?.interruption?.firstOtherPublicRelease, other);
+  assert.ok(elsewhere?.timeline && atDeadline?.timeline);
+  assert.equal(elsewhere.priceReplay, atDeadline.priceReplay);
+  assert.equal(elsewhere?.state, "IMPAIRED");
   const corrupted = structuredClone(present.frames);
   corrupted[8]!.streamId = "other";
   assert.equal(

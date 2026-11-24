@@ -12,6 +12,7 @@ export const atiDerivQuoteFramesTable = pgTable("ati_deriv_quote_frames", {
   ask: doublePrecision("ask"),
 }, (t) => ({
   frameId: primaryKey({ columns: [t.streamId, t.symbol, t.epoch] }),
+  symbolEpoch: index("ati_deriv_quote_frames_symbol_epoch_idx").on(t.symbol, t.epoch),
 }));
 
 export const atiShadowRunsTable = pgTable("ati_shadow_runs", {

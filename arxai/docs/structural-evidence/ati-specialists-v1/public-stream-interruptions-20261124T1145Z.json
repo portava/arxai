@@ -1,0 +1,144 @@
+{
+  "source": "ati_specialist_forward_renewal",
+  "symbol": "V75",
+  "windows": [
+    {
+      "window": "2026-11-24T08:30:00.000Z",
+      "receiptId": "structural-18ad303e8b9faced8d634ce5f07b127b5084321d1a1d5a029f9eb90fac2345a0",
+      "state": "IMPAIRED",
+      "priceReplay": "INCOMPLETE_TAPE",
+      "cutoff": "2026-11-24T08:45:05.000Z",
+      "missedAtEnd": 5,
+      "interruption": {
+        "firstOverdueAt": 1795509895000,
+        "issuanceStreamId": "a46c4501-21a0-428c-9d61-1c5789c7161b",
+        "lastReleasedAt": 1795509890141,
+        "firstOtherPublicRelease": {
+          "streamId": "008f94e4-92a1-4234-a728-9e8d50b19192",
+          "epoch": 1795509904,
+          "releasedAt": 1795509904094
+        }
+      },
+      "cutoffsVerified": [
+        "firstOverdueAt-1ms",
+        "firstOverdueAt",
+        "otherReleasedAt-1ms",
+        "otherReleasedAt"
+      ]
+    },
+    {
+      "window": "2026-11-24T09:30:00.000Z",
+      "receiptId": "structural-e92c06460c91c1df074d0b24c7c34ff78688e3b14e882454fbfa409dbe38aa1a",
+      "state": "IMPAIRED",
+      "priceReplay": "INCOMPLETE_TAPE",
+      "cutoff": "2026-11-24T09:45:05.000Z",
+      "missedAtEnd": 4,
+      "interruption": {
+        "firstOverdueAt": 1795513497000,
+        "issuanceStreamId": "008f94e4-92a1-4234-a728-9e8d50b19192",
+        "lastReleasedAt": 1795513492117,
+        "firstOtherPublicRelease": {
+          "streamId": "4e5a4224-c303-4606-8a4b-8452913c5dd6",
+          "epoch": 1795513504,
+          "releasedAt": 1795513504129
+        }
+      },
+      "cutoffsVerified": [
+        "firstOverdueAt-1ms",
+        "firstOverdueAt",
+        "otherReleasedAt-1ms",
+        "otherReleasedAt"
+      ]
+    },
+    {
+      "window": "2026-11-24T10:30:00.000Z",
+      "receiptId": "structural-d3737514a27801a62c0687e1bccd72fb44bab64dfec52a3cc91179c03b4e37c8",
+      "state": "IMPAIRED",
+      "priceReplay": "INCOMPLETE_TAPE",
+      "cutoff": "2026-11-24T10:45:05.000Z",
+      "missedAtEnd": 3,
+      "interruption": {
+        "firstOverdueAt": 1795517099000,
+        "issuanceStreamId": "4e5a4224-c303-4606-8a4b-8452913c5dd6",
+        "lastReleasedAt": 1795517094176,
+        "firstOtherPublicRelease": {
+          "streamId": "0ba52b33-ee16-42c8-8193-a939d42a04ed",
+          "epoch": 1795517104,
+          "releasedAt": 1795517104117
+        }
+      },
+      "cutoffsVerified": [
+        "firstOverdueAt-1ms",
+        "firstOverdueAt",
+        "otherReleasedAt-1ms",
+        "otherReleasedAt"
+      ]
+    },
+    {
+      "window": "2026-11-24T11:30:00.000Z",
+      "receiptId": "structural-5980eee817bf8c7815122f7ce7b26bc37717d8c92ee2016cf30e9e8bcff0f1f2",
+      "state": "IMPAIRED",
+      "priceReplay": "INCOMPLETE_TAPE",
+      "cutoff": "2026-11-24T11:45:05.000Z",
+      "missedAtEnd": 2,
+      "interruption": {
+        "firstOverdueAt": 1795520701000,
+        "issuanceStreamId": "0ba52b33-ee16-42c8-8193-a939d42a04ed",
+        "lastReleasedAt": 1795520696307,
+        "firstOtherPublicRelease": {
+          "streamId": "5821fa9c-b3fb-4256-a904-e84d3cbd5dcf",
+          "epoch": 1795520704,
+          "releasedAt": 1795520704169
+        }
+      },
+      "cutoffsVerified": [
+        "firstOverdueAt-1ms",
+        "firstOverdueAt",
+        "otherReleasedAt-1ms",
+        "otherReleasedAt"
+      ]
+    }
+  ],
+  "independentPublicProbe": {
+    "start": {
+      "time": "2026-11-24T11:04:22.223Z",
+      "event": "START",
+      "study": "V75_PUBLIC_SESSION_CONTINUITY",
+      "transportSha256": "7dbba38bdb65a5154366bbd20431e9f0be379da1bb0d6678ee4d7c2643cc06b2",
+      "endsAt": "2026-11-24T12:09:22.222Z",
+      "symbol": "R_75",
+      "executionAuthority": "NONE"
+    },
+    "socketOpen": {
+      "time": "2026-11-24T11:04:23.401Z",
+      "event": "SOCKET_OPEN",
+      "number": 1
+    },
+    "checkpoints": [
+      {
+        "time": "2026-11-24T11:44:22.273Z",
+        "event": "CHECKPOINT",
+        "number": 1,
+        "firstEpoch": 1795518262,
+        "lastEpoch": 1795520662,
+        "pingReplies": 79,
+        "discoveryReplies": 9,
+        "ticks": 1201,
+        "ticksAllSessions": 1201
+      },
+      {
+        "time": "2026-11-24T11:45:22.274Z",
+        "event": "CHECKPOINT",
+        "number": 1,
+        "firstEpoch": 1795518262,
+        "lastEpoch": 1795520722,
+        "pingReplies": 81,
+        "discoveryReplies": 10,
+        "ticks": 1231,
+        "ticksAllSessions": 1231
+      }
+    ],
+    "cadenceChangesOrSocketClosuresThroughCheckpoint": [],
+    "statusAtCutoff": "IN_PROGRESS"
+  }
+}

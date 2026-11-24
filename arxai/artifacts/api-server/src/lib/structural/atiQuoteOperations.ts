@@ -1,5 +1,5 @@
-import { and, eq, lte } from "drizzle-orm";
-import { chartDecisionReceiptsTable as receipts, db } from "@workspace/db";
+import { and, eq, gt, lte, ne, sql } from "drizzle-orm";
+import { atiDerivQuoteFramesTable as quotes, chartDecisionReceiptsTable as receipts, db } from "@workspace/db";
 import {
   ATI_SPECIALIST_VERSION,
   forecastHorizonBars,
@@ -18,6 +18,31 @@ import { readSpecialistTape } from "./atiSpecialistTape.js";
 
 type Receipt = { forecast: StructuralForecast; issuedAt: number; recordedAt: number };
 
+// This lookup only supplies operational evidence. Pricing always uses the issuance stream.
+async function firstOtherPublicRelease(
+  last: AtiDerivQuoteFrame, cutoff: number,
+): Promise<Pick<AtiDerivQuoteFrame, "streamId" | "epoch" | "releasedAt"> | null> {
+  const [frame] = await db
+    .select({ streamId: quotes.streamId, epoch: quotes.epoch, releasedAt: quotes.releasedAt })
+    .from(quotes)
+    .where(and(
+      eq(quotes.symbol, last.symbol),
+      ne(quotes.streamId, last.streamId),
+      gt(quotes.epoch, last.epoch),
+      lte(quotes.epoch, Math.floor(cutoff / 1000)),
+      gt(quotes.releasedAt, last.releasedAt),
+      lte(quotes.releasedAt, cutoff),
+      gt(quotes.receivedAt, 0),
+      sql`${quotes.releasedAt} >= ${quotes.receivedAt}`,
+      sql`${quotes.releasedAt} - 1000 * ${quotes.epoch} between 0 and 3000`,
+      gt(quotes.bid, 0),
+      sql`${quotes.ask} >= ${quotes.bid} and ${quotes.ask} < 'Infinity'::double precision`,
+    ))
+    .orderBy(quotes.releasedAt, quotes.epoch, quotes.streamId)
+    .limit(1);
+  return frame ?? null;
+}
+
 export async function diagnoseAtiQuoteStream(
   row: Receipt,
   asOf: number,
@@ -25,6 +50,7 @@ export async function diagnoseAtiQuoteStream(
     origin: AtiDerivQuoteOrigin,
     through: number,
   ) => PromiseLike<readonly AtiDerivQuoteFrame[]> = loadAtiDerivReplayQuotes,
+  otherPublicRelease?: typeof firstOtherPublicRelease,
 ) {
   const f = row.forecast,
     s = f.atiSpecialists,
@@ -129,6 +155,13 @@ export async function diagnoseAtiQuoteStream(
   const impaired =
     clockFaults + sequenceFaults + staleQuotes + missingSides + gaps.length + overdueTailTicks > 0;
   const ready = "prices" in reading;
+  const interruption = overdueTailTicks > 0 && !ready ? {
+    firstOverdueAt: (last.epoch + cadence) * 1000 + 3000,
+    issuanceStreamId: last.streamId,
+    lastReleasedAt: last.releasedAt,
+    // A null result means the archive was checked. Offline replays may omit the lookup.
+    ...(otherPublicRelease && { firstOtherPublicRelease: await otherPublicRelease(last, cutoff) }),
+  } : null;
   return {
     ...scope,
     state: impaired
@@ -145,6 +178,7 @@ export async function diagnoseAtiQuoteStream(
       lastEpoch: last.epoch,
       gaps,
       overdueTailTicks,
+      interruption,
       clockFaults,
       sequenceFaults,
       staleQuotes,
@@ -183,6 +217,8 @@ export async function readAtiQuoteOperations(ownerId: number, receiptId: string,
   const report = await diagnoseAtiQuoteStream(
     { forecast: payload.forecast, issuedAt: payload.issuedAt, recordedAt: +row.recordedAt },
     +asOf,
+    loadAtiDerivReplayQuotes,
+    firstOtherPublicRelease,
   );
   return report && { receiptId, ...report };
 }
