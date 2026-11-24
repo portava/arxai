@@ -33,7 +33,7 @@ import {
   isValidCacheOhlc,
 } from "./candleCache.js";
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
-import { getDerivCandles } from "./providers/derivProvider.js";
+import { getDerivCandles, resolveDerivFeedSymbol } from "./providers/derivProvider.js";
 import {
   depthTargetDaysFor,
   getProviderRoute,
@@ -400,12 +400,14 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   let page = await readCachedCandles({ symbol, timeframe, source, before, limit });
 
   // ── Deep-fetch older history when the cache is short for this window ─────────
-  // Only providers exposing a true older-than cursor (Deriv synthetics today)
+  // Only mapped markets on a provider exposing an older-than cursor
   // can page deeper server-side. Forward-only sources (assistant free tiers) and
   // EA-push-only (mt5_broker) report an honest limit instead of fabricating.
+  const canPageOlder = sourceSupportsDeepCursor(source) && (assetClass === "synthetic" ||
+    (source === "deriv_public" && resolveDerivFeedSymbol(symbol) !== null));
   const wantOlder = page.count < limit;
   if (wantOlder && !page.hasOlderInCache) {
-    if (sourceSupportsDeepCursor(source) && assetClass === "synthetic") {
+    if (canPageOlder) {
       let cursorIso = page.oldest ?? before ?? null;
       let fetches = 0;
       while (page.count < limit && fetches < MAX_DERIV_BACKFILL_FETCHES) {
@@ -539,7 +541,7 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   // provider can still page back (and hasn't reported a limit this call).
   const hasMoreHistory =
     page.hasOlderInCache ||
-    (sourceSupportsDeepCursor(source) && assetClass === "synthetic" && !providerLimitReached);
+    (canPageOlder && !providerLimitReached);
 
   const nextBefore = page.oldest; // oldest returned bar is the next back-cursor
 

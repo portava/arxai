@@ -188,7 +188,7 @@ export function getProviderRoute(assetClass: AssetClass): ProviderRouteEntry {
 }
 
 /** Whether the given history source can page OLDER history server-side. Only the
- *  Deriv synthetic feed supports a true older-than cursor today. */
+ *  Deriv history transports support a true older-than cursor on their mapped markets. */
 export function sourceSupportsDeepCursor(source: string | null): boolean {
   if (!source) return false;
   return (source === "deriv" || source === "deriv_public");

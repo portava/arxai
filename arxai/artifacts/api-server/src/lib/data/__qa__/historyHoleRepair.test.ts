@@ -17,7 +17,7 @@ let providerHas: (t: number) => boolean = () => true;
 let producer = "deriv_public";
 
 mock.module("../marketDataRouter.js", { namedExports: {
-  classifySymbol: () => "synthetic",
+  classifySymbol: (symbol: string) => symbol === "EURUSD" ? "forex" : "synthetic",
   routeCandles: async () => ({ ok: true, symbol: "V25_1S", assetClass: "synthetic", primaryProvider: "deriv_public",
     candles: [bar(tip)], provenance: null, userMessage: "", attempts: [] }),
 } });
@@ -82,4 +82,17 @@ test("a response from a different producer is not written into this series", asy
 test("a back page is not repaired; only the newest window is", async () => {
   const out = await getCandleHistory({ symbol: "V25_1S", timeframe: "M1", limit: 300, source: "deriv_public", before: new Date(tip + M1).toISOString() });
   assert.equal(out.ok, true); assert.deepEqual(fetches, []);
+});
+
+test("public FX pages before the oldest bar without filling the market closure", async () => {
+  cache.clear();
+  cache.set(tip, bar(tip));
+  const priorSessionEnd = tip - 2 * 24 * 60 * M1;
+  providerHas = t => t <= priorSessionEnd;
+  const out = await getCandleHistory({symbol:"EURUSD", timeframe:"M1", limit:300});
+  assert.equal(out.source,"deriv_public");
+  assert.equal(out.candles.length,300);
+  assert.deepEqual(fetches,[tip/1000-1]);
+  assert.ok(out.candles.slice(0,-1).every(c=>Date.parse(c.time)<=priorSessionEnd));
+  assert.equal(out.hasMoreHistory,true);
 });
