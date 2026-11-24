@@ -75,7 +75,7 @@ test("every opening fill must identify the same fleet strategy before any positi
   const shared = report(increased);
   assert.equal(shared.positions[0]?.attribution, "VERIFIED_ENTRY_STRATEGY");
   assert.equal(shared.byEntryStrategy[0]?.closedPositions, 1);
-  assert.deepEqual(shared.byEntryStrategy[0]?.decisionToFill, { coveredFills: 0, totalFills: 2, volumeWeightedMeanPriceUnits: null });
+  assert.deepEqual(shared.byEntryStrategy[0]?.decisionToFill, { coveredFills: 0, totalFills: 2, coveredLots: 0, eligibleLots: 0.3, volumeWeightedMeanPriceUnits: null });
   assert.equal(report({ ...increased, entryStrategy: { ...witness, cohortKey: "3".repeat(64),
     strategy: { ...strategy, setup: "REVERSAL" } } }).positions[0]?.attribution, "MULTIPLE_ENTRY_STRATEGIES");
   assert.deepEqual(report({ ...increased, entryStrategy: null }).byEntryStrategy, []);
@@ -110,4 +110,29 @@ test("combined charges cover only positions with all three charges on every deal
   assert.deepEqual(euros?.combinedDealCharges, { coveredPositions: 1, signedCashOnCoveredPositions: 0 });
   assert.equal(dollars?.positionsInCurrency, 3);
   assert.deepEqual(dollars?.combinedDealCharges, { coveredPositions: 1, signedCashOnCoveredPositions: -0.29999999 });
+});
+
+test("cost benchmark coverage reflects lot size and trade leg for each position and strategy", () => {
+  const command = entry.benchmark;
+  assert.equal(command.source, "COMMAND_QUOTES");
+  const legs: AtiPositionLeg[] = [
+    { ...entry, volume: 0.01, entryStrategy: witness, benchmark: { ...command, adverseSlippagePriceUnits: 0 } },
+    { ...entry, deal: "604", order: "504", volume: 0.29, entryStrategy: witness },
+    { ...partial, benchmark: { ...command, adverseSlippagePriceUnits: 0.22 } },
+    { ...final, closedPositionDealTickets: ["601","604","602","603"],
+      benchmark: { source: "BROKER_TRIGGER", triggerPrice: null, adverseMovementFromTriggerPriceUnits: null } },
+  ];
+  const report = reportAtiEntryStrategies(atiRoundTrips("LIVE", legs, 0).positions);
+  const benchmarks = report.positions[0]?.priceBenchmarks;
+  assert.ok(benchmarks);
+  const slippage = benchmarks.commandSlippage;
+  assert.equal(slippage.coveredFills, 2);
+  assert.equal(slippage.totalFills, 3);
+  assert.equal(slippage.coveredLots, 0.11);
+  assert.equal(slippage.eligibleLots, 0.4);
+  assert.ok(Math.abs(slippage.volumeWeightedMeanPriceUnits! - 0.2) < 1e-12);
+  assert.deepEqual(report.byEntryStrategy[0]?.commandSlippage, slippage);
+  assert.deepEqual(benchmarks.triggerMovement, { coveredFills: 0, totalFills: 1, coveredLots: 0, eligibleLots: 0.2,
+    volumeWeightedMeanPriceUnits: null });
+  assert.equal(reportAtiEntryStrategies(atiRoundTrips("LIVE", legs.slice(0, 1), 0).positions).positions[0]?.priceBenchmarks, null);
 });

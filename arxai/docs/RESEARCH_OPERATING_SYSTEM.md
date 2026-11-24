@@ -208,3 +208,21 @@ To repeat the rehearsal from `artifacts/api-server`, build with
 `node build.mjs --ati-shadow-study` and run
 `node scripts/rehearse-ati-report-recovery.mjs <verified archive directory>`
 with the isolated pilot's `DATABASE_URL`.
+
+## Fill size and conflicting broker deal claims
+
+For each reconciled position and verified entry strategy, each price benchmark
+shows the number of fills and the lot volume with a measurement, alongside
+the eligible fill count and lot volume. Decision benchmarks cover entries,
+submission benchmarks cover commanded fills, and trigger movement covers
+protective exits. Each mean weights the measured fills by volume. In the
+split-fill regression, two of three commanded fills had slippage observations.
+They covered 0.11 of 0.40 traded lots. A separate protective exit had 0.20
+eligible lots and no measured trigger movement.
+
+The current command report checks for other claims on the same broker deal
+across the owner's account and mode, including commands outside the selected
+dispatch window. A conflict removes the measurement and leaves the original
+command in the denominator. A historical review at an earlier cutoff keeps
+its original result. Current reports use the current settlement fields for
+legacy commands that predate complete event snapshots.

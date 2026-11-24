@@ -31,7 +31,7 @@ export function exactAtiLotUnits(volumes: readonly number[]) {
   return decimalUnits(volumes).units;
 }
 
-function signedCashTotal(values: readonly number[]) {
+function decimalTotal(values: readonly number[]) {
   if (!values.length || !values.every(Number.isFinite)) return null;
   const { units, places } = decimalUnits(values);
   const total = Number(`${units.reduce((sum, n) => sum + n, 0n)}e-${places}`);
@@ -75,7 +75,7 @@ function assessPosition(mode: Mode, legs: AtiPositionLeg[], duplicates: Set<stri
   const sameCurrency = !!currency && ordered.every(row => row.charges?.currency === currency);
   function signedAmount(field: "commission" | "fee" | "swap") {
     if (!sameCurrency || !ordered.every(row => row.charges?.[field] != null)) return null;
-    return signedCashTotal(ordered.map(row => row.charges![field]!));
+    return decimalTotal(ordered.map(row => row.charges![field]!));
   }
   const positionKey = atiPositionKey(mode, last.accountBinding, last.positionId);
   return { positionKey, brokerSymbol: last.brokerSymbol, positionId: last.positionId,
@@ -106,16 +106,32 @@ type Position = ReturnType<typeof assessPosition>;
 type Deal = Position["deals"][number];
 
 function volumeWeightedCost(deals: Deal[], select: (deal: Deal) => number | null) {
-  let coveredFills = 0, volume = 0, sum = 0;
+  const measuredLots: number[] = [];
+  let weightedSum = 0;
   for (const deal of deals) {
     const value = select(deal);
-    if (value == null) continue;
-    coveredFills++;
-    volume += deal.volume;
-    sum += deal.volume * value;
+    if (value == null || !Number.isFinite(value)) continue;
+    measuredLots.push(deal.volume);
+    weightedSum += deal.volume * value;
   }
-  return { coveredFills, totalFills: deals.length, volumeWeightedMeanPriceUnits:
-    volume > 0 && Number.isFinite(sum) && Number.isFinite(volume) ? sum / volume : null };
+  const coveredLots = measuredLots.length ? decimalTotal(measuredLots) : 0;
+  const eligibleLots = deals.length ? decimalTotal(deals.map(deal => deal.volume)) : 0;
+  return { coveredFills: measuredLots.length, totalFills: deals.length, coveredLots, eligibleLots,
+    volumeWeightedMeanPriceUnits: coveredLots && Number.isFinite(weightedSum) ? weightedSum / coveredLots : null };
+}
+
+function priceBenchmarks(deals: Deal[]) {
+  const commands = deals.filter(row => row.benchmark.source === "COMMAND_QUOTES");
+  const protective = deals.filter(row => row.benchmark.source === "BROKER_TRIGGER");
+  const entry = commands.filter(row => row.leg === "ENTRY");
+  return {
+    decisionToFill: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseFillVsDecisionMidPriceUnits : null),
+    decisionSpread: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.decisionSpreadPriceUnits : null),
+    movementBeforeSubmission: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseMovementBeforeSubmissionPriceUnits : null),
+    submissionSpread: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.submissionSpreadPriceUnits : null),
+    commandSlippage: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseSlippagePriceUnits : null),
+    triggerMovement: volumeWeightedCost(protective, row => row.benchmark.source === "BROKER_TRIGGER" ? row.benchmark.adverseMovementFromTriggerPriceUnits : null),
+  };
 }
 
 export function reportAtiEntryStrategies(input: Position[]) {
@@ -128,7 +144,8 @@ export function reportAtiEntryStrategies(input: Position[]) {
       : "VERIFIED_ENTRY_STRATEGY" as const;
     const entryStrategy = first && attribution === "VERIFIED_ENTRY_STRATEGY"
       ? { cohortKey: first.cohortKey, strategy: first.strategy } : null;
-    return { ...position, attribution, entryStrategy };
+    return { ...position, attribution, entryStrategy,
+      priceBenchmarks: position.state === "OBSERVED_BROKER_ROUND_TRIP" ? priceBenchmarks(position.deals) : null };
   });
   const groups = new Map<string, Position[]>();
   for (const position of positions) {
@@ -139,9 +156,6 @@ export function reportAtiEntryStrategies(input: Position[]) {
   const byEntryStrategy = [...groups].map(([cohortKey, group]) => {
     const deals = group.flatMap(p => p.deals);
     const strategy = deals.find(row => row.leg === "ENTRY" && row.entryStrategy)!.entryStrategy!.strategy;
-    const commands = deals.filter(row => row.benchmark.source === "COMMAND_QUOTES");
-    const protective = deals.filter(row => row.benchmark.source === "BROKER_TRIGGER");
-    const entry = commands.filter(row => row.leg === "ENTRY");
     const currencies = [...new Set(group.flatMap(p => p.charges ? [p.charges.currency] : []))].sort();
     const signedDealCharges = currencies.map(currency => {
       const same = group.filter(p => p.charges?.currency === currency);
@@ -154,18 +168,13 @@ export function reportAtiEntryStrategies(input: Position[]) {
           coveredPositions++;
           for (const value of values) amounts.push(value);
         }
-        return { coveredPositions, signedCashOnCoveredPositions: signedCashTotal(amounts) };
+        return { coveredPositions, signedCashOnCoveredPositions: decimalTotal(amounts) };
       }
       return { currency, positionsInCurrency: same.length, commission: cash("commission"), fee: cash("fee"),
         swap: cash("swap"), combinedDealCharges: cash("commission", "fee", "swap") };
     });
     return { cohortKey, strategy, positionKeys: group.map(p => p.positionKey), closedPositions: group.length,
-      decisionToFill: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseFillVsDecisionMidPriceUnits : null),
-      decisionSpread: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.decisionSpreadPriceUnits : null),
-      movementBeforeSubmission: volumeWeightedCost(entry, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseMovementBeforeSubmissionPriceUnits : null),
-      submissionSpread: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.submissionSpreadPriceUnits : null),
-      commandSlippage: volumeWeightedCost(commands, row => row.benchmark.source === "COMMAND_QUOTES" ? row.benchmark.adverseSlippagePriceUnits : null),
-      triggerMovement: volumeWeightedCost(protective, row => row.benchmark.source === "BROKER_TRIGGER" ? row.benchmark.adverseMovementFromTriggerPriceUnits : null),
+      ...priceBenchmarks(deals),
       positionsWithoutSingleChargeCurrency: group.filter(p => !p.charges).length, signedDealCharges };
   });
   return { positions, byEntryStrategy, entryAttributionCoverage: {

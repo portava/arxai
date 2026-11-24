@@ -34,12 +34,15 @@ type CommandCostQuery = {
   snapshotWindow?: boolean;
   dispatchUntil?: Date;
   evidenceAsOf?: Date;
+  // Older receipts depend on settlement fields on the current command row.
+  // Historical readers must reconstruct these fields from time-bound events.
+  useCurrentCommandState?: boolean;
 };
 
 async function readCommandCosts(ownerId: number, symbol: string, from: Date, until: Date, options: CommandCostQuery = {}) {
   const { history, liveCommandIds, monitorDispatches, position, snapshotWindow, dispatchUntil = until } = options;
   const bound = history ?? position;
-  const asOf = !!bound || snapshotWindow || liveCommandIds !== undefined;
+  const asOf = !options.useCurrentCommandState && (!!bound || snapshotWindow || liveCommandIds !== undefined);
   // SQL timestamps can carry microseconds that a JavaScript Date would truncate.
   const known = (column: typeof events.receivedAt | typeof events.occurredAt | typeof security.createdAt | typeof demo.terminalAt) =>
     options.evidenceAsOf ? lte(column, options.evidenceAsOf) : lt(column, until);
@@ -124,13 +127,13 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
       inArray(events.commandId, liveRows.map((row) => row.id)),
       asOf ? or(inArray(events.eventType, ["DISPATCH_SENT", "LATE_RESULT_RETAINED"]), sql`${events.eventType} LIKE 'RESULT_%'`)
         : inArray(events.eventType, ["DISPATCH_SENT", "RESULT_LIVE_FILLED", "RESULT_LIVE_PARTIALLY_FILLED", "LATE_RESULT_RETAINED"]),
-      asOf ? and(known(events.receivedAt), known(events.occurredAt)) : undefined,
+      asOf || options.evidenceAsOf ? and(known(events.receivedAt), known(events.occurredAt)) : undefined,
     )) : [],
     demoRows.length ? db.select({ metadata: security.metadata, availableAt: security.createdAt })
       .from(security).where(and(
         eq(security.actorUserId, ownerId), eq(security.eventType, "DEMO_DISPATCH_SENT"),
         eq(security.status, "ALLOWED"), gte(security.createdAt, from),
-        asOf ? known(security.createdAt) : undefined,
+        asOf || options.evidenceAsOf ? known(security.createdAt) : undefined,
         inArray(sql<string>`${security.metadata}->>'commandId'`, demoRows.map((row) => row.commandId)),
       )) : [],
   ]);
@@ -275,7 +278,7 @@ function withDistinctDeals<T extends { dealKey: string | null; result: { state: 
     ? { ...row, instrumentWitness: null, entryStrategy: null, decisionBenchmarkSource: null, result: unresolved("DEAL_CLAIMED_BY_MULTIPLE_COMMANDS") } : row);
 }
 
-async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCostRow[], mode: "LIVE" | "DEMO", until: Date, evidenceAsOf?: Date) {
+async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCostRow[], mode: "LIVE" | "DEMO", until: Date, evidenceAsOf?: Date, useCurrentCommandState = false) {
   // A command outside the dispatch window can claim the same account/deal.
   // It can invalidate the cost measurement without becoming a cohort member.
   const groups = new Map<string, { accountBinding: string; brokerSymbol: string; tickets: Set<string> }>();
@@ -293,7 +296,7 @@ async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCos
     for (let i = 0; i < deals.length; i += 256) {
       const batch = deals.slice(i, i + 256);
       const checked = await readCommandCosts(ownerId, brokerSymbol, new Date(0), until, {
-        position: { accountBinding, brokerSymbol, mode, positions: [], tickets: batch }, evidenceAsOf,
+        position: { accountBinding, brokerSymbol, mode, positions: [], tickets: batch }, evidenceAsOf, useCurrentCommandState,
       });
       for (const ticket of batch) if (checked.disputed.has("deal:" + ticket)) disputed.add(JSON.stringify([accountBinding, ticket]));
     }
@@ -332,6 +335,7 @@ export async function readAtiLiveMemoryCosts(ownerId: number, commandIds: string
 export async function readAtiExecutionCosts(ownerId: number, symbol: string, from: Date, windowEnd: Date, asOf?: Date) {
   // Dispatch windows are half-open. Integer millisecond archives use the next millisecond
   // as an exclusive bound. SQL receipt timestamps use the exact inclusive review time.
+  const claimCutoff = asOf ?? new Date(Date.now());
   const until = asOf ? new Date(+asOf + 1) : windowEnd;
   const dispatchUntil = until < windowEnd ? until : windowEnd;
   const followPosition = until > windowEnd;
@@ -443,9 +447,11 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
   const snapshot = asOf ? initial : await readCommandCosts(ownerId, symbol, from, until, { snapshotWindow: true });
   const [liveTrips, demoTrips] = await Promise.all([positionReport("LIVE", snapshot.liveResults, brokerTriggeredExits.live),
     positionReport("DEMO", snapshot.demoResults, brokerTriggeredExits.demo)]);
-  const [reviewedLive, reviewedDemo] = asOf ? await Promise.all([
-    checkAccountDealClaims(ownerId, liveResults, "LIVE", until, asOf), checkAccountDealClaims(ownerId, demoResults, "DEMO", until, asOf),
-  ]) : [liveResults, demoResults];
+  const claimUntil = new Date(+claimCutoff + 1);
+  const [reviewedLive, reviewedDemo] = await Promise.all([
+    checkAccountDealClaims(ownerId, liveResults, "LIVE", claimUntil, claimCutoff, !asOf),
+    checkAccountDealClaims(ownerId, demoResults, "DEMO", claimUntil, claimCutoff, !asOf),
+  ]);
   function reportMode(rows: readonly CommandCostRow[], roundTrips: typeof liveTrips) {
     const results = rows.map(({ dealKey: _key, instrumentWitness: _witness, ...row }) => row)
       .sort((a, b) => +(a.sentAt ?? 0) - +(b.sentAt ?? 0) || a.commandId.localeCompare(b.commandId));

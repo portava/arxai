@@ -319,7 +319,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       [1, 1, "801"], [2, 1, "802"], [3, 2, "801"], [4, 1, "801"],
       [5, 1, "805"], [6, 1, "806"], [7, 1, "807"],
     ] as const) {
-      const deal = id >= 5 ? `90${id}` : liveCost.deal;
+      const deal = id === 1 || id === 3 ? liveCost.deal : `90${id}`;
       await pool.query(`INSERT INTO arx_live_commands VALUES
         ($1,$2,11,$3,'PLACE_LIVE_MARKET_ORDER',$4,'LIVE_FILLED','EURUSD','BUY','{}',$5,0.02,1.1003,0.02,$1,3)`,
       [id, `live-${id}`, ownerId, stamp, order]);
@@ -328,8 +328,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       }]);
       await pool.query("INSERT INTO execution_events VALUES ($1,'RESULT_LIVE_FILLED','ea',2,$2)", [id, {
         applied: true, commandId: `live-${id}`, reportingBridgeConnectionId: 11,
-        atiCostEvidence: id >= 5 ? { ...liveCost, order, deal } : liveCost,
-        terminalResultEvidence: id >= 5 ? { ...resultWire, resultOrder: order, resultDeal: deal } : resultWire,
+        atiCostEvidence: { ...liveCost, order: id === 2 ? liveCost.order : order, deal },
+        terminalResultEvidence: { ...resultWire, resultOrder: id === 2 ? liveCost.order : order, resultDeal: deal },
       }]);
     }
     await pool.query("INSERT INTO execution_events VALUES (4,'LATE_RESULT_RETAINED','ea',3,$1)", [{
@@ -760,6 +760,16 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.deepEqual(disputedDemo.demo.results[0]?.result, { state: "UNRESOLVED", reason: "CONFLICTING_DEAL_CLAIM" });
       assert.equal(disputedDemo.demo.reconciledDealCount, 0);
       assert.deepEqual(await demoWindow(demoKnownAt), lateDemo);
+      let currentDemoTime = demoKnownAt;
+      const demoReviewClock = mock.method(Date, "now", () => currentDemoTime);
+      try {
+        assert.equal((await readAtiExecutionCosts(1, demoSymbol, stamp, endOfEntryWindow)).demo.reconciledDealCount, 1);
+        currentDemoTime = demoKnownAt + 1000;
+        const current = await readAtiExecutionCosts(1, demoSymbol, stamp, endOfEntryWindow);
+        assert.deepEqual(current.demo.results.map(r => r.commandId), ["demo-late-window"]);
+        assert.deepEqual(current.demo.results[0]?.result, disputedDemo.demo.results[0]?.result);
+      } finally { demoReviewClock.mock.restore(); }
+
 
       const { atiEntryStrategy, atiDispatchAdmission, atiVerifiedAdmission } = await import("../atiStrategyOrigin.js");
       const command = { commandId: "round-trip-7001", agentId: 3, decisionId: 7001, side: "BUY",
@@ -871,6 +881,14 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const monitored = await readAtiDispatchWindow(1, bridgeOrigin, stamp, afterClaim);
       assert.deepEqual(monitored.find(r => r.commandId === "round-trip-7001")?.result, memory.get("round-trip-7001"));
       assert.deepEqual((await reviewEntryWindow(+claimAt)).live.results[0]?.result, memory.get("round-trip-7001"));
+      const liveReviewClock = mock.method(Date, "now", () => +claimAt);
+      try {
+        const current = await readAtiExecutionCosts(1, symbol, stamp, endOfEntryWindow);
+        assert.deepEqual(current.live.results.map(r => r.commandId), ["round-trip-7001"]);
+        assert.deepEqual(current.live.results[0]?.result, memory.get("round-trip-7001"));
+        assert.equal(current.live.coverage.slippage, 0);
+      } finally { liveReviewClock.mock.restore(); }
+
 
     });
 
