@@ -304,3 +304,12 @@ Adding the pattern vote to the three other votes lowered the renewal pool's mean
 Pricing uses observed public bid/ask quotes with the registered slippage assumption. Broker costs are unknown. The original cohort can still price at most 12 of its 32 planned windows and the renewal cohort at most 29. Both registered minimums are 30. This is an interim review.
 
 The [original comparison](structural-evidence/ati-specialists-v1/forward-coverage-through-1115/original/coverage-review.json) and [renewal comparison](structural-evidence/ati-specialists-v1/forward-coverage-through-1115/renewal/coverage-review.json) include every elapsed receipt and gap. To reproduce a comparison, use the coverage audit command above with the corresponding saved snapshot in `forward-coverage-through-1115`, the cutoff `2026-11-24T11:15:00.000Z` and the final option `--comparisons`.
+
+
+## MT5 protective-exit costs across report boundaries
+
+An in-window stop-loss or take-profit deal now carries its order's earlier fills into the quantity check. The reader follows matching order and deal tickets on the same owner, account and mode up to the review cutoff. A sibling reported under another symbol can reveal a conflict. Only deals anchored in the requested window appear in the results.
+
+The isolated PostgreSQL regression reproduced the former error on a 0.02-lot order. A 0.02-lot fill before the window left no volume for the 0.01-lot in-window fill. The corrected reader withholds the latter's costs. The suite also covers a contradictory receipt on another order, an earlier receipt that supplies missing order history and a later contradiction that stays invisible at the earlier cutoff.
+
+The four [isolated V75 owner inventories](ati-evidence/v75-m5-owner-cost-inventory-20261124T1124Z.json) returned zero attested dispatches and reconciled deals in both DEMO and LIVE through the 11:24 UTC review. Broker costs remain unmeasured. The native shadow pilot reproduced both archived file hashes at its original cutoff.

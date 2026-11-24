@@ -1,0 +1,167 @@
+{
+  "scope": "ISOLATED_V75_OWNER_INVENTORY",
+  "measuredExecutionCosts": null,
+  "researchDatabases": [
+    {
+      "database": "ati_observed_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T11:24:00.000Z",
+      "evidenceAsOf": "2026-11-24T11:24:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_fleet_versioned_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T11:24:00.000Z",
+      "evidenceAsOf": "2026-11-24T11:24:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_observed_shadow_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T11:24:00.000Z",
+      "evidenceAsOf": "2026-11-24T11:24:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    },
+    {
+      "database": "ati_registered_fleet_v1",
+      "ownerId": 1,
+      "symbol": "V75",
+      "start": "2026-11-24T00:00:00.000Z",
+      "dispatchEndExclusive": "2026-11-24T11:24:00.000Z",
+      "evidenceAsOf": "2026-11-24T11:24:00.000Z",
+      "live": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      },
+      "demo": {
+        "commandCount": 0,
+        "reconciledDealCount": 0,
+        "brokerTriggeredDeals": 0,
+        "reconciledRoundTrips": 0,
+        "strategyCohorts": 0,
+        "coverage": {
+          "spread": 0,
+          "slippage": 0,
+          "movementBeforeSubmission": 0,
+          "commission": 0,
+          "fees": 0,
+          "swap": 0
+        }
+      }
+    }
+  ],
+  "reproducedShadowPilot": {
+    "asOf": "2026-11-24T10:37:14.312Z",
+    "pairedDecisions": 13,
+    "unrepresentedEntries": 0,
+    "sha256": {
+      "capture-coverage.json": "319a370e714c83c582437e22ceee197a2a8b69852d0e808bb306773287020729",
+      "shadow-report.json": "103d604fe5eec1df1d839ff7b999c255a25c589002bed5ca5d6fe7241a4bb250"
+    }
+  }
+}

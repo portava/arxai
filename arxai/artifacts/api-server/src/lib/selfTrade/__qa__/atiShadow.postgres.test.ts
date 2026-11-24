@@ -475,6 +475,46 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       return { ...historyPayload, dealTicket, volume, atiTriggeredExit: { ...historyPayload.atiTriggeredExit, orderTicket,
         order: { ...historyPayload.atiTriggeredExit.order, ticket: orderTicket } } };
     }
+    await t.test("triggered-exit reconciliation checks earlier and cross-symbol order claims without adding deals to the window", async () => {
+      const { readAtiTriggeredExits } = await import("../atiTriggeredExits.js");
+      const owner = 93, bridgeId = 93, at = fillTime;
+      const send = (payload: unknown, offset: number) => ingestHistory(payload, { owner, bridgeId, receivedAt: at + offset });
+      const window = (asOf: number) => readAtiTriggeredExits(owner, "EURUSD", new Date(at + 10), new Date(at + 12), [], undefined, new Date(at + asOf + 1));
+      await send(withHistoryOrder("45101", "45001", 0.02), 5);
+      await send(withHistoryOrder("45102", "45001", 0.01), 10);
+      await send(withHistoryOrder("45103", "45002", 0.02), 11);
+      const first = await window(11);
+      assert.deepEqual(first.live.results.map(row => row.deal), ["45102", "45103"]);
+      assert.deepEqual(first.live.results[0]?.result, { state: "UNRESOLVED", reason: "CONFLICTING_ORDER_VOLUME_OR_IDENTITY" });
+      assert.equal(first.live.reconciledDeals, 1);
+      assert.equal(first.live.results[0]?.receivedAtMs, at + 10);
+      const sibling = withHistoryOrder("45104", "45002", 0.01);
+      const otherSymbol = { ...sibling, symbol: "GBPCHF", atiTriggeredExit: { ...sibling.atiTriggeredExit,
+        order: { ...sibling.atiTriggeredExit.order, symbol: "GBPCHF" } } };
+      await send(otherSymbol, 12);
+      assert.deepEqual(await window(11), first);
+      const later = await window(12);
+      assert.equal(later.live.reconciledDeals, 0);
+      assert.equal(later.live.results[1]?.evidenceReceivedAtMs, at + 12);
+      const overlap = await readAtiTriggeredExits(owner, "EURUSD", new Date(at + 10), new Date(at + 13), []);
+      assert.deepEqual(overlap.live.results, later.live.results);
+      const retry = withHistoryOrder("45105", "45003", 0.01);
+      await send(retry, 15);
+      await send({ ...retry, atiTriggeredExit: { ...retry.atiTriggeredExit, order: null } }, 17);
+      const enriched = await readAtiTriggeredExits(owner, "EURUSD", new Date(at + 17), new Date(at + 18), []);
+      assert.equal(enriched.live.reconciledDeals, 1, "earlier matching order history can verify the in-window receipt");
+      assert.equal(enriched.live.results[0]?.receivedAtMs, at + 17);
+      assert.equal(enriched.live.results[0]?.evidenceReceivedAtMs, at + 17);
+      // The conflict is on a context-only sibling, re-reported against another order.
+      const split = withHistoryOrder("45106", "45004");
+      await send(split, 20);
+      await send(withHistoryOrder("45106", "45005"), 21);
+      await send(withHistoryOrder("45107", "45004"), 22);
+      const disputed = await readAtiTriggeredExits(owner, "EURUSD", new Date(at + 22), new Date(at + 23), []);
+      assert.deepEqual(disputed.live.results.map(r => [r.deal, r.result]), [
+        ["45107", { state: "UNRESOLVED", reason: "CONFLICTING_ORDER_VOLUME_OR_IDENTITY" }],
+      ]);
+    });
     await ingestHistory(historyPayload);
     await ingestHistory(historyPayload); // Same broker deal, distinct transport receipt.
     await ingestHistory({ ...historyPayload, dealTicket: "932" }); // Second execution of the same 0.02-lot order.

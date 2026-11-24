@@ -23,7 +23,7 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
   const exactNames = new Set(positionScope ? [positionScope.brokerSymbol] : atiBrokerNames(symbol));
   const names = new Set([...exactNames, ...instrumentWitnesses.map(({ brokerSymbol }) => brokerSymbol)]);
   const witnessed = new Set(instrumentWitnesses.map((w) => identity(w.mode, w.accountBinding, w.brokerSymbol)));
-  const fields = { receivedAtMs: history.serverReceivedAtEpochMs, payload: history.payload };
+  const fields = { id: history.id, receivedAtMs: history.serverReceivedAtEpochMs, payload: history.payload };
   const rows = await db.select(fields).from(history).where(and(
     eq(history.userId, ownerId), sql`${history.messageType} = 'DEAL_HISTORY' AND ${history.accepted}`,
     isNotNull(history.bridgeConnectionId), gte(history.serverReceivedAtEpochMs, +from), lt(history.serverReceivedAtEpochMs, +until),
@@ -36,55 +36,68 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     ) : undefined,
   )).orderBy(history.serverReceivedAtEpochMs, history.id);
 
-  const anchored = new Set<string>();
-  if (evidenceUntil > until) {
-    const groups = new Map<string, { mode: Mode; account: string; orders: Set<string>; tickets: Set<string> }>();
-    for (const row of rows) {
-      const parsed = dealHistory.safeParse(row.payload);
-      if (!parsed.success) continue;
-      const deal = parsed.data, t = deal.atiTriggeredExit;
-      if (!exactNames.has(deal.symbol) && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
-      const key = identity(t.mode, t.accountBinding);
-      const group = groups.get(key) ?? { mode: t.mode, account: t.accountBinding, orders: new Set(), tickets: new Set() };
-      group.orders.add(t.orderTicket);
-      group.tickets.add(deal.dealTicket);
-      groups.set(key, group);
-      anchored.add(identity(t.mode, t.accountBinding, deal.dealTicket));
-    }
-    // Later receipts can complete or contradict an anchored order. Sibling
-    // fills participate in the order-volume check without joining the cohort.
-    for (const { mode, account, orders, tickets } of groups.values()) {
-      const later = await db.select(fields).from(history).where(and(
+  // The reporting window selects deals. Their order volume and identity must be
+  // checked against all receipts available by the cutoff, across native symbols.
+  const anchored = new Map<string, { receivedAtMs: number; deal: ReturnType<typeof dealHistory.parse> }>();
+  const groups = new Map<string, { mode: Mode; account: string; orders: Set<string>; tickets: Set<string> }>();
+  const contextual = new Map<number, (typeof rows)[number]>();
+  let historyRowsWithoutVerifiedAccount = 0;
+  for (const row of rows) {
+    const parsed = dealHistory.safeParse(row.payload);
+    if (!parsed.success) { historyRowsWithoutVerifiedAccount++; continue; }
+    const deal = parsed.data, t = deal.atiTriggeredExit;
+    if (row.receivedAtMs == null || (!positionScope && !exactNames.has(deal.symbol) &&
+        !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol)))) continue;
+    const key = identity(t.mode, t.accountBinding);
+    const group = groups.get(key) ?? { mode: t.mode, account: t.accountBinding, orders: new Set<string>(), tickets: new Set<string>() };
+    group.orders.add(t.orderTicket);
+    group.tickets.add(deal.dealTicket);
+    groups.set(key, group);
+    const dealKey = identity(t.mode, t.accountBinding, deal.dealTicket);
+    if (!anchored.has(dealKey)) anchored.set(dealKey, { receivedAtMs: row.receivedAtMs, deal });
+    contextual.set(row.id, row);
+  }
+  for (const { mode, account, orders, tickets } of groups.values()) {
+    let nextOrders = [...orders], nextTickets = [...tickets];
+    // An order can have several deals, and a contradictory replay can claim a
+    // different order for one of them. Follow newly discovered keys once.
+    while (nextOrders.length || nextTickets.length) {
+      const related = await db.select(fields).from(history).where(and(
         eq(history.userId, ownerId), sql`${history.messageType} = 'DEAL_HISTORY' AND ${history.accepted}`,
-        isNotNull(history.bridgeConnectionId), gte(history.serverReceivedAtEpochMs, +until), lt(history.serverReceivedAtEpochMs, +evidenceUntil),
+        isNotNull(history.bridgeConnectionId), lt(history.serverReceivedAtEpochMs, +evidenceUntil),
         eq(sql<string>`${history.payload} #>> '{atiTriggeredExit,accountBinding}'`, account),
         eq(sql<string>`${history.payload} #>> '{atiTriggeredExit,mode}'`, mode),
-        or(sql`${history.payload} ->> 'dealTicket' = any(${sql.param([...tickets])}::text[])`,
-          sql`${history.payload} #>> '{atiTriggeredExit,orderTicket}' = any(${sql.param([...orders])}::text[])`),
-      )).orderBy(history.serverReceivedAtEpochMs, history.id);
-      for (const row of later) rows.push(row);
+        or(sql`${history.payload} ->> 'dealTicket' = any(${sql.param(nextTickets)}::text[])`,
+          sql`${history.payload} #>> '{atiTriggeredExit,orderTicket}' = any(${sql.param(nextOrders)}::text[])`),
+      ));
+      nextOrders = [];
+      nextTickets = [];
+      for (const row of related) {
+        if (contextual.has(row.id)) continue;
+        const parsed = dealHistory.safeParse(row.payload);
+        if (!parsed.success) continue;
+        contextual.set(row.id, row);
+        const { dealTicket, atiTriggeredExit: { orderTicket } } = parsed.data;
+        if (!orders.has(orderTicket)) { orders.add(orderTicket); nextOrders.push(orderTicket); }
+        if (!tickets.has(dealTicket)) { tickets.add(dealTicket); nextTickets.push(dealTicket); }
+      }
     }
   }
   type Sample = { deal: ReturnType<typeof dealHistory.parse>; receivedAtMs: number; evidenceReceivedAtMs: number; conflict: boolean };
   const deals = new Map<string, Sample>();
   const orderKey = (t: Sample["deal"]["atiTriggeredExit"]) => identity(t.mode, t.accountBinding, t.orderTicket);
   const disputedOrders = new Map<string, number>();
-  let historyRowsWithoutVerifiedAccount = 0;
   let duplicateReceipts = 0;
-  for (const row of rows) {
+  const ordered = [...contextual.values()].sort((a,b) => (a.receivedAtMs ?? 0) - (b.receivedAtMs ?? 0) || a.id - b.id);
+  for (const row of ordered) {
     const parsed = dealHistory.safeParse(row.payload);
-    if (!parsed.success) {
-      historyRowsWithoutVerifiedAccount++;
-      continue;
-    }
+    if (!parsed.success) continue;
     const deal = parsed.data;
     const t = deal.atiTriggeredExit;
-    const afterWindow = row.receivedAtMs != null && row.receivedAtMs >= +until;
-    if (!positionScope && !afterWindow && !exactNames.has(deal.symbol) && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
     const key = identity(t.mode, t.accountBinding, deal.dealTicket);
     const prior = deals.get(key);
     if (prior) {
-      if (!afterWindow || anchored.has(key)) duplicateReceipts++;
+      if (anchored.has(key)) duplicateReceipts++;
       // An order history record may arrive after its deal. Accept enrichment
       // of a missing order, and withhold evidence when two observations disagree.
       const { order, closedPositionDealTickets: closed, ...evidence } = t;
@@ -129,7 +142,10 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     order.conflicted ||= fills.reduce((sum, volume) => sum + volume, 0n) > requested!;
   }
 
-  const outcomes = samples.map(({ deal, receivedAtMs, evidenceReceivedAtMs, conflict }) => {
+  const outcomes = samples.flatMap(({ deal, evidenceReceivedAtMs, conflict }) => {
+    const anchor = anchored.get(identity(deal.atiTriggeredExit.mode, deal.atiTriggeredExit.accountBinding, deal.dealTicket));
+    if (!anchor) return [];
+    const reported = anchor.deal.atiTriggeredExit;
     const t = deal.atiTriggeredExit;
     const order = t.order;
     const aggregate = orders.get(orderKey(t));
@@ -154,13 +170,12 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
           : (deal.price - t.triggerPrice) * (deal.side === "BUY" ? 1 : -1),
         charges: t.currency ? { currency: t.currency, commission: deal.commission ?? null, fee: t.fee, swap: deal.swap ?? null } : null,
       };
-    return { mode: t.mode, accountBinding: t.accountBinding, positionId: t.positionId, receivedAtMs,
-      evidenceReceivedAtMs: aggregate?.conflicted ? Math.max(evidenceReceivedAtMs, aggregate.knownAt) : evidenceReceivedAtMs, trigger: t.trigger, brokerSymbol: deal.symbol,
-      order: t.orderTicket, deal: deal.dealTicket, result };
+    return [{ mode: reported.mode, accountBinding: reported.accountBinding, positionId: reported.positionId, receivedAtMs: anchor.receivedAtMs,
+      evidenceReceivedAtMs: Math.max(anchor.receivedAtMs, evidenceReceivedAtMs, aggregate?.conflicted ? aggregate.knownAt : 0),
+      trigger: reported.trigger, brokerSymbol: anchor.deal.symbol, order: reported.orderTicket, deal: deal.dealTicket, result }];
   });
   function report(mode: Mode) {
-    const results = outcomes.filter((row) => row.mode === mode &&
-      (evidenceUntil <= until || anchored.has(identity(row.mode, row.accountBinding, row.deal))));
+    const results = outcomes.filter(row => row.mode === mode).sort((a,b) => a.receivedAtMs - b.receivedAtMs);
     const measured = results.flatMap(({ result }) => result.state === "OBSERVED_BROKER_TRIGGERED_EXIT" ? [result] : []);
     return {
       distinctDeals: results.length,
