@@ -1,0 +1,151 @@
+{
+  "policy": "ati-shadow-capture-monitor-v1",
+  "runId": "5e2f983a-81e8-48fd-8152-5734414336e8",
+  "symbol": "V75",
+  "baselineVersion": "self-trade-owner-fleet-supervised-v1",
+  "challengerVersion": "skip-timeframe-conflict-v1",
+  "timeframe": "M5",
+  "asOf": "2026-11-24T10:37:14.312Z",
+  "captureMode": "PERSISTED_OWNER_FLEET_CYCLES",
+  "executionAuthority": "NONE",
+  "slots": [
+    {
+      "startsAt": 1795509434292,
+      "endsAt": 1795509600000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795509600000,
+      "endsAt": 1795509900000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795509900000,
+      "endsAt": 1795510200000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795510200000,
+      "endsAt": 1795510500000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795510500000,
+      "endsAt": 1795510800000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795510800000,
+      "endsAt": 1795511100000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795511100000,
+      "endsAt": 1795511400000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795511400000,
+      "endsAt": 1795511700000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795511700000,
+      "endsAt": 1795512000000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 2,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 1
+    },
+    {
+      "startsAt": 1795512000000,
+      "endsAt": 1795512300000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795512300000,
+      "endsAt": 1795512600000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795512600000,
+      "endsAt": 1795512900000,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    },
+    {
+      "startsAt": 1795512900000,
+      "endsAt": 1795513034292,
+      "complete": true,
+      "state": "OBSERVED",
+      "reads": 1,
+      "observed": 1,
+      "sourceChanged": 0,
+      "unavailable": 0
+    }
+  ],
+  "missingCompletedSlots": 0,
+  "lastSavedReceiptAt": 1795512919439,
+  "grading": {
+    "eligible": 0,
+    "waitingForGrade": 0,
+    "overdueObservationKeys": [],
+    "unresolvedGrades": 0
+  }
+}

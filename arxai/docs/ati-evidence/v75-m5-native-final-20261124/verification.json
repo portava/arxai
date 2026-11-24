@@ -1,0 +1,37 @@
+{
+  "runId": "5e2f983a-81e8-48fd-8152-5734414336e8",
+  "asOf": "2026-11-24T10:37:14.312Z",
+  "state": "REPRODUCED",
+  "nativeCycleOutcomes": [
+    {
+      "setup": "TREND_CONTINUATION",
+      "outcome": "DENIED",
+      "cycles": 1,
+      "represented": 1
+    },
+    {
+      "setup": "TREND_CONTINUATION",
+      "outcome": "WAIT",
+      "cycles": 111,
+      "represented": 13
+    }
+  ],
+  "unrepresentedEntries": 0,
+  "nativeReceipts": 14,
+  "paired": 13,
+  "pinnedRevision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+  "captureEnded": true,
+  "gradingHorizonElapsed": true,
+  "reportSha256": "103d604fe5eec1df1d839ff7b999c255a25c589002bed5ca5d6fe7241a4bb250",
+  "coverageSha256": "319a370e714c83c582437e22ceee197a2a8b69852d0e808bb306773287020729",
+  "collectorFinalAsOf": "2026-11-24T10:37:14.312Z",
+  "independentFixedCutoffReadbacks": 2,
+  "pinnedBuildReadback": {
+    "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+    "nativeObservationsMatched": 14,
+    "captureSlotsMatched": 13,
+    "gradeCountsAndSimulationTotalsMatched": true,
+    "brokerCountsAndCoverageMatched": true
+  },
+  "verificationToolRevision": "0e13f437b"
+}
