@@ -2,6 +2,8 @@ import { and, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { bridgeV2EventsTable as history, db } from "@workspace/db";
 import { bridgeV2 } from "@workspace/domain";
 
+import { exactAtiLotUnits } from "./atiRoundTrips.js";
+
 const extension = bridgeV2.atiTriggeredExitTraceSchema;
 const dealHistory = bridgeV2.dealHistoryPayloadSchema.extend({
   dealTicket: extension.shape.orderTicket,
@@ -16,12 +18,11 @@ const identity = (...parts: string[]) => JSON.stringify(parts);
 const unresolved = (reason: string) => ({ state: "UNRESOLVED" as const, reason });
 
 export async function readAtiTriggeredExits(ownerId: number, symbol: string, from: Date, until: Date,
-  instrumentWitnesses: InstrumentWitness[], positionScope?: AtiPositionScope) {
+  instrumentWitnesses: InstrumentWitness[], positionScope?: AtiPositionScope, evidenceUntil = until) {
   const names = new Set([symbol, ...instrumentWitnesses.map(({ brokerSymbol }) => brokerSymbol)]);
   const witnessed = new Set(instrumentWitnesses.map((w) => identity(w.mode, w.accountBinding, w.brokerSymbol)));
-  const rows = await db.select({
-    receivedAtMs: history.serverReceivedAtEpochMs, payload: history.payload,
-  }).from(history).where(and(
+  const fields = { receivedAtMs: history.serverReceivedAtEpochMs, payload: history.payload };
+  const rows = await db.select(fields).from(history).where(and(
     eq(history.userId, ownerId), sql`${history.messageType} = 'DEAL_HISTORY' AND ${history.accepted}`,
     isNotNull(history.bridgeConnectionId), gte(history.serverReceivedAtEpochMs, +from), lt(history.serverReceivedAtEpochMs, +until),
     positionScope ? undefined : inArray(sql<string>`${history.payload}->>'symbol'`, [...names]),
@@ -33,8 +34,39 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     ) : undefined,
   )).orderBy(history.serverReceivedAtEpochMs, history.id);
 
+  const anchored = new Set<string>();
+  if (evidenceUntil > until) {
+    const groups = new Map<string, { mode: Mode; account: string; orders: Set<string>; tickets: Set<string> }>();
+    for (const row of rows) {
+      const parsed = dealHistory.safeParse(row.payload);
+      if (!parsed.success) continue;
+      const deal = parsed.data, t = deal.atiTriggeredExit;
+      if (deal.symbol !== symbol && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
+      const key = identity(t.mode, t.accountBinding);
+      const group = groups.get(key) ?? { mode: t.mode, account: t.accountBinding, orders: new Set(), tickets: new Set() };
+      group.orders.add(t.orderTicket);
+      group.tickets.add(deal.dealTicket);
+      groups.set(key, group);
+      anchored.add(identity(t.mode, t.accountBinding, deal.dealTicket));
+    }
+    // Later receipts can complete or contradict an anchored order. Sibling
+    // fills participate in the order-volume check without joining the cohort.
+    for (const { mode, account, orders, tickets } of groups.values()) {
+      const later = await db.select(fields).from(history).where(and(
+        eq(history.userId, ownerId), sql`${history.messageType} = 'DEAL_HISTORY' AND ${history.accepted}`,
+        isNotNull(history.bridgeConnectionId), gte(history.serverReceivedAtEpochMs, +until), lt(history.serverReceivedAtEpochMs, +evidenceUntil),
+        eq(sql<string>`${history.payload} #>> '{atiTriggeredExit,accountBinding}'`, account),
+        eq(sql<string>`${history.payload} #>> '{atiTriggeredExit,mode}'`, mode),
+        or(sql`${history.payload} ->> 'dealTicket' = any(${sql.param([...tickets])}::text[])`,
+          sql`${history.payload} #>> '{atiTriggeredExit,orderTicket}' = any(${sql.param([...orders])}::text[])`),
+      )).orderBy(history.serverReceivedAtEpochMs, history.id);
+      for (const row of later) rows.push(row);
+    }
+  }
   type Sample = { deal: ReturnType<typeof dealHistory.parse>; receivedAtMs: number; evidenceReceivedAtMs: number; conflict: boolean };
   const deals = new Map<string, Sample>();
+  const orderKey = (t: Sample["deal"]["atiTriggeredExit"]) => identity(t.mode, t.accountBinding, t.orderTicket);
+  const disputedOrders = new Map<string, number>();
   let historyRowsWithoutVerifiedAccount = 0;
   let duplicateReceipts = 0;
   for (const row of rows) {
@@ -45,11 +77,12 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     }
     const deal = parsed.data;
     const t = deal.atiTriggeredExit;
-    if (!positionScope && deal.symbol !== symbol && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
+    const afterWindow = row.receivedAtMs != null && row.receivedAtMs >= +until;
+    if (!positionScope && !afterWindow && deal.symbol !== symbol && !witnessed.has(identity(t.mode, t.accountBinding, deal.symbol))) continue;
     const key = identity(t.mode, t.accountBinding, deal.dealTicket);
     const prior = deals.get(key);
     if (prior) {
-      duplicateReceipts++;
+      if (!afterWindow || anchored.has(key)) duplicateReceipts++;
       // An order history record may arrive after its deal. Accept enrichment
       // of a missing order, and withhold evidence when two observations disagree.
       const { order, closedPositionDealTickets: closed, ...evidence } = t;
@@ -60,6 +93,10 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
           (closed && priorClosed && JSON.stringify(closed) !== JSON.stringify(priorClosed)) ||
           (order != null && priorOrder != null && JSON.stringify(order) !== JSON.stringify(priorOrder))) {
         prior.conflict = true;
+        prior.evidenceReceivedAtMs = Math.max(prior.evidenceReceivedAtMs, row.receivedAtMs ?? prior.receivedAtMs);
+        for (const order of [orderKey(t), orderKey(prior.deal.atiTriggeredExit)]) {
+          disputedOrders.set(order, Math.max(disputedOrders.get(order) ?? 0, prior.evidenceReceivedAtMs));
+        }
       } else if (((order && !priorOrder) || (closed && !priorClosed)) && row.receivedAtMs != null) {
         prior.deal = { ...deal, atiTriggeredExit: { ...t, order: order ?? priorOrder, closedPositionDealTickets: closed ?? priorClosed } };
         prior.evidenceReceivedAtMs = row.receivedAtMs;
@@ -69,19 +106,25 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
     }
   }
 
-  const orderKey = (t: Sample["deal"]["atiTriggeredExit"]) => identity(t.mode, t.accountBinding, t.orderTicket);
-  const orders = new Map<string, { total: number; basis: string; initialVolume: number | null; conflicted: boolean }>();
+  const orders = new Map<string, { volumes: number[]; basis: string; initialVolume: number | null; conflicted: boolean; knownAt: number }>();
   const samples = [...deals.values()];
-  for (const { deal } of samples) {
+  for (const { deal, evidenceReceivedAtMs } of samples) {
     const t = deal.atiTriggeredExit;
     const order = t.order;
     const basis = JSON.stringify([t.positionId, deal.symbol, deal.side, t.trigger]);
     const key = orderKey(t);
-    const prior = orders.get(key) ?? { total: 0, basis, initialVolume: null, conflicted: false };
-    prior.total += deal.volume;
-    prior.conflicted ||= prior.basis !== basis || (order != null && prior.initialVolume != null && prior.initialVolume !== order.initialVolume);
+    const prior = orders.get(key) ?? { volumes: [], basis, initialVolume: null, conflicted: false, knownAt: evidenceReceivedAtMs };
+    prior.volumes.push(deal.volume);
+    prior.knownAt = Math.max(prior.knownAt, evidenceReceivedAtMs, disputedOrders.get(key) ?? 0);
+    prior.conflicted ||= disputedOrders.has(key) || prior.basis !== basis ||
+      (order != null && prior.initialVolume != null && prior.initialVolume !== order.initialVolume);
     prior.initialVolume ??= order?.initialVolume ?? null;
     orders.set(key, prior);
+  }
+  for (const order of orders.values()) {
+    if (order.initialVolume == null) continue;
+    const [requested, ...fills] = exactAtiLotUnits([order.initialVolume, ...order.volumes]);
+    order.conflicted ||= fills.reduce((sum, volume) => sum + volume, 0n) > requested!;
   }
 
   const outcomes = samples.map(({ deal, receivedAtMs, evidenceReceivedAtMs, conflict }) => {
@@ -93,7 +136,7 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
       : t.positionId !== deal.positionTicket || order.ticket !== t.orderTicket || order.positionId !== t.positionId ||
         order.symbol !== deal.symbol || order.side !== deal.side || order.trigger !== t.trigger || deal.volume > order.initialVolume
         ? unresolved("BROKER_ORDER_DEAL_MISMATCH")
-      : !aggregate || aggregate.conflicted || aggregate.total - order.initialVolume > Number.EPSILON * Math.max(aggregate.total, order.initialVolume)
+      : !aggregate || aggregate.conflicted
         ? unresolved("CONFLICTING_ORDER_VOLUME_OR_IDENTITY")
       : {
         state: "OBSERVED_BROKER_TRIGGERED_EXIT" as const,
@@ -109,11 +152,13 @@ export async function readAtiTriggeredExits(ownerId: number, symbol: string, fro
           : (deal.price - t.triggerPrice) * (deal.side === "BUY" ? 1 : -1),
         charges: t.currency ? { currency: t.currency, commission: deal.commission ?? null, fee: t.fee, swap: deal.swap ?? null } : null,
       };
-    return { mode: t.mode, accountBinding: t.accountBinding, positionId: t.positionId, receivedAtMs, evidenceReceivedAtMs, trigger: t.trigger, brokerSymbol: deal.symbol,
+    return { mode: t.mode, accountBinding: t.accountBinding, positionId: t.positionId, receivedAtMs,
+      evidenceReceivedAtMs: aggregate?.conflicted ? Math.max(evidenceReceivedAtMs, aggregate.knownAt) : evidenceReceivedAtMs, trigger: t.trigger, brokerSymbol: deal.symbol,
       order: t.orderTicket, deal: deal.dealTicket, result };
   });
   function report(mode: Mode) {
-    const results = outcomes.filter((row) => row.mode === mode);
+    const results = outcomes.filter((row) => row.mode === mode &&
+      (evidenceUntil <= until || anchored.has(identity(row.mode, row.accountBinding, row.deal))));
     const measured = results.flatMap(({ result }) => result.state === "OBSERVED_BROKER_TRIGGERED_EXIT" ? [result] : []);
     return {
       distinctDeals: results.length,

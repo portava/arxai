@@ -568,6 +568,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const protective = { ...historyPayload, positionTicket: positionId, dealTicket: "10203", symbol, volume: 0.02,
         closedAtEpochMs: fillTime + 7003, atiTriggeredExit: { ...historyPayload.atiTriggeredExit, orderTicket: "10103", positionId,
           order: { ...historyPayload.atiTriggeredExit.order, ticket: "10103", symbol, positionId } } };
+      await ingestHistory({ ...protective, atiTriggeredExit: { ...protective.atiTriggeredExit, order: null } },
+        { receivedAt: fillTime + 18 });
       await ingestHistory(protective);
       const partial = (await read()).live.roundTrips;
       assert.deepEqual(partial.positions[0]?.gaps, ["NO_CLOSED_POSITION_HISTORY"]);
@@ -597,6 +599,91 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       assert.equal(cohort.triggerMovement.coveredFills, 1);
       assert.deepEqual(cohort.signedDealCharges[0]?.swap, { coveredPositions: 0, signedCashOnCoveredPositions: null });
       assert.deepEqual(cohort.signedDealCharges[0]?.fee, { coveredPositions: 1, signedCashOnCoveredPositions: -0.1 });
+      // Freeze the dispatch cohort at the second dispatch. The review clock advances independently.
+      const endOfEntryWindow = new Date(+stamp + 2);
+      const reviewEntryWindow = (knownAt: number, owner = 1) =>
+        readAtiExecutionCosts(owner, symbol, stamp, endOfEntryWindow, new Date(knownAt));
+      const pendingEntry = await reviewEntryWindow(fillTime + 7000);
+      assert.deepEqual(pendingEntry.live.results.map(r => r.commandId), ["round-trip-7001"]);
+      assert.equal(pendingEntry.live.reconciledDealCount, 0);
+      assert.equal(pendingEntry.live.roundTrips.positions.length, 0);
+      const firstFill = await reviewEntryWindow(fillTime + 7001);
+      assert.equal(firstFill.live.reconciledDealCount, 1);
+      assert.equal(firstFill.live.roundTrips.reconciled, 0);
+      const closedLater = await reviewEntryWindow(fillTime + 7002);
+      assert.deepEqual(closedLater.live.results.map(r => r.commandId), ["round-trip-7001"]);
+      assert.equal(closedLater.brokerTriggeredExits.live.distinctDeals, 0);
+      assert.equal(closedLater.live.roundTrips.reconciled, 1);
+      assert.deepEqual(closedLater.live.roundTrips.byEntryStrategy[0], cohort);
+      assert.equal(closedLater.live.roundTrips.positions[0]?.deals.length, 3);
+      assert.equal(+closedLater.dispatchWindowEndExclusive!, +endOfEntryWindow);
+      assert.equal(+closedLater.live.roundTrips.receiptWindowEndExclusive, fillTime + 7003);
+      assert.deepEqual((await reviewEntryWindow(fillTime + 7002, 2)).live.roundTrips.positions, []);
+      assert.deepEqual(await reviewEntryWindow(fillTime + 7000), pendingEntry, "replaying the earlier cutoff keeps the fill pending");
+
+      const reviewTriggerWindow = (knownAt: number) => readAtiExecutionCosts(1, symbol,
+        new Date(fillTime + 18), new Date(fillTime + 19), new Date(knownAt));
+      const pendingTrigger = await reviewTriggerWindow(fillTime + 19);
+      assert.equal(pendingTrigger.live.commandCount, 0);
+      assert.equal(pendingTrigger.brokerTriggeredExits.live.results[0]?.result.state, "UNRESOLVED");
+      const enrichedTrigger = await reviewTriggerWindow(fillTime + 7002);
+      assert.equal(enrichedTrigger.live.commandCount, 0);
+      assert.equal(enrichedTrigger.brokerTriggeredExits.live.distinctDeals, 1);
+      assert.equal(enrichedTrigger.brokerTriggeredExits.live.reconciledDeals, 1);
+      assert.equal(enrichedTrigger.brokerTriggeredExits.live.results[0]?.receivedAtMs, fillTime + 18);
+      assert.equal(enrichedTrigger.brokerTriggeredExits.live.results[0]?.evidenceReceivedAtMs, fillTime + 20);
+      assert.equal(enrichedTrigger.live.roundTrips.reconciled, 1);
+      assert.deepEqual(enrichedTrigger.live.roundTrips.byEntryStrategy[0], cohort);
+
+      const completedShadowId = randomUUID();
+      await pool.query(`INSERT INTO ati_shadow_runs(id,owner_id,agent_id,symbol,timeframe,setup,baseline_version,challenger_version,started_at,ends_at)
+        SELECT $1,owner_id,agent_id,$2,timeframe,setup,baseline_version,challenger_version,$3,$4 FROM ati_shadow_runs WHERE id=$5`,
+        [completedShadowId, symbol, stamp, endOfEntryWindow, unsupported.runId]);
+      await pool.query(`INSERT INTO ati_shadow_observations(run_id,observation_key,observed_at,recorded_at,coverage,setup,baseline_outcome,challenger_outcome,evidence)
+        VALUES ($1,'gap:fixture',$2,$2,'NO_OBSERVED_FEED','NONE','WAIT','UNOBSERVED','{}')`, [completedShadowId, stamp]);
+      const reviewClock = mock.method(Date, "now", () => fillTime + 7002);
+      try {
+        const latestShadow = await readAtiShadowRun(1, 3, completedShadowId);
+        assert.deepEqual(latestShadow?.executionCosts, closedLater);
+        const earlierShadow = await readAtiShadowRun(1, 3, completedShadowId, new Date(fillTime + 7000));
+        assert.deepEqual(earlierShadow?.executionCosts, pendingEntry);
+        assert.equal(await readAtiShadowRun(2, 3, completedShadowId), null);
+      } finally {
+        reviewClock.mock.restore();
+      }
+
+      const demoSymbol = "AUDNZD", demoKnownAt = fillTime + 8000;
+      const demoWire = { ...resultWire, resultOrder: "49801", resultDeal: "49802" };
+      const demoReceipt = { ...demoCost, symbol: demoSymbol, order: demoWire.resultOrder, deal: demoWire.resultDeal };
+      await pool.query(`INSERT INTO mt5_demo_commands(command_id,bridge_connection_id,sent_at,status,user_id,command_type,
+        routed_via_master,payload,fill_volume,fill_price,broker_raw_result,terminal_at)
+        VALUES ('demo-late-window',22,$1,'FILLED_DEMO',1,'PLACE_MARKET_ORDER',false,$2,0.02,1.1003,$3,$4)`,
+        [stamp.toISOString(), { symbol: demoSymbol, side: "BUY", lotSize: 0.02 }, { ...demoWire, atiCostEvidence: demoReceipt }, new Date(demoKnownAt).toISOString()]);
+      await pool.query("INSERT INTO security_events VALUES ($1,1,'DEMO_DISPATCH_SENT','ALLOWED',$2)", [{
+        commandId: "demo-late-window", bridgeConnectionId: 22, atiAccountBinding: demoReceipt.accountBinding }, stamp]);
+      const demoWindow = (at: number) => readAtiExecutionCosts(1, demoSymbol, stamp, endOfEntryWindow, new Date(at));
+      const pendingDemo = await demoWindow(demoKnownAt - 1);
+      assert.equal(pendingDemo.demo.commandCount, 1);
+      assert.equal(pendingDemo.demo.reconciledDealCount, 0);
+      const lateDemo = await demoWindow(demoKnownAt);
+      assert.equal(lateDemo.demo.reconciledDealCount, 1);
+      assert.equal(lateDemo.live.commandCount, 0);
+      assert.equal(lateDemo.demo.coverage.commission, 0);
+      assert.equal(lateDemo.demo.coverage.swap, 0);
+
+      await pool.query(`INSERT INTO mt5_demo_commands(command_id,bridge_connection_id,sent_at,status,user_id,command_type,
+        routed_via_master,payload,fill_volume,fill_price,broker_raw_result,terminal_at)
+        SELECT 'other-demo-claim',bridge_connection_id,$1,status,user_id,command_type,routed_via_master,payload,fill_volume,
+        fill_price,broker_raw_result,$2 FROM mt5_demo_commands WHERE command_id='demo-late-window'`,
+        [endOfEntryWindow.toISOString(), new Date(demoKnownAt + 1000).toISOString()]);
+      await pool.query("INSERT INTO security_events VALUES ($1,1,'DEMO_DISPATCH_SENT','ALLOWED',$2)", [{
+        commandId: "other-demo-claim", bridgeConnectionId: 22, atiAccountBinding: demoReceipt.accountBinding }, endOfEntryWindow]);
+      const disputedDemo = await demoWindow(demoKnownAt + 1000);
+      assert.deepEqual(disputedDemo.demo.results.map(r => r.commandId), ["demo-late-window"]);
+      assert.deepEqual(disputedDemo.demo.results[0]?.result, { state: "UNRESOLVED", reason: "CONFLICTING_DEAL_CLAIM" });
+      assert.equal(disputedDemo.demo.reconciledDealCount, 0);
+      assert.deepEqual(await demoWindow(demoKnownAt), lateDemo);
+
       const { atiEntryStrategy, atiDispatchAdmission, atiVerifiedAdmission } = await import("../atiStrategyOrigin.js");
       const command = { commandId: "round-trip-7001", agentId: 3, decisionId: 7001, side: "BUY",
         symbol, requestedVolume: 0.03, payload: draft, sentAt: stamp };
@@ -673,10 +760,41 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       const later = new Date(+stamp + 70_000);
       await ingestHistory(unrelatedUnverified, { receivedAt: +later });
       assert.equal((await read()).live.roundTrips.reconciled, 1, "an unpublished conflict cannot change the old cutoff");
+      assert.ok((await reviewEntryWindow(+later)).live.roundTrips.positions[0]?.gaps.includes("UNRESOLVED_POSITION_RECEIPT"));
+      assert.deepEqual(await reviewEntryWindow(fillTime + 7002), closedLater, "a subsequent dispute is invisible at the earlier knowledge cutoff");
       assert.ok((await read(1, stamp, new Date(+later + 1))).live.roundTrips.positions[0]?.gaps.includes("UNRESOLVED_POSITION_RECEIPT"));
+      await ingestHistory({ ...protective, dealTicket: "10555", volume: 1e-18 }, { receivedAt: +later + 1000 });
+      const overfilled = await reviewTriggerWindow(+later + 1000);
+      assert.deepEqual(overfilled.brokerTriggeredExits.live.results.map(r => r.deal), ["10203"]);
+      assert.deepEqual(overfilled.brokerTriggeredExits.live.results[0]?.result,
+        { state: "UNRESOLVED", reason: "CONFLICTING_ORDER_VOLUME_OR_IDENTITY" });
+      assert.equal(overfilled.brokerTriggeredExits.live.reconciledDeals, 0);
+      assert.equal(overfilled.brokerTriggeredExits.live.results[0]?.evidenceReceivedAtMs, +later + 1000);
+      assert.deepEqual(await reviewTriggerWindow(fillTime + 7002), enrichedTrigger);
       await ingestHistory({ ...protective, atiTriggeredExit: { ...protective.atiTriggeredExit,
         closedPositionDealTickets: ["10201","10202","10203","10204"] } });
       assert.equal((await read()).live.roundTrips.reconciled, 0, "conflicting history invalidates the round trip");
+      const claimAt = new Date(+later + 2000);
+      await pool.query(`INSERT INTO arx_live_commands
+        SELECT 7014,'late-claim-other-bridge',31,user_id,command_type,$1,status,symbol,side,'{}',broker_ticket,executed_volume,
+        fill_price,requested_volume,NULL,NULL FROM arx_live_commands WHERE id=7001`, [claimAt]);
+      await pool.query(`INSERT INTO execution_events(command_id,event_type,source,sequence_no,payload,received_at,occurred_at)
+        SELECT 7014,event_type,source,sequence_no,payload || $1::jsonb,$2,$2 FROM execution_events WHERE command_id=7001`,
+        [{ commandId: "late-claim-other-bridge", bridgeConnectionId: 31, reportingBridgeConnectionId: 31 }, claimAt]);
+      const { readAtiHistoricalCostSamples, readAtiLiveMemoryCosts, readAtiDispatchWindow } = await import("../atiExecutionCosts.js");
+      const bridgeOrigin = { accountBinding: liveCost.accountBinding, mode: "LIVE" as const, brokerSymbol: symbol,
+        receiptId: 1, streamKey: "fixture", historyIdentity: "a".repeat(64), bridgeConnectionId: 11, brokerTickAtMs: fillTime };
+      const afterClaim = new Date(+claimAt + 1);
+      const measuredBefore = await readAtiHistoricalCostSamples(1, symbol, bridgeOrigin, claimAt);
+      assert.ok(measuredBefore.some(r => r.commandId === "round-trip-7001"));
+      const measuredAfter = await readAtiHistoricalCostSamples(1, symbol, bridgeOrigin, afterClaim);
+      assert.deepEqual(measuredAfter.map(r => r.commandId), ["round-trip-7002"]);
+      const memory = await readAtiLiveMemoryCosts(1, ["round-trip-7001"], afterClaim);
+      assert.deepEqual(memory.get("round-trip-7001"), { state: "UNRESOLVED", reason: "CONFLICTING_DEAL_CLAIM" });
+      const monitored = await readAtiDispatchWindow(1, bridgeOrigin, stamp, afterClaim);
+      assert.deepEqual(monitored.find(r => r.commandId === "round-trip-7001")?.result, memory.get("round-trip-7001"));
+      assert.deepEqual((await reviewEntryWindow(+claimAt)).live.results[0]?.result, memory.get("round-trip-7001"));
+
     });
 
     const brokerSymbol = "EURUSD.pro";

@@ -440,7 +440,10 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       }),
     };
   })() : null;
-  const executionCosts = await readAtiExecutionCosts(ownerId, run.symbol, run.startedAt, run.endsAt, asOf);
+  // Once capture ends, late receipts still settle the original dispatch cohort.
+  const now = Date.now();
+  const costCutoff = asOf ?? (now >= +run.endsAt ? new Date(now) : undefined);
+  const executionCosts = await readAtiExecutionCosts(ownerId, run.symbol, run.startedAt, run.endsAt, costCutoff);
   const { ownerId: _ownerId, researchSource: _source, researchMode: _mode, measuredCostProfile: _storedProfile, ...runInfo } = run;
   return {
     ...runInfo,

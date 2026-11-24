@@ -25,8 +25,17 @@ function tradeSide(value: unknown, exit: boolean) {
   return side === "BUY" ? "SELL" : "BUY";
 }
 
-async function readCommandCosts(ownerId: number, symbol: string, from: Date, until: Date, history?: AtiMt5QuoteOrigin,
-  liveCommandIds?: string[], monitorDispatches = false, position?: AtiPositionScope, snapshotWindow = false) {
+type CommandCostQuery = {
+  history?: AtiMt5QuoteOrigin;
+  liveCommandIds?: string[];
+  monitorDispatches?: boolean;
+  position?: AtiPositionScope;
+  snapshotWindow?: boolean;
+  dispatchUntil?: Date;
+};
+
+async function readCommandCosts(ownerId: number, symbol: string, from: Date, until: Date, options: CommandCostQuery = {}) {
+  const { history, liveCommandIds, monitorDispatches, position, snapshotWindow, dispatchUntil = until } = options;
   const bound = history ?? position;
   const asOf = !!bound || snapshotWindow || liveCommandIds !== undefined;
   // Owner-bound commands for the same instrument and dispatch window.
@@ -76,7 +85,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
         sql`${events.payload}->>'commandId' = ${live.commandId}`,
         sql`${events.payload}->>'bridgeConnectionId' = ${live.bridgeConnectionId}::text`,
         lt(events.receivedAt, until), lt(events.occurredAt, until)))) : undefined,
-      gte(live.sentToMt5At, from), lt(live.sentToMt5At, until),
+      gte(live.sentToMt5At, from), lt(live.sentToMt5At, dispatchUntil),
     )),
     bound?.mode === "LIVE" || liveCommandIds ? [] : db.select({
       commandId: demo.commandId, bridge: demo.bridgeConnectionId, sentAt: demo.sentAt,
@@ -95,7 +104,7 @@ async function readCommandCosts(ownerId: number, symbol: string, from: Date, unt
         sql`${demo.brokerRawResult} #>> '{atiCostEvidence,accountBinding}' = ${bound.accountBinding}`,
         position ? or(inArray(sql<string>`${demo.brokerRawResult} #>> '{atiCostEvidence,positionId}'`, position.positions),
           inArray(sql<string>`${demo.brokerRawResult} #>> '{atiCostEvidence,deal}'`, position.tickets)) : undefined) : undefined,
-      gte(demo.sentAt, from), lt(demo.sentAt, until),
+      gte(demo.sentAt, from), lt(demo.sentAt, dispatchUntil),
     )),
   ]);
   const [liveEvents, demoDispatches] = await Promise.all([
@@ -258,9 +267,37 @@ function withDistinctDeals<T extends { dealKey: string | null; result: { state: 
     ? { ...row, instrumentWitness: null, entryStrategy: null, decisionBenchmarkSource: null, result: unresolved("DEAL_CLAIMED_BY_MULTIPLE_COMMANDS") } : row);
 }
 
+async function checkAccountDealClaims(ownerId: number, rows: readonly CommandCostRow[], mode: "LIVE" | "DEMO", until: Date) {
+  // A command outside the dispatch window can claim the same account/deal.
+  // It can invalidate the cost measurement without becoming a cohort member.
+  const groups = new Map<string, { accountBinding: string; brokerSymbol: string; tickets: Set<string> }>();
+  for (const row of rows) {
+    if (!row.instrumentWitness || row.result.state !== "OBSERVED_BROKER_DEAL") continue;
+    const { accountBinding, brokerSymbol } = row.instrumentWitness;
+    const key = JSON.stringify([accountBinding, brokerSymbol]);
+    const group = groups.get(key) ?? { accountBinding, brokerSymbol, tickets: new Set<string>() };
+    group.tickets.add(row.result.deal);
+    groups.set(key, group);
+  }
+  const disputed = new Set<string>();
+  for (const { accountBinding, brokerSymbol, tickets } of groups.values()) {
+    const deals = [...tickets];
+    for (let i = 0; i < deals.length; i += 256) {
+      const batch = deals.slice(i, i + 256);
+      const checked = await readCommandCosts(ownerId, brokerSymbol, new Date(0), until, {
+        position: { accountBinding, brokerSymbol, mode, positions: [], tickets: batch },
+      });
+      for (const ticket of batch) if (checked.disputed.has("deal:" + ticket)) disputed.add(JSON.stringify([accountBinding, ticket]));
+    }
+  }
+  return rows.map(row => row.dealKey && disputed.has(row.dealKey) ? { ...row, decisionBenchmarkSource: null,
+    entryStrategy: null, result: unresolved("CONFLICTING_DEAL_CLAIM") } : row);
+}
+
 export async function readAtiDispatchWindow(ownerId: number, origin: AtiMt5QuoteOrigin, from: Date, until: Date) {
-  const rows = await readCommandCosts(ownerId, origin.brokerSymbol, from, until, origin, undefined, true);
-  return (origin.mode === "LIVE" ? rows.liveResults : rows.demoResults).map(({ commandId,sentAt,status,result,availableAt,instrumentWitness }) => ({
+  const rows = await readCommandCosts(ownerId, origin.brokerSymbol, from, until, { history: origin, monitorDispatches: true });
+  const checked = await checkAccountDealClaims(ownerId, origin.mode === "LIVE" ? rows.liveResults : rows.demoResults, origin.mode, until);
+  return checked.map(({ commandId,sentAt,status,result,availableAt,instrumentWitness }) => ({
     commandId, sentAt: sentAt?.getTime() ?? null, status, availableAt: availableAt?.getTime() ?? null,
     result: result.state === "OBSERVED_BROKER_DEAL" && instrumentWitness?.accountBinding !== origin.accountBinding
       ? unresolved("ACCOUNT_BINDING_MISMATCH") : result,
@@ -268,8 +305,8 @@ export async function readAtiDispatchWindow(ownerId: number, origin: AtiMt5Quote
 }
 
 export async function readAtiHistoricalCostSamples(ownerId: number, symbol: string, origin: AtiMt5QuoteOrigin, before: Date) {
-  const rows = await readCommandCosts(ownerId, symbol, new Date(0), before, origin);
-  const samples = origin.mode === "LIVE" ? rows.liveResults : rows.demoResults;
+  const rows = await readCommandCosts(ownerId, symbol, new Date(0), before, { history: origin });
+  const samples = await checkAccountDealClaims(ownerId, origin.mode === "LIVE" ? rows.liveResults : rows.demoResults, origin.mode, before);
   return samples.flatMap(({ commandId, availableAt, instrumentWitness, result }) =>
     result.state === "OBSERVED_BROKER_DEAL" && availableAt && availableAt < before &&
       instrumentWitness?.accountBinding === origin.accountBinding && instrumentWitness.brokerSymbol === origin.brokerSymbol
@@ -278,17 +315,20 @@ export async function readAtiHistoricalCostSamples(ownerId: number, symbol: stri
 
 export async function readAtiLiveMemoryCosts(ownerId: number, commandIds: string[], asOf: Date) {
   if (!commandIds.length) return new Map<string, CommandCostRow["result"]>();
-  const { liveResults } = await readCommandCosts(ownerId, "", new Date(0), asOf, undefined, commandIds);
-  return new Map(liveResults.map(({ commandId, result }) => [commandId, result]));
+  const { liveResults } = await readCommandCosts(ownerId, "", new Date(0), asOf, { liveCommandIds: commandIds });
+  const checked = await checkAccountDealClaims(ownerId, liveResults, "LIVE", asOf);
+  return new Map(checked.map(({ commandId, result }) => [commandId, result]));
 }
 
 export async function readAtiExecutionCosts(ownerId: number, symbol: string, from: Date, windowEnd: Date, asOf?: Date) {
   // Dispatch and history windows are half-open. An explicit knowledge cutoff includes its own millisecond.
-  const until = asOf && +asOf < +windowEnd ? new Date(+asOf + 1) : windowEnd;
-  const initial = await readCommandCosts(ownerId, symbol, from, until, undefined, undefined, false, undefined, !!asOf);
+  const until = asOf ? new Date(+asOf + 1) : windowEnd;
+  const dispatchUntil = until < windowEnd ? until : windowEnd;
+  const followPosition = until > windowEnd;
+  const initial = await readCommandCosts(ownerId, symbol, from, until, { snapshotWindow: !!asOf, dispatchUntil });
   const { liveResults, demoResults } = initial;
-  const brokerTriggeredExits = await readAtiTriggeredExits(ownerId, symbol, from, until,
-    [...liveResults, ...demoResults].flatMap(({ instrumentWitness }) => instrumentWitness ? [instrumentWitness] : []));
+  const brokerTriggeredExits = await readAtiTriggeredExits(ownerId, symbol, from, dispatchUntil,
+    [...liveResults, ...demoResults].flatMap(({ instrumentWitness }) => instrumentWitness ? [instrumentWitness] : []), undefined, until);
   type Triggered = typeof brokerTriggeredExits.live;
   function collectLegs(rows: readonly CommandCostRow[], triggered: Triggered) {
     const legs: AtiPositionLeg[] = [];
@@ -315,60 +355,87 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
     }
     return { legs, dealsWithoutPositionId };
   }
+  async function lifetime(scope: AtiPositionScope) {
+    const [commands, history] = await Promise.all([
+      readCommandCosts(ownerId, scope.brokerSymbol, new Date(0), until, { position: scope }),
+      readAtiTriggeredExits(ownerId, scope.brokerSymbol, new Date(0), until, [scope], scope),
+    ]);
+    const live = scope.mode === "LIVE";
+    const deals = live ? history.live : history.demo;
+    const { legs } = collectLegs(live ? commands.liveResults : commands.demoResults, deals);
+    const disputed = commands.disputed;
+    for (const row of deals.results) {
+      if (row.result.state === "UNRESOLVED") {
+        disputed.add("position:" + row.positionId);
+        disputed.add("deal:" + row.deal);
+      }
+    }
+    return { legs, disputed };
+  }
+
   async function positionReport(mode: "LIVE" | "DEMO", rows: readonly CommandCostRow[], triggered: Triggered) {
     const initial = collectLegs(rows, triggered);
     const report = atiRoundTrips(mode, initial.legs, initial.dealsWithoutPositionId);
-    const scopes = new Map<string, Map<string, AtiPositionLeg[]>>();
-    for (const leg of initial.legs) {
-      if (!leg.closedPositionDealTickets) continue;
-      const key = JSON.stringify([leg.accountBinding, leg.brokerSymbol]);
-      const account = scopes.get(key) ?? new Map<string, AtiPositionLeg[]>();
-      const position = account.get(leg.positionId) ?? [];
-      position.push(leg); account.set(leg.positionId, position); scopes.set(key, account);
+    const positionsByKey = new Map(report.positions.map(row => [row.positionKey, row]));
+    const groups = new Map<string, { accountBinding: string; brokerSymbol: string; positions: Map<string, Set<string>> }>();
+    function track(accountBinding: string, brokerSymbol: string, position: string, tickets: string[]) {
+      const key = JSON.stringify([accountBinding, brokerSymbol]);
+      const group = groups.get(key) ?? { accountBinding, brokerSymbol, positions: new Map<string, Set<string>>() };
+      const known = group.positions.get(position) ?? new Set<string>();
+      for (const ticket of tickets) known.add(ticket);
+      group.positions.set(position, known);
+      groups.set(key, group);
     }
-    const verified = new Map<string, (typeof report.positions)[number]>();
-    for (const account of scopes.values()) {
-      const ids = [...account.keys()];
+    for (const leg of initial.legs) {
+      if (followPosition || leg.closedPositionDealTickets) {
+        track(leg.accountBinding, leg.brokerSymbol, leg.positionId, [leg.deal, ...(leg.closedPositionDealTickets ?? [])]);
+      }
+    }
+    for (const { accountBinding, brokerSymbol, positions: anchors } of groups.values()) {
+      const ids = [...anchors.keys()];
       for (let i = 0; i < ids.length; i += 64) {
         const positions = ids.slice(i, i + 64);
-        const witnesses = positions.flatMap(id => account.get(id)!);
-        const { brokerSymbol, accountBinding } = witnesses[0]!;
-        const tickets = [...new Set(witnesses.flatMap(row => row.closedPositionDealTickets!))];
-        const scope = { mode, brokerSymbol, accountBinding, positions, tickets };
-        const [commands, history] = await Promise.all([
-          readCommandCosts(ownerId, brokerSymbol, new Date(0), until, undefined, undefined, false, scope),
-          readAtiTriggeredExits(ownerId, brokerSymbol, new Date(0), until, [scope], scope),
-        ]);
-        const complete = mode === "LIVE" ? collectLegs(commands.liveResults, history.live) : collectLegs(commands.demoResults, history.demo);
-        const disputed = commands.disputed;
-        for (const row of (mode === "LIVE" ? history.live : history.demo).results) {
-          if (row.result.state === "UNRESOLVED") {
-            disputed.add("position:" + row.positionId); disputed.add("deal:" + row.deal);
-          }
+        const tickets = new Set(positions.flatMap(id => [...anchors.get(id)!]));
+        const scope = { mode, brokerSymbol, accountBinding, positions, tickets: [...tickets] };
+        let evidence = await lifetime(scope);
+        // A later close can name deals absent from the first report. Look up
+        // every newly learned ticket, including claims under another position.
+        for (const leg of evidence.legs) {
+          if (!anchors.has(leg.positionId)) continue;
+          tickets.add(leg.deal);
+          for (const deal of leg.closedPositionDealTickets ?? []) tickets.add(deal);
         }
-        const assessed = atiRoundTrips(mode, complete.legs, 0);
-        for (const witness of witnesses) {
-          const key = atiPositionKey(mode, witness.accountBinding, witness.positionId);
+        if (tickets.size > scope.tickets.length) evidence = await lifetime({ ...scope, tickets: [...tickets] });
+        const assessed = atiRoundTrips(mode, evidence.legs, 0);
+        for (const id of positions) {
+          const key = atiPositionKey(mode, accountBinding, id);
+          const prior = positionsByKey.get(key);
           const found = assessed.positions.find(row => row.positionKey === key);
-          const conflict = disputed.has("position:" + witness.positionId) ||
-            witness.closedPositionDealTickets!.some(ticket => disputed.has("deal:" + ticket));
-          if (found && conflict) verified.set(key, { ...found, state: "UNRESOLVED", charges: null,
-            gaps: [...found.gaps, "UNRESOLVED_POSITION_RECEIPT"] });
-          else if (found) verified.set(key, found);
-          else {
-            const prior = report.positions.find(row => row.positionKey === key)!;
-            verified.set(key, { ...prior, state: "UNRESOLVED", gaps: ["POSITION_RECEIPTS_UNAVAILABLE"], charges: null, deals: [] });
+          if (!found) {
+            if (prior) positionsByKey.set(key, { ...prior, state: "UNRESOLVED", gaps: ["POSITION_RECEIPTS_UNAVAILABLE"], charges: null, deals: [] });
+            continue;
           }
+          const claimed = new Set([...anchors.get(id)!, ...found.deals.map(row => row.deal)]);
+          for (const leg of evidence.legs) if (leg.positionId === id) {
+            for (const ticket of leg.closedPositionDealTickets ?? []) claimed.add(ticket);
+          }
+          const conflict = evidence.disputed.has("position:" + id) || [...claimed].some(ticket => evidence.disputed.has("deal:" + ticket));
+          positionsByKey.set(key, conflict ? { ...found, state: "UNRESOLVED", charges: null,
+            gaps: [...found.gaps, "UNRESOLVED_POSITION_RECEIPT"] } : found);
         }
       }
     }
-    const positions = report.positions.map(row => verified.get(row.positionKey) ?? row);
-    return { ...report, scope: "POSITIONS_OBSERVED_IN_WINDOW_LIFETIME_RECEIPTS_AS_OF_END" as const, receiptWindowEndExclusive: until,
+    const positions = [...positionsByKey.values()].sort((a,b) => a.positionKey.localeCompare(b.positionKey));
+    return { ...report, scope: followPosition ? "WINDOW_POSITIONS_LIFETIME_RECEIPTS_AS_OF_REVIEW" as const
+      : "POSITIONS_OBSERVED_IN_WINDOW_LIFETIME_RECEIPTS_AS_OF_END" as const, receiptWindowEndExclusive: until,
       reconciled: positions.filter(row => row.state === "OBSERVED_BROKER_ROUND_TRIP").length, ...reportAtiEntryStrategies(positions) };
   }
-  const snapshot = asOf ? initial : await readCommandCosts(ownerId, symbol, from, until, undefined, undefined, false, undefined, true);
+  const snapshot = asOf ? initial : await readCommandCosts(ownerId, symbol, from, until, { snapshotWindow: true });
   const [liveTrips, demoTrips] = await Promise.all([positionReport("LIVE", snapshot.liveResults, brokerTriggeredExits.live),
     positionReport("DEMO", snapshot.demoResults, brokerTriggeredExits.demo)]);
+  const [reviewedLive, reviewedDemo] = asOf ? await Promise.all([
+    checkAccountDealClaims(ownerId, liveResults, "LIVE", until), checkAccountDealClaims(ownerId, demoResults, "DEMO", until),
+  ]) : [liveResults, demoResults];
   function reportMode(rows: readonly CommandCostRow[], roundTrips: typeof liveTrips) {
     const results = rows.map(({ dealKey: _key, instrumentWitness: _witness, ...row }) => row)
       .sort((a, b) => +(a.sentAt ?? 0) - +(b.sentAt ?? 0) || a.commandId.localeCompare(b.commandId));
@@ -395,10 +462,11 @@ export async function readAtiExecutionCosts(ownerId: number, symbol: string, fro
   }
   return {
     source: "MT5_BROKER_RESULT_RECEIPTS",
+    ...(asOf ? { dispatchWindowStart: from, dispatchWindowEndExclusive: dispatchUntil, evidenceAsOf: asOf } : {}),
     scope: asOf ? "OWNER_INSTRUMENT_ATTESTED_DISPATCH_WINDOW_AS_OF" : "OWNER_INSTRUMENT_DISPATCH_WINDOW",
     brokerTriggeredExits: { ...brokerTriggeredExits,
       live: publicTriggered(brokerTriggeredExits.live), demo: publicTriggered(brokerTriggeredExits.demo) },
-    live: reportMode(liveResults, liveTrips),
-    demo: reportMode(demoResults, demoTrips),
+    live: reportMode(reviewedLive, liveTrips),
+    demo: reportMode(reviewedDemo, demoTrips),
   };
 }

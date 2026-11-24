@@ -22,6 +22,12 @@ function decimalLots(volume: number) {
   return { coefficient: BigInt(whole! + fraction), places: fraction.length - Number(exponent) };
 }
 
+export function exactAtiLotUnits(volumes: readonly number[]) {
+  const lots = volumes.map(decimalLots);
+  const places = lots.reduce((max, lot) => Math.max(max, lot.places), 0);
+  return lots.map(lot => lot.coefficient * 10n ** BigInt(places - lot.places));
+}
+
 export function atiPositionKey(mode: Mode, accountBinding: string, positionId: string) {
   return createHash("sha256").update(JSON.stringify(["ATI_POSITION", mode, accountBinding, positionId])).digest("hex");
 }
@@ -42,15 +48,14 @@ function assessPosition(mode: Mode, legs: AtiPositionLeg[], duplicates: Set<stri
     gaps.push("CLOSING_DEAL_UNCONFIRMED");
   if (entry && ordered.some(row => (row.side === entry.side) !== (row.leg === "ENTRY")))
     gaps.push("POSITION_SIDE_MISMATCH");
-  const lots = ordered.map(row => decimalLots(row.volume));
-  const places = lots.reduce((max, lot) => Math.max(max, lot.places), 0);
+  const lots = exactAtiLotUnits(ordered.map(row => row.volume));
   let balance = 0n;
   for (let i = 0; i < ordered.length; i++) {
-    const row = ordered[i]!, lot = lots[i]!;
+    const row = ordered[i]!;
     const prior = ordered[i - 1];
     if (prior && prior.brokerFilledAtMs === row.brokerFilledAtMs && prior.leg !== row.leg)
       gaps.push("SAME_TIME_LEG_ORDER_UNVERIFIED");
-    balance += (row.leg === "ENTRY" ? 1n : -1n) * lot.coefficient * 10n ** BigInt(places - lot.places);
+    balance += (row.leg === "ENTRY" ? 1n : -1n) * lots[i]!;
     if (balance < 0n || (balance === 0n && i + 1 < ordered.length)) gaps.push("INVALID_POSITION_VOLUME_PATH");
   }
   if (balance !== 0n) gaps.push("ENTRY_EXIT_VOLUME_MISMATCH");
