@@ -2312,7 +2312,6 @@ export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnap
   const key = JSON.stringify(request);
   return scanCoordinator.run(key, async () => {
     const started = performance.now();
-    const generatedAt = new Date().toISOString();
     const { universe, syms, tfs } = request;
     // Bounded fan-out over every symbol×timeframe pair. Previously a fully
     // sequential loop; now the SAME worker-pool limiter caps how many per-symbol
@@ -2341,7 +2340,9 @@ export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnap
       universe, symbols: syms, timeframes: tfs, opportunities: ranked,
       timeframeCoverage: buildTimeframeCoverage(syms, tfs, out, skipped),
       skippedPairs: skipped.length,
-      generatedAt,
+      // The batch becomes available after the sweep. Each row retains its own
+      // observation time so early rows in a long sweep can expire independently.
+      generatedAt: new Date().toISOString(),
       durationMs: Math.round(performance.now() - started),
     };
   }, publishScanSnapshot);

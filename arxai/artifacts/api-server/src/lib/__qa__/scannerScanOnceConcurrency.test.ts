@@ -241,3 +241,24 @@ test("explicit empty or unsupported selections never silently scan the default u
   assert.equal((await scanner.scanOnce({ symbols: ["not-a-market"], timeframes: ["M5"] })).length, 0);
   assert.equal(candleCalls + quoteCalls, before);
 });
+
+test("a slow scan keeps its completion timestamp on later snapshot reads", async (t) => {
+  const start = Date.parse("2026-11-20T12:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: start });
+  let release!: () => void;
+  candleGates.set("EURUSD", new Promise<void>(resolve => { release = resolve; }));
+  try {
+    const initialCalls = candleCalls;
+    const running = scanner.scanOnceSnapshot({ symbols: ["EURUSD"], timeframes: ["M1"] });
+    while (candleCalls === initialCalls) await new Promise<void>(resolve => setImmediate(resolve));
+    t.mock.timers.setTime(start + 35_000);
+    release();
+    const batch = await running;
+    assert.equal(Date.parse(batch.generatedAt), start + 35_000);
+    t.mock.timers.setTime(start + 90_000);
+    assert.equal(scanner.scannerSnapshot()?.generatedAt, batch.generatedAt);
+  } finally {
+    release();
+    candleGates.delete("EURUSD");
+  }
+});
