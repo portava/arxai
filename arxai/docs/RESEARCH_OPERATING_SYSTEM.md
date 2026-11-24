@@ -163,3 +163,9 @@ An ordinary V75 native shadow pilot can now test the chart change for one subscr
 Each eligible recorded bar links the native decision ID and cycle to the measured chart result. The report retains the supervisor inputs needed for offline replay, their SHA-256 digest, both supervised outcomes, and any changes to other candidates. It reports a gap when an eligible candidate build failed, the original cycle cannot be reproduced, or the chart result cannot be matched. Cohort totals show comparable bars, entries, changed outcomes and effects on other agents. This comparison measures decision and allocation changes. It supplies no return or fill for an extra hypothetical entry.
 
 At 10:25 UTC on November 24 the four isolated V75 databases still held zero owner DEMO or LIVE dispatches and zero reconciled deals in the review window. [Cost inventory](ati-evidence/v75-m5-owner-cost-inventory-20261124T1025Z.json)
+
+### Reproducing a saved native fleet report
+
+Use the observed shadow CLI's `report-fleet <directory> <UTC cutoff>` to generate the report and capture coverage. A separate process can run `verify-fleet <directory> <same UTC cutoff>` against the read-only pilot database. It rebuilds both documents and matches the selected receipts to the independent supervisor records by owner, agent, symbol, timeframe, decision, cycle, timestamps and strategy version. The versioned pilot also requires the registered build revision.
+
+The verifier reports a digest for each saved document, the number of native evaluations in each setup and outcome, the number represented by a shadow receipt, and the number of eligible entries without a receipt. Calendar-slot coverage and native evaluation counts have different denominators, since the fleet may evaluate the same closed bar many times. The verifier marks the time at which the grading horizon has elapsed independently of whether any trade settled.
