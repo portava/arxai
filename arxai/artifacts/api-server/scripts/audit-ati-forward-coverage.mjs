@@ -6,7 +6,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const [kind, cohortDir, archiveDir, through] = process.argv.slice(2);
+const [kind, cohortDir, archiveDir, through, option] = process.argv.slice(2);
+assert.ok(process.argv.length === 6 || (process.argv.length === 7 && option === "--comparisons"));
 assert.ok(["original", "renewal"].includes(kind) && cohortDir && archiveDir && through?.endsWith("Z"));
 const planName = kind === "renewal" ? "forward-renewal-plan.json" : "forward-plan.json";
 const bytes = readFileSync(join(archiveDir, planName));
@@ -66,6 +67,33 @@ function mean(values) {
   assert.ok(values.every(Number.isFinite));
   return values.length ? values.reduce((a,b) => a+b, 0) / values.length : null;
 }
+// At the collector's current boundary its own multi-window report is an independent
+// cross-check. An older cutoff can still be replayed without borrowing later outcomes.
+let comparisons;
+if (option === "--comparisons") {
+  const worker = fileURLToPath(new URL("./replay-ati-specialist-comparisons.ts", import.meta.url));
+  const replayed = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", worker], {
+    cwd: server, env: { PATH: process.env.PATH, DATABASE_URL: "postgresql://offline@127.0.0.1:1/offline", LOG_LEVEL: "error" },
+    input: JSON.stringify({ archiveDir: resolve(archiveDir), windows: reviewed, digest, engineDigest: engine.engineDigest }),
+    encoding: "utf8", timeout: 60_000,
+  }));
+  const atSnapshotBoundary = snapshot.checkedAt < cutoff + step || cutoff === end;
+  let verifiedAgainstCollector = false;
+  if (atSnapshotBoundary && replayed && reviewed.length === windows.length) {
+    assert.equal(snapshot.prediction.cohorts.length, 1);
+    assert.equal(snapshot.costs.cohorts.length, 1);
+    const forecast = snapshot.prediction.cohorts[0], costs = snapshot.costs.cohorts[0];
+    assert.deepEqual(replayed.probability, forecast.paired);
+    assert.deepEqual(replayed.probabilityByTrend, forecast.byTrend);
+    assert.deepEqual(replayed.poolReliability, forecast.poolReliability);
+    assert.deepEqual(replayed.specialistReliability, forecast.specialistReliability);
+    for (const [key, value] of Object.entries(replayed.economics)) assert.deepEqual(value, costs[key]);
+    assert.deepEqual(replayed.costBasis, snapshot.costs.costBasis);
+    assert.equal(replayed.unit, snapshot.costs.unit);
+    verifiedAgainstCollector = true;
+  }
+  comparisons = { verifiedAgainstCollector, replayed };
+}
 console.log(JSON.stringify({ study: plan.study, planHash: digest, engineHash: engine.engineDigest,
   windowsEndingBy: through, planned: plan.plannedWindows, outcomesReplayed: reviewed.length, priced: priced.length,
   unpriced, unverifiedElapsed: windows.length - reviewed.length, scheduledAfterCutoff: plan.plannedWindows - windows.length,
@@ -73,4 +101,4 @@ console.log(JSON.stringify({ study: plan.study, planHash: digest, engineHash: en
   priceCoverageGate: maxPriced < plan.reviewConditions.minimumPairedQuoteWindows ? "UNREACHABLE_ON_RETAINED_EVIDENCE" : "STILL_POSSIBLE",
   meanBrier: { pool: mean(reviewed.map(w => w.poolBrier)), incumbent: mean(reviewed.map(w => w.incumbentBrier)) },
   meanAssumedNetPricePoints: { pool: mean(priced.map(w => w.pool)), incumbent: mean(priced.map(w => w.incumbent)) },
-  pricedDifferentSides: priced.filter(w => w.differentSide).length, observedBrokerCosts: null, executionAuthority: "NONE", windows }, null, 2));
+  pricedDifferentSides: priced.filter(w => w.differentSide).length, observedBrokerCosts: null, executionAuthority: "NONE", ...(comparisons && { comparisons }), windows }, null, 2));

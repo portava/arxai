@@ -288,3 +288,19 @@ tests contribute no forecast windows or MT5 fills.
 The research gate requires one passing report entry with the reviewed edge's version tag. Discovery supplies the hypothesis digest to validation. The factory covers that digest in the report hash alongside the variant key and verdict. The gate recomputes the digest of the stored specification and checks the report family. A rejected sibling, a repeated key, a changed hypothesis or an older report without a bound registration cannot qualify the edge. Legacy reports retain their original hash verification.
 
 This offline check establishes candidate identity at research review. A dated preregistration, forward evidence for the candidate, reconciled broker costs and a rehearsal of the running strategy's rollback each require separate evidence.
+
+
+## V75 specialist contribution through 11:15 UTC, November 24
+
+The offline replay reconstructed every elapsed window in both registered cohorts from its archived forecast and original quote stream. It matched the collectors on the training-frequency baseline, ARX, the four-vote pool, every specialist alone, the pool with each specialist removed, calibration bins and the three registered trend groups.
+
+| Collector | Scored windows | Priced windows | Pool / ARX / frequency Brier | Pool / ARX / frequency mean simulated net points |
+| --- | ---: | ---: | --- | --- |
+| Original | 20 | 0 | 0.5794 / 0.5906 / 0.6158 | Unmeasured |
+| Early discovery renewal | 14 | 11 | 0.5865 / 0.6137 / 0.6295 | −14.29 / −16.61 / −63.75 |
+
+Adding the pattern vote to the three other votes lowered the renewal pool's mean Brier loss by 0.00886 over 14 forecasts. On the 11 priced windows it reduced the mean simulated net result by 50.28 V75 price points. The full pool and ARX chose different positions in six priced windows. The pool's narrow lead over ARX in mean simulated points came from the six uptrend windows. It trailed ARX on the five downtrend windows. No unestablished-trend window was observed. These small, overlapping cohorts offer no independent confirmation for a weight change.
+
+Pricing uses observed public bid/ask quotes with the registered slippage assumption. Broker costs are unknown. The original cohort can still price at most 12 of its 32 planned windows and the renewal cohort at most 29. Both registered minimums are 30. This is an interim review.
+
+The [original comparison](structural-evidence/ati-specialists-v1/forward-coverage-through-1115/original/coverage-review.json) and [renewal comparison](structural-evidence/ati-specialists-v1/forward-coverage-through-1115/renewal/coverage-review.json) include every elapsed receipt and gap. To reproduce a comparison, use the coverage audit command above with the corresponding saved snapshot in `forward-coverage-through-1115`, the cutoff `2026-11-24T11:15:00.000Z` and the final option `--comparisons`.
