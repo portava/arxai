@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { STATUS_COLORS, type StatusTone } from "@/lib/design-tokens";
 import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { AtiShadowReports } from "@/components/selfTrade/AtiShadowReports";
 import { AccountingSummary } from "@/components/selfTrade/AccountingSummary";
 import { buildReasoningFromSelfTrade } from "@/lib/eleanorReasoningBlock";
 import {
@@ -240,6 +241,7 @@ export function AgentDetailPanel({ agentId }: { agentId: number }) {
         <StatCard label="Recorded allocation" value={usd(ledger?.allocatedFunds)} sub={`${usd(ledger?.availableFunds)} recorded available`} />
       </div>
       <AccountingSummary accounting={detail.accounting} />
+      <AtiShadowReports key={agentId} agentId={agentId} />
 
       {unfunded && (
         <Alert className="border-amber-500/30 bg-amber-500/5">

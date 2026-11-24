@@ -26,6 +26,7 @@ import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
+import { listAtiShadowRuns, summarizeAtiShadowReport } from "../lib/selfTrade/atiShadowReports.js";
 import { appendAtiShadowObservation, gradeAtiShadowRun, readAtiShadowRun, startAtiShadowRun } from "../lib/selfTrade/atiShadow.js";
 import { readAtiPortfolioRisk } from "../lib/selfTrade/atiPortfolioReport.js";
 import { readAtiCaptureOperations } from "../lib/selfTrade/atiCaptureOperations.js";
@@ -173,6 +174,13 @@ router.get("/self-trade-ai/ati-portfolio-risk/paper-accounts/:id", requireUser, 
   res.json(report);
 });
 
+router.get("/self-trade-ai/agents/:id/ati-shadow-runs", requireUser, async (req, res) => {
+  const params = idParam.safeParse(req.params);
+  const query = z.object({ before: z.uuid().optional() }).safeParse(req.query);
+  if (!params.success || !query.success) { err(res, 400, "INVALID_INPUT", "Invalid agent or run cursor."); return; }
+  res.json(await listAtiShadowRuns(req.authUser!.id, params.data.id, query.data.before));
+});
+
 router.post("/self-trade-ai/agents/:id/ati-shadow-runs", requireUser, async (req, res) => {
   const params = idParam.safeParse(req.params);
   const body = atiPilotBody.safeParse(req.body);
@@ -206,13 +214,13 @@ router.post("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/observations", req
 router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId", requireUser, async (req, res) => {
   const params = atiRunParams.safeParse(req.params);
   if (!params.success) { err(res, 400, "INVALID_ID", "Invalid agent or run id."); return; }
-  const query = z.object({ asOf: z.iso.datetime().optional() }).safeParse(req.query);
+  const query = z.object({ asOf: z.iso.datetime().optional(), view: z.enum(["full", "summary"]).optional() }).safeParse(req.query);
   if (!query.success) { err(res, 400, "INVALID_INPUT", "Use a UTC timestamp for asOf."); return; }
   const asOf = query.data.asOf ? new Date(query.data.asOf) : undefined;
   if (asOf && +asOf > Date.now()) { err(res, 400, "INVALID_INPUT", "Choose an elapsed shadow report cutoff."); return; }
   const report = await readAtiShadowRun(req.authUser!.id, params.data.id, params.data.runId, asOf);
   if (!report) { err(res, 404, "NOT_FOUND", "Shadow run not found."); return; }
-  res.json(report);
+  res.json(query.data.view === "summary" ? summarizeAtiShadowReport(report) : report);
 });
 
 router.get("/self-trade-ai/agents/:id/ati-shadow-runs/:runId/operations", requireUser, async (req, res) => {

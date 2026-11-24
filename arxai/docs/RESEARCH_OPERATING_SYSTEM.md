@@ -388,3 +388,9 @@ Directional choices accounted for 19.55 points of the 21.69-point shortfall. Spr
 The original study had 24 elapsed forecasts and zero priced windows. The maximum possible priced coverage is 8 of 32 for the original and 28 of 32 for the renewal. Both fall below the preregistered minimum of 30. Overlapping market periods keep these two cohorts dependent.
 
 The archived reviews in `docs/structural-evidence/ati-specialists-v1/forward-coverage-through-1215` include the two new windows for each collector. Run `scripts/audit-ati-forward-coverage.mjs` with `--comparisons --attribution` to reproduce the report. The attribution breaks out matched and changed positions, checks that the components reproduce each simulated fill and retains an unknown mean when a group has no priced windows.
+
+### Reading an agent's ATI shadow report
+
+In Self-Trade AI, select the agent and expand **ATI shadow reports**. Each report pairs the current bot and challenger on the same observed bars and shows missing feeds, eligible entries and settled comparisons. The JSON link uses the same cutoff as the displayed report. The cost tables show demo and live evidence separately, including the currency of each reported charge. A run with no reconciled deals leaves actual execution costs unknown.
+
+The isolated V75 M5 pilot returned 13 paired observations and one missing feed. It recorded zero eligible entries and zero reconciled demo or live deals. The signed-in owner could read the report in an HTTP rehearsal. A different owner received HTTP 404 and an unauthenticated request received HTTP 401.

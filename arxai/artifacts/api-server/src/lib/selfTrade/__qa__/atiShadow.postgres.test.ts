@@ -152,6 +152,36 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       row.coverage !== "OBSERVED").every((row: { decisionQuote: unknown }) => row.decisionQuote === null));
     assert.equal("evidence" in report.observations[0], false, "raw account-dependent inputs stay out of the report");
 
+    await t.test("shadow report browser preserves owner, agent, mode and cursor boundaries", async () => {
+      const { listAtiShadowRuns, summarizeAtiShadowReport } = await import("../atiShadowReports.js");
+      const summary = summarizeAtiShadowReport(report);
+      assert.equal(summary.eligibleEntries, 2);
+      assert.deepEqual(summary.counts, report.counts);
+      assert.deepEqual(summary.simulations, report.simulations);
+      assert.equal(summary.costs.demo.reconciledDealCount, 0);
+      assert.equal("observations" in summary, false);
+      const agent = 9201;
+      const add = async (owner: number, agentId: number, source: string | null = null) => {
+        const id = randomUUID();
+        await pool.query(`INSERT INTO ati_shadow_runs
+          (id, owner_id, agent_id, symbol, timeframe, setup, baseline_version, challenger_version, started_at, ends_at, research_source)
+          VALUES ($1,$2,$3,'V75','M5','TREND_CONTINUATION','baseline','challenger',$4,$5,$6)`,
+          [id, owner, agentId, new Date(base), new Date(base + 300000), source]);
+        return id;
+      };
+      const own = await Promise.all(Array.from({ length: 27 }, () => add(1, agent)));
+      const foreign = await add(2, agent), other = await add(1, agent + 1), research = await add(1, agent, "deriv_public");
+      const first = await listAtiShadowRuns(1, agent);
+      assert.equal(first.runs.length, 25);
+      assert.ok(first.next);
+      const second = await listAtiShadowRuns(1, agent, first.next);
+      assert.equal(second.next, null);
+      assert.deepEqual([...first.runs, ...second.runs].map(r => r.id), own.sort().reverse());
+      for (const cursor of [foreign, other, research, randomUUID()]) {
+        assert.deepEqual((await listAtiShadowRuns(1, agent, cursor)).runs, []);
+      }
+    });
+
     slot = base - 300_000;
     quoteOffset = -1;
     const deriv = await startAtiShadowRun(1, 3, {
