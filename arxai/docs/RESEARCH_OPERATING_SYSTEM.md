@@ -371,3 +371,20 @@ The independent public probe ran for 3,899.966 wall-clock seconds and recorded 1
 The demo command reconciler records a conflict when the same owner and bridge report two authenticated demo cost receipts for a settled market entry or close and their known fill facts disagree. ATI removes the disputed sample from measured-cost coverage at the time the second receipt became known. Reports also check other commands that claim either disputed deal. An earlier fixed-cutoff report can still reproduce the evidence available at its cutoff.
 
 A disposable PostgreSQL rehearsal applied one synthetic demo fill, replayed it across fresh processes and changed its reported fee. Before the change, ATI continued to count one measured deal. After the change, both sequential and concurrent deliveries produced one settlement and a durable conflict. The revised report counted zero measured deals for the disputed command. Broker-side delivery, live-account costs and end-to-end MT5 retries still require direct venue evidence. The receipt is in `docs/ati-evidence/demo-result-replay-20261124.json`.
+
+### V75 specialist returns through 12:15 UTC
+
+The renewal study issued 18 forecasts through the cutoff. Fourteen had a continuous public bid/ask series through the exit. The specialist pool was active in 13 priced windows and the current ARX forecast in 10. They chose different positions eight times. The table averages one unit of simulated exposure across the same 14 windows, including a zero contribution for each flat call.
+
+| Mean price points per priced window | Specialist pool | Current ARX | Pool minus current |
+| --- | ---: | ---: | ---: |
+| Directional return at quote midpoints | −34.85 | −15.30 | −19.55 |
+| Cost of crossing the observed public spread | 7.43 | 5.71 | 1.71 |
+| Assumed slippage | 1.86 | 1.43 | 0.43 |
+| Simulated net return | −44.13 | −22.44 | −21.69 |
+
+Directional choices accounted for 19.55 points of the 21.69-point shortfall. Spread and assumed slippage accounted for the remaining 2.14 points. Each active simulated position assumed one point of slippage per side and zero other charges. Actual broker costs are unknown. The two forecasts target the first structural break during the interval. On all 18 scored forecasts, mean Brier score slightly favored the specialist pool (0.6165 versus 0.6250, lower is better). The result reversed on the 14 windows with complete public quotes (0.6394 versus 0.6166). On the four unpriced windows it was 0.5366 versus 0.6547. Keeping both denominators visible matters when comparing forecast accuracy with the return at the fixed exit.
+
+The original study had 24 elapsed forecasts and zero priced windows. The maximum possible priced coverage is 8 of 32 for the original and 28 of 32 for the renewal. Both fall below the preregistered minimum of 30. Overlapping market periods keep these two cohorts dependent.
+
+The archived reviews in `docs/structural-evidence/ati-specialists-v1/forward-coverage-through-1215` include the two new windows for each collector. Run `scripts/audit-ati-forward-coverage.mjs` with `--comparisons --attribution` to reproduce the report. The attribution breaks out matched and changed positions, checks that the components reproduce each simulated fill and retains an unknown mean when a group has no priced windows.

@@ -1,0 +1,1374 @@
+{
+  "digest": "9503cc83ce4f52aff3101c8db9c3e7a4342ca7d6c09e7e0bb2d27e2c815fb4fd",
+  "engineDigest": "4b219cdbb131491807172c2340d8dc77ea85021a694c20ad29ca1d7db6876709",
+  "checkedAt": 1795522506107,
+  "windows": [
+    {
+      "asOf": 1795506300000,
+      "refusal": null,
+      "receiptId": "structural-8c8aca2add7e3a70636498d340394ada5886ada74e2d884129792f60c684d9b7",
+      "attempt": {
+        "attemptAt": 1795506303002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795507200000,
+      "refusal": null,
+      "receiptId": "structural-a7c190beaedf13e5360e987034a99685580d861254b5b570372825fa5ecb5317",
+      "attempt": {
+        "attemptAt": 1795507203001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795508100000,
+      "refusal": null,
+      "receiptId": "structural-2be99360244fb58f6989eb28286b8684f24bc7dea8d453408926bd6f6c8184d6",
+      "attempt": {
+        "attemptAt": 1795508103004
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795509000000,
+      "refusal": null,
+      "receiptId": "structural-18ad303e8b9faced8d634ce5f07b127b5084321d1a1d5a029f9eb90fac2345a0",
+      "attempt": {
+        "attemptAt": 1795509003001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795509900000,
+      "refusal": null,
+      "receiptId": "structural-0e10f629f557cf22fcbb9af00fbbee08639a619b160b8415a853adf1307503a6",
+      "attempt": {
+        "attemptAt": 1795509903000
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795510800000,
+      "refusal": null,
+      "receiptId": "structural-75f44875a4bf30d02040f0783369d8d8180dd2f03349cdc0715564cc26156212",
+      "attempt": {
+        "attemptAt": 1795510803003
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795511700000,
+      "refusal": null,
+      "receiptId": "structural-c4c820fd1d2a08b1abfc97470c7125282a69ed59472741cdef8af5356b264b17",
+      "attempt": {
+        "attemptAt": 1795511703001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795512600000,
+      "refusal": null,
+      "receiptId": "structural-e92c06460c91c1df074d0b24c7c34ff78688e3b14e882454fbfa409dbe38aa1a",
+      "attempt": {
+        "attemptAt": 1795512603001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795513500000,
+      "refusal": null,
+      "receiptId": "structural-ba4c2b65d8121285fc4a641c0d8874890ef0bd7fa5e99793360caf1c12103a5b",
+      "attempt": {
+        "attemptAt": 1795513503001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795514400000,
+      "refusal": null,
+      "receiptId": "structural-c7216eeea58de92d9d5d7979911cc6208a3e2c11cab16d7190fc07dbb702f83a",
+      "attempt": {
+        "attemptAt": 1795514403001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795515300000,
+      "refusal": null,
+      "receiptId": "structural-2ea045bac07beea8abf82daf40f15d8bcf7ef8438c05cd5420f6596d03fa2de6",
+      "attempt": {
+        "attemptAt": 1795515303001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795516200000,
+      "refusal": null,
+      "receiptId": "structural-d3737514a27801a62c0687e1bccd72fb44bab64dfec52a3cc91179c03b4e37c8",
+      "attempt": {
+        "attemptAt": 1795516202992
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795517100000,
+      "refusal": null,
+      "receiptId": "structural-c9d052bbb5591ab2d739bb708ce9cc5f02679d3439c63c98b737c2ca10df590f",
+      "attempt": {
+        "attemptAt": 1795517103005
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795518000000,
+      "refusal": null,
+      "receiptId": "structural-4716ee1f1c716d8315664cd2cd96c0439abe5d4be3b88fb40e452c1d0dbd5bef",
+      "attempt": {
+        "attemptAt": 1795518003001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795518900000,
+      "refusal": null,
+      "receiptId": "structural-2ea74fb9c59ac67070b354bf4b2abf3a026419268ef131b0f4fe7f131732065b",
+      "attempt": {
+        "attemptAt": 1795518903001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795519800000,
+      "refusal": null,
+      "receiptId": "structural-5980eee817bf8c7815122f7ce7b26bc37717d8c92ee2016cf30e9e8bcff0f1f2",
+      "attempt": {
+        "attemptAt": 1795519803003
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795520700000,
+      "refusal": null,
+      "receiptId": "structural-6ccfa71930d5de7515f48b2a7091fbd0007bf21f20efec1b1de50131848a4c02",
+      "attempt": {
+        "attemptAt": 1795520703000
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795521600000,
+      "refusal": null,
+      "receiptId": "structural-0c5bcbcd72f7fb791d3951496ce5ad90a53ac74a7fedc0ea3a9be35453aba50a",
+      "attempt": {
+        "attemptAt": 1795521603001
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795522500000,
+      "refusal": null,
+      "receiptId": "structural-09da84a1dd84b515fae161a30e213f9501e85852e0a82e325d9deeb91bd3a172",
+      "attempt": {
+        "attemptAt": 1795522503002
+      },
+      "status": "ISSUED"
+    },
+    {
+      "asOf": 1795523400000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795524300000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795525200000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795526100000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795527000000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795527900000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795528800000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795529700000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795530600000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795531500000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795532400000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795533300000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    },
+    {
+      "asOf": 1795534200000,
+      "refusal": null,
+      "receiptId": null,
+      "attempt": null,
+      "status": "PENDING"
+    }
+  ],
+  "offScheduleOrWrongPolicy": 0,
+  "prediction": {
+    "version": "ati-structural-specialists-m1-15-v1",
+    "target": "FIRST_STRUCTURAL_BREAK_15_M1",
+    "executionAuthority": "NONE",
+    "historyLimit": 250,
+    "receiptsRead": 19,
+    "atHistoryLimit": false,
+    "outsideScope": 0,
+    "invalidOriginTime": 0,
+    "cohorts": [
+      {
+        "symbol": "V75",
+        "provider": "deriv_public",
+        "sourceKind": "BROKER_HISTORY",
+        "forecastVersion": "arx-v6.7-implementation-1",
+        "featureVersion": "arx-v6.7-implementation-1:features-1",
+        "eventDefinitionVersion": "arx-v6.7-implementation-1:events-1",
+        "receipts": 19,
+        "anchors": 19,
+        "overlappingOrUpdates": 0,
+        "missingSpecialists": 0,
+        "invalidEvidence": 0,
+        "unresolved": 1,
+        "paired": {
+          "windows": 18,
+          "poolBrier": 0.6165420663387464,
+          "incumbentBrier": 0.625045492865498,
+          "frequencyBrier": 0.6359977617079889,
+          "gainOverIncumbent": 0.008503426526751687,
+          "gainOverFrequency": 0.0194556953692426,
+          "specialists": [
+            {
+              "id": "STRUCTURE",
+              "standaloneBrier": 0.6440357850878149,
+              "standaloneGainOverFrequency": -0.008038023379825806,
+              "poolWithoutBrier": 0.614013839568152,
+              "gainFromIncluding": -0.0025282267705943667
+            },
+            {
+              "id": "MOMENTUM",
+              "standaloneBrier": 0.6200002218075295,
+              "standaloneGainOverFrequency": 0.015997539900459448,
+              "poolWithoutBrier": 0.6206781199948169,
+              "gainFromIncluding": 0.004136053656070492
+            },
+            {
+              "id": "LIQUIDITY",
+              "standaloneBrier": 0.6502611786861978,
+              "standaloneGainOverFrequency": -0.014263416978208703,
+              "poolWithoutBrier": 0.6105504532540115,
+              "gainFromIncluding": -0.005991613084734972
+            },
+            {
+              "id": "PATTERN",
+              "standaloneBrier": 0.6202573341450053,
+              "standaloneGainOverFrequency": 0.015740427562983494,
+              "poolWithoutBrier": 0.6285243252459567,
+              "gainFromIncluding": 0.011982258907210323
+            }
+          ]
+        },
+        "specialistReliability": [
+          {
+            "id": "STRUCTURE",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 2,
+                "confidence": 0.3867930692972007,
+                "accuracy": 0.5
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 12,
+                "confidence": 0.44024898827656317,
+                "accuracy": 0.75
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 4,
+                "confidence": 0.5504154734316304,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "MOMENTUM",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 2,
+                "confidence": 0.39402332059268896,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 10,
+                "confidence": 0.43986772450018574,
+                "accuracy": 0.2
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 5,
+                "confidence": 0.549454765083335,
+                "accuracy": 0.8
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 1,
+                "confidence": 0.6151278917656933,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "LIQUIDITY",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 10,
+                "confidence": 0.3786427534022777,
+                "accuracy": 0.5
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 8,
+                "confidence": 0.42633032029046586,
+                "accuracy": 0.375
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          },
+          {
+            "id": "PATTERN",
+            "bins": [
+              {
+                "lower": 0,
+                "upper": 0.1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "n": 5,
+                "confidence": 0.38150573085037565,
+                "accuracy": 0
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "n": 7,
+                "confidence": 0.44670373724066265,
+                "accuracy": 0.14285714285714285
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "n": 3,
+                "confidence": 0.5219981484784414,
+                "accuracy": 0.3333333333333333
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "n": 1,
+                "confidence": 0.677038912500423,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "n": 2,
+                "confidence": 0.7624499421048649,
+                "accuracy": 1
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              },
+              {
+                "lower": 0.9,
+                "upper": 1,
+                "n": 0,
+                "confidence": null,
+                "accuracy": null
+              }
+            ]
+          }
+        ],
+        "poolReliability": [
+          {
+            "lower": 0,
+            "upper": 0.1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.1,
+            "upper": 0.2,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.2,
+            "upper": 0.3,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.3,
+            "upper": 0.4,
+            "n": 6,
+            "confidence": 0.3812701443963631,
+            "accuracy": 0.3333333333333333
+          },
+          {
+            "lower": 0.4,
+            "upper": 0.5,
+            "n": 9,
+            "confidence": 0.4254572819100533,
+            "accuracy": 0.3333333333333333
+          },
+          {
+            "lower": 0.5,
+            "upper": 0.6,
+            "n": 3,
+            "confidence": 0.5257385148246664,
+            "accuracy": 1
+          },
+          {
+            "lower": 0.6,
+            "upper": 0.7,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.7,
+            "upper": 0.8,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.8,
+            "upper": 0.9,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          },
+          {
+            "lower": 0.9,
+            "upper": 1,
+            "n": 0,
+            "confidence": null,
+            "accuracy": null
+          }
+        ],
+        "byTrend": [
+          {
+            "trend": "UP",
+            "windows": 10,
+            "poolBrier": 0.6202587395554648,
+            "incumbentBrier": 0.5954386294400471,
+            "frequencyBrier": 0.6213972107438017,
+            "gainOverIncumbent": -0.024820110115417692,
+            "gainOverFrequency": 0.0011384711883369314,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": 0.6870564416627578,
+                "standaloneGainOverFrequency": -0.06565923091895616,
+                "poolWithoutBrier": 0.6061399709023922,
+                "gainFromIncluding": -0.014118768653072383
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": 0.6332090208008796,
+                "standaloneGainOverFrequency": -0.011811810057078053,
+                "poolWithoutBrier": 0.6196402116178241,
+                "gainFromIncluding": -0.0006185279376406394
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": 0.6472770400941034,
+                "standaloneGainOverFrequency": -0.025879829350301743,
+                "poolWithoutBrier": 0.6163778304666716,
+                "gainFromIncluding": -0.00388090908879305
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": 0.5893037119633993,
+                "standaloneGainOverFrequency": 0.032093498780402484,
+                "poolWithoutBrier": 0.6473004181571131,
+                "gainFromIncluding": 0.02704167860164857
+              }
+            ]
+          },
+          {
+            "trend": "DOWN",
+            "windows": 8,
+            "poolBrier": 0.6118962248178484,
+            "incumbentBrier": 0.662054072147312,
+            "frequencyBrier": 0.6542484504132231,
+            "gainOverIncumbent": 0.05015784732946341,
+            "gainOverFrequency": 0.042352225595374694,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": 0.590259964369136,
+                "standaloneGainOverFrequency": 0.06398848604408713,
+                "poolWithoutBrier": 0.6238561754003517,
+                "gainFromIncluding": 0.011959950582503154
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": 0.6034892230658419,
+                "standaloneGainOverFrequency": 0.05075922734738133,
+                "poolWithoutBrier": 0.6219755054660578,
+                "gainFromIncluding": 0.010079280648209406
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": 0.6539913519263156,
+                "standaloneGainOverFrequency": 0.00025709848690759485,
+                "poolWithoutBrier": 0.603266231738186,
+                "gainFromIncluding": -0.008629993079662376
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": 0.6589493618720135,
+                "standaloneGainOverFrequency": -0.004700911458790244,
+                "poolWithoutBrier": 0.605054209107011,
+                "gainFromIncluding": -0.006842015710837486
+              }
+            ]
+          },
+          {
+            "trend": "UNESTABLISHED",
+            "windows": 0,
+            "poolBrier": null,
+            "incumbentBrier": null,
+            "frequencyBrier": null,
+            "gainOverIncumbent": null,
+            "gainOverFrequency": null,
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "MOMENTUM",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "LIQUIDITY",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              },
+              {
+                "id": "PATTERN",
+                "standaloneBrier": null,
+                "standaloneGainOverFrequency": null,
+                "poolWithoutBrier": null,
+                "gainFromIncluding": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "costs": {
+    "version": "ati-structural-specialists-m1-15-v1",
+    "target": "FIRST_STRUCTURAL_BREAK_15_M1",
+    "executionAuthority": "NONE",
+    "historyLimit": 250,
+    "receiptsRead": 19,
+    "atHistoryLimit": false,
+    "outsideScope": 0,
+    "invalidOriginTime": 0,
+    "study": "fixed-horizon-bid-ask-v1",
+    "mode": "PUBLIC_QUOTE_SIMULATION",
+    "unit": "ONE_UNIT_PRICE_POINTS",
+    "costBasis": {
+      "spread": "OBSERVED_BID_ASK",
+      "assumedSlippagePointsPerSide": 1,
+      "assumedOtherCostPoints": 0,
+      "observedBrokerCharges": null
+    },
+    "cohorts": [
+      {
+        "symbol": "V75",
+        "provider": "deriv_public",
+        "sourceKind": "BROKER_HISTORY",
+        "forecastVersion": "arx-v6.7-implementation-1",
+        "featureVersion": "arx-v6.7-implementation-1:features-1",
+        "eventDefinitionVersion": "arx-v6.7-implementation-1:events-1",
+        "receipts": 19,
+        "anchors": 19,
+        "overlappingOrUpdates": 0,
+        "missingSpecialists": 0,
+        "invalidEvidence": 0,
+        "unresolved": 1,
+        "scoredWindows": 18,
+        "pricedWindows": 14,
+        "pool": {
+          "active": 13,
+          "changedSide": 0,
+          "meanAssumedNetPoints": -44.13470000000026,
+          "poolGainPoints": 0
+        },
+        "incumbent": {
+          "active": 10,
+          "changedSide": 8,
+          "meanAssumedNetPoints": -22.443878571428545,
+          "poolGainPoints": -21.690821428571716
+        },
+        "frequency": {
+          "active": 12,
+          "changedSide": 9,
+          "meanAssumedNetPoints": -54.9359642857141,
+          "poolGainPoints": 10.801264285713842
+        },
+        "specialists": [
+          {
+            "id": "STRUCTURE",
+            "alone": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -4.629650000001026,
+              "poolGainPoints": -39.50504999999924
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -106.24122142857075,
+              "poolGainPoints": 62.106521428570495
+            }
+          },
+          {
+            "id": "MOMENTUM",
+            "alone": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -74.70012142857169,
+              "poolGainPoints": 30.565421428571426
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -59.07505000000102,
+              "poolGainPoints": 14.940350000000763
+            }
+          },
+          {
+            "id": "LIQUIDITY",
+            "alone": {
+              "active": 14,
+              "changedSide": 6,
+              "meanAssumedNetPoints": 20.304492857143487,
+              "poolGainPoints": -64.43919285714375
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 1,
+              "meanAssumedNetPoints": -38.87639285714301,
+              "poolGainPoints": -5.25830714285725
+            }
+          },
+          {
+            "id": "PATTERN",
+            "alone": {
+              "active": 14,
+              "changedSide": 7,
+              "meanAssumedNetPoints": -101.0391928571423,
+              "poolGainPoints": 56.90449285714203
+            },
+            "omitted": {
+              "active": 14,
+              "changedSide": 3,
+              "meanAssumedNetPoints": -4.629650000001026,
+              "poolGainPoints": -39.50504999999924
+            }
+          }
+        ],
+        "gaps": [
+          {
+            "receiptId": "structural-18ad303e8b9faced8d634ce5f07b127b5084321d1a1d5a029f9eb90fac2345a0",
+            "reason": "INCOMPLETE_TAPE"
+          },
+          {
+            "receiptId": "structural-e92c06460c91c1df074d0b24c7c34ff78688e3b14e882454fbfa409dbe38aa1a",
+            "reason": "INCOMPLETE_TAPE"
+          },
+          {
+            "receiptId": "structural-d3737514a27801a62c0687e1bccd72fb44bab64dfec52a3cc91179c03b4e37c8",
+            "reason": "INCOMPLETE_TAPE"
+          },
+          {
+            "receiptId": "structural-5980eee817bf8c7815122f7ce7b26bc37717d8c92ee2016cf30e9e8bcff0f1f2",
+            "reason": "INCOMPLETE_TAPE"
+          }
+        ],
+        "byTrend": [
+          {
+            "trend": "UP",
+            "pricedWindows": 8,
+            "pool": {
+              "active": 8,
+              "changedSide": 0,
+              "meanAssumedNetPoints": -15.065975000000435,
+              "poolGainPoints": 0
+            },
+            "incumbent": {
+              "active": 4,
+              "changedSide": 6,
+              "meanAssumedNetPoints": -33.44784999999956,
+              "poolGainPoints": 18.381874999999127
+            },
+            "frequency": {
+              "active": 7,
+              "changedSide": 7,
+              "meanAssumedNetPoints": -67.98961249999957,
+              "poolGainPoints": 52.92363749999913
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -15.039975000000595,
+                  "poolGainPoints": -0.02599999999983993
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -132.954424999999,
+                  "poolGainPoints": 117.88844999999856
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -124.89627500000006,
+                  "poolGainPoints": 109.83029999999962
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -29.509550000001582,
+                  "poolGainPoints": 14.443575000001147
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 29.847650000000613,
+                  "poolGainPoints": -44.91362500000105
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": -15.065975000000435,
+                  "poolGainPoints": 0
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 8,
+                  "changedSide": 4,
+                  "meanAssumedNetPoints": -72.41652499999964,
+                  "poolGainPoints": 57.3505499999992
+                },
+                "omitted": {
+                  "active": 8,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -15.039975000000595,
+                  "poolGainPoints": -0.02599999999983993
+                }
+              }
+            ]
+          },
+          {
+            "trend": "DOWN",
+            "pricedWindows": 6,
+            "pool": {
+              "active": 5,
+              "changedSide": 0,
+              "meanAssumedNetPoints": -82.89300000000003,
+              "poolGainPoints": 0
+            },
+            "incumbent": {
+              "active": 6,
+              "changedSide": 2,
+              "meanAssumedNetPoints": -7.771916666667191,
+              "poolGainPoints": -75.12108333333283
+            },
+            "frequency": {
+              "active": 5,
+              "changedSide": 2,
+              "meanAssumedNetPoints": -37.53110000000015,
+              "poolGainPoints": -45.36189999999988
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 9.250783333331734,
+                  "poolGainPoints": -92.14378333333177
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -70.62361666666645,
+                  "poolGainPoints": -12.269383333333584
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": -7.771916666667191,
+                  "poolGainPoints": -75.12108333333283
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -98.49571666666695,
+                  "poolGainPoints": 15.602716666666916
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 4,
+                  "meanAssumedNetPoints": 7.580283333333985,
+                  "poolGainPoints": -90.47328333333401
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 1,
+                  "meanAssumedNetPoints": -70.62361666666645,
+                  "poolGainPoints": -12.269383333333584
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 6,
+                  "changedSide": 3,
+                  "meanAssumedNetPoints": -139.20274999999916,
+                  "poolGainPoints": 56.309749999999134
+                },
+                "omitted": {
+                  "active": 6,
+                  "changedSide": 2,
+                  "meanAssumedNetPoints": 9.250783333331734,
+                  "poolGainPoints": -92.14378333333177
+                }
+              }
+            ]
+          },
+          {
+            "trend": "UNESTABLISHED",
+            "pricedWindows": 0,
+            "pool": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "incumbent": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "frequency": {
+              "active": 0,
+              "changedSide": 0,
+              "meanAssumedNetPoints": null,
+              "poolGainPoints": null
+            },
+            "specialists": [
+              {
+                "id": "STRUCTURE",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "MOMENTUM",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "LIQUIDITY",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              },
+              {
+                "id": "PATTERN",
+                "alone": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                },
+                "omitted": {
+                  "active": 0,
+                  "changedSide": 0,
+                  "meanAssumedNetPoints": null,
+                  "poolGainPoints": null
+                }
+              }
+            ]
+          }
+        ],
+        "witnesses": [
+          {
+            "receiptId": "structural-8c8aca2add7e3a70636498d340394ada5886ada74e2d884129792f60c684d9b7",
+            "long": -7.89600000000064,
+            "short": -8.10399999999936,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795506310,
+            "exitEpoch": 1795507200,
+            "frames": 447,
+            "tapeHash": "acfee0e11220a408d95e7de03c992fb569cc38e5c7d404114387d1131f9f43d0"
+          },
+          {
+            "receiptId": "structural-a7c190beaedf13e5360e987034a99685580d861254b5b570372825fa5ecb5317",
+            "long": -149.30080000000453,
+            "short": 133.30080000000453,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795507206,
+            "exitEpoch": 1795508100,
+            "frames": 449,
+            "tapeHash": "4a1f191b80be9de12c598beae0536fe974cb4bd3c578ec2b38296e302d8e0684"
+          },
+          {
+            "receiptId": "structural-2be99360244fb58f6989eb28286b8684f24bc7dea8d453408926bd6f6c8184d6",
+            "long": -331.23949999999604,
+            "short": 315.23949999999604,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795508106,
+            "exitEpoch": 1795509000,
+            "frames": 449,
+            "tapeHash": "3fe62d71599282afe3c3b057d12cadd51760dad80be92861784fa0629716f8b1"
+          },
+          {
+            "receiptId": "structural-0e10f629f557cf22fcbb9af00fbbee08639a619b160b8415a853adf1307503a6",
+            "long": 138.31229999999778,
+            "short": -154.31229999999778,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795509906,
+            "exitEpoch": 1795510800,
+            "frames": 449,
+            "tapeHash": "540784584ab628403e67535564d89b2f81d7f40609d25394df00b97e2ecc8937"
+          },
+          {
+            "receiptId": "structural-75f44875a4bf30d02040f0783369d8d8180dd2f03349cdc0715564cc26156212",
+            "long": -115.20739999999932,
+            "short": 99.20739999999932,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795510808,
+            "exitEpoch": 1795511700,
+            "frames": 448,
+            "tapeHash": "c02dc06c2b46e07b879acbe39447a01eb9171a3b0bca82e900b074ec655b57b1"
+          },
+          {
+            "receiptId": "structural-c4c820fd1d2a08b1abfc97470c7125282a69ed59472741cdef8af5356b264b17",
+            "long": 75.6163000000015,
+            "short": -91.6163000000015,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795511706,
+            "exitEpoch": 1795512600,
+            "frames": 449,
+            "tapeHash": "1b0758702c7c81696c92a0677c3ed3a38ca813d2e43cd9c0dbbf9b23956d9716"
+          },
+          {
+            "receiptId": "structural-ba4c2b65d8121285fc4a641c0d8874890ef0bd7fa5e99793360caf1c12103a5b",
+            "long": 51.425100000000384,
+            "short": -67.42510000000038,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795513506,
+            "exitEpoch": 1795514400,
+            "frames": 449,
+            "tapeHash": "f5395e405ccf7959c720450e79be2e7c37bb58850bc6786ba042eb70e1b4f242"
+          },
+          {
+            "receiptId": "structural-c7216eeea58de92d9d5d7979911cc6208a3e2c11cab16d7190fc07dbb702f83a",
+            "long": 171.55050000000483,
+            "short": -187.55050000000483,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795514406,
+            "exitEpoch": 1795515300,
+            "frames": 449,
+            "tapeHash": "7d430d093c902ea9bb506a719ef179e252586b6ccc5f0270c7c10694f225dc99"
+          },
+          {
+            "receiptId": "structural-2ea045bac07beea8abf82daf40f15d8bcf7ef8438c05cd5420f6596d03fa2de6",
+            "long": 8.931900000003225,
+            "short": -24.931900000003225,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795515308,
+            "exitEpoch": 1795516200,
+            "frames": 448,
+            "tapeHash": "43dd06e206c3d8f30ddd4541d1119aa1167bbbf8efbaf0ff60c3fccbd95961e9"
+          },
+          {
+            "receiptId": "structural-c9d052bbb5591ab2d739bb708ce9cc5f02679d3439c63c98b737c2ca10df590f",
+            "long": 431.3211999999985,
+            "short": -447.3211999999985,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795517106,
+            "exitEpoch": 1795518000,
+            "frames": 449,
+            "tapeHash": "6bd6c35a14c4a040101f768b2bbc480476a04e57d8cb429d37feeca215511d8e"
+          },
+          {
+            "receiptId": "structural-4716ee1f1c716d8315664cd2cd96c0439abe5d4be3b88fb40e452c1d0dbd5bef",
+            "long": 24.232599999995728,
+            "short": -40.23259999999573,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795518006,
+            "exitEpoch": 1795518900,
+            "frames": 449,
+            "tapeHash": "8acba78b4fb5582eb53978b3a9f31080b314556c75091f7791d0accc2822ebf7"
+          },
+          {
+            "receiptId": "structural-2ea74fb9c59ac67070b354bf4b2abf3a026419268ef131b0f4fe7f131732065b",
+            "long": 49.87830000000395,
+            "short": -65.87830000000395,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795518906,
+            "exitEpoch": 1795519800,
+            "frames": 449,
+            "tapeHash": "9f54392310cb7cb3576d1122879833cda26c1a01f475da7e163e4d705fc900c5"
+          },
+          {
+            "receiptId": "structural-6ccfa71930d5de7515f48b2a7091fbd0007bf21f20efec1b1de50131848a4c02",
+            "long": -308.02990000000136,
+            "short": 292.02990000000136,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795520706,
+            "exitEpoch": 1795521600,
+            "frames": 449,
+            "tapeHash": "a2a4564d43eb54da748170cdced0f71abeb5b87baa7e41a156a478587b012bc7"
+          },
+          {
+            "receiptId": "structural-0c5bcbcd72f7fb791d3951496ce5ad90a53ac74a7fedc0ea3a9be35453aba50a",
+            "long": 180.55509999999776,
+            "short": -196.55509999999776,
+            "entrySpread": 8,
+            "exitSpread": 8,
+            "entryEpoch": 1795521606,
+            "exitEpoch": 1795522500,
+            "frames": 449,
+            "tapeHash": "0c1ced116f91d2795de63bc93428af79eb67846d89940f97ce149b8bd27e9fd2"
+          }
+        ]
+      }
+    ]
+  },
+  "verdict": "COLLECTING",
+  "executionAuthority": "NONE"
+}
