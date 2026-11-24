@@ -384,3 +384,62 @@ test("scalp-only conditions on an unverified read do not invite a scalp", () => 
     fastFlags: { ...ok.fastFlags, momentumBurst: true } }).scalp.text;
   assert.match(verifiedText, /^Scalp-only: there's a quick momentum burst/);
 });
+
+test("ATI compares only the frozen DEMO quote and chart, preserving the independent safety decision", async () => {
+  const { compareAtiDemoChart } = await import("../../../selfTrade/atiDemoChartComparison.js");
+  const { recordStateCandleWindow } = await import("../stateCandleWindow.js");
+  const { normalizeCandles } = await import("../candleNormalization.js");
+  const { buildEleanorMarketEdge } = await import("@workspace/domain/signal-intelligence");
+  const { runDecisionPipeline } = await import("@workspace/domain/self-trade");
+  const symbol = "EURUSD", timeframe = "M5", now = Math.floor(epoch / 300_000) * 300_000 + 1500;
+  const bar = { time: new Date(now - 301500).toISOString(), open: 1.1, high: 1.101, low: 1.099, close: 1.1 };
+  const [candle] = normalizeCandles([bar], { symbol, timeframe, source: "mt5_broker", displaySymbol: symbol, now }).candles;
+  assert.ok(candle);
+  const state = { ...aGradeState(gate(70)), symbol, latestClosedCandle: candle };
+  const market = { symbol, timeframe, source: "mt5_broker", sourceIdentity: "demo-chart-fixture", lastClosedCandleAt: candle.closeTime };
+  recordStateCandleWindow(state, [candle], market);
+  const origin = { mode: "DEMO" as const, receiptId: 9, bridgeConnectionId: 7, brokerSymbol: symbol,
+    streamKey: symbol, accountBinding: "a".repeat(64), historyIdentity: "b".repeat(64), brokerTickAtMs: now - 50 };
+  const chart = { state, truthResult: truthFixture({ priceBasis: "MID" }), feedStatus: { ...feed, symbol },
+    seriesAttribution: { providerId: "mt5_broker", subProviderId: null, userId: 70, environment: "demo" as const,
+      bridgeConnectionId: 7, brokerSymbol: symbol } };
+  const quote = { bid: 1.09999, ask: 1.10001, observedAt: new Date(now - 50).toISOString() };
+  const signal = buildEleanorMarketEdge({ symbol, displayName: symbol, timeframe, assetClass: "forex", now,
+    candles: Array.from({ length: 64 }, (_, i) => ({ ...bar, time: new Date(now - (64 - i) * 300000).toISOString() })),
+    currentPrice: 1.1, dataSource: "LIVE_FEED", scanner: null, scalp: null, execution: null, newsRiskLevel: null, previous: null });
+  signal.marketEvidence = { ...market, userId: 70 };
+  const rawHandshake = { ready: true, blocked: [], degraded: [] };
+  const input = { symbol, timeframe, now, signal, htfSignals: [], currentPrice: 1.1, symbolAllowed: true,
+    agentId: 3, agentKey: "fixture", agentRankWeight: 1, maxSpreadPoints: null, newsRisk: "none" as const,
+    execution: { liveSpreadPoints: null, heartbeatAgeSeconds: null, bridgeConnected: null },
+    funding: { availableFunds: 100, allocatedFunds: 100 }, governor: { status: "PAPER_ALLOWED", hardBlocks: [] },
+    quota: { dailyMinTrades: 0, effectiveMaxTrades: 1, tradesTakenToday: 0, remainingToMax: 1,
+      belowDailyMinimum: false, baseReached: false, hardCapReached: false },
+    handshake: { ready: false, blocked: ["CHART_TRUTH_BLOCKED"], degraded: [] }, killEngaged: true };
+  const baseline = runDecisionPipeline(input);
+  const compare = (ctx = chart, o = origin, q = quote) => compareAtiDemoChart(input, baseline, rawHandshake, ctx, q, o, 70, now);
+  const measured = compare();
+  assert.ok(measured.state === "MEASURED");
+  assert.equal(measured.chartAllowed, true);
+  assert.equal(measured.challenger.outcome, "BLOCKED");
+  assert.equal(measured.challenger.reason, baseline.reason);
+  assert.equal(measured.receiptId, 9);
+  assert.deepEqual(input.handshake.blocked, ["CHART_TRUTH_BLOCKED"]);
+  assert.equal(state.gateOutput.selfTradeChartAllowed, false);
+  for (const missing of [
+    compareAtiDemoChart(input, baseline, rawHandshake, chart, quote, { ...origin, mode: "LIVE" }, 70, now),
+    compareAtiDemoChart(input, baseline, rawHandshake, null, quote, origin, 70, now),
+    compare({ ...chart, seriesAttribution: { ...chart.seriesAttribution, userId: 71 } }),
+    compare({ ...chart, seriesAttribution: { ...chart.seriesAttribution, providerId: "deriv_public" } }),
+    compare(chart, { ...origin, bridgeConnectionId: 8 }),
+    compare(chart, { ...origin, brokerSymbol: "Volatility 75 (1s) Index" }),
+    compare(chart, origin, { ...quote, observedAt: new Date(now + 1).toISOString() }),
+    compare(chart, origin, { ...quote, observedAt: new Date(now - 60_000).toISOString() }),
+    compare({ ...chart, truthResult: truthFixture({ priceBasis: "UNKNOWN" }) }),
+  ]) {
+    assert.equal(missing.state, "UNAVAILABLE");
+    assert.equal(missing.challenger, null);
+  }
+  recordStateCandleWindow(state, [candle], { ...market, sourceIdentity: "prior-account-era" });
+  assert.equal(compare().state, "UNAVAILABLE");
+});

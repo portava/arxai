@@ -153,6 +153,7 @@ function comparison(read: CandidateRead, run: Run, sourceIdentity: string | null
       input,
       quote: read.observation.boundQuote,
       chartConfirmation: read.observation.chartConfirmation,
+      ...(coverage === "OBSERVED" && read.observation.demoChartComparison ? { demoChartComparison: read.observation.demoChartComparison } : {}),
       mt5QuoteOrigin: read.observation.mt5QuoteOrigin ?? null,
       ...(derivOrigin !== undefined ? { derivQuoteOrigin: retainedDerivOrigin } : {}),
       feedGapReason: atiInstrumentConflict(run.symbol, mt5Origin?.brokerSymbol) ? "MT5_INSTRUMENT_MISMATCH"
@@ -403,6 +404,7 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     setup: observations.setup,
     baselineOutcome: observations.baselineOutcome,
     challengerOutcome: observations.challengerOutcome,
+    demoChartComparison: sql<CandidateRead["observation"]["demoChartComparison"] | null>`${observations.evidence} -> 'demoChartComparison'`,
     frozenHandshake: sql<unknown>`${observations.evidence} #> '{input,handshake}'`,
     baselineReason: sql<string | null>`${observations.evidence} #>> '{baseline,reason}'`,
     chartConfirmation: sql<CandidateRead["observation"]["chartConfirmation"] | null>`${observations.evidence} -> 'chartConfirmation'`,
@@ -425,7 +427,7 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
   const native = run.baselineVersion === ATI_FLEET_BASELINE;
   const rows = storedRows.map(({ brokerSymbol, frozenHandshake, ...row }) => {
-    if (atiInstrumentConflict(run.symbol, brokerSymbol)) return { ...row, handshake: null, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
+    if (atiInstrumentConflict(run.symbol, brokerSymbol)) return { ...row, handshake: null, demoChartComparison: null, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
       gradedAt: null, gradeVersion: null, decisionQuote: null, chartConfirmation: null, regimeAssessment: null, counterargument: null, retestPlan: null };
     const parsed = native ? recordedHandshake.safeParse(frozenHandshake) : null;
     return { ...row, handshake: parsed?.success ? parsed.data : null };
@@ -539,12 +541,13 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       pnlRiskBasis: "FROZEN_PLANNED_STOP_DISTANCE",
     } : {}),
     ...(regimeReport ? { regimeReport } : {}),
-    observations: rows.map(({ decisionQuote, handshake, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
+    observations: rows.map(({ decisionQuote, handshake, demoChartComparison, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
       ...row,
       ...(fleetReceipt ? { fleetReceipt, handshake, fleetPrice: fleetPriceOrigin ? {
         symbol: fleetPriceOrigin.symbol, epoch: fleetPriceOrigin.epoch,
       } : null } : {}),
       ...(chartConfirmation ? { chartConfirmation } : {}),
+      ...(demoChartComparison ? { demoChartComparison } : {}),
       ...(counterargument ? { counterargument } : {}),
       ...(retestPlan ? { retestPlan } : {}),
       ...(regimeAssessment ? { regimeAssessment } : {}),

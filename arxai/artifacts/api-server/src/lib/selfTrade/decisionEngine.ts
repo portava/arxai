@@ -44,6 +44,8 @@ import type {
   EleanorMarketEdgeSignal,
 } from "@workspace/domain/signal-intelligence";
 import { logger } from "../logger.js";
+import { compareAtiDemoChart, type AtiDemoChartComparison } from "./atiDemoChartComparison.js";
+import { selfTradeChartConfirmation } from "./selfTradeChartConfirmation.js";
 import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
 import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
@@ -92,6 +94,7 @@ export interface DecisionCycleResult {
 const cache = new Map<string, { at: number; result: DecisionCycleResult }>();
 
 export interface SelfTradeObservationInput {
+  demoChartComparison?: AtiDemoChartComparison;
   input: DecisionCandidateInput;
   chartConfirmation: { allowed: boolean; reason: string | null };
   boundQuote: { bid: number; ask: number; observedAt: string } | null;
@@ -186,62 +189,9 @@ async function buildCandidate(
     observe ? Promise.resolve(null) : routeQuote(symbol).catch(() => null),
   ]);
 
-  // Phase 4: Check whether the Phase 3 chart gate allows chart-based
-  // confirmation for this symbol. If selfTradeChartAllowed is false, inject
-  // CHART_TRUTH_BLOCKED into handshake.blocked so the pure decision pipeline
-  // knows chart confirmation is unavailable (advisory downgrade, never a real
-  // execution block — the 16-gate live pipeline is untouched).
-  // Use only cached state (no provider re-probe) — fail-safe: absent cache →
-  // chart confirmation blocked (conservative, never fabricate a pass).
-  // Phase 4: Chart gate for self-trade chart-based confirmation.
-  // Requires ALL of:
-  //   - selfTradeChartAllowed (Chart Truth ≥ 75)
-  //   - autonomousChartActionAllowed (feed not stale — no autonomous action on stale data)
-  //   - tradeConfirmationAllowed (mirror synced — chart entry/stop references usable)
-  //   - current candle is closed (no forming-candle confirmation)
-  // Fail-safe: absent cache → chartGateAllowed = false (conservative, no fabrication).
-  // Advisory only — never touches the 16-gate live dispatch pipeline.
-  let chartGateAllowed = false;
-  let chartGateNote: string | null = null;
-  {
-    const cached =
-      getCachedIntelligenceContext(symbol, PRIMARY_TF, 300) ??
-      getCachedIntelligenceContext(symbol, PRIMARY_TF, 200);
-    if (cached) {
-      const gate = cached.state.gateOutput;
-      // Truth check (Chart Truth ≥ 75)
-      if (!gate.selfTradeChartAllowed) {
-        chartGateNote = gate.primaryBlockReason ??
-          "Chart Truth below threshold — chart-based confirmation unavailable.";
-      }
-      // Freshness check (feed not stale)
-      else if (!gate.autonomousChartActionAllowed) {
-        chartGateNote = gate.primaryBlockReason ??
-          "Chart feed is stale — autonomous chart-based confirmation withheld.";
-      }
-      // Mirror check (broker price alignment in tolerance)
-      else if (!gate.tradeConfirmationAllowed) {
-        chartGateNote = gate.primaryBlockReason ??
-          "Broker price mirror is degraded — chart-based entry/stop confirmation unavailable.";
-      }
-      // Broker data availability: tradeConfirmationAllowed can be true even when
-      // broker quote was never available (alignmentFailed is only set when
-      // brokerDataAvailable=true AND tolerance="failed"). For autonomous self-trade
-      // the broker-alignment check must be confirmed with real broker data present.
-      else if (!cached.state.brokerAlignment.brokerDataAvailable) {
-        chartGateNote = "Broker price data not available — self-trade chart confirmation requires live broker alignment evidence.";
-      }
-      // Closed-candle requirement: strategies must not confirm on a still-forming candle.
-      else if (cached.state.currentCandle != null) {
-        chartGateNote = "Current candle has not closed — chart-based confirmation withheld until the bar closes.";
-      }
-      else {
-        chartGateAllowed = true;
-      }
-    } else {
-      chartGateNote = "Chart intelligence not yet cached — chart-based confirmation unavailable.";
-    }
-  }
+  const cached = getCachedIntelligenceContext(symbol, PRIMARY_TF, 300) ?? getCachedIntelligenceContext(symbol, PRIMARY_TF, 200);
+  const chartConfirmation = selfTradeChartConfirmation(cached?.state ?? null);
+  const { allowed: chartGateAllowed, reason: chartGateNote } = chartConfirmation;
 
   // When the chart gate blocks, inject CHART_TRUTH_BLOCKED into the advisory
   // handshake so the pure pipeline's handshake-readiness check can degrade the
@@ -303,7 +253,11 @@ async function buildCandidate(
   const costQuote = freezeAtiDecisionQuote(quote, effectiveUserId, decidedAt);
   const candidate = runDecisionPipeline(input);
   if (observe || captureFleet) {
-    const observation = { input, ...evidence, chartConfirmation: { allowed: chartGateAllowed, reason: chartGateNote } };
+    const observation: SelfTradeObservationInput = { input, ...evidence, chartConfirmation };
+    if (observe && evidence.mt5QuoteOrigin?.mode === "DEMO") {
+      observation.demoChartComparison = compareAtiDemoChart(input, candidate, handshake, cached, evidence.boundQuote,
+        evidence.mt5QuoteOrigin, effectiveUserId, decidedAt);
+    }
     observe?.(observation);
     captureFleet?.({ observation, priceOrigin: fleetPriceOrigin(quote) });
   }

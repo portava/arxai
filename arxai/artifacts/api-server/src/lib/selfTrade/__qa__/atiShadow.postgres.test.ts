@@ -31,6 +31,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
     receiptId: 1, streamKey: "EURUSD", bridgeConnectionId: 11, accountBinding: "1".repeat(64), historyIdentity: "2".repeat(64),
     mode: "LIVE", brokerSymbol: "EURUSD", brokerTickAtMs: base,
   };
+  let demoChartComparison: import("../atiDemoChartComparison.js").AtiDemoChartComparison | undefined;
   let readCount = 0;
   mock.module("../decisionEngine.js", { namedExports: {
     canObserveSelfTradeAgent: async (owner: number, agent: number, symbol: string) => owner === 1 && agent === 3 && symbol === "V75",
@@ -63,6 +64,7 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
               userId: ownerId, lastClosedCandleAt: new Date(slot).toISOString() },
           } },
           chartConfirmation: { allowed: true, reason: null },
+          ...(demoChartComparison ? { demoChartComparison } : {}),
           boundQuote: { bid: 1.1, ask: 1.1001, observedAt: new Date(slot + 1_000 + quoteOffset).toISOString() },
           mt5QuoteOrigin: symbol === "EURUSD" ? mt5QuoteOrigin : null,
           ...(symbol === "V75" && derivQuoteOrigin !== undefined ? { derivQuoteOrigin } : {}),
@@ -2384,6 +2386,37 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
       } finally {
         clock.mock.restore();
       }
+    });
+    await t.test("DEMO chart comparison survives a report restart without replacing the paired strategy or creating a fill", async () => {
+      slot = base;
+      quoteOffset = -1;
+      dataSource = "LIVE_FEED";
+      assert.ok(mt5QuoteOrigin);
+      mt5QuoteOrigin = { ...mt5QuoteOrigin, mode: "DEMO" };
+      demoChartComparison = {
+        version: "ati-demo-chart-comparison-v1", scope: "PRE_SUPERVISOR", evaluatedAt: slot + 1000, executionAuthority: "NONE",
+        baseline: { outcome: "APPROVED_REDUCED", reason: "Higher timeframe opposes." },
+        state: "MEASURED", chartAllowed: true, mode: "DEMO", receiptId: mt5QuoteOrigin.receiptId,
+        brokerSymbol: "EURUSD", sourceIdentity, candleClosedAt: new Date(slot).toISOString(), candlePrice: 1.1,
+        priceBasis: "BID", tickAt: new Date(slot + 999).toISOString(), bid: 1.1, ask: 1.1001,
+        tolerance: "tight", deviationPct: 0, chartTruthScore: 87, chartReason: null,
+        challenger: { outcome: "APPROVED", reason: "Fixture comparison" },
+      };
+      const demo = await startAtiShadowRun(1, 3, pilot);
+      assert.ok(demo);
+      const stored = await restarted.readAtiShadowRun(1, 3, demo.runId);
+      const bar = stored?.observations[0];
+      assert.deepEqual(bar?.demoChartComparison, demoChartComparison);
+      assert.equal(bar.challengerOutcome, "WAIT");
+      assert.equal(bar.grade, null);
+      assert.equal(stored?.executionCosts.demo.commandCount, 0);
+      assert.equal(await restarted.readAtiShadowRun(2, 3, demo.runId), null);
+      quoteOffset = 60_000;
+      slot += 300_000;
+      await appendAtiShadowObservation(1, 3, demo.runId);
+      const after = await restarted.readAtiShadowRun(1, 3, demo.runId);
+      assert.equal(after?.observations[1]?.coverage, "NO_OBSERVED_FEED");
+      assert.equal(after?.observations[1]?.demoChartComparison, undefined);
     });
   } finally {
     await pool.end();
