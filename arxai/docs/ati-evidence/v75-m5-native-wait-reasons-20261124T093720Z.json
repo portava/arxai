@@ -1,0 +1,127 @@
+{
+  "asOf": "2026-11-24T09:37:20.000Z",
+  "symbol": "V75",
+  "timeframe": "M5",
+  "setup": "TREND_CONTINUATION",
+  "captureMode": "PERSISTED_OWNER_FLEET_CYCLES",
+  "executionAuthority": "NONE",
+  "counts": {
+    "observations": 14,
+    "paired": 13,
+    "different": 0,
+    "noObservedFeed": 1,
+    "sourceChanged": 0,
+    "ungraded": 0,
+    "unresolved": 0
+  },
+  "scope": "ISOLATED_OBSERVED_PUBLIC_FEED_SHADOW_PILOT",
+  "runId": "5e2f983a-81e8-48fd-8152-5734414336e8",
+  "cohortVersion": {
+    "build": {
+      "revision": "4a37e3af7e5eff5faa53cdc414fd86d259472cd5",
+      "sourceState": "clean"
+    },
+    "engine": "SELF_TRADE_FLEET_DECISION",
+    "decisionSettingsHash": "4c6436011b3e8c3b15bd7dc8b5886f0794d5ce48f977c58d126a356964b4af09"
+  },
+  "sourceIdentity": "b4b6bd20d0fbeea87c8acfceff5b7cf022a3a99af8f7118f6115146b0efbbe38",
+  "eligibleEntries": 0,
+  "decisionBreakdown": [
+    {
+      "baselineOutcome": "WAIT",
+      "baselineReason": "System readiness handshake not green",
+      "challengerOutcome": "WAIT",
+      "challengerReason": "System readiness handshake not green",
+      "handshake": {
+        "ready": false,
+        "blocked": [
+          "CHART_TRUTH_BLOCKED"
+        ],
+        "degraded": []
+      },
+      "chartConfirmation": {
+        "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+        "allowed": false
+      },
+      "bars": 8
+    },
+    {
+      "baselineOutcome": "WAIT",
+      "baselineReason": "System readiness handshake not green",
+      "challengerOutcome": "WAIT",
+      "challengerReason": "System readiness handshake not green",
+      "handshake": {
+        "ready": false,
+        "blocked": [
+          "CHART_TRUTH_BLOCKED"
+        ],
+        "degraded": []
+      },
+      "chartConfirmation": {
+        "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+        "allowed": false
+      },
+      "bars": 3
+    },
+    {
+      "baselineOutcome": "WAIT",
+      "baselineReason": "Market data stale",
+      "challengerOutcome": "WAIT",
+      "challengerReason": "Market data stale",
+      "handshake": {
+        "ready": false,
+        "blocked": [
+          "CHART_TRUTH_BLOCKED"
+        ],
+        "degraded": []
+      },
+      "chartConfirmation": {
+        "reason": "Chart intelligence not yet cached \u2014 chart-based confirmation unavailable.",
+        "allowed": false
+      },
+      "bars": 1
+    },
+    {
+      "baselineOutcome": "WAIT",
+      "baselineReason": "Market data stale",
+      "challengerOutcome": "WAIT",
+      "challengerReason": "Market data stale",
+      "handshake": {
+        "ready": false,
+        "blocked": [
+          "CHART_TRUTH_BLOCKED"
+        ],
+        "degraded": []
+      },
+      "chartConfirmation": {
+        "reason": "Broker price data not available \u2014 self-trade chart confirmation requires live broker alignment evidence.",
+        "allowed": false
+      },
+      "bars": 1
+    }
+  ],
+  "nativeVerification": {
+    "matchedReceipts": 14,
+    "pairedDecisionIds": [
+      1,
+      7,
+      16,
+      25,
+      34,
+      44,
+      53,
+      62,
+      72,
+      81,
+      90,
+      100,
+      109
+    ],
+    "pairedNativeHandshakeCheck": "FAIL: CHART_TRUTH_BLOCKED"
+  },
+  "independentReadbacks": {
+    "copies": 2,
+    "shadowReportSha256": "c1237341be18b8a6776e970edc4e762fc5c83ad07e89979733fbb2c862d11e17",
+    "captureCoverageSha256": "f2f5a0078eb1c31838dac81aaa1b75a320f3c38d0cbb101d8091f0215b6fdf70"
+  }
+}

@@ -2339,6 +2339,8 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         await gradeAtiShadowRun(1, 3, native.runId);
         slot += 300_000;
         const second = await nativeInputs();
+        second.captured.observation.input.handshake = { ready: false, blocked: ["CHART_TRUTH_BLOCKED"], degraded: [] };
+        second.captured.observation.chartConfirmation = { allowed: false, reason: "Broker alignment unavailable" };
         clockAt = slot + 1000;
         const { resolveSupervisor } = await import("@workspace/domain/self-trade");
         const [contested] = resolveSupervisor([
@@ -2359,6 +2361,16 @@ test("ATI Shadow stores one immutable paired read per bar and isolates owners an
         assert.equal(report.fleetCohorts?.length, 2);
         assert.equal(report.fleetCohorts[0]?.changedDecisions, 1);
         assert.equal(report.fleetCohorts[1]?.eligibleEntries, 0);
+        const firstDecision = report.fleetCohorts[0]?.decisionBreakdown[0];
+        assert.ok(firstDecision);
+        assert.equal(firstDecision.handshake, null, "an older receipt with no handshake has unknown readiness");
+        assert.equal(firstDecision.challengerOutcome, "WAIT");
+        const contestedReasons = report.fleetCohorts[1]?.decisionBreakdown;
+        assert.equal(contestedReasons?.length, 1);
+        assert.equal(contestedReasons[0]!.bars, 1, "an unverified feed receipt cannot increase the decision count");
+        assert.equal(contestedReasons[0]!.baselineOutcome, "ASSIGNED_TO_ANOTHER");
+        assert.deepEqual(contestedReasons[0]!.handshake, second.captured.observation.input.handshake);
+        assert.deepEqual(contestedReasons[0]!.chartConfirmation, second.captured.observation.chartConfirmation);
         assert.equal(report.observations[0]?.grade?.state, "SIMULATED_FILL", JSON.stringify(report.observations[0]?.grade));
         assert.equal(report.observations[0]?.challengerOutcome, "WAIT");
         assert.equal(report.observations[1]?.challengerOutcome, "ASSIGNED_TO_ANOTHER");

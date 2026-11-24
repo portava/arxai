@@ -2,6 +2,7 @@ import { atiInstrumentConflict } from "../data/atiBrokerInstrument.js";
 import type { DbOrTx } from "./audit.js";
 import { atiDecisionSettingsHash } from "./atiStrategyOrigin.js";
 import { createHash, randomUUID } from "node:crypto";
+import { z } from "zod";
 import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import {
   atiShadowObservationsTable as observations, atiShadowOutcomesTable as outcomes,
@@ -369,6 +370,28 @@ export async function gradeAtiShadowRun(ownerId: number, agentId: number, runId:
   return { checked: pending.length, recorded, pending: pending.length - grades.length, executionAuthority: AUTHORITY };
 }
 
+const recordedHandshake = z.object({
+  ready: z.boolean(), blocked: z.array(z.string()), degraded: z.array(z.string()),
+});
+
+type FleetDecisionEvidence = {
+  baselineOutcome: string; baselineReason: string | null; challengerOutcome: string; challengerReason: string | null;
+  handshake: z.infer<typeof recordedHandshake> | null;
+  chartConfirmation: CandidateRead["observation"]["chartConfirmation"] | null;
+};
+
+function summarizeFleetDecisions(rows: FleetDecisionEvidence[]) {
+  const groups = new Map<string, FleetDecisionEvidence & { bars: number }>();
+  for (const { baselineOutcome, baselineReason, challengerOutcome, challengerReason, handshake, chartConfirmation } of rows) {
+    const decision = { baselineOutcome, baselineReason, challengerOutcome, challengerReason, handshake, chartConfirmation };
+    const key = JSON.stringify(decision);
+    const group = groups.get(key);
+    if (group) group.bars++;
+    else groups.set(key, { ...decision, bars: 1 });
+  }
+  return [...groups.values()];
+}
+
 export async function readAtiShadowRun(ownerId: number, agentId: number, runId: string, asOf?: Date) {
   const [run] = await db.select().from(runs).where(runScope(ownerId, agentId, runId)).limit(1);
   if (!run || (asOf && run.startedAt > asOf)) return null;
@@ -380,9 +403,10 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     setup: observations.setup,
     baselineOutcome: observations.baselineOutcome,
     challengerOutcome: observations.challengerOutcome,
-    baselineReason: sql<string>`${observations.evidence} #>> '{baseline,reason}'`,
+    frozenHandshake: sql<unknown>`${observations.evidence} #> '{input,handshake}'`,
+    baselineReason: sql<string | null>`${observations.evidence} #>> '{baseline,reason}'`,
     chartConfirmation: sql<CandidateRead["observation"]["chartConfirmation"] | null>`${observations.evidence} -> 'chartConfirmation'`,
-    challengerReason: sql<string>`${observations.evidence} ->> 'challengerReason'`,
+    challengerReason: sql<string | null>`${observations.evidence} ->> 'challengerReason'`,
     counterargument: sql<AtiCounterargumentEvidence | null>`${observations.evidence} -> 'counterargument'`,
     retestPlan: sql<AtiRetestPlan | null>`${observations.evidence} -> 'retestPlan'`,
     regimeAssessment: sql<AtiRegimeAssessment | null>`${observations.evidence} -> 'regimeAssessment'`,
@@ -399,11 +423,13 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
     lte(outcomes.recordedAt, asOf)) : undefined)).where(and(eq(observations.runId, runId),
       asOf ? and(lte(observations.observedAt, asOf), lte(observations.recordedAt, asOf)) : undefined))
     .orderBy(asc(observations.observedAt), asc(observations.observationKey));
-  const rows = storedRows.map(({ brokerSymbol, ...row }) => atiInstrumentConflict(run.symbol, brokerSymbol)
-    ? { ...row, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
-      gradedAt: null, gradeVersion: null, decisionQuote: null, chartConfirmation: null, regimeAssessment: null, counterargument: null, retestPlan: null }
-    : row);
   const native = run.baselineVersion === ATI_FLEET_BASELINE;
+  const rows = storedRows.map(({ brokerSymbol, frozenHandshake, ...row }) => {
+    if (atiInstrumentConflict(run.symbol, brokerSymbol)) return { ...row, handshake: null, coverage: "NO_OBSERVED_FEED", feedGapReason: "MT5_INSTRUMENT_MISMATCH", grade: null,
+      gradedAt: null, gradeVersion: null, decisionQuote: null, chartConfirmation: null, regimeAssessment: null, counterargument: null, retestPlan: null };
+    const parsed = native ? recordedHandshake.safeParse(frozenHandshake) : null;
+    return { ...row, handshake: parsed?.success ? parsed.data : null };
+  });
   if (asOf && !rows.length && !native) return null;
   const storedProfile = run.measuredCostProfile as AtiMeasuredCostProfile | null;
   const measuredCostProfile = !atiInstrumentConflict(run.symbol, storedProfile?.brokerSymbol) &&
@@ -470,6 +496,7 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
         version, sourceIdentity: first.fleetSource, symbol: run.symbol, setup: run.setup, timeframe: run.timeframe,
         baselineVersion: run.baselineVersion, challengerVersion: run.challengerVersion, agentId: run.agentId,
         hasVerifiedVersion: version.build.sourceState === "clean" && !!version.build.revision && !!version.decisionSettingsHash,
+        decisionBreakdown: summarizeFleetDecisions(group),
         matchingBars: group.length, eligibleEntries: entries.length, changedDecisions: group.filter(r => r.baselineOutcome !== r.challengerOutcome).length,
         pending: entries.filter(r => r.grade == null).length, unresolved: entries.filter(r => r.grade?.state === "UNRESOLVED").length,
         unverifiedEntry: entries.filter(r => r.grade?.state === "UNRESOLVED" && r.grade.reason === "ENTRY_UNVERIFIED").length,
@@ -512,9 +539,9 @@ export async function readAtiShadowRun(ownerId: number, agentId: number, runId: 
       pnlRiskBasis: "FROZEN_PLANNED_STOP_DISTANCE",
     } : {}),
     ...(regimeReport ? { regimeReport } : {}),
-    observations: rows.map(({ decisionQuote, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
+    observations: rows.map(({ decisionQuote, handshake, fleetSource: _sourceIdentity, fleetPriceOrigin, fleetReceipt, chartConfirmation, counterargument, retestPlan, regimeAssessment, ...row }) => ({
       ...row,
-      ...(fleetReceipt ? { fleetReceipt, fleetPrice: fleetPriceOrigin ? {
+      ...(fleetReceipt ? { fleetReceipt, handshake, fleetPrice: fleetPriceOrigin ? {
         symbol: fleetPriceOrigin.symbol, epoch: fleetPriceOrigin.epoch,
       } : null } : {}),
       ...(chartConfirmation ? { chartConfirmation } : {}),

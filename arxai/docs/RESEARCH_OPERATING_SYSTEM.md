@@ -137,3 +137,9 @@ bot decision remains unknown.
 ATI compares the requested market with the broker symbol on the captured quote before it credits feed coverage or grades a simulated entry. For example, a decision on Volatility 75 Index cannot use Volatility 75 (1s) Index ticks, even when every archived tick repeats that same incorrect mapping. Owner, account, mode and quote continuity checks still apply.
 
 When older observations carry a known conflicting broker symbol, the shadow report retains the decision and shows a feed gap. Trading Memory withholds the replay and its costs, Guardian reports the instrument mismatch, and operations excludes that observation from eligible grades and broker cost monitoring. Newly sealed research datasets retain the gap and exclude the stored fill. Already sealed datasets preserve their original contents, and reproduction still requires the archived inputs to pass the instrument check.
+
+## Why the native V75 pilot waited
+
+The 08:37–09:37 UTC native V75 M5 capture on November 24 produced 13 matching trend-continuation bars. Both strategies waited on every one. All 13 native decisions recorded a failed chart-readiness check. The primary decision reason was readiness on 11 bars and stale market data on two. Chart confirmation recorded missing broker prices on nine bars and missing cached chart intelligence on four. The one extra read with an unverified feed is outside these counts.
+
+The fleet shadow report groups paired bars by both decisions, their primary reasons, the recorded handshake and chart confirmation within each strategy version and source. Old receipts without a handshake show an unknown value. Two independent read-only processes reproduced the report and capture coverage at the same cutoff. The 13 paired decisions matched the original supervisor receipts and their failed handshake checks. [Wait reasons and verification](ati-evidence/v75-m5-native-wait-reasons-20261124T093720Z.json)
