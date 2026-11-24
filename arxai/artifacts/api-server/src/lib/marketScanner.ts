@@ -675,10 +675,10 @@ export function computeFinalRead(
     if (rule && Number.isFinite(rule.lastClose) && rule.lastClose > 0 && Number.isFinite(rule.rangeAbove) && rule.rangeAbove >= 0) {
       const side = bias === "bullish" ? "above" : "below";
       const range = rule.rangeAbove.toLocaleString("en-US", { maximumSignificantDigits: 6 });
-      return `${name} is confirmed. Watch the next ${opp.timeframe} candle for a close ${side} ${priceText(rule.lastClose)} and a high–low range greater than ${range} points (rounded).`;
+      return `Watch the next ${opp.timeframe} candle for a close ${side} ${priceText(rule.lastClose)} and a high–low range greater than ${range} points (rounded).`;
     }
     const side = bias === "bullish" ? "higher" : "lower";
-    return `${name} is confirmed. Watch for a ${opp.timeframe} candle that closes ${side} than the previous close with a range above 1.5× the 20-bar average.`;
+    return `Watch for a ${opp.timeframe} candle that closes ${side} than the previous close with a range above 1.5× the 20-bar average.`;
   };
   // No win rate exists for same-time bars (see historical-comparison).
   const histScore: number | null = null;
@@ -932,7 +932,7 @@ export function computeFinalRead(
       if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
       const setup = opp.patternTrigger;
       const level = priceText(opp.patternConfirmationLevel);
-      reasons.push(setup?.confirmed ? "The chart pattern is confirmed and directional momentum is pending." : "Chart pattern is forming, not confirmed — wait for the trigger.");
+      reasons.push(setup?.confirmed ? `${setup.name} is confirmed. Directional momentum is pending.` : "Chart pattern is forming, not confirmed — wait for the trigger.");
       if (setup?.confirmed) {
         confirmations.push(momentumTrigger(setup.name, setup.bias));
       } else if (level && setup && setup.bias !== "neutral") {
@@ -1019,7 +1019,8 @@ export function computeFinalRead(
           ? `Wait for price to retest the trendline${observedSide ? "" : line} and ${hold} on a closed ${opp.timeframe} candle.`
           : `Wait for a ${opp.timeframe} candle to close beyond the trendline${line}.`;
       if (observed?.reclaimed && label === "WAIT_FOR_CONFIRMATION") label = avoidSetup(label, trigger);
-      else reasons.push(trigger);
+      else reasons.push(observed?.confirmed && tl.labelHint === "needs_confirmation"
+        ? `${observed.name} is confirmed. ${trigger}` : trigger);
       confirmations.push(trigger);
     } else if (tl.labelHint === "limited_room") {
       if (confidence === "HIGH") confidence = "MEDIUM";

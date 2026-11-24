@@ -218,8 +218,16 @@ test("the live close and candle range lead the history recheck on either setup s
     });
     const read = computeFinalRead(row);
     assert.equal(read.label, "WAIT_FOR_CONFIRMATION");
-    assert.match(read.headline, buy ? /^Retest is confirmed.*close above 100\.25/ : /^Retest is confirmed.*close below 100\.25/);
+    assert.match(read.headline, buy ? /^Watch the next .*close above 100\.25/ : /^Watch the next .*close below 100\.25/);
     assert.match(read.headline, /range greater than 1\.75 points.*historical candle pair/);
+    const paired = computeFinalRead({ ...row,
+      trendlineImpact: { ...impact(), labelHint: "needs_confirmation" },
+      trendlineTrigger: { name: "Channel", confirmed: true, bias, side: bias, reclaimed: false },
+    });
+    assert.equal(paired.headline.match(/range greater than/g)?.length, 1);
+    assert.match(paired.headline, /historical candle pair/);
+    assert.ok(paired.reasons.some(text => text.includes("Retest is confirmed")));
+    assert.ok(paired.reasons.some(text => text.includes("Channel is confirmed")));
     const fallback = computeFinalRead({ ...row, momentumConfirmation: undefined });
     assert.match(fallback.headline, /1.5× the 20-bar average/);
     assert.equal(fallback.label, read.label);
