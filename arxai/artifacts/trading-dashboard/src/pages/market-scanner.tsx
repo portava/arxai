@@ -444,7 +444,8 @@ export default function MarketScanner() {
     readController.current = controller;
     const [s, o] = await Promise.all([
       safeJson<NonNullable<typeof status>>("/api/market-scanner/status", { signal: controller.signal }),
-      safeJson<ScanEnvelope>("/api/market-scanner/opportunities?limit=40", { signal: controller.signal }),
+      // The API accepts 200 rows. A complete broad scan currently spans up to 168 pairs.
+      safeJson<ScanEnvelope>("/api/market-scanner/opportunities?limit=200", { signal: controller.signal }),
     ]);
     if (!mounted.current || requestVersion !== loadVersion.current || selection !== selectionVersion.current) return;
     readController.current = null;

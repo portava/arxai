@@ -189,6 +189,24 @@ describe("scanner direct scan response and request ownership", () => {
     expect(visible("BTCUSD")).toBe(true);
     expect(visible("EURUSD")).toBe(false);
   });
+  it("requests the entire manual result again when a poll refreshes a broad scan", async () => {
+    render(<MarketScanner />); await settle();
+    const symbols = [...Array.from({ length: 17 }, (_, i) => `V${i}`), "XAUUSD"];
+    const snapshot = envelope("all", symbols);
+    snapshot.opportunities = symbols.flatMap(symbol =>
+      ["M1", "M5", "M15", "M30", "H1", "H4", "D1"].map(timeframe => ({ ...row(symbol), timeframe })),
+    );
+    fetchMock.mockResolvedValue(response(snapshot));
+    fireEvent.click(screen.getByTestId("scanner-btn-scan")); await settle();
+    expect(screen.getAllByTestId("scanner-result-unavailable-XAUUSD")).toHaveLength(7);
+    safeJsonMock.mockImplementationOnce(async () => ({ ok: true, data: { running: false } }))
+      .mockImplementationOnce(async url => {
+        const limit = Number(new URL(url, "http://localhost").searchParams.get("limit"));
+        return { ok: true, data: { ...snapshot, opportunities: snapshot.opportunities.slice(0, limit) } };
+      });
+    refreshPoll(); await settle();
+    expect(screen.getAllByTestId("scanner-result-unavailable-XAUUSD")).toHaveLength(7);
+  });
   it("aborts an old poll and cannot let its late response replace the manual result", async () => {
     const old = deferred<unknown>(); pendingRead = old;
     render(<MarketScanner />); await settle();
