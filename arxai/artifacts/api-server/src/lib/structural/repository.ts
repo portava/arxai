@@ -1,3 +1,4 @@
+import { hasPaperQuoteCoverage } from "../tradeEngine/paperQuoteCoverage.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, chartDecisionReceiptsTable as receipts, chartDecisionOutcomesTable as outcomes } from "@workspace/db";
 import { MODEL_POLICY, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, scenarioIndex, type ForecastPaperGrade, type Triple, type HorizonForecast, forecastStepMs, type StructuralForecast, type ForecastScore, type StructuralModel } from "@workspace/domain/structural";
@@ -71,7 +72,7 @@ export const structuralRepository: ForecastRepository = {
         expiresAt: new Date(row.forecast.asOf + 60 * forecastStepMs(row.forecast)),
       }).onConflictDoNothing({ target: receipts.receiptId }).returning();
       if (!inserted.length) return null;
-      if (row.forecast.origin.provider === "deriv_public" && /^V(10|25|50|75|100)(_1S)?$/.test(row.forecast.origin.symbol) && row.forecast.paperInstruction && row.forecast.paperInstruction.action !== "HOLD") {
+      if (hasPaperQuoteCoverage(row.forecast.origin.provider, row.forecast.origin.symbol) && row.forecast.paperInstruction && row.forecast.paperInstruction.action !== "HOLD") {
         const at = Date.now();
         await tx.insert(outcomes).values({receiptRef:row.id,userId,kind:"STRUCTURAL_PAPER_ISSUED", evidence:{at}});
         return { ...row, paperPublishedAt: at };

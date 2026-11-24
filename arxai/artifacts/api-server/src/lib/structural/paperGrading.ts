@@ -1,3 +1,4 @@
+import { hasPaperQuoteCoverage } from "../tradeEngine/paperQuoteCoverage.js";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { db, chartDecisionReceiptsTable as receipts, chartDecisionOutcomesTable as outcomes } from "@workspace/db";
 import { settledPaperGrade, type ForecastPaperInstruction } from "@workspace/domain/structural";
@@ -8,7 +9,7 @@ import { logger } from "../logger.js";
 
 export function gradePublicForecastOrder(symbol: string, plan: ForecastPaperInstruction, publishedAt: number, now: number) {
   const market = resolveDerivSymbol(symbol);
-  if (!market || !/^V(10|25|50|75|100)(_1S)?$/.test(market.symbol)) return undefined;
+  if (!market || !hasPaperQuoteCoverage("deriv_public", market.symbol)) return undefined;
   return publicPaperBrackets.gradeTicket(market.derivId, plan, publishedAt, now);
 }
 

@@ -287,6 +287,12 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const stops = paperTickets.filter(r => r.paperGrade?.state === "STOP").length;
   const skippedOrders = paperTickets.filter(r => r.paperGrade?.state === "SKIPPED").length;
   const unverifiedOrders = paperTickets.filter(r => r.paperGrade?.state === "UNVERIFIED").length;
+  // Older saved forecasts can contain a calculated bracket without an issued ticket.
+  const savedPlan = shown?.forecast.paperInstruction;
+  const unpublishedPlan = savedPlan && savedPlan.action !== "HOLD" && shown?.paperPublishedAt == null;
+  const paperInstruction = unpublishedPlan
+    ? { action: "HOLD" as const, reason: "No paper order was issued for this forecast." }
+    : savedPlan;
   const selectedPaperGrade = windowHistory.find(r => r.id === shown?.id)?.paperGrade ?? shown?.paperGrade;
   const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
     .flatMap(r => uniqueHorizonScores(r.scores, preset.bars).map(score => {
@@ -330,15 +336,15 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <div aria-label="Selected horizon probabilities" className="my-2 flex flex-wrap gap-4"><span>Outcomes within {preset.label}:</span>
         {allScenarios.map((scenario, i) => <span key={scenario}>{labels[scenario]}: <strong>{((probability?.[i] ?? 0) * 100).toFixed(1)}%</strong></span>)}
       </div>
-      {shown.forecast.paperInstruction && <div aria-label="Issued Forecast paper order" className="my-2">
-        <strong>Paper instruction at issue · {shown.forecast.paperInstruction.action}</strong>
-        {shown.forecast.paperInstruction.action !== "HOLD" && <span> · Reference {shown.forecast.paperInstruction.reference.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Stop {shown.forecast.paperInstruction.stop.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Target {shown.forecast.paperInstruction.target.toLocaleString(undefined, {maximumSignificantDigits: 9})}</span>}
-        {shown.forecast.paperInstruction.action !== "HOLD" && shown.forecast.paperInstruction.entryLimit != null && <div className="text-xs">
-          First quote only · {shown.forecast.paperInstruction.action === "BUY" ? "maximum buy ask" : "minimum sell bid"} {shown.forecast.paperInstruction.entryLimit.toLocaleString(undefined, {maximumSignificantDigits: 9})}
-          {shown.forecast.paperInstruction.breakoutLevel != null && <> · {shown.forecast.paperInstruction.action === "BUY" ? "bid must hold above" : "ask must hold below"} {shown.forecast.paperInstruction.breakoutLevel.toLocaleString(undefined, {maximumSignificantDigits: 9})}</>}
+      {paperInstruction && <div aria-label={paperInstruction.action === "HOLD" ? "Forecast paper instruction" : "Issued Forecast paper order"} className="my-2">
+        <strong>{unpublishedPlan ? "Paper order · None issued" : `Paper instruction at issue · ${paperInstruction.action}`}</strong>
+        {paperInstruction.action !== "HOLD" && <span> · Reference {paperInstruction.reference.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Stop {paperInstruction.stop.toLocaleString(undefined, {maximumSignificantDigits: 9})} · Target {paperInstruction.target.toLocaleString(undefined, {maximumSignificantDigits: 9})}</span>}
+        {paperInstruction.action !== "HOLD" && paperInstruction.entryLimit != null && <div className="text-xs">
+          First quote only · {paperInstruction.action === "BUY" ? "maximum buy ask" : "minimum sell bid"} {paperInstruction.entryLimit.toLocaleString(undefined, {maximumSignificantDigits: 9})}
+          {paperInstruction.breakoutLevel != null && <> · {paperInstruction.action === "BUY" ? "bid must hold above" : "ask must hold below"} {paperInstruction.breakoutLevel.toLocaleString(undefined, {maximumSignificantDigits: 9})}</>}
         </div>}
-        <div className="text-xs text-zinc-400">{shown.forecast.paperInstruction.reason}</div>
-        {selectedPaperGrade && <div>Ticket result · {({ STOP: "Stopped", TARGET: "Target reached", OPEN: "Open", SKIPPED: "Entry skipped", UNVERIFIED: "Quote coverage incomplete", PENDING: "Awaiting first quote" })[selectedPaperGrade.state]}</div>}
+        <div className="text-xs text-zinc-400">{paperInstruction.reason}</div>
+        {shown.paperPublishedAt != null && selectedPaperGrade && <div>Ticket result · {({ STOP: "Stopped", TARGET: "Target reached", OPEN: "Open", SKIPPED: "Entry skipped", UNVERIFIED: "Quote coverage incomplete", PENDING: "Awaiting first quote" })[selectedPaperGrade.state]}</div>}
       </div>}
       {shown.forecast.routes && <label className="mt-2 inline-flex items-center gap-2">Chart view
         <select aria-label="Forecast chart view" className="rounded bg-zinc-900 p-1" value={view} onChange={e => setView(e.target.value === "estimate" ? "estimate" : e.target.value === "range" ? "range" : "routes")}>

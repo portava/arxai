@@ -1,3 +1,4 @@
+import { hasPaperQuoteCoverage } from "../tradeEngine/paperQuoteCoverage.js";
 import { forecastPaperInstruction, settledPaperGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { createHash } from "node:crypto";
 import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
@@ -136,7 +137,9 @@ export class StructuralForecastService {
       window.probabilities = learned.shown;
       forecast.calibration = learned.record;
     }
-    forecast.paperInstruction = forecastPaperInstruction(feed.bars.filter(b => b.closeTime <= asOf), window?.probabilities);
+    forecast.paperInstruction = hasPaperQuoteCoverage(feed.origin.provider, feed.origin.symbol)
+      ? forecastPaperInstruction(feed.bars.filter(b => b.closeTime <= asOf), window?.probabilities)
+      : { action: "HOLD", reason: "Paper stop and target tracking is unavailable on this feed. The first-break forecast is scored separately." };
     const id = createHash("sha256").update(`${userId}:${symbol}:${horizon.id}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();
     if (issuedAt >= asOf + horizon.stepMs) throw new ForecastRefusal("FIRST_HORIZON_ALREADY_CLOSED", facts({ lastCloseAgeSeconds: Math.round((issuedAt - asOf) / 1000) }));

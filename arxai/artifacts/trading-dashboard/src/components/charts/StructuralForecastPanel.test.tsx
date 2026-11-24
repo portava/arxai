@@ -251,4 +251,16 @@ it("includes a newly issued paper ticket in the pending count immediately", asyn
   fireEvent.click(screen.getByRole("button",{name:"Forecast 1 hour ahead"}));
   expect((await screen.findByLabelText("Forecast paper ticket results")).textContent).toContain("1 open or pending");
   expect(screen.getByLabelText("Independent first-break accuracy").textContent).toContain("1 unresolved");
+  expect(screen.getByLabelText("Issued Forecast paper order").textContent).toContain("maximum buy ask");
+});
+
+it("shows direction but no order for an archived forecast with an unpublished bracket", async () => {
+  const archived = { ...row, forecast: { ...row.forecast, origin: { symbol: "USDJPY", provider: "deriv_public" },
+    paperInstruction: { action: "BUY", reference: 158.942, stop: 158.8997, target: 159.0054, reason: "Breakout" } } };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ forecasts: [archived] })));
+  render(<StructuralForecastPanel symbol="USDJPY" onPaths={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh saved forecasts" }));
+  expect((await screen.findByLabelText("Forecast paper instruction")).textContent).toContain("None issued");
+  expect(screen.queryByLabelText("Issued Forecast paper order")).toBeNull();
+  expect(screen.getByLabelText("Selected horizon probabilities").textContent).toContain("50.0%");
 });

@@ -1,3 +1,4 @@
+import { hasPaperQuoteCoverage } from "./paperQuoteCoverage.js";
 import {
   executableForecastPaperOrder,
   type ForecastPaperGrade,
@@ -176,7 +177,7 @@ export async function checkedPaperBracketQuote(
   const { resolveDerivSymbol } =
     await import("../data/providers/derivProvider.js");
   const mapping = resolveDerivSymbol(order.symbol);
-  if (!mapping || !/^V(10|25|50|75|100)(_1S)?$/.test(mapping.symbol))
+  if (!mapping || !hasPaperQuoteCoverage("deriv_public", mapping.symbol))
     return quote;
   return publicPaperBrackets.read(order, mapping.derivId, quote);
 }

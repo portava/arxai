@@ -314,6 +314,8 @@ test("a requested window reads its own bar length and an unknown window is refus
   const row = await service.issue(1, "V75", "15m");
   assert.equal(row.forecast.horizonId, "15m"); assert.equal(row.forecast.horizonBars, 15);
   assert.ok(row.forecast.horizons.some(h => h.minutes === 15));
+  assert.equal(row.forecast.paperInstruction?.action, "HOLD");
+  assert.match(row.forecast.paperInstruction!.reason, /tracking is unavailable on this feed/);
   assert.deepEqual(seen, ["M1"]);
   await assert.rejects(service.issue(1, "V75", "3h"), (e: unknown) => e instanceof ForecastRefusal && e.code === "INVALID_HORIZON");
   // An eight-hour window asks for 15-minute bars and refuses a feed of any other length.
