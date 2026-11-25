@@ -345,7 +345,12 @@ int BeginDemoCommand(const string commandId)
    g_demoJournal = FileOpen("ARX_DEMO_131\\" + key + ".txt",
                            FILE_READ | FILE_WRITE | FILE_TXT | FILE_UNICODE | FILE_COMMON);
    if(g_demoJournal == INVALID_HANDLE) return 0; // busy/unwritable: no broker call
-   if(FileSize(g_demoJournal) > 0)
+   // A new FILE_UNICODE file already holds its 2-byte BOM (FF FE) when opened,
+   // so "size > 0" made every first attempt look like an uncertain prior one.
+   // PENDING is always written before any broker call, so a BOM-only file
+   // proves no attempt was made: treat it as empty and append after the BOM.
+   if(FileSize(g_demoJournal) <= 2) FileSeek(g_demoJournal, 0, SEEK_END);
+   else
    {
       string intent = FileReadString(g_demoJournal);
       string body = FileReadString(g_demoJournal);
