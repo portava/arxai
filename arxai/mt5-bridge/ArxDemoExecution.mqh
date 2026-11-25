@@ -5,6 +5,17 @@
 #else
 #define ARX_DEMO_DEVIATION(sym) g_maxDeviationPoints
 #endif
+// v1.35: an EA that defines ARX_HAS_COST_RECEIPT supplies
+// ArxDemoCostBeforeSend (reads the submission tick) and ArxDemoCostAfterFill
+// (reads the broker deal). Both only record evidence; neither can change the
+// order, its outcome or its write-back. Older EAs compile without them.
+#ifdef ARX_HAS_COST_RECEIPT
+#define ARX_DEMO_COST_BEFORE_SEND(kind, sym) ArxDemoCostBeforeSend(kind, sym)
+#define ARX_DEMO_COST_AFTER_FILL(kind, sym, tkt, o) ArxDemoCostAfterFill(kind, sym, tkt, (o).price, (o).volume, (o).ticket, (o).retcode)
+#else
+#define ARX_DEMO_COST_BEFORE_SEND(kind, sym)
+#define ARX_DEMO_COST_AFTER_FILL(kind, sym, tkt, o)
+#endif
 // DEMO execution core. Included verbatim by the EA and the offline C++ harness.
 // CTrade::PositionClosePartial is ticket-scoped and hedging-only. Netting is
 // refused before entry: an opposite netting deal can reverse a changed position.
@@ -104,6 +115,7 @@ void ExecuteDemoCommand(const string kind, const string symbol, const string sid
    if(!g_demoTrade.SetTypeFillingBySymbol(symbol))
    { out.reason = "REJECTED_UNSUPPORTED_FILLING_MODE"; return; }
    bool sent = false;
+   ARX_DEMO_COST_BEFORE_SEND(kind, symbol);
    if(kind == "PLACE_MARKET_ORDER")
       sent = g_demoTrade.PositionOpen(symbol, side == "sell" ? ORDER_TYPE_SELL : ORDER_TYPE_BUY,
                                      volume, 0.0, sl, tp, "ARX_DEMO");
@@ -150,6 +162,7 @@ void ExecuteDemoCommand(const string kind, const string symbol, const string sid
          }
          if(out.ticket == 0) return;
       }
+      ARX_DEMO_COST_AFTER_FILL(kind, symbol, ticket, out);
    }
    out.status = "FILLED_DEMO"; out.reason = "OK";
 }
