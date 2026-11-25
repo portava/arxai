@@ -1372,7 +1372,7 @@ void PushBoundTicksNow()
 {
    if(!EnableBoundTickFeed) return;
    if(AccountInfoInteger(ACCOUNT_TRADE_MODE) != ACCOUNT_TRADE_MODE_DEMO) return;
-   if(g_tickInstance == "")
+   if(StringLen(g_tickInstance) == 0)
       g_tickInstance = "v135-" + IntegerToString((long)TimeGMT()) + "-" + IntegerToString((long)(GetMicrosecondCount() % 1000000));
    string list[]; ArrayResize(list, 1); list[0] = _Symbol;
    string extra[];
@@ -1396,7 +1396,9 @@ void PushBoundTicksNow()
       if(gmt <= 0) continue; // never stamp the broker clock as UTC
       int slot = -1;
       for(int j = 0; j < 4; j++) if(g_tickStreams[j] == sym) { slot = j; break; }
-      if(slot < 0) for(int j = 0; j < 4; j++) if(g_tickStreams[j] == "") { slot = j; g_tickStreams[j] = sym; g_tickNextSeq[j] = 0; break; }
+      // A global string array starts as NULL strings, and NULL != "" in MQL5:
+      // test the length, which is 0 for both.
+      if(slot < 0) for(int j = 0; j < 4; j++) if(StringLen(g_tickStreams[j]) == 0) { slot = j; g_tickStreams[j] = sym; g_tickNextSeq[j] = 0; break; }
       if(slot < 0) continue;
       g_tickIdem++;
       string env = ArxBoundTickEnvelope(g_tickNextSeq[slot], g_tickInstance + "-" + IntegerToString(g_tickIdem),
