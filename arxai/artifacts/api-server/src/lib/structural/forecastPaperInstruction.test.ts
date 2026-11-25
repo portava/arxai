@@ -5,6 +5,8 @@ import {
   forecastPaperInstruction,
   type StructuralBar,
 } from "@workspace/domain/structural";
+// A forecast whose pre-break model passed its independent gate.
+const gated = { mode: "PREBREAK", gateReason: "INDEPENDENT_GATE_ACCEPTED" } as const;
 const bars: StructuralBar[] = Array.from({ length: 15 }, (_, i) => ({
   openTime: i * 60000,
   closeTime: (i + 1) * 60000,
@@ -15,7 +17,7 @@ const bars: StructuralBar[] = Array.from({ length: 15 }, (_, i) => ({
   isFinal: true,
 }));
 test("odds alone hold and a confirmed directional break fixes the paper bracket", () => {
-  assert.equal(forecastPaperInstruction(bars, [0.5, 0.3, 0.2]).action, "HOLD");
+  assert.equal(forecastPaperInstruction(bars, [0.5, 0.3, 0.2], gated).action, "HOLD");
   for (const buy of [true, false]) {
     const input = bars.map((b) => ({ ...b }));
     Object.assign(
@@ -25,6 +27,7 @@ test("odds alone hold and a confirmed directional break fixes the paper bracket"
     const result = forecastPaperInstruction(
       input,
       buy ? [0.5, 0.3, 0.2] : [0.3, 0.5, 0.2],
+      gated,
     );
     assert.notEqual(result.action, "HOLD");
     if (result.action === "HOLD") throw Error("Missing order");
@@ -55,18 +58,39 @@ test("odds alone hold and a confirmed directional break fixes the paper bracket"
       ) < 1e-10,
     );
     assert.equal(
-      forecastPaperInstruction(input, [0.4, 0.4, 0.2]).action,
+      forecastPaperInstruction(input, [0.4, 0.4, 0.2], gated).action,
       "HOLD",
     );
     assert.equal(
-      forecastPaperInstruction(input, [0.25, 0.15, 0.6]).action,
+      forecastPaperInstruction(input, [0.25, 0.15, 0.6], gated).action,
       "HOLD",
     );
-    assert.equal(forecastPaperInstruction(input, [0.40004, 0.40003, 0.19993]).action, "HOLD");
+    assert.equal(forecastPaperInstruction(input, [0.40004, 0.40003, 0.19993], gated).action, "HOLD");
     input[10]!.isFinal = false;
     assert.equal(
-      forecastPaperInstruction(input, [0.5, 0.3, 0.2]).action,
+      forecastPaperInstruction(input, [0.5, 0.3, 0.2], gated).action,
       "HOLD",
     );
+  }
+});
+
+test("a BASELINE forecast never issues a paper order, even on a clean breakout", () => {
+  for (const buy of [true, false]) {
+    const input = bars.map((b) => ({ ...b }));
+    Object.assign(input[14]!, buy ? { high: 103, close: 102 } : { low: 97, close: 98 });
+    const odds: [number, number, number] = buy ? [0.5, 0.3, 0.2] : [0.3, 0.5, 0.2];
+    // The same bars and odds issue an order when a gated model is in use.
+    assert.equal(forecastPaperInstruction(input, odds, gated).action, buy ? "BUY" : "SELL");
+    for (const [gateReason, reason] of [
+      ["INDEPENDENT_GATE_REJECTED", /No first-break model has passed its independent test here/],
+      ["INSUFFICIENT_INDEPENDENT_GATE_SAMPLES", /No first-break model has passed its independent test here/],
+      ["PERFORMANCE_QUARANTINE", /quarantined after weak recent scores/],
+      ["OUT_OF_DISTRIBUTION", /outside the model's training range/],
+    ] as const) {
+      const r = forecastPaperInstruction(input, odds, { mode: "BASELINE", gateReason });
+      assert.equal(r.action, "HOLD", gateReason);
+      assert.match(r.reason, reason);
+      assert.match(r.reason, /no paper order is issued/);
+    }
   }
 });
