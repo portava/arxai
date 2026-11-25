@@ -141,7 +141,7 @@ export class StructuralForecastService {
       forecast.calibration = learned.record;
     }
     forecast.paperInstruction = hasPaperQuoteCoverage(feed.origin.provider, feed.origin.symbol)
-      ? forecastPaperInstruction(feed.bars.filter(b => b.closeTime <= asOf), window?.probabilities)
+      ? forecastPaperInstruction(feed.bars.filter(b => b.closeTime <= asOf), window?.probabilities, forecast)
       : { action: "HOLD", reason: "Paper stop and target tracking is unavailable on this feed. The first-break forecast is scored separately." };
     const id = createHash("sha256").update(`${userId}:${symbol}:${horizon.id}:${asOf}:${model.modelId}`).digest("hex");
     const issuedAt = this.deps.now();

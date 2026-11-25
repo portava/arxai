@@ -168,16 +168,22 @@ export interface ScenarioProjection {
 }
 
 export interface MissionProbabilityScore {
-  /** 0–100 estimate the target is reached within the timeframe. */
-  targetHitProbability: number;
-  /** 0–100 estimate of a meaningful drawdown along the way. */
-  drawdownRisk: number;
-  /** 0–100 estimate the mission ends short of the target. */
-  failureProbability: number;
+  /**
+   * 0–100 measured share of comparable graded missions that reached their
+   * target; null when unmeasured (always, until graded outcomes exist).
+   */
+  targetHitProbability: number | null;
+  /** 0–100 measured share that drew down along the way; null when unmeasured. */
+  drawdownRisk: number | null;
+  /** 100 − targetHitProbability; null when unmeasured. */
+  failureProbability: number | null;
 
   projections: {
+    /** Reaching the target (arithmetic). */
     best: ScenarioProjection;
-    expected: ScenarioProjection;
+    /** Always null: an expected ending needs measured ending values. */
+    expected: ScenarioProjection | null;
+    /** The selected risk profile's drawdown (arithmetic). */
     worst: ScenarioProjection;
   };
 

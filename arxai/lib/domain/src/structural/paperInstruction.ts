@@ -1,5 +1,5 @@
 import { favoredScenario } from "./learning.js";
-import type { StructuralBar, Triple } from "./contracts.js";
+import type { StructuralBar, StructuralForecast, Triple } from "./contracts.js";
 
 export type ForecastPaperInstruction =
   | { action: "HOLD"; reason: string }
@@ -13,15 +13,33 @@ export type ForecastPaperInstruction =
       reason: string;
     };
 
+/** The forecast facts that decide whether its odds may issue a paper order. */
+export type PaperForecastBasis = Pick<StructuralForecast, "mode" | "gateReason">;
+
+function baselineHoldReason(gateReason: string): string {
+  if (gateReason === "PERFORMANCE_QUARANTINE")
+    return "This window is quarantined after weak recent scores, so no paper order is issued.";
+  if (gateReason === "OUT_OF_DISTRIBUTION")
+    return "Current conditions are outside the model's training range, so no paper order is issued.";
+  return "No first-break model has passed its independent test here, so no paper order is issued.";
+}
+
 /** Frozen paper hypothesis. The later executable quote sets the actual entry. */
 export function forecastPaperInstruction(
   bars: StructuralBar[],
-  odds?: Triple,
+  odds: Triple | undefined,
+  basis: PaperForecastBasis,
 ): ForecastPaperInstruction {
   const hold = (reason: string): ForecastPaperInstruction => ({
     action: "HOLD",
     reason,
   });
+  // A BASELINE forecast has no first-break model in use (rejected, untested,
+  // quarantined or out of range), so its leader is the historical favourite,
+  // not a tested direction. Replayed with this code on 75 real Deriv series
+  // (2026-11-25), 5,431 such paper orders averaged -0.058R before costs and
+  // -0.297R after the measured MT5 spread. None is issued.
+  if (basis.mode === "BASELINE") return hold(baselineHoldReason(basis.gateReason));
   if (
     !odds ||
     !odds.every((p) => Number.isFinite(p) && p >= 0 && p <= 1) ||

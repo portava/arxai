@@ -306,6 +306,28 @@ test("a five-minute model forecasts four hours: 48 bars, five-minute ghost candl
   const s48 = scores.find(s => s.horizon === 48)!;
   assert.equal(s48.minutes, 240); assert.equal(s48.observedThrough, m5AsOf + 48 * step);
 });
+test("on a paper-covered feed a BASELINE forecast issues no paper order", async () => {
+  const deriv: DataOrigin = { ...origin, provider: "deriv_public", kind: "BROKER_HISTORY" };
+  // The fixture's pre-break model passes its gate. Rejecting the gates on a copy
+  // leaves the forecast on base rates (BASELINE), as most real markets are.
+  const derivModel = fitStructuralModel(bars, deriv);
+  const rejected = { accepted: false, blend: 0, selectedBlend: 0, n: 0, gain: null, lowerGain: null, reason: "INDEPENDENT_GATE_REJECTED" };
+  const baselineModel = { ...structuredClone(derivModel), prebreakGate: rejected, confirmationGate: { ...rejected, reason: "SELECTION_ONLY" } };
+  for (const [fitted, mode] of [[derivModel, "PREBREAK"], [baselineModel, "BASELINE"]] as const) {
+    const service = new StructuralForecastService({ repository: memory(), now: () => asOf + 1000,
+      readFeed: async () => ({ bars, origin: deriv, ready: true, reason: null }),
+      fit: () => structuredClone(fitted) });
+    const row = await service.issue(1, "V75", "15m");
+    assert.equal(row.forecast.mode, mode);
+    if (mode === "BASELINE") {
+      assert.equal(row.forecast.paperInstruction?.action, "HOLD");
+      assert.match(row.forecast.paperInstruction!.reason, /No first-break model has passed its independent test here, so no paper order is issued/);
+    } else {
+      // The gated forecast is judged by the bars and odds; it never gets the BASELINE hold.
+      assert.doesNotMatch(row.forecast.paperInstruction!.reason, /no paper order is issued/);
+    }
+  }
+});
 test("a requested window reads its own bar length and an unknown window is refused", async () => {
   const seen: string[] = [];
   const service = new StructuralForecastService({ repository: memory(), now: () => asOf + 1000,

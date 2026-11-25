@@ -655,39 +655,43 @@ export function FeasibilityPanel({
 }
 
 // ── Probability panel ────────────────────────────────────────────────────────
+// A chance of reaching the target is shown only when it is measured from graded
+// missions. Without them the panel says "Unmeasured" and keeps the two
+// arithmetic scenarios (reaching the target, the risk profile's drawdown).
 function ProbabilityPanel({ p }: { p: MissionProbabilityScore }) {
   const projectionOnly = p.planningProjectionOnly;
-  const suffix = projectionOnly ? " (planning projection only)" : " (est.)";
+  const measured = p.targetHitProbability != null;
+  const chance = (x: number | null) => (x == null ? "Unmeasured" : pct(x, 0));
   return (
     <Card data-testid="card-probability">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" /> Probability &amp; risk
-          {projectionOnly ? " (planning projection)" : " (estimate)"}
+          <TrendingUp className="h-5 w-5" /> Chance of reaching the target
+          {measured ? " (measured)" : " (unmeasured)"}
         </CardTitle>
         <CardDescription>
-          Confidence: <span className="capitalize">{p.confidence}</span> · sample
-          size {p.sampleSize}
+          {measured
+            ? <>Measured on {p.sampleSize} graded missions · confidence <span className="capitalize">{p.confidence}</span></>
+            : <>Unmeasured · sample size {p.sampleSize}</>}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {projectionOnly && p.planningProjectionNote && (
           <CompactAlert
             tone="info"
-            title="Planning projection — not backtested"
+            title="No measured chance yet"
             description={p.planningProjectionNote}
             testId="alert-planning-projection"
           />
         )}
         <div className="grid grid-cols-3 gap-3">
-          <Metric label={`Target-hit${suffix}`} value={pct(p.targetHitProbability, 0)} testId="metric-target-hit" />
-          <Metric label={`Drawdown risk${suffix}`} value={pct(p.drawdownRisk, 0)} />
-          <Metric label={`Falls short${suffix}`} value={pct(p.failureProbability, 0)} />
+          <Metric label="Target-hit" value={chance(p.targetHitProbability)} testId="metric-target-hit" />
+          <Metric label="Drawdown risk" value={chance(p.drawdownRisk)} testId="metric-drawdown-risk" />
+          <Metric label="Falls short" value={chance(p.failureProbability)} testId="metric-falls-short" />
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Scenario label="At target" v={p.projections.best} projectionOnly={projectionOnly} />
-          <Scenario label="Partial goal" v={p.projections.expected} projectionOnly={projectionOnly} />
-          <Scenario label="Drawdown scenario" v={p.projections.worst} projectionOnly={projectionOnly} />
+        <div className="grid grid-cols-2 gap-3">
+          <Scenario label="At target" v={p.projections.best} />
+          <Scenario label="Drawdown scenario" v={p.projections.worst} />
         </div>
         {p.sampleSizeWarnings.length > 0 && (
           <ul className="space-y-1 text-xs text-muted-foreground" data-testid="list-sample-warnings">
@@ -697,7 +701,7 @@ function ProbabilityPanel({ p }: { p: MissionProbabilityScore }) {
           </ul>
         )}
         <p className="text-xs text-muted-foreground" data-testid="text-probability-caption">
-          Partial goal adds {pct(p.targetHitProbability, 0)} of the requested profit to starting capital. The drawdown scenario uses the selected risk profile.
+          At target is your target amount. The drawdown scenario applies the selected risk profile&apos;s drawdown to the starting amount.
         </p>
         <p className="text-xs text-muted-foreground">{p.disclaimer}</p>
       </CardContent>
@@ -716,21 +720,20 @@ function Metric({ label, value, testId }: { label: string; value: string; testId
   );
 }
 
+// Both scenarios are arithmetic from the inputs whatever the sample size, so
+// they are always labelled planning projections, never estimates.
 function Scenario({
   label,
   v,
-  projectionOnly,
 }: {
   label: string;
   v: { endingValue: number; profit: number; returnPct: number };
-  projectionOnly?: boolean;
 }) {
   const positive = v.profit >= 0;
   return (
     <div className="rounded-md border border-border/50 p-2">
       <div className="text-xs text-muted-foreground">
-        {label}
-        {projectionOnly ? " (planning projection)" : " (est.)"}
+        {label} (planning projection)
       </div>
       <div className="text-base font-semibold">{money(v.endingValue)}</div>
       <div className={`text-xs ${positive ? "text-success" : "text-danger"}`}>
