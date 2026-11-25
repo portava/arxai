@@ -1,3 +1,10 @@
+// v1.34: per-symbol deviation cap when the EA defines it (demo synthetics);
+// older EAs keep the global cap.
+#ifdef ARX_HAS_SYMBOL_CAPS
+#define ARX_DEMO_DEVIATION(sym) ArxMaxDeviationPointsFor(sym)
+#else
+#define ARX_DEMO_DEVIATION(sym) g_maxDeviationPoints
+#endif
 // DEMO execution core. Included verbatim by the EA and the offline C++ harness.
 // CTrade::PositionClosePartial is ticket-scoped and hedging-only. Netting is
 // refused before entry: an opposite netting deal can reverse a changed position.
@@ -93,7 +100,7 @@ void ExecuteDemoCommand(const string kind, const string symbol, const string sid
       { out.reason = guard; return; }
    }
    g_demoTrade.SetAsyncMode(false);
-   g_demoTrade.SetDeviationInPoints(g_maxDeviationPoints);
+   g_demoTrade.SetDeviationInPoints(ARX_DEMO_DEVIATION(symbol));
    if(!g_demoTrade.SetTypeFillingBySymbol(symbol))
    { out.reason = "REJECTED_UNSUPPORTED_FILLING_MODE"; return; }
    bool sent = false;
@@ -103,7 +110,7 @@ void ExecuteDemoCommand(const string kind, const string symbol, const string sid
    else if(kind == "CLOSE_POSITION")
       // Use the bounded volume for BOTH partial and full closes. PositionClose
       // would read the current position again and could close a larger size.
-      sent = g_demoTrade.PositionClosePartial(ticket, volume, g_maxDeviationPoints);
+      sent = g_demoTrade.PositionClosePartial(ticket, volume, ARX_DEMO_DEVIATION(symbol));
    else
       sent = g_demoTrade.PositionModify(ticket, sl, tp);
 
@@ -249,7 +256,7 @@ void ExecuteDemoPendingPlace(const ArxDemoRequest &req, ArxDemoOutcome &out)
    ENUM_ORDER_TYPE_TIME tmode = (expiry > 0) ? ORDER_TIME_SPECIFIED : ORDER_TIME_GTC;
 
    g_demoTrade.SetAsyncMode(false);
-   g_demoTrade.SetDeviationInPoints(g_maxDeviationPoints);
+   g_demoTrade.SetDeviationInPoints(ARX_DEMO_DEVIATION(symbol));
    if(!g_demoTrade.SetTypeFillingBySymbol(symbol))
    { out.reason = "REJECTED_UNSUPPORTED_FILLING_MODE"; return; }
    bool sent = false;
