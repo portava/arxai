@@ -2292,6 +2292,11 @@ const SymbolSpecItem = z.object({
   stopsLevelPoints: z.number().int().optional().nullable(),
   freezeLevelPoints: z.number().int().optional().nullable(),
   spreadPoints: z.number().int().optional().nullable(),
+  // EA v1.33+: broker SYMBOL_CURRENCY_MARGIN / SYMBOL_CURRENCY_PROFIT. The Risk
+  // Governor converts P/L to the account currency from profitCurrency; without
+  // it a non-FX symbol (e.g. Volatility 75 Index) can never be sized.
+  marginCurrency: z.string().trim().min(1).max(8).optional().nullable(),
+  profitCurrency: z.string().trim().min(1).max(8).optional().nullable(),
 });
 const SyncSymbolSpecsBody = z.object({ symbols: z.array(SymbolSpecItem).max(500) });
 
@@ -2325,6 +2330,8 @@ router.post("/mt5/sync-symbol-specs", bridgeAuthPerUserOnly, async (req, res) =>
       stopsLevelPoints: s.stopsLevelPoints ?? null,
       freezeLevelPoints: s.freezeLevelPoints ?? null,
       spreadPoints: s.spreadPoints ?? null,
+      marginCurrency: s.marginCurrency ?? null,
+      profitCurrency: s.profitCurrency ?? null,
       reportedAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
@@ -2348,6 +2355,10 @@ router.post("/mt5/sync-symbol-specs", bridgeAuthPerUserOnly, async (req, res) =>
         stopsLevelPoints: s.stopsLevelPoints ?? null,
         freezeLevelPoints: s.freezeLevelPoints ?? null,
         spreadPoints: s.spreadPoints ?? null,
+        // Only overwrite broker currencies when this EA reports them, so an
+        // older EA (<1.33) never erases a known profit currency.
+        ...(s.marginCurrency != null ? { marginCurrency: s.marginCurrency } : {}),
+        ...(s.profitCurrency != null ? { profitCurrency: s.profitCurrency } : {}),
         reportedAt: now,
         updatedAt: now,
       },
