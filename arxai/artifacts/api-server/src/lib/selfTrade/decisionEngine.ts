@@ -44,7 +44,7 @@ import type {
   EleanorMarketEdgeSignal,
 } from "@workspace/domain/signal-intelligence";
 import { logger } from "../logger.js";
-import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
+import { selfTradeDecisionChart } from "./selfTradeDecisionChart.js";
 import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
@@ -182,11 +182,11 @@ async function buildCandidate(
   let chartGateAllowed = false;
   let chartGateNote: string | null = null;
   {
-    const cached =
-      getCachedIntelligenceContext(symbol, PRIMARY_TF, 300) ??
-      getCachedIntelligenceContext(symbol, PRIMARY_TF, 200);
-    if (cached) {
-      const gate = cached.state.gateOutput;
+    // Bind this user's own broker quote to the served series before the gate
+    // reads it; the shared cache alone always carries the placeholder alignment.
+    const { state: chartState } = await selfTradeDecisionChart(symbol, PRIMARY_TF, effectiveUserId);
+    if (chartState) {
+      const gate = chartState.gateOutput;
       // Truth check (Chart Truth ≥ 75)
       if (!gate.selfTradeChartAllowed) {
         chartGateNote = gate.primaryBlockReason ??
@@ -206,11 +206,11 @@ async function buildCandidate(
       // broker quote was never available (alignmentFailed is only set when
       // brokerDataAvailable=true AND tolerance="failed"). For autonomous self-trade
       // the broker-alignment check must be confirmed with real broker data present.
-      else if (!cached.state.brokerAlignment.brokerDataAvailable) {
+      else if (!chartState.brokerAlignment.brokerDataAvailable) {
         chartGateNote = "Broker price data not available — self-trade chart confirmation requires live broker alignment evidence.";
       }
       // Closed-candle requirement: strategies must not confirm on a still-forming candle.
-      else if (cached.state.currentCandle != null) {
+      else if (chartState.currentCandle != null) {
         chartGateNote = "Current candle has not closed — chart-based confirmation withheld until the bar closes.";
       }
       else {
