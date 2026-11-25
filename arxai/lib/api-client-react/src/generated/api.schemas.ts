@@ -577,7 +577,8 @@ export interface ProfitMissionFeasibility {
 
 export type ProfitMissionProbabilityProjections = {
   best: ProfitMissionScenarioProjection;
-  expected: ProfitMissionScenarioProjection;
+  /** Always null; an expected ending needs measured ending values. */
+  expected: ProfitMissionScenarioProjection | null;
   worst: ProfitMissionScenarioProjection;
 };
 
@@ -591,16 +592,16 @@ export const ProfitMissionProbabilityConfidence = {
 } as const;
 
 /**
- * Advisory probability / risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).
+ * Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.
 
  */
 export interface ProfitMissionProbability {
-  /** 0–100 estimate. */
-  targetHitProbability: number;
-  /** 0–100 estimate. */
-  drawdownRisk: number;
-  /** 0–100 estimate. */
-  failureProbability: number;
+  /** 0–100 measured share of comparable graded missions that reached their target; null when unmeasured. */
+  targetHitProbability: number | null;
+  /** 0–100 measured share of comparable graded missions that drew down; null when unmeasured. */
+  drawdownRisk: number | null;
+  /** 100 − targetHitProbability; null when unmeasured. */
+  failureProbability: number | null;
   projections: ProfitMissionProbabilityProjections;
   confidence: ProfitMissionProbabilityConfidence;
   sampleSize: number;

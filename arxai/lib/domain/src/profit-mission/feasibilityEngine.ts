@@ -123,16 +123,28 @@ function recommendedRiskProfileFor(requiredDailyReturnPct: number): RiskProfile 
   return "extreme";
 }
 
+/** "45 minutes", "1 hour", "2.5 hours", "1 day", "7 days". */
+function durationText(minutes: number): string {
+  const one = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (minutes < MINUTES_PER_HOUR) return one(Math.max(1, Math.round(minutes)), "minute");
+  if (minutes < MINUTES_PER_DAY) return one(Math.round((minutes / MINUTES_PER_HOUR) * 10) / 10, "hour");
+  return one(Math.round((minutes / MINUTES_PER_DAY) * 10) / 10, "day");
+}
+
 function explanationFor(
   tier: FeasibilityTier,
   m: MissionMath,
 ): string {
   const ret = m.requiredReturnPct.toFixed(1);
-  const daily = m.requiredDailyReturnPct.toFixed(2);
-  const days = Math.max(0, Math.round(m.totalDays));
-  const base =
-    `This target needs about a ${ret}% total return over ${days} day(s) — ` +
-    `roughly ${daily}% per day at a compounding pace.`;
+  // Under a day the pace is stated per hour over the real duration (a 1-hour
+  // mission is not "0 day(s)", and a compounded daily rate would be shown for
+  // a day the mission never lasts).
+  const minutes = m.timeframeMinutes;
+  const base = minutes > 0 && minutes < MINUTES_PER_DAY
+    ? `This target needs about a ${ret}% total return over ${durationText(minutes)} — ` +
+      `roughly ${m.requiredReturnPerHourPct.toFixed(2)}% per hour.`
+    : `This target needs about a ${ret}% total return over ${durationText(minutes)} — ` +
+      `roughly ${m.requiredDailyReturnPct.toFixed(2)}% per day at a compounding pace.`;
   switch (tier) {
     case "Easy":
       return `${base} This is a steady, low-pace target with room to spare.`;

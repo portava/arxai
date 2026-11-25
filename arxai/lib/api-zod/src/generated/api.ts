@@ -188,9 +188,22 @@ export const ListProfitMissionsResponseItem = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -217,6 +230,10 @@ export const ListProfitMissionsResponseItem = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -247,7 +264,7 @@ export const ListProfitMissionsResponseItem = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -512,9 +529,22 @@ export const GetProfitMissionResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -541,6 +571,10 @@ export const GetProfitMissionResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -571,7 +605,7 @@ export const GetProfitMissionResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -712,9 +746,22 @@ export const GetProfitMissionPulseResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -741,6 +788,10 @@ export const GetProfitMissionPulseResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -771,7 +822,7 @@ export const GetProfitMissionPulseResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     risk: zod
       .object({
@@ -1195,9 +1246,22 @@ export const PauseProfitMissionResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -1224,6 +1288,10 @@ export const PauseProfitMissionResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -1254,7 +1322,7 @@ export const PauseProfitMissionResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -1453,9 +1521,22 @@ export const ResumeProfitMissionResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -1482,6 +1563,10 @@ export const ResumeProfitMissionResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -1512,7 +1597,7 @@ export const ResumeProfitMissionResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -1711,9 +1796,22 @@ export const CancelProfitMissionResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -1740,6 +1838,10 @@ export const CancelProfitMissionResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -1770,7 +1872,7 @@ export const CancelProfitMissionResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -1967,9 +2069,22 @@ export const UpdateProfitMissionSettingsResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -1996,6 +2111,10 @@ export const UpdateProfitMissionSettingsResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -2026,7 +2145,7 @@ export const UpdateProfitMissionSettingsResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),
@@ -3350,9 +3469,22 @@ export const EmergencyStopProfitMissionResponse = zod
       ),
     probability: zod
       .object({
-        targetHitProbability: zod.number().describe("0–100 estimate."),
-        drawdownRisk: zod.number().describe("0–100 estimate."),
-        failureProbability: zod.number().describe("0–100 estimate."),
+        targetHitProbability: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that reached their target; null when unmeasured.",
+          ),
+        drawdownRisk: zod
+          .number()
+          .nullable()
+          .describe(
+            "0–100 measured share of comparable graded missions that drew down; null when unmeasured.",
+          ),
+        failureProbability: zod
+          .number()
+          .nullable()
+          .describe("100 − targetHitProbability; null when unmeasured."),
         projections: zod.object({
           best: zod
             .object({
@@ -3379,6 +3511,10 @@ export const EmergencyStopProfitMissionResponse = zod
             })
             .describe(
               "One labelled scenario estimate (best \/ expected \/ worst).",
+            )
+            .nullable()
+            .describe(
+              "Always null; an expected ending needs measured ending values.",
             ),
           worst: zod
             .object({
@@ -3409,7 +3545,7 @@ export const EmergencyStopProfitMissionResponse = zod
         disclaimer: zod.string(),
       })
       .describe(
-        "Advisory probability \/ risk read. Every value is a labelled ESTIMATE; `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and `planningProjectionOnly` is true (forward math, not backtested).\n",
+        "Chance of reaching the target, shown only when measured from graded missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so every chance is null (unmeasured) and `planningProjectionOnly` is true. The best and worst scenarios are arithmetic from the inputs.\n",
       ),
     createdAt: zod.string().describe("ISO 8601."),
     updatedAt: zod.string().describe("ISO 8601."),

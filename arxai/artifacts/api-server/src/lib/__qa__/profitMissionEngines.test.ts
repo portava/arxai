@@ -185,7 +185,9 @@ test("small-account warning carries the drawdown / min-lot caveat", () => {
 });
 
 // ── Probability + sample-size honesty ─────────────────────────────────────────
-test("Phase-1 (no sample) => low confidence + explicit sample-size warning", () => {
+// ARX has no graded record of missions, so no chance is shown: every chance is
+// null (unmeasured), never a formula over the required pace or the tier.
+test("Phase-1 (no sample) => every chance unmeasured, low confidence + sample-size warning", () => {
   const m = math(1000, 1300, 7);
   const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
   const p = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize: 0 });
@@ -193,17 +195,70 @@ test("Phase-1 (no sample) => low confidence + explicit sample-size warning", () 
   assert.equal(p.sampleSize, 0);
   assert.ok(p.sampleSizeWarnings.length >= 1);
   assert.equal(p.isEstimate, true);
-  // target-hit is a damped, honest estimate (never exceeds feasibility)
-  assert.ok(p.targetHitProbability <= f.feasibilityScore);
-  // failure + target-hit are complementary, bounded 0–100
-  assert.equal(p.targetHitProbability + p.failureProbability, 100);
+  assert.equal(p.targetHitProbability, null);
+  assert.equal(p.failureProbability, null);
+  assert.equal(p.drawdownRisk, null);
+  // The two scenarios are arithmetic from the inputs; there is no expected ending.
+  assert.deepEqual(p.projections.best, { endingValue: 1300, profit: 300, returnPct: 30 });
+  assert.deepEqual(p.projections.worst, { endingValue: 800, profit: -200, returnPct: -20 });
+  assert.equal(p.projections.expected, null);
 });
 
-test("unreasonable mission => target-hit estimate capped very low", () => {
-  const m = math(1000, 2000, 1);
-  const f = evaluateFeasibility({ math: m, riskProfile: "extreme" });
-  const p = evaluateProbability({ math: m, feasibility: f, riskProfile: "extreme", sampleSize: 0 });
-  assert.ok(p.targetHitProbability <= 5);
+test("no tier, risk profile or bare sample size produces a chance", () => {
+  const cases: Array<[number, number, number]> = [[1000, 1010, 100], [1000, 1300, 7], [1000, 2000, 1], [50, 900, 2]];
+  for (const [s, t, d] of cases) {
+    for (const profile of ["conservative", "balanced", "aggressive", "extreme"] as const) {
+      const m = math(s, t, d);
+      const f = evaluateFeasibility({ math: m, riskProfile: profile });
+      for (const sampleSize of [0, 29, 30, 500]) {
+        const p = evaluateProbability({ math: m, feasibility: f, riskProfile: profile, sampleSize });
+        const at = `${s}->${t}/${d}d ${profile} n=${sampleSize}`;
+        assert.equal(p.targetHitProbability, null, at);
+        assert.equal(p.failureProbability, null, at);
+        assert.equal(p.drawdownRisk, null, at);
+        assert.equal(p.confidence, "low", at);
+        assert.equal(p.projections.expected, null, at);
+      }
+    }
+  }
+});
+
+test("graded outcomes => the chance is the measured share of those missions", () => {
+  const m = math(1000, 1300, 7);
+  const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
+  const p = evaluateProbability({
+    math: m, feasibility: f, riskProfile: "balanced", sampleSize: 40,
+    outcomes: { reachedTarget: 10, drewDown: 6 },
+  });
+  assert.equal(p.targetHitProbability, 25);
+  assert.equal(p.failureProbability, 75);
+  assert.equal(p.drawdownRisk, 15);
+  assert.equal(p.confidence, "medium");
+  assert.deepEqual(p.sampleSizeWarnings, []);
+  const big = evaluateProbability({
+    math: m, feasibility: f, riskProfile: "balanced", sampleSize: 120,
+    outcomes: { reachedTarget: 120, drewDown: 0 },
+  });
+  assert.equal(big.targetHitProbability, 100);
+  assert.equal(big.failureProbability, 0);
+  assert.equal(big.drawdownRisk, 0);
+  assert.equal(big.confidence, "high");
+});
+
+test("too few or inconsistent graded outcomes => still unmeasured", () => {
+  const m = math(1000, 1300, 7);
+  const f = evaluateFeasibility({ math: m, riskProfile: "balanced" });
+  const run = (sampleSize: number, reachedTarget: number, drewDown: number) =>
+    evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize, outcomes: { reachedTarget, drewDown } });
+  const cases: Array<[number, number, number]> = [[29, 10, 3], [40, 41, 3], [40, 10, 41], [40, -1, 3], [40, 2.5, 3], [40, Number.NaN, 3]];
+  for (const [n, hit, dd] of cases) {
+    const p = run(n, hit, dd);
+    const at = `n=${n} hit=${hit} dd=${dd}`;
+    assert.equal(p.targetHitProbability, null, at);
+    assert.equal(p.failureProbability, null, at);
+    assert.equal(p.drawdownRisk, null, at);
+    assert.equal(p.confidence, "low", at);
+  }
 });
 
 test("sampleSize 0 => planningProjectionOnly with the exact note; >0 clears it", () => {
@@ -213,12 +268,31 @@ test("sampleSize 0 => planningProjectionOnly with the exact note; >0 clears it",
   assert.equal(none.planningProjectionOnly, true);
   assert.equal(
     none.planningProjectionNote,
-    "No historical sample is available yet. These values are mathematical " +
-      "planning projections based on your inputs, not backtested probabilities.",
+    "No graded record of missions like this one exists yet, so no chance of " +
+      "reaching the target is shown. The two scenarios are arithmetic from your " +
+      "inputs, not backtested results.",
   );
   const some = evaluateProbability({ math: m, feasibility: f, riskProfile: "balanced", sampleSize: 50 });
   assert.equal(some.planningProjectionOnly, false);
   assert.equal(some.planningProjectionNote, "");
+});
+
+// ── Feasibility explanation states the real duration ──────────────────────────
+test("explanation states the real duration and the matching pace", () => {
+  const hour = computeMissionMath({
+    startingAmount: 1000, targetAmount: 1010, timeframeStartMs: NOW, timeframeEndMs: NOW + 60 * 60 * 1000, nowMs: NOW,
+  });
+  const h = evaluateFeasibility({ math: hour, riskProfile: "balanced" });
+  assert.match(h.explanation, /^This target needs about a 1\.0% total return over 1 hour — roughly 1\.00% per hour\./);
+  assert.doesNotMatch(h.explanation, /day/);
+  const halfHour = computeMissionMath({
+    startingAmount: 1000, targetAmount: 1005, timeframeStartMs: NOW, timeframeEndMs: NOW + 30 * 60 * 1000, nowMs: NOW,
+  });
+  assert.match(evaluateFeasibility({ math: halfHour, riskProfile: "balanced" }).explanation, /over 30 minutes — roughly 1\.00% per hour\./);
+  const week = evaluateFeasibility({ math: math(1000, 1300, 7), riskProfile: "balanced" });
+  assert.match(week.explanation, /^This target needs about a 30\.0% total return over 7 days — roughly 3\.82% per day at a compounding pace\./);
+  const oneDay = evaluateFeasibility({ math: math(1000, 1010, 1), riskProfile: "balanced" });
+  assert.match(oneDay.explanation, /over 1 day — roughly 1\.00% per day/);
 });
 
 // ── Banned-vocabulary guard ───────────────────────────────────────────────────

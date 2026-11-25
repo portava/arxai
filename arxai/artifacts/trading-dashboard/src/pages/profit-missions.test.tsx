@@ -51,7 +51,7 @@ const mission = {
     recommendedRiskProfile: "aggressive",
     missionType: "high_risk_sprint",
     warnings: ["This is a high-risk target; possible loss is elevated."],
-    explanation: "This target needs about a 30.0% total return over 7 day(s).",
+    explanation: "This target needs about a 30.0% total return over 7 days.",
     canStart: false,
     startBlockReason: "FEED_NOT_CONFIRMED",
     requiredReturnPct: 30,
@@ -59,12 +59,12 @@ const mission = {
     riskProfileMismatch: { mismatch: false, selected: "balanced", required: "balanced", explanation: null },
   },
   probability: {
-    targetHitProbability: 29,
-    drawdownRisk: 47,
-    failureProbability: 71,
+    targetHitProbability: null,
+    drawdownRisk: null,
+    failureProbability: null,
     projections: {
       best: { endingValue: 1300, profit: 300, returnPct: 30 },
-      expected: { endingValue: 1087, profit: 87, returnPct: 8.7 },
+      expected: null,
       worst: { endingValue: 800, profit: -200, returnPct: -20 },
     },
     confidence: "low",
@@ -73,8 +73,8 @@ const mission = {
     isEstimate: true,
     planningProjectionOnly: true,
     planningProjectionNote:
-      "No historical sample is available yet. These values are mathematical planning projections based on your inputs, not backtested probabilities.",
-    disclaimer: "All values are projections based on the inputs and pace, not a promise of profit. Actual results vary and possible loss is real.",
+      "No graded record of missions like this one exists yet, so no chance of reaching the target is shown. The two scenarios are arithmetic from your inputs, not backtested results.",
+    disclaimer: "The scenarios are arithmetic from your inputs, not a promise of profit. Actual results vary and possible loss is real.",
   },
 };
 
@@ -136,21 +136,24 @@ describe("Profit Mission planner (Phase 1 two-step)", () => {
     // Risk-profile mismatch (balanced selected, extreme required) is surfaced.
     expect(screen.getByTestId("alert-risk-mismatch").textContent).toMatch(/extreme risk assumptions/i);
 
-    // Probability is framed as a planning projection (sample size 0).
+    // No graded missions exist, so no chance of reaching the target is shown:
+    // every chance reads "Unmeasured", never a percentage from the pace.
     expect(screen.getByTestId("alert-planning-projection").textContent).toMatch(
-      /planning projections based on your inputs, not backtested/i,
+      /no chance of reaching the target is shown/i,
     );
-    const targetShare = screen.getByTestId("metric-target-hit").textContent;
+    for (const id of ["metric-target-hit", "metric-drawdown-risk", "metric-falls-short"]) {
+      expect(screen.getByTestId(id).textContent).toBe("Unmeasured");
+    }
     expect(screen.getByTestId("text-probability-caption").textContent).toContain(
-      `Partial goal adds ${targetShare} of the requested profit to starting capital.`,
+      "At target is your target amount.",
     );
 
-    // With no historical sample, scenario labels must read as planning
-    // projections — never the vague "(est.)" historical-estimate wording.
+    // The two scenarios are arithmetic planning projections; no "partial goal"
+    // ending is derived from an invented chance.
     const probabilityCard = screen.getByTestId("card-probability");
     expect(probabilityCard.textContent).not.toMatch(/\(est\.\)/);
+    expect(probabilityCard.textContent).not.toMatch(/partial goal/i);
     expect(probabilityCard.textContent).toMatch(/at target \(planning projection\)/i);
-    expect(probabilityCard.textContent).toMatch(/partial goal \(planning projection\)/i);
     expect(probabilityCard.textContent).toMatch(/drawdown scenario \(planning projection\)/i);
 
     // The primary action is a labelled draft — never an execution affordance.

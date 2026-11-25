@@ -59,12 +59,12 @@ const mission = {
     isEstimate: true,
   },
   probability: {
-    targetHitProbability: 29,
-    drawdownRisk: 47,
-    failureProbability: 71,
+    targetHitProbability: null,
+    drawdownRisk: null,
+    failureProbability: null,
     projections: {
       best: { endingValue: 1300, profit: 300, returnPct: 30 },
-      expected: { endingValue: 1087, profit: 87, returnPct: 8.7 },
+      expected: null,
       worst: { endingValue: 800, profit: -200, returnPct: -20 },
     },
     confidence: "low",

@@ -11557,23 +11557,27 @@ components:
     ProfitMissionProbability:
       type: object
       description: >
-        Advisory probability / risk read. Every value is a labelled ESTIMATE;
-        `sampleSize` is 0 in Phase 1 so a sample-size warning is always present and
-        `planningProjectionOnly` is true (forward math, not backtested).
+        Chance of reaching the target, shown only when measured from graded
+        missions. `sampleSize` is 0 in Phase 1 and no graded outcomes exist, so
+        every chance is null (unmeasured) and `planningProjectionOnly` is true.
+        The best and worst scenarios are arithmetic from the inputs.
       required:
         [targetHitProbability, drawdownRisk, failureProbability, projections,
          confidence, sampleSize, sampleSizeWarnings, planningProjectionOnly,
          planningProjectionNote, isEstimate, disclaimer]
       properties:
-        targetHitProbability: { type: number, description: "0–100 estimate." }
-        drawdownRisk: { type: number, description: "0–100 estimate." }
-        failureProbability: { type: number, description: "0–100 estimate." }
+        targetHitProbability: { type: number, nullable: true, description: "0–100 measured share of comparable graded missions that reached their target; null when unmeasured." }
+        drawdownRisk: { type: number, nullable: true, description: "0–100 measured share of comparable graded missions that drew down; null when unmeasured." }
+        failureProbability: { type: number, nullable: true, description: "100 − targetHitProbability; null when unmeasured." }
         projections:
           type: object
           required: [best, expected, worst]
           properties:
             best: { $ref: "#/components/schemas/ProfitMissionScenarioProjection" }
-            expected: { $ref: "#/components/schemas/ProfitMissionScenarioProjection" }
+            expected:
+              allOf: [{ $ref: "#/components/schemas/ProfitMissionScenarioProjection" }]
+              nullable: true
+              description: Always null; an expected ending needs measured ending values.
             worst: { $ref: "#/components/schemas/ProfitMissionScenarioProjection" }
         confidence: { type: string, enum: [low, medium, high] }
         sampleSize: { type: integer }

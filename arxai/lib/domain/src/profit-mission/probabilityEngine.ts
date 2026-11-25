@@ -1,11 +1,12 @@
 // Profit Mission — pure probability engine (MissionProbabilityScore).
 //
-// Produces target-hit / drawdown / failure ESTIMATES with best/expected/worst
-// projections, a confidence label, and sample-size warnings. Every number is a
-// labelled estimate — never a promise. PURE and DETERMINISTIC.
-//
-// Phase 1 has no historical/backtest sample wired, so confidence is honest
-// (low) and a sample-size warning is always surfaced when sampleSize is small.
+// Reports the chance of reaching the target ONLY when it is measured. ARX has
+// no graded record of missions like this one (the server passes sampleSize 0
+// and no outcomes), so the chance of reaching the target, the chance of falling
+// short and the drawdown risk are null, never a formula over the required pace
+// presented as a probability. The two scenarios are arithmetic from the inputs:
+// reaching the target, and the selected risk profile's drawdown. PURE and
+// DETERMINISTIC.
 
 import type {
   ConfidenceLabel,
@@ -20,12 +21,13 @@ import type {
 const MIN_RELIABLE_SAMPLE = 30;
 
 /**
- * Exact honest note shown when there is NO historical sample. Every projected
- * value is forward math, not a backtested probability. Locked by the unit suite.
+ * Exact honest note shown when there is NO historical sample. Locked by the
+ * unit suite.
  */
 const PLANNING_PROJECTION_NOTE =
-  "No historical sample is available yet. These values are mathematical " +
-  "planning projections based on your inputs, not backtested probabilities.";
+  "No graded record of missions like this one exists yet, so no chance of " +
+  "reaching the target is shown. The two scenarios are arithmetic from your " +
+  "inputs, not backtested results.";
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
@@ -54,6 +56,11 @@ export interface ProbabilityInput {
   riskProfile: RiskProfile;
   /** Historical samples behind the estimate; 0 in Phase 1. */
   sampleSize?: number;
+  /**
+   * Graded outcomes of `sampleSize` comparable missions. The only source of a
+   * shown chance: without them every chance is null (unmeasured).
+   */
+  outcomes?: { reachedTarget: number; drewDown: number };
 }
 
 function projection(startingAmount: number, endingValue: number): ScenarioProjection {
@@ -63,38 +70,29 @@ function projection(startingAmount: number, endingValue: number): ScenarioProjec
 }
 
 export function evaluateProbability(input: ProbabilityInput): MissionProbabilityScore {
-  const { math, feasibility, riskProfile } = input;
+  const { math, riskProfile } = input;
   const sampleSize = Math.max(0, Math.floor(input.sampleSize ?? 0));
 
-  // Target-hit estimate: damped feasibility (honest — below feasibility), with
-  // a small penalty for an aggressive/extreme chosen profile.
-  let targetHit = feasibility.feasibilityScore * 0.85;
-  if (riskProfile === "aggressive") targetHit -= 5;
-  if (riskProfile === "extreme") targetHit -= 10;
-  // Fail-closed: an unassessable mission has no positive target-hit estimate.
-  if (feasibility.tier === "Unreasonable") targetHit = Math.min(targetHit, 5);
-  const targetHitProbability = clamp(round(targetHit), 0, 100);
+  // A chance is shown only from graded outcomes of at least MIN_RELIABLE_SAMPLE
+  // comparable missions. Required pace, feasibility tier and risk profile are
+  // inputs, not observations: a formula over them is not a probability.
+  const o = input.outcomes;
+  const measured = o != null && sampleSize >= MIN_RELIABLE_SAMPLE &&
+    [o.reachedTarget, o.drewDown].every((n) => Number.isInteger(n) && n >= 0 && n <= sampleSize);
+  const share = (n: number) => clamp(round((n / sampleSize) * 100), 0, 100);
+  const targetHitProbability = measured ? share(o!.reachedTarget) : null;
+  const failureProbability = targetHitProbability == null ? null : 100 - targetHitProbability;
+  const drawdownRisk = measured ? share(o!.drewDown) : null;
 
-  // Drawdown risk estimate scales with the chosen risk profile and the overall
-  // risk score of the verdict.
-  const drawdownRisk = clamp(
-    round(DRAWDOWN_FRACTION[riskProfile] * 100 * 0.6 + feasibility.riskScore * 0.4),
-    0,
-    100,
-  );
-
-  const failureProbability = clamp(100 - targetHitProbability, 0, 100);
-
-  // Scenario projections (estimates):
-  //  - expected: a fraction of the goal gap proportional to target-hit odds.
-  //  - best: reaching the target (capped at the goal in Phase 1).
+  // Scenario projections (arithmetic from the inputs, not estimates):
+  //  - best: reaching the target.
   //  - worst: a risk-profile-sized drawdown from the starting amount.
-  const expectedEnding =
-    math.startingAmount + math.requiredProfit * (targetHitProbability / 100);
+  // No "expected" ending: it would need measured ending values.
   const bestEnding = math.targetAmount;
   const worstEnding = math.startingAmount * (1 - DRAWDOWN_FRACTION[riskProfile]);
 
-  const confidence = confidenceFor(sampleSize);
+  // Confidence describes a measured chance; with none it stays low.
+  const confidence = measured ? confidenceFor(sampleSize) : "low";
   const sampleSizeWarnings: string[] = [];
   if (sampleSize < MIN_RELIABLE_SAMPLE) {
     sampleSizeWarnings.push(
@@ -110,7 +108,7 @@ export function evaluateProbability(input: ProbabilityInput): MissionProbability
     failureProbability,
     projections: {
       best: projection(math.startingAmount, bestEnding),
-      expected: projection(math.startingAmount, expectedEnding),
+      expected: null,
       worst: projection(math.startingAmount, worstEnding),
     },
     confidence,
@@ -120,7 +118,7 @@ export function evaluateProbability(input: ProbabilityInput): MissionProbability
     planningProjectionNote: sampleSize === 0 ? PLANNING_PROJECTION_NOTE : "",
     isEstimate: true,
     disclaimer:
-      "All values are projections based on the inputs and pace, not a promise of profit. " +
+      "The scenarios are arithmetic from your inputs, not a promise of profit. " +
       "Actual results vary and possible loss is real.",
   };
 }
