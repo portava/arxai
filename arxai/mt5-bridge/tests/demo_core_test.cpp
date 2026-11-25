@@ -37,7 +37,7 @@ std::map<int,long> info;
 double currentVolume=.02, currentSL=1.1, currentTP=1.2, brokerVolume=.01, brokerPrice=1.15;
 double requested=0, minimum=.01, step=.01, maximum=100;
 bool positionExists=true, brokerBool=true, filling=true, guardPass=true, updateModify=true;
-bool symbolOk=true, dealAvailable=true, fileBlocked=false, writeFails=false, flushFails=false;
+bool symbolOk=true, dealAvailable=true, fileBlocked=false, writeFails=false, flushFails=false, unicodeBom=false;
 uint brokerCode=TRADE_RETCODE_DONE;
 int calls=0, selectedSide=-1, errorCode=0, checks=0;
 ulong selectedTicket=0;
@@ -136,15 +136,18 @@ int FileOpen(const string &name,int flags) {
  if(fileBlocked)return INVALID_HANDLE;
  if(flags!=(FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_COMMON))throw std::runtime_error("journal must be exclusive");
  for(auto &h:handles)if(h.second.path==name)return INVALID_HANDLE;
+ // Real MT5 writes the 2-byte UTF-16 BOM (FF FE) into a new FILE_UNICODE file on open.
+ if(unicodeBom&&disk[name].empty())disk[name]="\xFF\xFE";
  int h=nextHandle++;handles[h]={name,0};return h;
 }
 size_t FileSize(int h) {return disk[handles.at(h).path].size();}
 string FileReadString(int h) {
- auto &f=handles.at(h);auto &s=disk[f.path];if(f.cursor>=s.size())return "";
+ auto &f=handles.at(h);auto &s=disk[f.path];if(f.cursor==0&&s.rfind("\xFF\xFE",0)==0)f.cursor=2;if(f.cursor>=s.size())return "";
  size_t n=s.find("\r\n",f.cursor);if(n==string::npos)n=s.size();
  string out=s.substr(f.cursor,n-f.cursor);f.cursor=n+2;return out;
 }
 uint FileWriteString(int h,const string &s) {if(writeFails){errorCode=1;return 0;}auto &f=handles.at(h);disk[f.path].append(s);f.cursor+=s.size();return (uint)s.size()*2;}
+bool FileSeek(int h,long offset,int origin) {auto &f=handles.at(h);long base=origin==SEEK_END?(long)disk[f.path].size():origin==SEEK_CUR?(long)f.cursor:0;f.cursor=(size_t)(base+offset);return true;}
 void FileFlush(int) {if(flushFails)errorCode=1;}
 void FileClose(int h) {handles.erase(h);}
 // Deterministic fake digest for journal corruption scenarios; real MQL uses SHA256.
@@ -168,7 +171,7 @@ void reset() {
  brokerVolume=.01;brokerPrice=1.15;requested=0;minimum=.01;step=.01;maximum=100;positionExists=true;
  brokerBool=true;filling=true;guardPass=true;updateModify=true;symbolOk=true;dealAvailable=true;
  brokerCode=TRADE_RETCODE_DONE;calls=0;operation="";posted="";handles.clear();disk.clear();
- fileBlocked=false;writeFails=false;flushFails=false;g_demoJournal=INVALID_HANDLE;
+ fileBlocked=false;writeFails=false;flushFails=false;unicodeBom=false;g_demoJournal=INVALID_HANDLE;
  book.clear();brokerOrder=5001;selectedOrder=0;bookOnPlace=true;deleteRemoves=true;historyHas=true;historyState=ORDER_STATE_CANCELED;
  placedPrice=placedLimit=placedSL=placedTP=0;placedType=placedTime=placedFilling=-1;placedExpiry=-1;tickNow=1000;tickStep=0;
  gmtNow=1800000000;serverNow=1800000000+7200+13;last=ArxDemoOutcome();
@@ -276,6 +279,10 @@ int main() {
  reset();flushFails=true;check(BeginDemoCommand("a")==0,"intent flush failure");
  reset();check(BeginDemoCommand("a")==1,"new intent claims");int held=g_demoJournal;check(BeginDemoCommand("a")==0,"second chart cannot claim");g_demoJournal=held;PersistDemoResult("saved-result");check(BeginDemoCommand("a")==0 && posted=="saved-result","lost HTTP ack replays exact result");
  reset();check(BeginDemoCommand("a")==1,"crash intent claims");FileClose(g_demoJournal);g_demoJournal=INVALID_HANDLE;check(BeginDemoCommand("a")==0 && last.status=="FAILED" && last.reason.find("DO_NOT_RETRY")!=string::npos,"restart refuses uncertain intent");
+ reset();unicodeBom=true;check(BeginDemoCommand("a")==1 && last.reason.empty(),"BOM-only new journal claims, not PRIOR_ATTEMPT_UNCERTAIN");
+ check(disk.begin()->second.rfind("\xFF\xFEPENDING",0)==0,"intent appended after the BOM");
+ reset();unicodeBom=true;check(BeginDemoCommand("a")==1,"BOM crash intent claims");FileClose(g_demoJournal);g_demoJournal=INVALID_HANDLE;check(BeginDemoCommand("a")==0 && last.reason.find("DO_NOT_RETRY")!=string::npos,"BOM restart still refuses uncertain intent");
+ reset();unicodeBom=true;check(BeginDemoCommand("a")==1,"BOM intent claims");PersistDemoResult("saved-result");check(BeginDemoCommand("a")==0 && posted=="saved-result","BOM journal replays exact result");
  reset();BeginDemoCommand("a");PersistDemoResult("saved-result");disk.begin()->second.back()='x';check(BeginDemoCommand("a")==0 && last.status=="FAILED","truncated/corrupt result never reexecutes");
  reset();response=R"({"commands":[{"commandId":"wire-1","commandType":"CLOSE_POSITION","payload":{"ticket":"42","symbol":"EURUSD","volume":0.01,"lot":0.01}}]})";PollAndExecuteDemoCommands();string first=posted;check(calls==1 && requested==.01 && last.ticket==42,"actual wire poll reads string ticket and volume");PollAndExecuteDemoCommands();check(calls==1 && posted==first,"poll retry makes no second broker call");
  reset();response=R"({"commands":[{"commandId":"wire-2","commandType":"CLOSE_POSITION","payload":{"ticket":42,"symbol":"EURUSD","lot":0.01}}]})";PollAndExecuteDemoCommands();check(calls==1 && requested==.01,"legacy numeric ticket and lot");
