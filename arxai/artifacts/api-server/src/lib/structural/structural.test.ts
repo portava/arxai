@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { fitStructuralModel, forecastStructural, makeEpisodes, chronologicalPartitions,
   specialistIds, specialistFeatures, structuralFeatures, observeStructure, validateBars, hazardsToMass, reallocateEarly, probabilities,
   prebreakCandidate, softmax, evaluateForecast, performanceBrake, calibrationBins, predictHead, predictMass,
-  fitWindowCount, MIN_FIT_WINDOWS, favoredScenario, forecastRoutes, estimatePrice, scoreClosePath, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
+  fitWindowCount, MIN_FIT_WINDOWS, FIT_WINDOW_BARS, fitWindowCapacity, sessionShortfall, unbrokenRunLengths, favoredScenario, forecastRoutes, estimatePrice, scoreClosePath, scoreForecastRoute, FORECAST_HORIZONS, forecastHorizon, walkForwardAccuracy, calibrate, gradeForecast, independentForecasts, analogTrajectories, regradeAgainstBaseline, seasonalBandAt,
   type StructuralBar, type Mass, type DataOrigin, type StructuralModel } from "@workspace/domain/structural";
-import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
+import { StructuralForecastService, ForecastRefusal, MIN_FIT_BARS, FORECAST_HISTORY_BARS, type StoredForecast, type ForecastRepository } from "./service.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
 
 export function fixture(n = 5000, step = 60_000): StructuralBar[] {
@@ -272,6 +272,102 @@ test("a refusal states a stable code and what the feed looked like", async () =>
   assert.equal(holed.bars.length, 350); assert.equal(holed.diagnostics?.closedBars, 250); assert.equal(holed.diagnostics?.barsBeforeLastGap, 100);
   assert.equal(holed.bars[100]!.openTime, Date.parse(minute(150)));
   assert.equal(holed.bars[100]!.openTime - holed.bars[99]!.openTime, 51 * 60_000);
+});
+
+/** Bars in runs of the given lengths, `gap` missing bars between runs, on the bar grid. */
+function runsHistory(step: number, runs: number[], gap: number): StructuralBar[] {
+  const total = runs.reduce((a, b) => a + b, 0), prices = fixture(total, step), times: number[] = [];
+  let t = Date.UTC(2026, 0, 5);
+  for (const run of runs) { for (let k = 0; k < run; k++) { times.push(t); t += step; } t += gap * step; }
+  return prices.map((b, i) => ({ ...b, openTime: times[i]!, closeTime: times[i]! + step }));
+}
+/** A market that closes between sessions: whole sessions of `session` bars, the
+ * newest `newest` bars in so far, `total` bars in all (the oldest cut by the start). */
+function sessionHistory(step: number, session: number, gap: number, newest: number, total = FORECAST_HISTORY_BARS): StructuralBar[] {
+  const whole = Math.floor((total - newest) / session), oldest = total - newest - whole * session;
+  return runsHistory(step, [...(oldest ? [oldest] : []), ...Array<number>(whole).fill(session), newest], gap);
+}
+function sessionService(feedBars: StructuralBar[], newest: number, now = feedBars.at(-1)!.closeTime + 1000) {
+  const counter = { fits: 0 };
+  const service = new StructuralForecastService({ repository: memory(), now: () => now,
+    readFeed: async () => ({ bars: feedBars, origin: { ...origin, kind: "BROKER_HISTORY" }, ready: true, reason: null,
+      diagnostics: { historySource: "deriv_public", historyBars: feedBars.length, chartSource: "deriv_public", chartQuality: "clean",
+        chartAiUsable: true, closedBars: newest, barsBeforeLastGap: feedBars.length - newest, lastCloseAgeSeconds: null } }),
+    fit: () => { counter.fits++; return structuredClone(model()); } });
+  return { service, counter };
+}
+const refusedWith = (code: string, check: (detail: ForecastRefusal["detail"]) => void = () => {}) => (error: unknown) => {
+  assert.ok(error instanceof ForecastRefusal, String(error)); assert.equal(error.code, code); check(error.detail); return true;
+};
+
+test("a market whose sessions can never hold the window is refused as such, with its longest session", async () => {
+  // Measured 2026-11-25, frxXAUUSD M5 (the 4h window): whole sessions of 276
+  // bars (23 hours) between daily breaks. Sessions that long leave at most 134
+  // of the 153 training windows in the 5,000 bars kept, so 4h never issued.
+  const gold = sessionHistory(300_000, 276, 12, 150);
+  const goldWindows = fitWindowCount(gold);
+  assert.ok(goldWindows < MIN_FIT_WINDOWS && goldWindows <= 134, String(goldWindows));
+  assert.deepEqual(sessionShortfall(gold, FORECAST_HISTORY_BARS), { longestUnbrokenBars: 276, sessionsSeen: 17, trainingWindowsPossible: 134 });
+  const { service, counter } = sessionService(gold, 150);
+  await assert.rejects(service.issue(1, "frxXAUUSD", "4h"), refusedWith("MARKET_SESSIONS_TOO_SHORT", detail => {
+    assert.equal(detail?.timeframe, "M5"); assert.equal(detail?.longestUnbrokenBars, 276); assert.equal(detail?.sessionsSeen, 17);
+    assert.equal(detail?.trainingWindowsPossible, 134); assert.equal(detail?.trainingWindows, goldWindows);
+    assert.equal(detail?.trainingWindowsNeeded, MIN_FIT_WINDOWS); assert.equal(detail?.historyBarLimit, FORECAST_HISTORY_BARS);
+  }));
+  // Said first, whether the market is open or closed: no wait changes it.
+  const closed = sessionService(gold, 150, gold.at(-1)!.closeTime + 7_200_000);
+  await assert.rejects(closed.service.issue(1, "frxXAUUSD", "4h"), refusedWith("MARKET_SESSIONS_TOO_SHORT"));
+  // Measured OTC_FTSE M15 (the 8h window): no session longer than 57 bars, so
+  // not even one 180-bar training window, nor 120 unbroken recent bars, exists.
+  const otc = sessionHistory(900_000, 57, 39, 40);
+  const index = sessionService(otc, 40);
+  await assert.rejects(index.service.issue(1, "OTC_FTSE", "8h"), refusedWith("MARKET_SESSIONS_TOO_SHORT", detail => {
+    assert.equal(detail?.longestUnbrokenBars, 57); assert.equal(detail?.trainingWindowsPossible, 0); assert.equal(detail?.trainingWindows, 0);
+  }));
+  assert.equal(counter.fits + closed.counter.fits + index.counter.fits, 0);
+});
+test("a gap that will clear keeps its own refusal: the window is not called impossible", async () => {
+  // One recent outage on a continuous market: no whole session, so nothing is claimed about sessions.
+  const outage = sessionHistory(60_000, 4950, 30, 50);
+  assert.deepEqual(unbrokenRunLengths(outage), [4950, 50]);
+  assert.equal(sessionShortfall(outage, FORECAST_HISTORY_BARS), null);
+  await assert.rejects(sessionService(outage, 50).service.issue(1, "V75"), refusedWith("RECENT_HISTORY_HAS_GAP",
+    detail => assert.equal(detail?.longestUnbrokenBars, undefined)));
+  // Two outages: the whole run between them is long enough to fit, so the gap clears.
+  const twice = sessionHistory(60_000, 4000, 30, 50);
+  assert.deepEqual(unbrokenRunLengths(twice), [950, 4000, 50]);
+  assert.equal(sessionShortfall(twice, FORECAST_HISTORY_BARS), null);
+  await assert.rejects(sessionService(twice, 50).service.issue(1, "V75"), refusedWith("RECENT_HISTORY_HAS_GAP"));
+  // A holed store whose newest run is longer than any whole session: history
+  // is still accumulating, so the short window count is not a session limit.
+  const holed = runsHistory(60_000, [100, 100, 2000], 30);
+  assert.equal(sessionShortfall(holed, FORECAST_HISTORY_BARS), null);
+  await assert.rejects(sessionService(holed, 2000).service.issue(1, "V75"), refusedWith("UNBROKEN_HISTORY_TOO_SHORT",
+    detail => assert.ok(detail!.trainingWindows! < MIN_FIT_WINDOWS)));
+  // A cut-off oldest run longer than every whole session also leaves the question open.
+  assert.equal(sessionShortfall(runsHistory(300_000, [400, 276, 276, 50], 12), FORECAST_HISTORY_BARS), null);
+});
+test("session capacity bounds the training windows any history of such sessions holds", () => {
+  // The window length is the model's: 180 bars hold one window, 179 none.
+  assert.equal(FIT_WINDOW_BARS, 180);
+  assert.equal(fitWindowCount(fixture(FIT_WINDOW_BARS)), 1); assert.equal(fitWindowCount(fixture(FIT_WINDOW_BARS - 1)), 0);
+  assert.equal(fitWindowCapacity(179, FORECAST_HISTORY_BARS), 0);
+  for (const session of [180, 194, 195, 234, 276, 476, 1428]) for (let offset = 0; offset < 15; offset++) {
+    const whole = Math.floor((FORECAST_HISTORY_BARS - offset - 2) / session);
+    const history = runsHistory(300_000, [offset + 1, ...Array<number>(whole).fill(session), 1], 12);
+    const windows = fitWindowCount(history), bound = fitWindowCapacity(session, history.length);
+    assert.ok(windows <= bound, `${session}/${offset}: ${windows} > ${bound}`);
+    assert.ok(bound <= fitWindowCapacity(session, FORECAST_HISTORY_BARS));
+  }
+  // Measured session lengths: forex M15 weeks (476 bars) fit, forex M30 weeks (234) and gold M5 days (276) cannot.
+  assert.ok(fitWindowCapacity(476, FORECAST_HISTORY_BARS) >= MIN_FIT_WINDOWS);
+  assert.equal(fitWindowCapacity(234, FORECAST_HISTORY_BARS), 98);
+  assert.equal(fitWindowCapacity(276, FORECAST_HISTORY_BARS), 134);
+  // Bars that are not one ordered series of whole bars are not judged.
+  const gold = sessionHistory(300_000, 276, 12, 150);
+  assert.equal(sessionShortfall(gold.map((b, i) => i === 10 ? { ...b, closeTime: b.closeTime + 60_000 } : b), FORECAST_HISTORY_BARS), null);
+  assert.equal(sessionShortfall(gold.map((b, i) => i >= 300 ? { ...b, openTime: b.openTime + 60_000, closeTime: b.closeTime + 60_000 } : b), FORECAST_HISTORY_BARS), null);
+  assert.equal(sessionShortfall([], FORECAST_HISTORY_BARS), null);
 });
 
 test("every forecast window fits inside the model's 60 bars, from 15 minutes to one week", () => {

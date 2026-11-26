@@ -80,6 +80,71 @@ export function fitWindowCount(bars: StructuralBar[]): number {
 /** Fewest usable windows that leave MODEL_POLICY.minTraining training episodes
  * after the chronological split and purge (a test pins this to fit behaviour). */
 export const MIN_FIT_WINDOWS = 153;
+/** Consecutive bars one training window spans: 120 of history and 60 after it. */
+export const FIT_WINDOW_BARS = 180;
+/** Newest closed bars a forecast reads, which must be unbroken. */
+export const FORECAST_INPUT_BARS = 120;
+/** Lengths of the runs of consecutive bars in an ordered history, oldest
+ * first. A run ends where a bar does not open at the previous bar's close. */
+export function unbrokenRunLengths(bars: readonly StructuralBar[]): number[] {
+  const runs: number[] = [];
+  bars.forEach((b, i) => { if (i && b.openTime === bars[i - 1]!.closeTime) runs[runs.length - 1]!++; else runs.push(1); });
+  return runs;
+}
+/**
+ * The most training windows `historyBars` bars can hold when no run of
+ * consecutive bars is longer than `longestRun`. This is an upper bound, never
+ * an estimate.
+ *
+ * A run of L bars holds at most floor((L - 180) / 15) + 1 windows. For every L
+ * up to `longestRun`, that is at most L * (longestRun - 165) / (15 * longestRun).
+ * Summed over the runs, the windows are at most `historyBars` times that ratio.
+ */
+export function fitWindowCapacity(longestRun: number, historyBars: number): number {
+  const stride = MODEL_POLICY.stride;
+  if (longestRun < FIT_WINDOW_BARS || historyBars < FIT_WINDOW_BARS) return 0;
+  return Math.floor(historyBars * (longestRun - FIT_WINDOW_BARS + stride) / (stride * longestRun));
+}
+/** Facts showing a market's sessions can never hold enough training windows. */
+export interface SessionShortfall {
+  /** The longest whole session in the history: a run with a gap on both sides. */
+  longestUnbrokenBars: number;
+  /** Whole sessions the history holds. */
+  sessionsSeen: number;
+  /** The most training windows the history limit could hold with sessions that long. */
+  trainingWindowsPossible: number;
+}
+/**
+ * When a market's sessions are too short for this bar length. Even if every
+ * session were as long as the longest whole one in the history,
+ * `historyLimit` bars could not hold MIN_FIT_WINDOWS training windows. No wait
+ * or retry would let the window be forecast.
+ *
+ * Returns null when the history does not show that:
+ * - it holds no whole session yet;
+ * - the cut-off run at either end is already longer than every whole session
+ *   (a gap that will clear, or history still accumulating);
+ * - its bars are not an ordered series of whole bars of one length.
+ * Whenever the history could be fitted now, the capacity is at least its
+ * window count, so this returns null.
+ */
+export function sessionShortfall(bars: readonly StructuralBar[], historyLimit: number): SessionShortfall | null {
+  const step = bars.length ? bars[0]!.closeTime - bars[0]!.openTime : 0;
+  if (!(step > 0)) return null;
+  // Bars up to an hour sit on their own grid; H4 grids follow the venue (validateBars).
+  const grid = step <= 3_600_000 ? step : 60_000;
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i]!, gap = i ? b.openTime - bars[i - 1]!.closeTime : 0;
+    if (b.closeTime - b.openTime !== step || gap < 0 || gap % grid !== 0) return null;
+  }
+  const runs = unbrokenRunLengths(bars), sessions = runs.slice(1, -1);
+  if (!sessions.length) return null;
+  const longest = sessions.reduce((m, n) => Math.max(m, n), 0);
+  if (runs[0]! > longest || runs.at(-1)! > longest) return null;
+  // Every run is at most `longest`, so the bars given hold at most this many windows too.
+  const possible = fitWindowCapacity(longest, Math.max(historyLimit, bars.length));
+  return possible < MIN_FIT_WINDOWS ? { longestUnbrokenBars: longest, sessionsSeen: sessions.length, trainingWindowsPossible: possible } : null;
+}
 export function makeEpisodes(bars: StructuralBar[]): Episode[] {
   if (bars.length < 180) throw new Error("INSUFFICIENT_CLOSED_HISTORY");
   const step = barStepMs(bars);

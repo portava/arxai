@@ -31,6 +31,7 @@
     "test:selected-market-panel": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/scanner/SelectedMarketPanel.test.tsx src/components/scanner/SelectedMarketPanel.responsiveness.test.tsx src/lib/selectedMarketQuery.test.tsx src/hooks/useScannerTruth.selectedMarket.test.tsx",
     "test:chart-deep-history-hook": "node ../../scripts/validation/run-named-tests.mjs vitest run src/lib/useChartDeepHistory.test.ts",
     "test:chart-display-status": "node ../../scripts/validation/run-named-tests.mjs vitest run src/lib/chart-display-status.test.ts",
+    "test:structural-forecast-panel": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/charts/StructuralForecastPanel.test.tsx",
     "test:scanner-feed-badge": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/scanner/ScannerChartFeedBadge.test.tsx",
     "test:news-risk-honesty": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/news/NewsRiskCard.honesty.test.tsx src/components/scanner/GlobalMarketHeatCard.test.tsx",
     "test:chart-tick-stream": "node ../../scripts/validation/run-named-tests.mjs vitest run src/components/charts/ARXNativeChart.tick-stream.test.tsx",

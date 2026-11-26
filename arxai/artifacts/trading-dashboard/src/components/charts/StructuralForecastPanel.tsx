@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { brier, probabilities, independentForecasts, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
+import { brier, probabilities, independentForecasts, logLoss, scenarioIndex, favoredScenario, scoreClosePath, forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, FIT_WINDOW_BARS, FORECAST_INPUT_BARS, MIN_FIT_WINDOWS, type ForecastHorizonPreset, type ForecastRoute, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -147,6 +147,35 @@ export function ForecastDirectionSummary({ read }: { read: ForecastDirectionRead
   </div>;
 }
 
+/** The facts the service sends with a refusal (ForecastFeedDiagnostics). */
+export interface ForecastRefusalDetail { historySource?: string | null; historyBars?: number; chartSource?: string | null; chartQuality?: string; chartAiUsable?: boolean;
+  closedBars?: number; barsBeforeLastGap?: number; lastCloseAgeSeconds?: number | null; timeframe?: string; trainingWindows?: number; trainingWindowsNeeded?: number;
+  longestUnbrokenBars?: number; sessionsSeen?: number; trainingWindowsPossible?: number; historyBarLimit?: number }
+const span = (bars: number, stepMs: number) => {
+  const hours = bars * stepMs / 3_600_000;
+  return hours >= 48 ? `${+(hours / 24).toFixed(1)} days` : hours >= 1 ? `${+hours.toFixed(1)} hours` : `${Math.round(hours * 60)} minutes`;
+};
+/**
+ * What the panel says when the service declines a forecast. If the market's
+ * sessions can never hold the window, it says so plainly, as permanent. Any
+ * other refusal is shown by its code and what the feed looked like. A broken
+ * recent history also says what clears it.
+ */
+export function forecastRefusalMessage(reason: string, d: ForecastRefusalDetail | undefined, preset: ForecastHorizonPreset): string {
+  const tf = d?.timeframe ?? preset.timeframe;
+  if (reason === "MARKET_SESSIONS_TOO_SHORT" && d?.longestUnbrokenBars != null) {
+    const seen = `In ${d.sessionsSeen ?? 0} sessions, its longest unbroken run was ${d.longestUnbrokenBars} ${tf} bars (${span(d.longestUnbrokenBars, preset.stepMs)})`;
+    const why = d.longestUnbrokenBars < FIT_WINDOW_BARS
+      ? `each training window needs ${FIT_WINDOW_BARS} bars (${span(FIT_WINDOW_BARS, preset.stepMs)}) in a row`
+      : `sessions that long fit at most ${d.trainingWindowsPossible ?? 0} of the ${d.trainingWindowsNeeded ?? MIN_FIT_WINDOWS} training windows the model needs in the ${(d.historyBarLimit ?? 5000).toLocaleString("en-US")} bars it keeps`;
+    return `${preset.label} ahead can't be forecast on this market. ${seen}; ${why}. Waiting won't change this; a shorter window may fit`;
+  }
+  const facts = d ? ` (${tf} feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} unbroken closed bars${d.barsBeforeLastGap ? `, ${d.barsBeforeLastGap} older bars behind a gap` : ""}${d.trainingWindows != null ? `; ${d.trainingWindows} of ${d.trainingWindowsNeeded} gap-free training windows` : ""}; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
+  const clears = reason === "RECENT_HISTORY_HAS_GAP" && d?.closedBars != null && d.closedBars < FORECAST_INPUT_BARS
+    ? `; it can be forecast once ${FORECAST_INPUT_BARS - d.closedBars} more ${tf} bars close without a gap` : "";
+  return `${reason.replaceAll("_", " ").toLowerCase()}${facts}${clears}`;
+}
+
 /** Pair only finalized provider candles at the forecast's exact timestamps. */
 export function routeProgress(route: Pick<ForecastRoute, "candles">, actual: readonly { openTime: string; closeTime: string; close: number; isComplete: boolean; isForming: boolean; source: string }[], provider: string, now: number) {
   const closes = actual.filter(c => c.source === provider && c.isComplete && !c.isForming && Date.parse(c.closeTime) <= now)
@@ -182,10 +211,13 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
   const [auto, setAuto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Windows this market's sessions can never hold, with the reason, by window id.
+  const [unavailable, setUnavailable] = useState<Record<string, string>>({});
+  const unavailableReason = unavailable[preset.id];
   const request = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    request.current?.abort(); setRow(null); setHistory([]); setError(null); setAuto(false); setBusy(false);
+    request.current?.abort(); setRow(null); setHistory([]); setError(null); setAuto(false); setBusy(false); setUnavailable({});
     return () => { request.current?.abort(); };
   }, [symbol]);
   useEffect(() => {
@@ -241,9 +273,14 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       const result = await response.json();
       if (!response.ok || !result.saved) {
         // State what the forecast saw, not only that it declined.
-        const d = result.detail as { historySource?: string | null; historyBars?: number; chartSource?: string | null; chartQuality?: string; chartAiUsable?: boolean; closedBars?: number; barsBeforeLastGap?: number; lastCloseAgeSeconds?: number | null; timeframe?: string; trainingWindows?: number; trainingWindowsNeeded?: number } | undefined;
-        const facts = d ? ` (${d.timeframe ?? preset.timeframe} feed: ${d.chartSource ?? "no source"}, quality ${d.chartQuality ?? "unknown"}, ${d.chartAiUsable ? "analysis-usable" : "not analysis-usable"}; history: ${d.historySource ?? "no source"}, ${d.closedBars ?? 0} unbroken closed bars${d.barsBeforeLastGap ? `, ${d.barsBeforeLastGap} older bars behind a gap` : ""}${d.trainingWindows != null ? `; ${d.trainingWindows} of ${d.trainingWindowsNeeded} gap-free training windows` : ""}; last bar closed ${d.lastCloseAgeSeconds == null ? "at an unknown time" : `${d.lastCloseAgeSeconds}s ago`})` : "";
-        throw new Error(`${String(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE").replaceAll("_", " ").toLowerCase()}${facts}`);
+        const reason = String(result.reason ?? result.error ?? "FORECAST_UNAVAILABLE");
+        const message = forecastRefusalMessage(reason, result.detail as ForecastRefusalDetail | undefined, preset);
+        if (reason === "MARKET_SESSIONS_TOO_SHORT") {
+          // This market's sessions can never hold this window: stop offering it.
+          if (!controller.signal.aborted) { setUnavailable(u => ({ ...u, [preset.id]: message })); setAuto(false); }
+          return;
+        }
+        throw new Error(message);
       }
       if (!controller.signal.aborted) {
         setRow(result as Row);
@@ -322,12 +359,13 @@ export function StructuralForecastPanel({ symbol, onPaths, onDirectionRead, sele
       <strong className="text-zinc-100">ARX structural forecast</strong>
       <label>Window <select aria-label="Forecast window" data-testid="forecast-window" className="rounded bg-zinc-900 p-1" value={preset.id}
         onChange={e => { request.current?.abort(); setBusy(false); setHorizonId(e.target.value); setAuto(false); setError(null); }}>
-        {FORECAST_HORIZONS.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}</select></label>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => void generate(false, true)}>{busy ? "Building forecast…" : `Forecast ${preset.label} ahead`}</Button>
+        {FORECAST_HORIZONS.map(h => <option key={h.id} value={h.id}>{h.label}{unavailable[h.id] ? " · not on this market" : ""}</option>)}</select></label>
+      <Button size="sm" variant="outline" disabled={busy || Boolean(unavailableReason)} onClick={() => void generate(false, true)}>{busy ? "Building forecast…" : `Forecast ${preset.label} ahead`}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void generate(true)}>Refresh saved forecasts</Button>
-      <label className="flex items-center gap-1"><input type="checkbox" aria-label="Dynamic forecast" checked={auto} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(false, true); }} /> Dynamic: re-forecast each {preset.timeframe} bar</label>
+      <label className="flex items-center gap-1"><input type="checkbox" aria-label="Dynamic forecast" checked={auto} disabled={Boolean(unavailableReason)} onChange={e => { setAuto(e.target.checked); if (e.target.checked) void generate(false, true); }} /> Dynamic: re-forecast each {preset.timeframe} bar</label>
     </div>
-    {error && <p role="alert" className="mt-2 text-amber-300">Live update unavailable. {error}.{shown && " Showing the saved forecast below."}</p>}
+    {unavailableReason ? <p role="alert" data-testid="forecast-window-unavailable" className="mt-2 text-amber-300">{unavailableReason}.</p>
+      : error && <p role="alert" className="mt-2 text-amber-300">Live update unavailable. {error}.{shown && " Showing the saved forecast below."}</p>}
     {shown && shown.forecast.origin.symbol === canonicalSymbol && <>
       {shown.forecast.update && <p data-testid="forecast-update" className="mt-2 text-sky-200">
         Updated {shown.forecast.update.barsIntoWindow} {preset.timeframe} bar{shown.forecast.update.barsIntoWindow === 1 ? "" : "s"} into the forecast issued {new Date(shown.forecast.update.anchorAsOf).toLocaleTimeString()}; the faint dashed outline shows the original when its paths are available.
