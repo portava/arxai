@@ -287,6 +287,13 @@ export interface DerivSymbolFeedStatus {
   derivId: string | null;
   /** THIS symbol's own most-recent cached tick time (ISO), or null. */
   lastTickAt: string | null;
+  /** The price of that same tick (the feed quote), or null with lastTickAt. */
+  lastTickQuote: number | null;
+  /**
+   * The tick this stream published just before it (time + quote), or null when
+   * unknown. Lets a reader tell a bar close that is one tick behind lastTickAt.
+   */
+  previousTick: { at: string; quote: number } | null;
   lastTickAgeMs: number | null;
   /** True ONLY when THIS symbol ticked within `maxAgeMs`. */
   hasRecentTick: boolean;
@@ -321,6 +328,8 @@ export function getDerivSymbolFeedStatus(
 
   const map = resolveDerivFeedSymbol(symbolOrLabel);
   let lastTickAt: string | null = null;
+  let lastTickQuote: number | null = null;
+  let previousTick: DerivSymbolFeedStatus["previousTick"] = null;
   let lastTickAgeMs: number | null = null;
   let hasRecentTick = false;
   if (map && connected) {
@@ -330,7 +339,14 @@ export function getDerivSymbolFeedStatus(
       const ageMs = Date.now() - epochMs;
       lastTickAgeMs = ageMs;
       lastTickAt = new Date(epochMs).toISOString();
+      lastTickQuote = tick.quote;
       hasRecentTick = ageMs >= 0 && ageMs <= maxAgeMs;
+      // Read against this same tick object, so the pair is two consecutive
+      // ticks of one stream (the public client keeps the predecessor).
+      const prior = "getPreviousTickByDerivId" in client ? client.getPreviousTickByDerivId(map.derivId, tick) : null;
+      if (prior && Number.isFinite(prior.epoch) && prior.epoch < tick.epoch && Number.isFinite(prior.quote) && prior.quote > 0) {
+        previousTick = { at: new Date(prior.epoch * 1000).toISOString(), quote: prior.quote };
+      }
     }
   }
 
@@ -349,6 +365,8 @@ export function getDerivSymbolFeedStatus(
     resolved: map != null,
     derivId: map?.derivId ?? null,
     lastTickAt,
+    lastTickQuote,
+    previousTick,
     lastTickAgeMs,
     hasRecentTick,
     feedReadinessState,

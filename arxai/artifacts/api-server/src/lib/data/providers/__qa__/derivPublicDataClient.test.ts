@@ -148,6 +148,26 @@ test("invalid, wrong, future, retrograde and conflicting equal-time ticks never 
   assert.equal(observed.length, 1); assert.equal(f.client.getCachedTick("R_75")?.quote, 124);
 });
 
+test("the cached tick's predecessor is the stream's previous published tick, bound by identity", async t => {
+  const f = fixture(); t.after(() => f.client.stop()); await f.client.subscribeTicks("R_75");
+  const first = f.client.getCachedTick("R_75")!;
+  assert.equal(f.client.getPreviousTickByDerivId("R_75", first), null, "the first tick has no predecessor");
+  f.setNow((epoch + 2) * 1000);
+  f.sockets[0]!.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: epoch + 2, quote: 124.5 }, subscription: { id: "sub-R_75" } }));
+  const latest = f.client.getCachedTick("R_75")!;
+  assert.equal(latest.quote, 124.5);
+  assert.deepEqual(f.client.getPreviousTickByDerivId("R_75", latest), first);
+  assert.equal(f.client.getPreviousTickByDerivId("R_75", first), null, "a superseded tick is not the cached one");
+  // A retrograde tick is refused and leaves the pair unchanged.
+  f.sockets[0]!.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: epoch + 1, quote: 1 }, subscription: { id: "sub-R_75" } }));
+  assert.equal(f.client.getCachedTick("R_75"), latest);
+  assert.deepEqual(f.client.getPreviousTickByDerivId("R_75", latest), first);
+  // Forgetting the stream forgets its history: a new subscription starts fresh.
+  await f.client.unsubscribeTicks("R_75"); await f.client.subscribeTicks("R_75");
+  const fresh = f.client.getCachedTick("R_75")!;
+  assert.equal(f.client.getPreviousTickByDerivId("R_75", fresh), null);
+});
+
 test("mismatched subscribe response is forgotten, never relabeled", async t => {
   const f = fixture({ reply: (s,r) => { if (!r.ticks) return false; s.respond(r, { tick: { symbol: "1HZ75V", quote: 99, epoch }, subscription: { id: "wrong" } }); return true; }});
   t.after(() => f.client.stop()); await assert.rejects(f.client.subscribeTicks("R_75"), /INVALID_TICK/);

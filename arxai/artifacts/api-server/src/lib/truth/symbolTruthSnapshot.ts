@@ -137,11 +137,18 @@ export interface TruthData {
   sourceIdentity?: string | null;
   /** Clean-English provider label for display. */
   sourceLabel: string | null;
-  /** Newest observed chart close (may be a provider forming bar), or null. */
+  /**
+   * The newest observed price, or null: the producer's latest tick when the
+   * feed binds its price to lastTickAt (provably no older than the newest bar's
+   * close), otherwise the newest chart close (may be a provider forming bar).
+   */
   price: number | null;
-  /** Observation bound to this price, never a separate tick or preceding bar. */
+  /**
+   * The time this exact price was observed: the tick's own time, or a closed
+   * bar's close time. null for a forming close, which carries no clock.
+   */
   priceObservedAt?: string | null;
-  priceBasis?: "forming_candle_close" | "closed_candle_close" | null;
+  priceBasis?: "producer_tick" | "forming_candle_close" | "closed_candle_close" | null;
   /**
    * DATA timestamp of the newest CLOSED candle (its close time, never later
    * than now), or null. Never a forming bar's scheduled future close.
@@ -284,12 +291,34 @@ function deriveDataState(fs: ChartFeedStatus | null): TruthDataState {
   return "SYNCING";
 }
 
-function newestClose(candles: NormalizedChartCandle[]): number | null {
-  for (let i = candles.length - 1; i >= 0; i--) {
-    const c = candles[i];
-    if (c && Number.isFinite(c.close)) return c.close;
+/**
+ * The snapshot's price and the observation it rests on, always one pair:
+ *  - the producer's latest tick when the feed binds a price to that tick
+ *    (lastTickPrice, basis producer_tick): the chart feed sets it only when the
+ *    tick is provably no older than the newest bar's close;
+ *  - otherwise the newest bar's close: a closed bar observed at its close
+ *    time, or a forming bar's close with no observation time of its own.
+ * A price is never paired with a time at which it was not observed.
+ */
+export function truthPriceObservation(
+  candles: NormalizedChartCandle[],
+  feedStatus: Pick<ChartFeedStatus, "lastTickTime" | "lastTickTimeBasis" | "lastTickPrice"> | null,
+  nowMs: number,
+): Pick<TruthData, "price" | "priceObservedAt" | "priceBasis"> {
+  const bar = [...candles].reverse().find(c => Number.isFinite(c.close));
+  if (!bar) return { price: null, priceObservedAt: null, priceBasis: null };
+  const tickPrice = feedStatus?.lastTickPrice;
+  const tickAt = feedStatus?.lastTickTime ?? null;
+  const tickMs = tickAt != null ? Date.parse(tickAt) : Number.NaN;
+  if (feedStatus?.lastTickTimeBasis === "producer_tick" && typeof tickPrice === "number" && Number.isFinite(tickPrice) &&
+      tickPrice > 0 && Number.isFinite(tickMs) && tickMs <= nowMs) {
+    return { price: tickPrice, priceObservedAt: tickAt, priceBasis: "producer_tick" };
   }
-  return null;
+  const closed = bar.isComplete === true && bar.isForming !== true && bar.isFinal !== false && Date.parse(bar.closeTime) <= nowMs;
+  return closed
+    ? { price: bar.close, priceObservedAt: bar.closeTime, priceBasis: "closed_candle_close" }
+    // Provider OHLC exposes the forming close but no price-bound tick clock.
+    : { price: bar.close, priceObservedAt: null, priceBasis: "forming_candle_close" };
 }
 
 function computeAtr(
@@ -583,16 +612,11 @@ export async function buildSymbolTruthSnapshot(
   // ── data block (single source of freshness + price) ────────────────────────
   const feedStatus = chart?.feedStatus ?? null;
   const candles = chart?.candles ?? [];
-  const priceBar = [...candles].reverse().find(c => Number.isFinite(c.close));
-  const priceIsClosed = priceBar?.isComplete === true && priceBar.isForming !== true && priceBar.isFinal !== false && Date.parse(priceBar.closeTime) <= Date.now();
   const data: TruthData = {
     state: deriveDataState(feedStatus),
     source: feedStatus?.source ?? chart?.source ?? null,
     sourceLabel: sourceLabelFor(feedStatus?.source ?? chart?.source ?? null),
-    price: newestClose(candles),
-    priceBasis: !priceBar ? null : priceIsClosed ? "closed_candle_close" : "forming_candle_close",
-    // Provider OHLC exposes the forming close but no price-bound tick clock.
-    priceObservedAt: priceIsClosed ? priceBar!.closeTime : null,
+    ...truthPriceObservation(candles, feedStatus, Date.now()),
     // Not feedStatus.lastCandleTime: that is the newest PROVIDER bar's
     // closeTime, which for a forming bar is a scheduled future instant.
     lastCandleAt: lastClosedCandleAt(candles, Date.now()),

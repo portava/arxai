@@ -64,6 +64,10 @@ test("the ticking symbol reads LIVE_FEED (false-negative fixed)", () => {
   assert.equal(s.hasRecentTick, true);
   assert.equal(s.feedReadinessState, "LIVE_FEED");
   assert.ok(s.lastTickAt && s.lastTickAgeMs != null && s.lastTickAgeMs >= 0);
+  // The price of that same tick; the authorized client keeps no predecessor,
+  // so none is reported (never inferred).
+  assert.equal(s.lastTickQuote, 100);
+  assert.equal(s.previousTick, null);
 });
 
 test("a SIBLING ticking never promotes THIS symbol (one per-symbol story)", () => {
@@ -76,6 +80,7 @@ test("a SIBLING ticking never promotes THIS symbol (one per-symbol story)", () =
   // Connected + active_symbols loaded but awaiting THIS symbol's first tick.
   assert.equal(other.feedReadinessState, "HISTORY_READY_AWAITING_LIVE_TICK");
   assert.equal(other.lastTickAt, null);
+  assert.equal(other.lastTickQuote, null);
 });
 
 test("a fresh GLOBAL tick clock never promotes a symbol without its OWN tick", () => {

@@ -21,9 +21,9 @@ export interface TruthData {
   sourceIdentity?: string | null;
   sourceLabel: string | null;
   price: number | null;
-  /** Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp. */
+  /** The time this exact price was observed — the producer tick's own time (producer_tick) or a closed candle's close time; null for a forming close, which carries no clock. */
   priceObservedAt?: string | null;
-  /** The source observation represented by price, separate from the last closed candle and latest feed tick. */
+  /** The source observation represented by price — the producer's latest tick (only when it is provably no older than the newest bar's close), a forming candle's close, or a closed candle's close. Separate from the last closed candle and latest feed tick fields. */
   priceBasis?: TruthDataPriceBasis;
   lastCandleAt: string | null;
   lastTickAt: string | null;

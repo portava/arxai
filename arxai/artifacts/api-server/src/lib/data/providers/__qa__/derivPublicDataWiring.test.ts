@@ -19,8 +19,9 @@ let now = Date.now();
 let tickEpoch = Math.floor(now / 1000);
 const failedTicks = new Set<string>();
 let ignoreHistoryCursor = false;
+const sockets: Socket[] = [];
 class Socket extends EventEmitter {
-  constructor(readonly url: string) { super(); queueMicrotask(() => this.emit("open")); }
+  constructor(readonly url: string) { super(); sockets.push(this); queueMicrotask(() => this.emit("open")); }
   send(raw: string) {
     const r = JSON.parse(raw); sent.push(r);
     const reply = (body: unknown) => this.emit("message", JSON.stringify({ req_id: r.req_id, ...body as object }));
@@ -205,4 +206,24 @@ test("failed live subscription preserves real history without inventing tick fre
     assert.equal(result.candles.length, 30);
     assert.equal(getDerivSymbolFeedStatus("EURUSD").hasRecentTick, false);
   } finally { failedTicks.delete("frxEURUSD"); }
+});
+
+test("chart feed binds the newest tick's price when the forming close is the stream's previous tick", async () => {
+  const { getChartCandles } = await import("../../chart/chartDataService.js");
+  await routeQuote("V75");
+  const first = getDerivSymbolFeedStatus("V75");
+  assert.equal(first.lastTickQuote, 123);
+  // The next tick arrives after the bars were last fetched (their close is 123).
+  while (Math.floor(Date.now() / 1000) <= tickEpoch) await new Promise(r => setTimeout(r, 25));
+  const nextEpoch = Math.floor(Date.now() / 1000);
+  sockets.at(-1)!.emit("message", JSON.stringify({ tick: { symbol: "R_75", epoch: nextEpoch, quote: 124.5 }, subscription: { id: "R_75" } }));
+  const status = getDerivSymbolFeedStatus("V75");
+  assert.equal(status.lastTickQuote, 124.5);
+  assert.deepEqual(status.previousTick, { at: new Date(tickEpoch * 1000).toISOString(), quote: 123 });
+  const chart = await getChartCandles("V75", "M1", 30, false);
+  assert.equal(chart.source, "deriv_public");
+  assert.equal(chart.candles.at(-1)?.close, 123, "the provider bar is one tick behind");
+  assert.equal(chart.feedStatus.lastTickTime, new Date(nextEpoch * 1000).toISOString());
+  assert.equal(chart.feedStatus.lastTickTimeBasis, "producer_tick");
+  assert.equal(chart.feedStatus.lastTickPrice, 124.5, "the tick's own price, bound to lastTickTime");
 });
