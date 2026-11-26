@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StructuralForecastPanel, forecastDirectionRead, routeProgress, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence } from "./StructuralForecastPanel";
+import { forecastHorizon } from "@workspace/domain/structural";
+import { StructuralForecastPanel, forecastDirectionRead, routeProgress, ForecastDirectionSummary, trajectoryChartLabel, trajectoryLabel, rangeSentence, forecastRefusalMessage } from "./StructuralForecastPanel";
 
 const row = { id: "saved-1", issuedAt: 1800000000000, scores: [], forecast: {
   asOf: 1800000000000, origin: { symbol: "V75", provider: "deriv" }, mode: "BASELINE", version: "arx-v6.7-implementation-1",
@@ -47,6 +48,44 @@ describe("ARX structural forecast controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Forecast 1 week ahead" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/H4 feed.*50 of 153 gap-free training windows/);
     expect(JSON.parse(fetch.mock.calls[3]![1].body)).toEqual({ symbol: "V75", horizon: "1w" });
+  });
+  it("says plainly when a market's sessions can never hold a window, and stops offering it on that market", async () => {
+    // Measured 2026-11-25, frxXAUUSD M5: whole sessions of 276 bars between daily breaks.
+    const detail = { timeframe: "M5", chartSource: "deriv_public", chartQuality: "clean", chartAiUsable: true, historySource: "deriv_public", closedBars: 150,
+      barsBeforeLastGap: 4850, lastCloseAgeSeconds: 1, longestUnbrokenBars: 276, sessionsSeen: 17, trainingWindows: 110, trainingWindowsNeeded: 153,
+      trainingWindowsPossible: 134, historyBarLimit: 5000 };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ forecasts: [] }))
+      .mockResolvedValueOnce(response({ saved: false, reason: "MARKET_SESSIONS_TOO_SHORT", detail }, false)));
+    const { rerender } = render(<StructuralForecastPanel symbol="XAUUSD" onPaths={vi.fn()} />);
+    const windowOption = (id: string) => Array.from((screen.getByLabelText("Forecast window") as HTMLSelectElement).options).find(o => o.value === id)!;
+    fireEvent.change(screen.getByLabelText("Forecast window"), { target: { value: "4h" } });
+    fireEvent.click(screen.getByRole("button", { name: "Forecast 4 hours ahead" }));
+    expect((await screen.findByTestId("forecast-window-unavailable")).textContent).toBe("4 hours ahead can't be forecast on this market. In 17 sessions, "
+      + "its longest unbroken run was 276 M5 bars (23 hours); sessions that long fit at most 134 of the 153 training windows the model needs "
+      + "in the 5,000 bars it keeps. Waiting won't change this; a shorter window may fit.");
+    expect(screen.queryByText(/Live update unavailable/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Forecast 4 hours ahead" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Dynamic forecast") as HTMLInputElement).disabled).toBe(true);
+    expect(windowOption("4h").textContent).toBe("4 hours · not on this market");
+    // Other windows are still offered, and another market is judged on its own sessions.
+    fireEvent.change(screen.getByLabelText("Forecast window"), { target: { value: "1h" } });
+    expect((screen.getByRole("button", { name: "Forecast 1 hour ahead" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("forecast-window-unavailable")).toBeNull();
+    rerender(<StructuralForecastPanel symbol="V75" onPaths={vi.fn()} />);
+    await waitFor(() => expect(windowOption("4h").textContent).toBe("4 hours"));
+  });
+  it("names the unbroken run one training window needs when no session is that long", () => {
+    // Measured OTC_FTSE M15: no session longer than 57 bars.
+    expect(forecastRefusalMessage("MARKET_SESSIONS_TOO_SHORT", { timeframe: "M15", longestUnbrokenBars: 57, sessionsSeen: 86, trainingWindows: 0,
+      trainingWindowsNeeded: 153, trainingWindowsPossible: 0, historyBarLimit: 5000 }, forecastHorizon("8h")!))
+      .toBe("8 hours ahead can't be forecast on this market. In 86 sessions, its longest unbroken run was 57 M15 bars (14.3 hours); "
+        + "each training window needs 180 bars (45 hours) in a row. Waiting won't change this; a shorter window may fit");
+  });
+  it("says what clears a temporary gap in the recent history", () => {
+    expect(forecastRefusalMessage("RECENT_HISTORY_HAS_GAP", { timeframe: "M15", chartSource: "deriv_public", chartQuality: "clean", chartAiUsable: true,
+      historySource: "deriv_public", closedBars: 37, barsBeforeLastGap: 4963, lastCloseAgeSeconds: 30 }, forecastHorizon("8h")!))
+      .toBe("recent history has gap (M15 feed: deriv_public, quality clean, analysis-usable; history: deriv_public, 37 unbroken closed bars, "
+        + "4963 older bars behind a gap; last bar closed 30s ago); it can be forecast once 83 more M15 bars close without a gap");
   });
   it("switches the chart to the requested forecast interval on success", async () => {
     const onShow = vi.fn();

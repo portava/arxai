@@ -2,7 +2,7 @@ import { retainSpecialistQuoteStudy } from "../data/atiDerivQuotes.js";
 import { resolveDerivSymbol } from "../data/providers/derivProvider.js";
 import { gradePublicForecastOrder } from "./paperGrading.js";
 import { getChartCandles } from "../data/chart/chartDataService.js";
-import { StructuralForecastService } from "./service.js";
+import { FORECAST_HISTORY_BARS, StructuralForecastService } from "./service.js";
 import { fitWindowCount, MIN_FIT_WINDOWS, forecastHorizon, DEFAULT_FORECAST_HORIZON } from "@workspace/domain/structural";
 import { structuralRepository } from "./repository.js";
 import { fitInWorker } from "./fitAsync.js";
@@ -27,7 +27,7 @@ export const structuralService = new StructuralForecastService({
     // Existing paginated cache/backfill supplies training depth. Fetch the
     // current truth afterwards so a slow history backfill cannot stale the tip.
     const read = async (excludeProviders?: readonly string[]) => {
-      const history = await getCandleHistory({ symbol, timeframe: tf, limit: 5000, ...(excludeProviders ? { excludeProviders } : {}) });
+      const history = await getCandleHistory({ symbol, timeframe: tf, limit: FORECAST_HISTORY_BARS, ...(excludeProviders ? { excludeProviders } : {}) });
       const current = await getChartCandles(symbol, tf, 120, false, excludeProviders ? { excludeProviders } : {});
       return assembleForecastFeed(symbol, history, current, Date.now(), horizon);
     };

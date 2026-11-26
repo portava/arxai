@@ -1,7 +1,7 @@
 import { hasPaperQuoteCoverage } from "../tradeEngine/paperQuoteCoverage.js";
 import { forecastPaperInstruction, settledPaperGrade, type ForecastPaperGrade } from "@workspace/domain/structural";
 import { createHash } from "node:crypto";
-import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS,
+import { fitStructuralModel, forecastStructural, evaluateForecast, performanceBrake, MODEL_POLICY, fitWindowCount, MIN_FIT_WINDOWS, sessionShortfall, FORECAST_INPUT_BARS,
   calibrate, probabilities, scenarioIndex, type GradedObservation,
   forecastHorizon, forecastHorizonBars, forecastStepMs, forecastHorizonId, DEFAULT_FORECAST_HORIZON, FORECAST_HORIZONS,
   regradeAgainstBaseline, hasAtiStructuralScope, type StructuralModel, type StructuralBar, type StructuralForecast, type DataOrigin, type ForecastScore, type ForecastHorizonPreset } from "@workspace/domain/structural";
@@ -25,6 +25,14 @@ export interface ForecastFeedDiagnostics {
   timeframe?: string;
   /** Consecutive 180-bar windows the model could train on, and how many it needs. */
   trainingWindows?: number; trainingWindowsNeeded?: number;
+  /** MARKET_SESSIONS_TOO_SHORT: the longest whole session in the history, in bars. */
+  longestUnbrokenBars?: number;
+  /** MARKET_SESSIONS_TOO_SHORT: whole sessions the history holds. */
+  sessionsSeen?: number;
+  /** MARKET_SESSIONS_TOO_SHORT: the most training windows the bars kept could ever hold with sessions that long. */
+  trainingWindowsPossible?: number;
+  /** MARKET_SESSIONS_TOO_SHORT: the most bars of history the forecast keeps. */
+  historyBarLimit?: number;
 }
 export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready: boolean; reason: string | null; diagnostics?: ForecastFeedDiagnostics; atiHistoricalSourceVerified?: boolean }
 /**
@@ -33,6 +41,8 @@ export interface ForecastFeed { bars: StructuralBar[]; origin: DataOrigin; ready
  * chronological split); a test pins it to the model's actual behaviour.
  */
 export const MIN_FIT_BARS = 2460;
+/** The most bars of one length the forecast reads and keeps (history plus tip). */
+export const FORECAST_HISTORY_BARS = 5000;
 /** A domain refusal: a stable code plus the non-secret facts behind it. */
 export class ForecastRefusal extends Error {
   constructor(readonly code: string, readonly detail?: ForecastFeedDiagnostics) { super(code); this.name = "ForecastRefusal"; }
@@ -95,6 +105,17 @@ export class StructuralForecastService {
     const asOf = feed.bars.at(-1)?.closeTime;
     const facts = (extra: Partial<ForecastFeedDiagnostics> = {}): ForecastFeedDiagnostics | undefined => feed.diagnostics
       ? { ...feed.diagnostics, timeframe: horizon.timeframe, lastCloseAgeSeconds: asOf == null ? null : Math.round((now - asOf) / 1000), ...extra } : undefined;
+    // Measured 2026-11-25: OTC indices from 8h up, forex at 24h and 2d, and
+    // gold from 4h up were refused on every bar for a gap or short history.
+    // Their sessions can never hold this window's training history. Say so
+    // first, whether the market is open or closed, since no wait changes it.
+    // This fires only when the history could not be fitted now, so it never
+    // refuses a feed the model accepts.
+    if (feed.origin.kind !== "SYNTHETIC_TEST" && feed.bars.every(b => b.closeTime - b.openTime === horizon.stepMs)) {
+      const short = sessionShortfall(feed.bars, FORECAST_HISTORY_BARS);
+      if (short) throw new ForecastRefusal("MARKET_SESSIONS_TOO_SHORT", facts({ ...short, historyBarLimit: FORECAST_HISTORY_BARS,
+        trainingWindows: fitWindowCount(feed.bars), trainingWindowsNeeded: MIN_FIT_WINDOWS }));
+    }
     // The newest closed bar must be the one that just closed: older than one
     // bar means the feed missed a close (one minute for M1, four hours for H4).
     if (!feed.ready || asOf == null || asOf > now || now - asOf >= horizon.stepMs) {
@@ -108,7 +129,7 @@ export class StructuralForecastService {
     // Say so before fitting, with the facts, instead of a bare model error.
     const windows = fitWindowCount(feed.bars);
     if (windows < MIN_FIT_WINDOWS) throw new ForecastRefusal("UNBROKEN_HISTORY_TOO_SHORT", facts({ trainingWindows: windows, trainingWindowsNeeded: MIN_FIT_WINDOWS }));
-    if ((feed.diagnostics?.closedBars ?? feed.bars.length) < 120) throw new ForecastRefusal("RECENT_HISTORY_HAS_GAP", facts());
+    if ((feed.diagnostics?.closedBars ?? feed.bars.length) < FORECAST_INPUT_BARS) throw new ForecastRefusal("RECENT_HISTORY_HAS_GAP", facts());
     const existing = (await this.deps.repository.list(userId, symbol)).filter(r => forecastHorizonId(r.forecast) === horizon.id);
     const sameBar = existing.find(r => r.forecast.asOf === asOf && r.forecast.origin.provider === feed.origin.provider);
     if (sameBar) return sameBar;

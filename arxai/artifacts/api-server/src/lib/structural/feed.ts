@@ -1,6 +1,6 @@
 import { normalizeCandles, type NormalizedChartCandle } from "../data/chart/candleNormalization.js";
 import type { CandleHistoryResult } from "../data/candleHistoryService.js";
-import type { ForecastFeed } from "./service.js";
+import { FORECAST_HISTORY_BARS, type ForecastFeed } from "./service.js";
 import type { ForecastHorizonPreset } from "@workspace/domain/structural";
 
 /** Compose existing deep-history and current-truth services; never mix sources. */
@@ -16,7 +16,7 @@ export function assembleForecastFeed(symbol: string, history: CandleHistoryResul
   const byTime = new Map(historical.map(b => [b.openTime, b]));
   if (sameSource) for (const b of current.candles) byTime.set(b.openTime, b);
   const ordered = [...byTime.values()].filter(b => b.isFinal && b.isComplete)
-    .sort((a, b) => Date.parse(a.openTime) - Date.parse(b.openTime)).slice(-5000);
+    .sort((a, b) => Date.parse(a.openTime) - Date.parse(b.openTime)).slice(-FORECAST_HISTORY_BARS);
   // The model trains on windows of 180 consecutive bars and never bridges a
   // gap, so bars on both sides of a hole are kept: windows that cross it are
   // simply not used (fitWindowCount). The forecast itself needs the newest 120
