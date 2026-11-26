@@ -98,6 +98,8 @@ export class DerivPublicDataClient {
   private opening: Promise<void> | null = null;
   private pending = new Map<number, Pending>();
   private ticks = new Map<string, DerivTick>();
+  /** The tick each stream published just before its current `ticks` entry. */
+  private previousTicks = new Map<string, DerivTick>();
   private staged = new Map<string, Map<number, { tick: DerivTick; receivedAt: number; timer: ReturnType<typeof setTimeout> }>>();
   private listeners = new Set<DerivTickListener>();
   private desired = new Set<string>();
@@ -162,6 +164,16 @@ export class DerivPublicDataClient {
     return tick && tick.epoch * 1000 <= this.now() ? tick : null;
   }
   getCachedTick(symbol: string) { return this.getCachedTickByDerivId(symbol); }
+  /**
+   * The tick this stream published just before `latest`, or null. `latest`
+   * must be the tick getCachedTickByDerivId just returned (checked by
+   * identity), so the pair always describes two consecutive published ticks.
+   */
+  getPreviousTickByDerivId(symbol: string, latest: DerivTick): DerivTick | null {
+    if (this.ticks.get(symbol) !== latest) return null;
+    const previous = this.previousTicks.get(symbol);
+    return previous && previous.epoch < latest.epoch ? previous : null;
+  }
   getLastTickAt() { const epoch = this.lastTickEpoch(); return epoch === null ? null : new Date(epoch * 1000).toISOString(); }
   getLastTickAgeMs() { const epoch = this.lastTickEpoch(); return epoch === null ? null : this.now() - epoch * 1000; }
   hasRecentTick(maxAgeMs = FRESH_MS) { const age = this.getLastTickAgeMs(); return this.isConnected() && age !== null && age >= 0 && age <= maxAgeMs; }
@@ -187,7 +199,7 @@ export class DerivPublicDataClient {
         this.connected = false; this.connectedAt = null; this.opening = null;
         this.disconnect = null; this.ws = null;
         for (const symbol of this.staged.keys()) this.clearStaged(symbol);
-        this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.subscriptions.clear(); this.subscriptionStreams.clear();
+        this.discovery = null; this.discoveryPromise = null; this.ticks.clear(); this.previousTicks.clear(); this.subscriptions.clear(); this.subscriptionStreams.clear();
         this.subscriptionPromises.clear(); this.candlePromises.clear(); this.candleCache.clear(); this.lastCandle = null; this.historySymbols.clear();
         if (this.pingTimer) clearInterval(this.pingTimer);
         this.pingTimer = null;
@@ -329,6 +341,7 @@ export class DerivPublicDataClient {
     const prior = this.ticks.get(symbol);
     if (prior && (tick.epoch < prior.epoch || tick.epoch === prior.epoch && tick.quote !== prior.quote)) return prior ?? null;
     if (prior?.epoch === tick.epoch) return prior;
+    if (prior) this.previousTicks.set(symbol, prior); else this.previousTicks.delete(symbol);
     this.ticks.set(symbol, tick);
     const releasedAt = this.now();
     publicPaperBrackets.observe(tick, receivedAt, releasedAt);
@@ -400,7 +413,7 @@ export class DerivPublicDataClient {
   async unsubscribeTicks(symbol: string) {
     if (!this.known.some(s => s.derivId === symbol)) return { ok: false, forgot: false, reason: "DERIV_PUBLIC_UNKNOWN_SYMBOL" };
     this.intentVersions.set(symbol, (this.intentVersions.get(symbol) ?? 0) + 1);
-    this.clearStaged(symbol); this.desired.delete(symbol); this.ticks.delete(symbol);
+    this.clearStaged(symbol); this.desired.delete(symbol); this.ticks.delete(symbol); this.previousTicks.delete(symbol);
     const id = this.subscriptions.get(symbol); this.subscriptions.delete(symbol); this.subscriptionStreams.delete(symbol);
     if (!id) return { ok: true, forgot: false, reason: "not_subscribed" };
     try { const result = await this.request({ forget: id }); return { ok: true, forgot: result.forget === 1 || result.forget === true }; }

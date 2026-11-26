@@ -5943,6 +5943,12 @@ export const GetChartCandlesResponse = zod.object({
       .describe(
         "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
       ),
+    lastTickPrice: zod
+      .number()
+      .nullish()
+      .describe(
+        "The price of the tick at lastTickTime on the bars' own basis, set only with lastTickTimeBasis producer_tick and only when that tick is provably no older than the newest bar's close; null otherwise.\n",
+      ),
   }),
   truthResult: zod
     .union([
@@ -6387,6 +6393,12 @@ export const GetChartFeedStatusResponse = zod.object({
     .describe(
       "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
     ),
+  lastTickPrice: zod
+    .number()
+    .nullish()
+    .describe(
+      "The price of the tick at lastTickTime on the bars' own basis, set only with lastTickTimeBasis producer_tick and only when that tick is provably no older than the newest bar's close; null otherwise.\n",
+    ),
 });
 
 /**
@@ -6796,6 +6808,12 @@ export const GetMeChartIntelligenceResponse = zod.object({
           .nullish()
           .describe(
             "What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).\n",
+          ),
+        lastTickPrice: zod
+          .number()
+          .nullish()
+          .describe(
+            "The price of the tick at lastTickTime on the bars' own basis, set only with lastTickTimeBasis producer_tick and only when that tick is provably no older than the newest bar's close; null otherwise.\n",
           ),
       }),
       currentCandle: zod.union([
@@ -8326,13 +8344,13 @@ export const GetMeMarketTruthResponse = zod.object({
       .string()
       .nullish()
       .describe(
-        "Observation time bound to this price; null when a forming close has no provider price-bound tick timestamp.",
+        "The time this exact price was observed — the producer tick's own time (producer_tick) or a closed candle's close time; null for a forming close, which carries no clock.",
       ),
     priceBasis: zod
-      .enum(["forming_candle_close", "closed_candle_close"])
+      .enum(["producer_tick", "forming_candle_close", "closed_candle_close"])
       .nullish()
       .describe(
-        "The source observation represented by price, separate from the last closed candle and latest feed tick.",
+        "The source observation represented by price — the producer's latest tick (only when it is provably no older than the newest bar's close), a forming candle's close, or a closed candle's close. Separate from the last closed candle and latest feed tick fields.",
       ),
     lastCandleAt: zod.string().nullable(),
     lastTickAt: zod.string().nullable(),

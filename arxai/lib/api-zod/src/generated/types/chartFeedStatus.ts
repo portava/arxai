@@ -75,4 +75,10 @@ export interface ChartFeedStatus {
    * @nullable
    */
   lastTickTimeBasis?: ChartFeedStatusLastTickTimeBasis;
+  /**
+   * The price of the tick at lastTickTime on the bars' own basis, set only with lastTickTimeBasis producer_tick and only when that tick is provably no older than the newest bar's close; null otherwise.
+
+   * @nullable
+   */
+  lastTickPrice?: number | null;
 }

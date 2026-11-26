@@ -79,6 +79,7 @@ import {
   type FormingPartition,
 } from "./formingBarComposer.js";
 import { brokerBucketCloseMs, isBrokerBucketAligned } from "./brokerBucket.js";
+import { quotePriceOnBasis, tickPriceSupersedingClose } from "./tickPrice.js";
 
 // Quality precedence + trailing-interval thresholds now live in the shared
 // freshness module (../freshness.js) so every analysis/chart surface classifies
@@ -156,6 +157,14 @@ export interface ChartFeedStatus {
    * prove the tick is current). null when there is no last tick.
    */
   lastTickTimeBasis?: "producer_tick" | "server_receive" | null;
+  /**
+   * The price of the tick at `lastTickTime`, on the bars' own basis (Deriv: the
+   * feed quote; MT5: the side the bars declare). Set only with basis
+   * producer_tick and only when that tick is provably no older than the newest
+   * bar's close (tickPrice.ts), so it is the series' current price bound to
+   * lastTickTime. null otherwise; absent on older servers.
+   */
+  lastTickPrice?: number | null;
 }
 
 export type ChartFeedScope = "own_bridge" | "platform_shared" | "provider";
@@ -498,6 +507,23 @@ async function buildChartFeed(
   const lastTickTimeBasis: ChartFeedStatus["lastTickTimeBasis"] = lastTickTime == null
     ? null
     : derivBacked || mt5TickConverted ? "producer_tick" : "server_receive";
+  // That same tick's price on the bars' basis, kept only when the tick is
+  // provably no older than the newest provider bar's close. A receive-time
+  // stamp never dates a price, so it never carries one.
+  const tickPriceOnBarBasis = lastTickTimeBasis !== "producer_tick"
+    ? null
+    : derivBacked
+      ? derivSymbolStatus?.lastTickQuote ?? null
+      : mt5TickConverted ? quotePriceOnBasis(mt5WriterQuote!.quote, lastCandle?.priceBasis) : null;
+  const previousDerivTick = derivBacked ? derivSymbolStatus?.previousTick ?? null : null;
+  const lastTickPrice = lastTickTime != null && tickPriceOnBarBasis != null
+    ? tickPriceSupersedingClose({
+        bar: lastCandle,
+        tick: { atMs: Date.parse(lastTickTime), price: tickPriceOnBarBasis },
+        previousTick: previousDerivTick ? { atMs: Date.parse(previousDerivTick.at), price: previousDerivTick.quote } : null,
+        nowMs: now,
+      })
+    : null;
 
   // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
   // Fold the live-tick forming bar onto the newest bar for the DISPLAY surface.
@@ -713,6 +739,7 @@ async function buildChartFeed(
     contention,
     brokerClockOffsetMs: brokerClock?.offsetMs ?? null,
     lastTickTimeBasis,
+    lastTickPrice,
   };
 
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.

@@ -7,13 +7,14 @@
  */
 
 /**
- * The source observation represented by price, separate from the last closed candle and latest feed tick.
+ * The source observation represented by price — the producer's latest tick (only when it is provably no older than the newest bar's close), a forming candle's close, or a closed candle's close. Separate from the last closed candle and latest feed tick fields.
  */
 export type TruthDataPriceBasis =
   | (typeof TruthDataPriceBasis)[keyof typeof TruthDataPriceBasis]
   | null;
 
 export const TruthDataPriceBasis = {
+  producer_tick: "producer_tick",
   forming_candle_close: "forming_candle_close",
   closed_candle_close: "closed_candle_close",
 } as const;

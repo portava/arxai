@@ -69,6 +69,43 @@ test("live matching read: direct observations verified, calculations estimates, 
   assert.deepEqual(s.evidence.news, { evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null });
 });
 
+// Truth audit 2026-11-25: in 53 of 151 live reads the price was the forming
+// close, one tick behind lastTickAt. The chart feed now binds the producer
+// tick's own price (lastTickPrice) when that tick is provably no older.
+test("a tick price the feed binds to lastTickAt is the price, with the tick's own time and a verified class", async () => {
+  const chart = { ...fixture.chart, feedStatus: { ...fixture.chart.feedStatus, lastTickPrice: 1.0987 } };
+  const s = await snapshot({ getChartCandlesFn: async () => chart as never });
+  assert.equal(s.data.price, 1.0987);
+  assert.equal(s.data.priceBasis, "producer_tick");
+  assert.equal(s.data.priceObservedAt, s.data.lastTickAt);
+  assert.deepEqual(s.evidence.price, { evidenceClass: "verified", reason: "LIVE_FEED_OBSERVATION", observedAt: s.data.lastTickAt });
+});
+
+test("a tick price without a producer time is never shown; the bar close keeps its own time", async () => {
+  const bar = fixture.chart.candles.at(-1)!;
+  for (const feedStatus of [
+    { ...fixture.chart.feedStatus, lastTickPrice: 1.0987, lastTickTimeBasis: "server_receive" },
+    { ...fixture.chart.feedStatus, lastTickPrice: null },
+    { ...fixture.chart.feedStatus, lastTickPrice: 1.0987, lastTickTime: new Date(Date.now() + 60_000).toISOString() },
+  ]) {
+    const s = await snapshot({ getChartCandlesFn: async () => ({ ...fixture.chart, feedStatus }) as never });
+    assert.equal(s.data.price, bar.close);
+    assert.equal(s.data.priceBasis, "closed_candle_close");
+    assert.equal(s.data.priceObservedAt, bar.closeTime);
+  }
+});
+
+test("a forming close with no bound tick keeps no clock of its own", async () => {
+  const forming = marketFixture({ forming: true });
+  const bar = forming.chart.candles.at(-1)!;
+  assert.equal(bar.isComplete, false);
+  const s = await snapshot({ getChartCandlesFn: async () => forming.chart as never });
+  assert.equal(s.data.price, bar.close);
+  assert.equal(s.data.priceBasis, "forming_candle_close");
+  assert.equal(s.data.priceObservedAt, null);
+  assert.deepEqual(s.evidence.price, { evidenceClass: "unavailable", reason: "NO_OBSERVATION_TIME", observedAt: null });
+});
+
 test("a calendar that is not configured stays NO_CALENDAR", async () => {
   const s = await snapshot({ buildNewsFn: async () => ({
     radar: { symbol: "EURUSD", provider: { connected: false, name: "none", note: "" }, events: [], topSeverity: null, highImpactWindowActive: false, summary: "" },
