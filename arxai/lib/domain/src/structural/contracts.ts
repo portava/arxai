@@ -128,7 +128,9 @@ export interface StructuralForecast {
   /** Bars of the 60 modelled that the requested window covers; absent means 60. */
   horizonBars?: number;
   /** Which engine drew the bull-bear range for this market, and the out-of-sample evidence. Absent on older forecasts. */
-  range?: { engine: "HISTORY" | "VOLATILITY"; reason: string; tested: number; historyInside: number | null; volatilityInside: number | null };
+  range?: { engine: "HISTORY" | "VOLATILITY"; reason: string; tested: number; historyInside: number | null; volatilityInside: number | null;
+    /** What sized the volatility range: the hour-of-week forecast (M15/H1) or the last 120 bars. Absent on older forecasts. */
+    volatility?: "HOUR_OF_WEEK" | "RECENT_120_BARS" };
   /** True only when the analogs' up/down share reliably beat a coin flip on this market's untested setups. */
   directionEdge?: boolean;
   horizonId?: string;

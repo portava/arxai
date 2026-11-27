@@ -79,20 +79,18 @@ describe("market-scanner scan button — never silently fails", () => {
 
   it("renders the degraded banner exactly once, at page scope (not tab-trapped)", () => {
     // FIX 1: the honest degraded banner must show on EVERY tab (including the
-    // default Focus tab) during a scanner outage, not only on Broad Scan. It is
+    // default Chart tab) during a scanner outage, not only on Broad Scan. It is
     // hoisted to the page return and must appear exactly once so it never
     // double-renders.
     const matches = code.match(/testId="scanner-error"/g) ?? [];
     expect(matches.length, "scanner-error banner must render exactly once").toBe(1);
 
-    // The single banner must sit at page scope — after the header summary and
-    // ABOVE the PageTabs — so it is independent of the active tab.
+    // The error belongs to the workspace, above its tab switcher.
+    const workspaceIdx = code.indexOf("<SelectedActionStoreProvider>");
     const bannerIdx = code.indexOf('testId="scanner-error"');
-    const headerIdx = code.indexOf("<ScannerHeaderSummary");
-    const tabsIdx = code.indexOf("<PageTabs");
-    expect(headerIdx).toBeGreaterThan(-1);
-    expect(tabsIdx).toBeGreaterThan(-1);
-    expect(bannerIdx).toBeGreaterThan(headerIdx);
+    const tabsIdx = code.indexOf("<PageTabs", workspaceIdx);
+    expect(workspaceIdx).toBeGreaterThan(-1);
+    expect(bannerIdx).toBeGreaterThan(workspaceIdx);
     expect(bannerIdx).toBeLessThan(tabsIdx);
   });
 

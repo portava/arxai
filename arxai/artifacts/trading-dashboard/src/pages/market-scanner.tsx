@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders, Target, Layers, Wand2 } from "lucide-react";
+import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders } from "lucide-react";
 import { Link } from "wouter";
 import { SetupQualityBadge } from "@/components/trading/SetupQualityBadge";
 import { EleanorSetupReason } from "@/components/scanner/EleanorSetupReason";
@@ -257,19 +257,6 @@ export function scalpResultToSignal(r: ScalpResult) {
   };
 }
 
-/**
- * Simple-first scanner page. Four tabs:
- *  Focus    — selected market + Eleanor read + safety banners. Default tab.
- *  Results  — opportunity cards from the running scan.
- *  Symbols  — full SymbolExplorer with search + collapsible groups.
- *  Advanced — scan universe selector, scan engine controls, feed status,
- *             scanner universe symbol list (collapsible), recent commands.
- *
- * Nothing is removed — only reorganised. Universe controls / scanner
- * engine controls / feed config notes / recent commands all still live in
- * Advanced. The default Focus view stays calm: one selected-market card,
- * one Eleanor read, no chip walls.
- */
 // Parent scan polling/cooldowns do not change this subtree's inputs. Its own
 // queries, symbol subscriptions and shared Truth contexts still update normally.
 const StableScannerChart = memo(ScannerChartPanel);
@@ -279,15 +266,12 @@ const ScannerFocusPanels = memo(function ScannerFocusPanels({ symbol, onBuild }:
   return <div className="space-y-4">
     <MasterLiveAccessBanner />
     <HighImpactEventBanner />
-    <GlobalMarketHeatCard />
-    <SelectedMarketPanel />
-    <ScannerDataHealthPanel />
-    <EleanorScalpBasketPanel />
-    <EleanorScalpReviewPanel />
-    <EleanorScalpFocusCard symbol={symbol} onBuild={onBuild} />
-    <ScannerReadGate symbol={symbol} />
-    <TimingIntelligenceCard symbol={symbol} />
-    <EleanorMarketReadCard symbol={symbol} />
+    <PageTabs label="Market analysis" defaultTab="market" tabs={[
+      { id: "market", label: "Market read", content: <><SelectedMarketPanel /><EleanorMarketReadCard symbol={symbol} /></> },
+      { id: "timing", label: "Timing", content: <><ScannerReadGate symbol={symbol} /><TimingIntelligenceCard symbol={symbol} /></> },
+      { id: "heat", label: "Market heat", content: <GlobalMarketHeatCard /> },
+      { id: "scalp-focus", label: "Scalp focus", content: <EleanorScalpFocusCard symbol={symbol} onBuild={onBuild} /> },
+    ]} />
   </div>;
 });
 
@@ -684,7 +668,12 @@ export default function MarketScanner() {
 
   const scalpBuilderTab = (
     <div className="space-y-4">
-      <EleanorScalpBuilder onBuild={openScalpTrade} />
+      <PageTabs label="Scalp tools" defaultTab="builder" tabs={[
+        { id: "builder", label: "Builder", content: <EleanorScalpBuilder onBuild={openScalpTrade} /> },
+        { id: "rankings", label: "Rankings", content: <EleanorScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} /> },
+        { id: "basket", label: "Basket", content: <EleanorScalpBasketPanel /> },
+        { id: "review", label: "Review", content: <EleanorScalpReviewPanel /> },
+      ]} />
     </div>
   );
 
@@ -1035,16 +1024,15 @@ export default function MarketScanner() {
         </CardContent>
       </Card>
 
-      <EleanorScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
-
-      <BroadScanOpportunityMap
-        marketGroup={opportunityMapGroup(universe)}
-        selectedSymbol={symbolsTabActive}
-        onPick={handleSymbolPick}
-        onScanned={setMapScanned}
-      />
-
-      {resultsBlock}
+      <PageTabs label="Scan results" defaultTab="results" tabs={[
+        { id: "results", label: "Results", content: resultsBlock },
+        { id: "map", label: "Opportunity map", content: <BroadScanOpportunityMap
+          marketGroup={opportunityMapGroup(universe)}
+          selectedSymbol={symbolsTabActive}
+          onPick={handleSymbolPick}
+          onScanned={setMapScanned}
+        />, keepMounted: true },
+      ]} />
 
       {activeUniverse && activeUniverse.symbols.length > 0 && (
         <CollapsibleSection
@@ -1070,26 +1058,6 @@ export default function MarketScanner() {
         />
       )}
 
-      <CollapsibleSection
-        title="Recent scanner trades"
-        description="Lists MT5 demo orders sent from the scanner only."
-        storageKey="scanner.recentTrades"
-        testId="scanner-recent-trades"
-        defaultOpen
-      >
-        <RecentScannerTrades />
-      </CollapsibleSection>
-      <CollapsibleSection
-        title="Probability accuracy"
-        description="Reliability diagram and Brier score for the probabilities this scanner shows."
-        storageKey="scanner.calibration"
-        testId="scanner-calibration"
-        defaultOpen
-      >
-        <SectionErrorBoundary section="Probability accuracy">
-          <CalibrationReliabilityCard />
-        </SectionErrorBoundary>
-      </CollapsibleSection>
     </div>
   );
 
@@ -1102,8 +1070,7 @@ export default function MarketScanner() {
     {/* Keep the last result card clear of the fixed mobile bottom nav (h-14) and
         the floating Eleanor orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
-    <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary />
+    <div className="scanner-workspace mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
 
       {err && (
         <CompactAlert
@@ -1128,25 +1095,31 @@ export default function MarketScanner() {
       )}
 
       <PageTabs
-        storageKey="market-scanner"
-        defaultTab="broad-scan"
+        className="scanner-desk-tabs"
+        label="Chart workspace"
+        defaultTab="chart"
         variant="pill"
         tabs={[
-          { id: "focus",      label: "Focus",      icon: <Target className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
-          { id: "broad-scan", label: "Broad Scan", icon: <Radar className="h-3.5 w-3.5" />,  content: <SectionErrorBoundary section="Broad Scan">{broadScanTab}</SectionErrorBoundary> },
-          { id: "scalp-builder", label: "Scalp Builder", icon: <Wand2 className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
-          { id: "symbols",    label: "Symbols",    icon: <Layers className="h-3.5 w-3.5" />, content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
+          { id: "chart", label: "Chart", keepMounted: true, content: <SectionErrorBoundary section="Chart"><StableScannerChart compactWorkspace /></SectionErrorBoundary> },
+          { id: "symbols", label: "Symbols", content: <SectionErrorBoundary section="Symbols">{symbolsTab}</SectionErrorBoundary> },
+          { id: "broad-scan", label: "Scan", content: <SectionErrorBoundary section="Broad Scan">{broadScanTab}</SectionErrorBoundary> },
+          { id: "focus", label: "Analysis", content: <SectionErrorBoundary section="Focus">{focusTab}</SectionErrorBoundary> },
+          { id: "scalp-builder", label: "Scalp", content: <SectionErrorBoundary section="Scalp Builder">{scalpBuilderTab}</SectionErrorBoundary> },
+          { id: "health", label: "Health", content: <SectionErrorBoundary section="Trade Health">
+            <ScannerHeaderSummary />
+            <PageTabs label="Health reports" tabs={[
+              { id: "trade-health", label: "Trade health", content: <TradeHealthPanel chartSymbol={chartSym} /> },
+              { id: "data-health", label: "Data health", content: <ScannerDataHealthPanel /> },
+            ]} />
+          </SectionErrorBoundary> },
+          { id: "activity", label: "Activity", content: <SectionErrorBoundary section="Scanner activity">
+            <PageTabs label="Scanner activity" tabs={[
+              { id: "trades", label: "Recent trades", content: <RecentScannerTrades /> },
+              { id: "accuracy", label: "Probability accuracy", content: <CalibrationReliabilityCard /> },
+            ]} />
+          </SectionErrorBoundary> },
         ]}
       />
-
-      <SectionErrorBoundary section="Chart">
-        <StableScannerChart />
-      </SectionErrorBoundary>
-
-      <SectionErrorBoundary section="Trade Health">
-        <TradeHealthPanel chartSymbol={chartSym} />
-      </SectionErrorBoundary>
-
 
       {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">

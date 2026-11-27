@@ -76,3 +76,21 @@ describe("News Risk Check — scheduled events not checked", () => {
     expect(screen.getByTestId("news-risk-level").textContent).toMatch(/\bnone\b/);
   });
 });
+
+it("shows source links and first-seen provenance without implying direction", () => {
+  data = pack({ bias: "bullish", recentHeadlines: [{
+    headline: "Rates surge", source: "Example", url: "https://example.com/news",
+    publishedAt: "", observedAt: "2026-11-17T03:00:00Z", timeBasis: "provider_first_seen",
+  }] }, NOT_CONFIGURED);
+  render(<NewsRiskCheckPanel symbol="EURUSD" defaultOpen />);
+  expect(screen.getByRole("link", { name: "Rates surge" }).getAttribute("href")).toBe("https://example.com/news");
+  expect(screen.getByText(/First seen:/).textContent).toContain("publication time unknown");
+  expect(screen.getByText("Not established")).toBeTruthy();
+  expect(screen.queryByText("bullish")).toBeNull();
+});
+
+it("does not turn an unsafe provider URL into a clickable link", () => {
+  data = pack({ recentHeadlines: [{headline: "Bad link", source: "Example", url: "javascript:alert(1)", publishedAt: ""}] }, NOT_CONFIGURED);
+  render(<NewsRiskCheckPanel symbol="EURUSD" defaultOpen />);
+  expect(screen.queryByRole("link")).toBeNull();
+});

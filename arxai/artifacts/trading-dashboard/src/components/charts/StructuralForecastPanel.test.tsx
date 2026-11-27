@@ -84,7 +84,7 @@ describe("ARX structural forecast controls", () => {
     expect(screen.getByLabelText("Projected paths").textContent).not.toMatch(/ended higher|ended lower/);
     expect(screen.getByTestId("forecast-range-engine").textContent).toBe("Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here. On 88 setups the model did not learn from, the history range held 48% of outcomes and the volatility range 51% (ideal 50%). Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.");
     // The explanation matches what is drawn and what was learned (audit 2026-11-15).
-    expect(screen.getByText(/The paths are not price predictions: .*shaded range from bull to bear is where about half of outcomes should end.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
+    expect(screen.getByText(/The paths are not price predictions: .*shaded range from bull to bear is a nominal 50% endpoint interval; actual coverage can differ.*adjusted by what earlier graded forecasts showed/)).toBeTruthy();
     expect(screen.queryByText(/Ghost candles/)).toBeNull();
     expect(screen.getByTestId("forecast-learning").textContent).toMatch(/Learned from 42 independent graded forecasts.*0\.012 Brier better on the 13 newest/);
     const grades = screen.getByTestId("forecast-grades").textContent!;
@@ -101,6 +101,10 @@ describe("ARX structural forecast controls", () => {
     expect(rangeSentence({ range: { engine: "HISTORY", reason: "HISTORY_RELIABLY_BETTER", tested: 109, historyInside: .24, volatilityInside: .09 }, directionEdge: true } as never))
       .toBe("Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here. On 109 setups the model did not learn from, the history range held 24% of outcomes and the volatility range 9% (ideal 50%). Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown.");
     expect(rangeSentence({} as never)).toBeNull();
+    const vol = (volatility?: string) => rangeSentence({ range: { engine: "VOLATILITY", reason: "HISTORY_NOT_RELIABLY_BETTER", tested: 0, historyInside: null, volatilityInside: null, volatility } } as never);
+    expect(vol("HOUR_OF_WEEK")).toContain("sized from how much this market usually moves at these hours of the week and how active it has been today");
+    expect(vol("RECENT_120_BARS")).toContain("sized from recent price swings");
+    expect(vol()).toContain("sized from recent price swings");
   });
   it("in dynamic mode shows an update over its faint original and grades updates apart from fresh forecasts", async () => {
     const onPaths = vi.fn();

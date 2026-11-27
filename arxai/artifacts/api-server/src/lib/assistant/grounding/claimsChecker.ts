@@ -449,7 +449,9 @@ export function checkSegment(seg: Segment, idx: EvidenceIndex): { claims: Claim[
       && /\b(?:I can see|you have|there (?:is|are))\s*$/i.test(clause.before);
     const bookCountField = (e: EvidenceNumber) => /get(?:MyLiveOpenTrades|OpenPositions)/.test(e.tool)
       && (e.key === "count" || e.keyTokens.includes("count")) && !(e.entities?.length);
-    const candidates = idx.numbers.filter(e => e.source === "user" ? userEcho : entityMatches(e) || globalBookCount && bookCountField(e));
+    const marketLevelClaim = /\b(?:entry|stop(?:[- ]?loss)?|take[- ]?profit|price|quote|support|resistance|bid|ask|spread)\b/i.test(raw);
+    const candidates = idx.numbers.filter(e => (e.source === "user" ? userEcho : entityMatches(e) || globalBookCount && bookCountField(e))
+      && !(e.researchOnly && (liveContext || marketLevelClaim)));
     const matches = candidates.filter((e) => matchesValue(nc, e));
     const claim = pushClaim({
       kind: "number", text: raw.slice(localStart, localEnd).trim(), value: (m[1] === "-" || m[1] === "−" ? -1 : 1) * value,

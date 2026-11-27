@@ -121,3 +121,12 @@ test('Replit targets nested ARX builds and the guarded app-specific production l
     assert.match(config,/run = "bash scripts\/run-arx-replit-production.sh"/);
   } finally {rmSync(folder,{recursive:true,force:true});}
 });
+
+test('local-only launch requires the exact loopback listener origin', () => {
+  const local = { ...valid(), ARX_LOOPBACK_ONLY: 'true', APP_BASE_URL: 'http://127.0.0.1:8080' };
+  assert.equal(checkProductionEnvironment(local).ok, true);
+  for (const url of ['https://public.example', 'http://0.0.0.0:8080', 'http://127.0.0.1:8081', 'http://user@127.0.0.1:8080']) {
+    assert.equal(checkProductionEnvironment({ ...local, APP_BASE_URL: url }).ok, false);
+  }
+  assert.equal(checkProductionEnvironment({ ...local, ARX_LOOPBACK_ONLY: 'false' }).ok, false);
+});

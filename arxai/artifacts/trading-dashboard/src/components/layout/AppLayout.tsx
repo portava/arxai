@@ -1,3 +1,4 @@
+import { useOnboarding } from "@/components/onboarding/OnboardingProvider";
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "wouter";
@@ -46,6 +47,7 @@ import {
   workspaceTabForPath,
 } from "./workspaceNavigation";
 import "@/components/dashboard/command-workspace.css";
+import "./workspace-navigation.css";
 
 // Lazy-load the Eleanor assistant panel (voice / realtime-WebRTC / TTS stack) so
 // its large module graph stays OUT of every page's first-paint critical path.
@@ -172,6 +174,7 @@ const buildNavGroups = (name: string): NavGroup[] => [
     approvedOnly: true,
     items: [
       { href: "/live-chart",        label: "Live Market Chart", icon: Activity },
+      { href: "/investor-research", label: "Investor Research", icon: Search },
       { href: "/watchlists",        label: "Watchlist",         icon: Eye },
       // Manual Ticket + News Risk back onto requireAdmin-only mutations
       // (oms.ts order routes, marketDataLayer.ts news-risk event CRUD).
@@ -696,6 +699,12 @@ function CommandPaletteLauncher({ open, onOpen }: { open: boolean; onOpen: () =>
   return dockTarget ? createPortal(trigger, dockTarget) : trigger;
 }
 
+const railIcons: Record<string, LucideIcon> = {
+  Scanner: Crosshair, Chart: LineChart, Calendar: CalendarIcon, Journal: NotebookPen,
+  "Positions & Orders": Briefcase, Portfolio: Wallet, Account: User, Settings,
+  Help: HelpCircle, Overview: LayoutGrid, Learn: GraduationCap,
+};
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const isRootWorkspace = location === "/market-desk";
@@ -775,6 +784,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setShellPreferences(readShellPreferences(window.localStorage, userId));
   }, [userId]);
 
+  const { showWhatsNew } = useOnboarding();
   useEffect(() => {
     document.documentElement.classList.add("dark");
     localStorage.setItem("theme", "dark");
@@ -816,6 +826,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const matchingGroups = [...new Set(filteredTools.map((item) => item.group))];
   const allToolsContent = <div className="arx-shell-tools">
+    <button type="button" className="arx-release-notes-link" onClick={() => { setAllToolsOpen(false); void showWhatsNew(); }}>What’s new</button>
     <label className="arx-shell-tools-search">
       <Search size={15} aria-hidden="true" />
       <Input
@@ -900,6 +911,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const title = isRootWorkspace
     ? <>Market desk <span className="arx-shell-symbol">{activeSymbol}</span></>
+    : location === "/market-scanner"
+      ? "Chart workspace"
     : location === "/live-chart"
       ? "Smart Chart"
     : (toolCatalog.find((item) => item.href === location)?.label
@@ -907,7 +920,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       ?? "ARX workspace");
   const eyebrow = isRootWorkspace
     ? <>ARX · MARKET DESK · <time>{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></>
-    : `ARX · ${isInvestor ? "INVESTOR" : "TRADING"} WORKSPACE`;
+    : (isInvestor ? "Investor workspace" : "Trading workspace");
   const workspaceAccess = {
     isInvestor,
     isAdmin: viewMode.effectiveIsAdmin,
@@ -918,13 +931,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const activeWorkspaceTab = workspaceTabForPath(location, workspacePrimaryTabs);
   const workspaceSectionNavigation = <div className="arx-workspace-section-navigation">
     <nav className="arx-workspace-section-tabs" aria-label="Workspace sections" data-testid="workspace-section-tabs">
-      {workspacePrimaryTabs.map((tab) => <Link
-        key={tab.href}
-        href={tab.href}
-        className={activeWorkspaceTab?.href === tab.href ? "is-active" : ""}
-        aria-current={activeWorkspaceTab?.href === tab.href ? "page" : undefined}
-        data-testid={`workspace-tab-${tab.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-      >{tab.label}</Link>)}
+      {workspacePrimaryTabs.map((tab) => {
+        const Icon = railIcons[tab.label] ?? BookOpen;
+        return <Link
+          key={tab.href}
+          href={tab.href}
+          className={activeWorkspaceTab?.href === tab.href ? "is-active" : ""}
+          aria-current={activeWorkspaceTab?.href === tab.href ? "page" : undefined}
+          data-testid={`workspace-tab-${tab.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+        ><Icon size={17} aria-hidden="true" />{tab.label}</Link>;
+      })}
+      {roleReady && !isInvestor && (workspaceAccess.isAdmin || workspaceAccess.isApprovedTrader) && <Link
+        href="/investor-research" aria-current={location === "/investor-research" ? "page" : undefined}
+        className={location === "/investor-research" ? "is-active" : ""}><Search size={17} aria-hidden="true" />Investor Research</Link>}
     </nav>
   </div>;
   const routePanel = ROUTE_LAYOUT_PANELS[location];

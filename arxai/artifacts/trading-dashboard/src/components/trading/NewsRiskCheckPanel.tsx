@@ -22,12 +22,12 @@ const REC_LABEL: Record<string, string> = {
   proceed_with_caution: "Proceed with caution",
 };
 
-const BIAS_TONE: Record<string, string> = {
-  bullish: "text-emerald-300",
-  bearish: "text-rose-300",
-  mixed: "text-amber-300",
-  unclear: "text-slate-400",
-};
+function safeNewsUrl(value: string | null): string | null {
+  try {
+    const url = new URL(value ?? "");
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
 
 export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen);
@@ -127,9 +127,9 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
 
               <div className="grid grid-cols-3 gap-1 pt-1">
                 <div className="rounded border border-slate-700 bg-slate-900 p-1">
-                  <div className="text-[10px] text-slate-500">Bias</div>
-                  <div className={`font-semibold ${BIAS_TONE[result.bias]}`}>
-                    {result.bias}
+                  <div className="text-[10px] text-slate-500">Direction</div>
+                  <div className="font-semibold text-slate-400">
+                    Not established
                   </div>
                 </div>
                 <div className="rounded border border-slate-700 bg-slate-900 p-1">
@@ -167,11 +167,18 @@ export function NewsRiskCheckPanel({ symbol, defaultOpen = false }: Props) {
 
               {result.recentHeadlines.length > 0 && (
                 <div className="space-y-0.5">
-                  <div className="text-[10px] text-slate-500">Recent headlines</div>
+                  <div className="text-[10px] text-slate-500">Recent headlines · unverified leads</div>
                   {result.recentHeadlines.slice(0, 3).map((h, i) => (
                     <div key={i} className="text-[11px] text-slate-300 leading-snug">
-                      · {h.headline}{" "}
+                      {safeNewsUrl(h.url) ? (
+                        <a href={safeNewsUrl(h.url)!} target="_blank" rel="noopener noreferrer" className="underline">{h.headline}</a>
+                      ) : h.headline}{" "}
                       <span className="text-slate-500">— {h.source}</span>
+                      <div className="text-[10px] text-slate-500">
+                        {h.timeBasis === "provider_first_seen"
+                          ? `First seen: ${h.observedAt || "unknown"} · publication time unknown`
+                          : h.publishedAt ? `Published: ${h.publishedAt}` : "Publication time unknown"}
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -9,7 +9,7 @@
 // verdicts only; the precise provider name is shown to admins.
 
 import { useEffect, useState, useId } from "react";
-import { Activity, Crosshair } from "lucide-react";
+import { Activity } from "lucide-react";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
@@ -348,15 +348,12 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
   const whyCode = actionReadCapped ? "" : truth?.consolidated.internalReasonCode ?? "";
 
   return (
-    <div className="space-y-2 md:space-y-3">
+    <div className="scanner-overview">
       {/* Hero */}
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 hidden md:grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/25">
-          <Crosshair className="h-5 w-5 text-primary" />
-        </span>
+      <div className="scanner-title-row">
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl md:text-2xl font-bold leading-tight">Market Scanner</h1>
-          <p className="hidden md:block text-sm text-txt-secondary">Find setups, compare opportunities, and let {name} explain the market.</p>
+          <h2 className="scanner-page-title">Market health</h2>
+          <p className="hidden md:block text-sm text-txt-secondary">Data quality and trading readiness for the selected market.</p>
         </div>
         <button type="button" className="md:hidden shrink-0 self-center text-xs text-primary underline underline-offset-4" aria-label={statusDetailsOpen ? "Hide status details" : "Show status details"} aria-expanded={statusDetailsOpen} aria-controls={`${statusDetailsId} ${statusDetailsId}-explanations`} onClick={() => setStatusDetailsOpen(value => !value)}>
           Details
@@ -364,7 +361,7 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
       </div>
 
       {/* Identity row — symbol · timeframe · price */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <div className="scanner-market-identity flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <span className="font-mono font-semibold">{symbol}</span>
         <Dot />
         <span className="text-txt-secondary">{timeframe}</span>
@@ -477,16 +474,11 @@ export function ScannerHeaderSummary(_props: { running?: boolean } = {}) {
 
       </div>
 
-      {shouldShowAdminDiagnostics && truth && (
-        <p className="text-[11px] text-txt-muted" data-testid="scanner-header-candle-diag">
-          source: {truth.candles.sourceTechnical} · {candleDiagnostic(truth.candles)} · {truth.candles.status}
-        </p>
-      )}
-      {shouldShowAdminDiagnostics && truth?.consolidated.readId && (
-        <p className="font-mono text-[11px] text-txt-muted" data-testid="scanner-header-read-id">
-          read-id: {truth.consolidated.readId}
-        </p>
-      )}
+      {shouldShowAdminDiagnostics && truth && <details className="scanner-diagnostics">
+        <summary>Technical details</summary>
+        <p data-testid="scanner-header-candle-diag">source: {truth.candles.sourceTechnical} · {candleDiagnostic(truth.candles)} · {truth.candles.status}</p>
+        {truth.consolidated.readId && <p data-testid="scanner-header-read-id">read-id: {truth.consolidated.readId}</p>}
+      </details>}
     </div>
   );
 }

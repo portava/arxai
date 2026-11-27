@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
+import { forecastRangeCoverage, uniqueHorizonScores, FORECAST_HORIZONS, DEFAULT_FORECAST_HORIZON, forecastHorizon, type ForecastScore, type StructuralBar, type StructuralForecast, type Scenario, type Trajectory, type TrajectoryKind, type Triple, type CalibrationRecord, type ForecastGrade } from "@workspace/domain/structural";
 import { Button } from "@/components/ui/button";
 import { resolveArxMarket } from "@workspace/domain/market";
 
@@ -41,7 +41,7 @@ export function rangeSentence(f: StructuralForecast): string | null {
     ? "Range engine for this market: history — the 25th–75th percentile of similar past setups, because it scored reliably better than a volatility range here."
     : r.reason === "TOO_FEW_TEST_SETUPS"
       ? "Range engine for this market: volatility — too little tested history to judge the history engine yet."
-      : "Range engine for this market: volatility — sized from recent price swings, because the history range did not score reliably better here.";
+      : `Range engine for this market: volatility — sized from ${r.volatility === "HOUR_OF_WEEK" ? "how much this market usually moves at these hours of the week and how active it has been today" : "recent price swings"}, because the history range did not score reliably better here.`;
   const direction = f.directionEdge
     ? " Up/down: the share of similar setups that ended higher beat a coin flip here, so it is shown."
     : " Up/down: no tested edge here, so up and down are treated as equally likely and no “x% higher” is shown.";
@@ -138,7 +138,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
   const probability = shown?.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities;
   const windowHistory = history.filter(r => rowHorizonId(r) === preset.id);
   const evaluated = windowHistory.filter(r => cohort === "all" || (cohort === "prebreak" ? r.forecast.preBreakEligible : !r.forecast.preBreakEligible))
-    .flatMap(r => r.scores.filter(s => s.horizon === preset.bars).map(score => ({ score,
+    .flatMap(r => uniqueHorizonScores(r.scores, preset.bars).map(score => ({ score,
       p: r.forecast.horizons.find(h => h.minutes === preset.minutes)?.probabilities })));
   const scores = evaluated.map(r => r.score);
   // Each finished forecast's judgement on its whole window, newest first.
@@ -146,6 +146,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
     return sc?.grade ? [{ id: r.id, issuedAt: r.issuedAt, grade: sc.grade, outcome: sc.outcome, update: r.forecast.update }] : []; }).sort((a, b) => b.issuedAt - a.issuedAt);
   const cohortSummary = (rows: typeof graded) => rows.length
     ? `${rows.length}, average skill ${(rows.reduce((s, g) => s + g.grade.skill, 0) / rows.length).toFixed(2)}` : "none yet";
+  const rangeCoverage = forecastRangeCoverage(windowHistory, preset.id, Date.now());
   const inRange = graded.filter(g => g.grade.insideRange != null);
   const directional = evaluated.filter(r => r.p && r.p.indexOf(Math.max(...r.p)) < 2);
   const correctDirection = directional.filter(r => (r.p!.indexOf(Math.max(...r.p!)) === 0 ? "UP_FIRST" : "DOWN_FIRST") === r.score.outcome).length;
@@ -186,7 +187,7 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
         {onShowOnTimeframe && <Button size="sm" variant="outline" onClick={() => onShowOnTimeframe(preset.timeframe)}>Show on {preset.timeframe}</Button>}
       </p>}
       <p className="text-amber-200">{shown.forecast.trajectories?.length
-        ? `The paths are not price predictions: the shaded range from bull to bear is where about half of outcomes should end (see the range engine below), and the middle line is the median of the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market, rescaled to the current price. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
+        ? `The paths are not price predictions: the shaded range from bull to bear is a nominal 50% endpoint interval; actual coverage can differ (see measured coverage below), and the middle line is the median of the ${shown.forecast.trajectories[0]!.analogs} most similar past setups of this market, rescaled to the current price. Break odds are the model's chance that structure breaks that way first${shown.forecast.calibration?.applied ? ", adjusted by what earlier graded forecasts showed (see below)" : ""}; their accuracy is not yet validated.`
         : "Ghost paths are illustrative scenarios, not price predictions: each is one past stretch of this market, rescaled to the current price, whose outcome matched that scenario. “Neither” means no confirmed structural break; prices can still move."}</p>
       {rangeSentence(shown.forecast) && <p data-testid="forecast-range-engine" className="mt-1 text-zinc-300">{rangeSentence(shown.forecast)}</p>}
       {shown.forecast.calibration && <p data-testid="forecast-learning" className="mt-1 text-zinc-300">{learningSentence(shown.forecast.calibration)}</p>}
@@ -201,6 +202,10 @@ export function StructuralForecastPanel({ symbol, onPaths, selectedScenarios, on
       <span>Direction recall: {actualDirection ? `${(100 * correctDirection / actualDirection).toFixed(1)}%` : "—"}</span>
       <span>Saved {preset.label} forecasts: {windowHistory.length + (shown && !windowHistory.some(r => r.id === shown.id) ? 1 : 0)}</span>
     </div>}
+    {windowHistory.length > 0 && <p data-testid="forecast-range-coverage" className="mt-2 text-zinc-300">
+      Range coverage: {rangeCoverage.coverage == null ? "awaiting completed original forecasts" : `${pct(rangeCoverage.coverage)} inside across ${rangeCoverage.n} non-overlapping completed windows (${rangeCoverage.outside} outside; nominal target 50%)`}.
+      {" "}{rangeCoverage.excluded} updates, overlapping, unresolved or ungraded windows excluded. Descriptive history; this does not establish calibrated future coverage or trading edge.
+    </p>}
     {graded.length > 0 && <div aria-label="Graded forecasts" data-testid="forecast-grades" className="mt-3 text-zinc-300">
       <p><strong className="text-zinc-100">Graded {preset.label} forecasts: {graded.length}</strong>
         {" · "}{(["A", "B", "C", "D", "F"] as const).map(l => `${l} ${graded.filter(g => g.grade.letter === l).length}`).join(" · ")}

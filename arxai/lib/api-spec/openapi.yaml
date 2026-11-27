@@ -19151,6 +19151,13 @@ components:
                   - type: string
                   - type: "null"
               publishedAt: { type: string }
+              observedAt: { type: string }
+              timeBasis:
+                type: string
+                enum: [publication, provider_first_seen]
+              verification:
+                type: string
+                enum: [headline_only]
         affectedCurrencies:
           type: array
           items: { type: string }

@@ -1,0 +1,1302 @@
+{
+  "protocolSha256": "38c87fe038651d60a0ccbf046416c3895f37ec609cee5e273234f86b0a0f1f74",
+  "inputSha256": "a9e2809c6014022561236e1b8f60468d0f30f03cc1ba420cd924e6850e27f360",
+  "packages": {
+    "arch": "9.0.0",
+    "statsforecast": "2.1.1",
+    "river": "0.27.0",
+    "numpy": "2.5.5"
+  },
+  "status": "EXPLORATORY_REUSED_HISTORY_NO_PROMOTION",
+  "summary": {
+    "garch": {
+      "n": 3633,
+      "meanNormalizedGain": -0.036784846930545956,
+      "hierarchicalBlockBootstrap95": [
+        -0.0518192488168237,
+        -0.024208904935076235
+      ],
+      "seriesBetter": 2
+    },
+    "conformal": {
+      "n": 3633,
+      "meanNormalizedGain": -0.005439270658491508,
+      "hierarchicalBlockBootstrap95": [
+        -0.011796928003600113,
+        0.0016039532154455808
+      ],
+      "seriesBetter": 8
+    }
+  },
+  "failures": [
+    {
+      "model": "garch",
+      "symbol": "frxEURUSD",
+      "timeframe": "M15",
+      "index": 15720,
+      "error": "GARCH optimizer convergence=8"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxEURUSD",
+      "timeframe": "H1",
+      "index": 3540,
+      "error": "GARCH optimizer convergence=4"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxUSDJPY",
+      "timeframe": "M15",
+      "index": 12720,
+      "error": "GARCH optimizer convergence=9"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxEURGBP",
+      "timeframe": "M15",
+      "index": 20760,
+      "error": "GARCH optimizer convergence=8"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxEURGBP",
+      "timeframe": "M15",
+      "index": 21600,
+      "error": "GARCH optimizer convergence=9"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxEURJPY",
+      "timeframe": "M15",
+      "index": 12240,
+      "error": "GARCH optimizer convergence=8"
+    },
+    {
+      "model": "garch",
+      "symbol": "frxEURJPY",
+      "timeframe": "M15",
+      "index": 18480,
+      "error": "GARCH optimizer convergence=8"
+    },
+    {
+      "model": "garch",
+      "symbol": "OTC_FTSE",
+      "timeframe": "M15",
+      "index": 6060,
+      "error": "GARCH optimizer convergence=8"
+    },
+    {
+      "model": "garch",
+      "symbol": "OTC_N225",
+      "timeframe": "M15",
+      "index": 9960,
+      "error": "GARCH optimizer convergence=4"
+    }
+  ],
+  "series": [
+    {
+      "symbol": "frxEURUSD",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.013606969468074484,
+          "coverageByHorizon": [
+            0.5767634854771784,
+            0.5601659751037344,
+            0.5477178423236515
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.014223094615587897,
+          "coverageByHorizon": [
+            0.6597510373443983,
+            0.6473029045643154,
+            0.6058091286307054
+          ],
+          "meanNormalizedGain": -0.04528011538197434,
+          "firstHalfGain": -0.04731394035093257,
+          "lastHalfGain": -0.04326309888383394
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.013831271464545832,
+          "coverageByHorizon": [
+            0.48132780082987553,
+            0.5103734439834025,
+            0.4896265560165975
+          ],
+          "meanNormalizedGain": -0.016484346275459652,
+          "firstHalfGain": -0.02215997249628475,
+          "lastHalfGain": -0.010855626056459552
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxEURUSD",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.0262375807799598,
+          "coverageByHorizon": [
+            0.576271186440678,
+            0.576271186440678,
+            0.5254237288135594
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.027035636538102335,
+          "coverageByHorizon": [
+            0.6440677966101694,
+            0.576271186440678,
+            0.6610169491525424
+          ],
+          "meanNormalizedGain": -0.030416514572566392,
+          "firstHalfGain": -0.029305546155993657,
+          "lastHalfGain": -0.03149045070858671
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.02695707950820675,
+          "coverageByHorizon": [
+            0.559322033898305,
+            0.559322033898305,
+            0.4915254237288136
+          ],
+          "meanNormalizedGain": -0.027422449282995556,
+          "firstHalfGain": -0.04709495499343009,
+          "lastHalfGain": -0.00840569376290884
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxGBPUSD",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.01485673444170532,
+          "coverageByHorizon": [
+            0.5933609958506224,
+            0.6099585062240664,
+            0.5643153526970954
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.0155055857209722,
+          "coverageByHorizon": [
+            0.6431535269709544,
+            0.6763485477178424,
+            0.6307053941908713
+          ],
+          "meanNormalizedGain": -0.04367388283157611,
+          "firstHalfGain": -0.05004542279495345,
+          "lastHalfGain": -0.03735500022326801
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.01500954171925656,
+          "coverageByHorizon": [
+            0.4979253112033195,
+            0.4979253112033195,
+            0.4896265560165975
+          ],
+          "meanNormalizedGain": -0.010285387959973673,
+          "firstHalfGain": -0.028708823318993625,
+          "lastHalfGain": 0.007985787602690742
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxGBPUSD",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.02937204827636247,
+          "coverageByHorizon": [
+            0.5084745762711864,
+            0.5254237288135594,
+            0.5423728813559322
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.030589198491591953,
+          "coverageByHorizon": [
+            0.576271186440678,
+            0.6271186440677966,
+            0.6271186440677966
+          ],
+          "meanNormalizedGain": -0.04143906491563965,
+          "firstHalfGain": -0.03260781669714524,
+          "lastHalfGain": -0.04997593819351758
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.029963824318524394,
+          "coverageByHorizon": [
+            0.5084745762711864,
+            0.5423728813559322,
+            0.4915254237288136
+          ],
+          "meanNormalizedGain": -0.020147591907581267,
+          "firstHalfGain": -0.004185996026954505,
+          "lastHalfGain": -0.03557713459218713
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDJPY",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.017607684284029444,
+          "coverageByHorizon": [
+            0.6348547717842323,
+            0.5933609958506224,
+            0.6431535269709544
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.01826836880224126,
+          "coverageByHorizon": [
+            0.6556016597510373,
+            0.6390041493775933,
+            0.6887966804979253
+          ],
+          "meanNormalizedGain": -0.037522510487711866,
+          "firstHalfGain": -0.03825435613524211,
+          "lastHalfGain": -0.03679671315131824
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.017266577657921122,
+          "coverageByHorizon": [
+            0.48132780082987553,
+            0.46887966804979253,
+            0.45643153526970953
+          ],
+          "meanNormalizedGain": 0.01937260008788966,
+          "firstHalfGain": 0.05137837747993158,
+          "lastHalfGain": -0.01236866674719324
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDJPY",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.03630339121672626,
+          "coverageByHorizon": [
+            0.6949152542372882,
+            0.6779661016949152,
+            0.6440677966101694
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.03643059165771356,
+          "coverageByHorizon": [
+            0.711864406779661,
+            0.7288135593220338,
+            0.6779661016949152
+          ],
+          "meanNormalizedGain": -0.0035038170464004657,
+          "firstHalfGain": 0.00924507673171603,
+          "lastHalfGain": -0.015827747698579746
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.03547058641047091,
+          "coverageByHorizon": [
+            0.5254237288135594,
+            0.5254237288135594,
+            0.5084745762711864
+          ],
+          "meanNormalizedGain": 0.022940138051666295,
+          "firstHalfGain": 0.05982939347424533,
+          "lastHalfGain": -0.012719475523493435
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxAUDUSD",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 240,
+          "meanScore": 0.018813733034938,
+          "coverageByHorizon": [
+            0.6041666666666666,
+            0.6125,
+            0.5958333333333333
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 240,
+          "meanScore": 0.01999911220930903,
+          "coverageByHorizon": [
+            0.6291666666666667,
+            0.6708333333333333,
+            0.6416666666666667
+          ],
+          "meanNormalizedGain": -0.06300605904047464,
+          "firstHalfGain": -0.08701387978622571,
+          "lastHalfGain": -0.038998238294723576
+        },
+        "conformal": {
+          "n": 240,
+          "meanScore": 0.018957580775491107,
+          "coverageByHorizon": [
+            0.4708333333333333,
+            0.4875,
+            0.4875
+          ],
+          "meanNormalizedGain": -0.007645890386877181,
+          "firstHalfGain": -0.003063742775347653,
+          "lastHalfGain": -0.012228037998406709
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxAUDUSD",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.03550905191521893,
+          "coverageByHorizon": [
+            0.5423728813559322,
+            0.559322033898305,
+            0.6101694915254238
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.03604993071251056,
+          "coverageByHorizon": [
+            0.5932203389830508,
+            0.6101694915254238,
+            0.6779661016949152
+          ],
+          "meanNormalizedGain": -0.015232138514512324,
+          "firstHalfGain": -0.009624648554201217,
+          "lastHalfGain": -0.020652712142813057
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.03636153978098594,
+          "coverageByHorizon": [
+            0.576271186440678,
+            0.5932203389830508,
+            0.5423728813559322
+          ],
+          "meanNormalizedGain": -0.02400762114973958,
+          "firstHalfGain": -0.012602444344208779,
+          "lastHalfGain": -0.035032625395086024
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDCAD",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.010974627954614034,
+          "coverageByHorizon": [
+            0.6141078838174274,
+            0.5933609958506224,
+            0.5477178423236515
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.011238032193919816,
+          "coverageByHorizon": [
+            0.6514522821576764,
+            0.6182572614107884,
+            0.5975103734439834
+          ],
+          "meanNormalizedGain": -0.024001199894438358,
+          "firstHalfGain": -0.0314539127840139,
+          "lastHalfGain": -0.0166100796733717
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.010944601939753213,
+          "coverageByHorizon": [
+            0.48132780082987553,
+            0.46473029045643155,
+            0.49377593360995853
+          ],
+          "meanNormalizedGain": 0.0027359483150585307,
+          "firstHalfGain": 0.01730734904779778,
+          "lastHalfGain": -0.011715027618236592
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDCAD",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.02384534634561013,
+          "coverageByHorizon": [
+            0.5423728813559322,
+            0.559322033898305,
+            0.4915254237288136
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.023805876912731786,
+          "coverageByHorizon": [
+            0.6779661016949152,
+            0.559322033898305,
+            0.559322033898305
+          ],
+          "meanNormalizedGain": 0.0016552258166553705,
+          "firstHalfGain": -0.010513931599692898,
+          "lastHalfGain": 0.013418744652458696
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.023712951909075516,
+          "coverageByHorizon": [
+            0.4067796610169492,
+            0.4406779661016949,
+            0.5084745762711864
+          ],
+          "meanNormalizedGain": 0.005552212772073348,
+          "firstHalfGain": 0.017675400184669805,
+          "lastHalfGain": -0.006166868393436559
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDCHF",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.017385299563321074,
+          "coverageByHorizon": [
+            0.6099585062240664,
+            0.6348547717842323,
+            0.5601659751037344
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.01840250740804954,
+          "coverageByHorizon": [
+            0.6763485477178424,
+            0.6846473029045643,
+            0.6639004149377593
+          ],
+          "meanNormalizedGain": -0.05850965299870586,
+          "firstHalfGain": -0.031988393255741474,
+          "lastHalfGain": -0.08481172877685236
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.017394041268830256,
+          "coverageByHorizon": [
+            0.49377593360995853,
+            0.4854771784232365,
+            0.47717842323651455
+          ],
+          "meanNormalizedGain": -0.0005028216785878978,
+          "firstHalfGain": -0.00382776969812209,
+          "lastHalfGain": 0.002794647431693946
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxUSDCHF",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.03619353192558457,
+          "coverageByHorizon": [
+            0.5932203389830508,
+            0.4915254237288136,
+            0.4406779661016949
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.036042250256058964,
+          "coverageByHorizon": [
+            0.6610169491525424,
+            0.559322033898305,
+            0.5254237288135594
+          ],
+          "meanNormalizedGain": 0.004179798474397247,
+          "firstHalfGain": -0.017461931529862192,
+          "lastHalfGain": 0.0251001374785147
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.03610668454640806,
+          "coverageByHorizon": [
+            0.5423728813559322,
+            0.4576271186440678,
+            0.4745762711864407
+          ],
+          "meanNormalizedGain": 0.002399527610487878,
+          "firstHalfGain": -0.0201958150696346,
+          "lastHalfGain": 0.02424169220127294
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxEURGBP",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 241,
+          "meanScore": 0.007814302912463671,
+          "coverageByHorizon": [
+            0.6141078838174274,
+            0.6265560165975104,
+            0.5726141078838174
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 241,
+          "meanScore": 0.007952399921391736,
+          "coverageByHorizon": [
+            0.6473029045643154,
+            0.6224066390041494,
+            0.6224066390041494
+          ],
+          "meanNormalizedGain": -0.017672338847756215,
+          "firstHalfGain": -0.015808457088289537,
+          "lastHalfGain": -0.019520816625739703
+        },
+        "conformal": {
+          "n": 241,
+          "meanScore": 0.007890829478834026,
+          "coverageByHorizon": [
+            0.5103734439834025,
+            0.5020746887966805,
+            0.4854771784232365
+          ],
+          "meanNormalizedGain": -0.009793140504995943,
+          "firstHalfGain": -0.010423340350958927,
+          "lastHalfGain": -0.009168148922222735
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxEURGBP",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.017365600736280823,
+          "coverageByHorizon": [
+            0.5932203389830508,
+            0.4915254237288136,
+            0.4576271186440678
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.017756716395989747,
+          "coverageByHorizon": [
+            0.6779661016949152,
+            0.4915254237288136,
+            0.4745762711864407
+          ],
+          "meanNormalizedGain": -0.022522437642586032,
+          "firstHalfGain": -0.018029175784449028,
+          "lastHalfGain": -0.02686592410545181
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.017713198731032078,
+          "coverageByHorizon": [
+            0.4406779661016949,
+            0.4406779661016949,
+            0.4576271186440678
+          ],
+          "meanNormalizedGain": -0.020016468190763043,
+          "firstHalfGain": -0.016207103953323657,
+          "lastHalfGain": -0.023698853620287768
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxEURJPY",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 240,
+          "meanScore": 0.015905581481816856,
+          "coverageByHorizon": [
+            0.6291666666666667,
+            0.6125,
+            0.5583333333333333
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 240,
+          "meanScore": 0.016315550481032472,
+          "coverageByHorizon": [
+            0.6666666666666666,
+            0.6583333333333333,
+            0.6291666666666667
+          ],
+          "meanNormalizedGain": -0.025775165760792296,
+          "firstHalfGain": -0.005995750209839917,
+          "lastHalfGain": -0.045554581311744675
+        },
+        "conformal": {
+          "n": 240,
+          "meanScore": 0.015703276554181755,
+          "coverageByHorizon": [
+            0.4791666666666667,
+            0.475,
+            0.48333333333333334
+          ],
+          "meanNormalizedGain": 0.012719115479454476,
+          "firstHalfGain": 0.01108055363756186,
+          "lastHalfGain": 0.014357677321347092
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxEURJPY",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 59,
+          "meanScore": 0.03480675013321397,
+          "coverageByHorizon": [
+            0.559322033898305,
+            0.6101694915254238,
+            0.6271186440677966
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 59,
+          "meanScore": 0.03513216099559088,
+          "coverageByHorizon": [
+            0.5932203389830508,
+            0.6101694915254238,
+            0.6779661016949152
+          ],
+          "meanNormalizedGain": -0.009349073416262118,
+          "firstHalfGain": 0.009325048497831268,
+          "lastHalfGain": -0.027400724599885726
+        },
+        "conformal": {
+          "n": 59,
+          "meanScore": 0.03469426572923276,
+          "coverageByHorizon": [
+            0.4915254237288136,
+            0.4745762711864407,
+            0.5254237288135594
+          ],
+          "meanNormalizedGain": 0.003231683611675893,
+          "firstHalfGain": 0.027355602638114082,
+          "lastHalfGain": -0.020088104780547685
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxXAUUSD",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 230,
+          "meanScore": 0.06215540561191257,
+          "coverageByHorizon": [
+            0.5652173913043478,
+            0.5739130434782609,
+            0.5478260869565217
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 230,
+          "meanScore": 0.06359732185584836,
+          "coverageByHorizon": [
+            0.6260869565217392,
+            0.591304347826087,
+            0.6130434782608696
+          ],
+          "meanNormalizedGain": -0.023198565430316138,
+          "firstHalfGain": -0.032725395474374676,
+          "lastHalfGain": -0.013671735386257601
+        },
+        "conformal": {
+          "n": 230,
+          "meanScore": 0.06311366113531722,
+          "coverageByHorizon": [
+            0.5043478260869565,
+            0.4782608695652174,
+            0.5
+          ],
+          "meanNormalizedGain": -0.01541709066123433,
+          "firstHalfGain": -0.016311681731256196,
+          "lastHalfGain": -0.014522499591212462
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "frxXAUUSD",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 57,
+          "meanScore": 0.12102045858241617,
+          "coverageByHorizon": [
+            0.5263157894736842,
+            0.5263157894736842,
+            0.631578947368421
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 57,
+          "meanScore": 0.12253540314895965,
+          "coverageByHorizon": [
+            0.543859649122807,
+            0.5964912280701754,
+            0.6491228070175439
+          ],
+          "meanNormalizedGain": -0.012518086481318202,
+          "firstHalfGain": -0.026352779438369944,
+          "lastHalfGain": 0.0008395480979041656
+        },
+        "conformal": {
+          "n": 57,
+          "meanScore": 0.12272364735475877,
+          "coverageByHorizon": [
+            0.5263157894736842,
+            0.5789473684210527,
+            0.543859649122807
+          ],
+          "meanNormalizedGain": -0.014073560720997478,
+          "firstHalfGain": -0.03513793342042333,
+          "lastHalfGain": 0.006264454299137826
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_SPC",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 141,
+          "meanScore": 0.04187413168089371,
+          "coverageByHorizon": [
+            0.6595744680851063,
+            0.624113475177305,
+            0.5957446808510638
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 141,
+          "meanScore": 0.04774318111362148,
+          "coverageByHorizon": [
+            0.6879432624113475,
+            0.624113475177305,
+            0.624113475177305
+          ],
+          "meanNormalizedGain": -0.14015931070412357,
+          "firstHalfGain": -0.23406633566684296,
+          "lastHalfGain": -0.04757491989580867
+        },
+        "conformal": {
+          "n": 141,
+          "meanScore": 0.04252188406746508,
+          "coverageByHorizon": [
+            0.5177304964539007,
+            0.5106382978723404,
+            0.48936170212765956
+          ],
+          "meanNormalizedGain": -0.015469034474735611,
+          "firstHalfGain": 0.014699498824854785,
+          "lastHalfGain": -0.045212658854613466
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_SPC",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 37,
+          "meanScore": 0.07310450282002479,
+          "coverageByHorizon": [
+            0.6216216216216216,
+            0.6756756756756757,
+            0.5945945945945946
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 37,
+          "meanScore": 0.07599865865429875,
+          "coverageByHorizon": [
+            0.7027027027027027,
+            0.6756756756756757,
+            0.6216216216216216
+          ],
+          "meanNormalizedGain": -0.03958929645413283,
+          "firstHalfGain": -0.06438273073009781,
+          "lastHalfGain": -0.016100779771639682
+        },
+        "conformal": {
+          "n": 37,
+          "meanScore": 0.07395890783329481,
+          "coverageByHorizon": [
+            0.4594594594594595,
+            0.5675675675675675,
+            0.5945945945945946
+          ],
+          "meanNormalizedGain": -0.01168744715183224,
+          "firstHalfGain": -0.00889068315320859,
+          "lastHalfGain": -0.014337013045265173
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_NDX",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 141,
+          "meanScore": 0.06906660551065298,
+          "coverageByHorizon": [
+            0.6524822695035462,
+            0.5602836879432624,
+            0.5106382978723404
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 141,
+          "meanScore": 0.07314231014249144,
+          "coverageByHorizon": [
+            0.6950354609929078,
+            0.624113475177305,
+            0.5815602836879432
+          ],
+          "meanNormalizedGain": -0.0590112197016806,
+          "firstHalfGain": -0.08819416733348195,
+          "lastHalfGain": -0.030239299501313044
+        },
+        "conformal": {
+          "n": 141,
+          "meanScore": 0.07008153974895863,
+          "coverageByHorizon": [
+            0.48936170212765956,
+            0.46808510638297873,
+            0.46808510638297873
+          ],
+          "meanNormalizedGain": -0.014695006809754153,
+          "firstHalfGain": -0.008334080817741465,
+          "lastHalfGain": -0.020966342294837084
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_NDX",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 36,
+          "meanScore": 0.14065172036976648,
+          "coverageByHorizon": [
+            0.5,
+            0.5277777777777778,
+            0.4722222222222222
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 36,
+          "meanScore": 0.1419969357553427,
+          "coverageByHorizon": [
+            0.5555555555555556,
+            0.5833333333333334,
+            0.5
+          ],
+          "meanNormalizedGain": -0.00956415877487815,
+          "firstHalfGain": -0.015194259766007282,
+          "lastHalfGain": -0.003934057783749016
+        },
+        "conformal": {
+          "n": 36,
+          "meanScore": 0.14447234984213833,
+          "coverageByHorizon": [
+            0.4444444444444444,
+            0.4166666666666667,
+            0.4722222222222222
+          ],
+          "meanNormalizedGain": -0.027163759265280234,
+          "firstHalfGain": -0.0278824763248825,
+          "lastHalfGain": -0.026445042205677963
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_GDAXI",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 137,
+          "meanScore": 0.05563673507093112,
+          "coverageByHorizon": [
+            0.6131386861313869,
+            0.5547445255474452,
+            0.5474452554744526
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 137,
+          "meanScore": 0.05832796444973486,
+          "coverageByHorizon": [
+            0.5985401459854015,
+            0.5693430656934306,
+            0.5620437956204379
+          ],
+          "meanNormalizedGain": -0.04837144694728571,
+          "firstHalfGain": -0.09273520034719851,
+          "lastHalfGain": -0.004650646495197727
+        },
+        "conformal": {
+          "n": 137,
+          "meanScore": 0.05612698991266572,
+          "coverageByHorizon": [
+            0.5109489051094891,
+            0.49635036496350365,
+            0.4744525547445255
+          ],
+          "meanNormalizedGain": -0.008811711203210882,
+          "firstHalfGain": -0.014182699315090991,
+          "lastHalfGain": -0.0035185634987493233
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_GDAXI",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 34,
+          "meanScore": 0.09304149610377,
+          "coverageByHorizon": [
+            0.5294117647058824,
+            0.5882352941176471,
+            0.6176470588235294
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 34,
+          "meanScore": 0.09602754208690144,
+          "coverageByHorizon": [
+            0.5882352941176471,
+            0.7058823529411765,
+            0.6764705882352942
+          ],
+          "meanNormalizedGain": -0.03209370128572635,
+          "firstHalfGain": -0.03727655468463596,
+          "lastHalfGain": -0.026910847886816722
+        },
+        "conformal": {
+          "n": 34,
+          "meanScore": 0.09342459169578864,
+          "coverageByHorizon": [
+            0.5882352941176471,
+            0.6176470588235294,
+            0.5
+          ],
+          "meanNormalizedGain": -0.004117470247806066,
+          "firstHalfGain": 0.03938115559492329,
+          "lastHalfGain": -0.04761609609053542
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_FTSE",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 142,
+          "meanScore": 0.04292098006069293,
+          "coverageByHorizon": [
+            0.6197183098591549,
+            0.5985915492957746,
+            0.5915492957746479
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 142,
+          "meanScore": 0.04382415976259873,
+          "coverageByHorizon": [
+            0.6056338028169014,
+            0.6197183098591549,
+            0.5915492957746479
+          ],
+          "meanNormalizedGain": -0.021042848989670217,
+          "firstHalfGain": -0.02705909273113746,
+          "lastHalfGain": -0.01502660524820298
+        },
+        "conformal": {
+          "n": 142,
+          "meanScore": 0.04321470668759878,
+          "coverageByHorizon": [
+            0.5070422535211268,
+            0.4647887323943662,
+            0.4859154929577465
+          ],
+          "meanNormalizedGain": -0.006843427770999296,
+          "firstHalfGain": -0.012883582206570687,
+          "lastHalfGain": -0.0008032733354279021
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_FTSE",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 37,
+          "meanScore": 0.07455167592210735,
+          "coverageByHorizon": [
+            0.5135135135135135,
+            0.5945945945945946,
+            0.5135135135135135
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 37,
+          "meanScore": 0.07482325385835009,
+          "coverageByHorizon": [
+            0.5675675675675675,
+            0.6486486486486487,
+            0.6216216216216216
+          ],
+          "meanNormalizedGain": -0.0036428146367426264,
+          "firstHalfGain": -0.014934303959080512,
+          "lastHalfGain": 0.007054385773893268
+        },
+        "conformal": {
+          "n": 37,
+          "meanScore": 0.07368486430763976,
+          "coverageByHorizon": [
+            0.43243243243243246,
+            0.4864864864864865,
+            0.5135135135135135
+          ],
+          "meanNormalizedGain": 0.011626990322433892,
+          "firstHalfGain": 0.0188221132881946,
+          "lastHalfGain": 0.004810558039081646
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_N225",
+      "timeframe": "M15",
+      "variants": {
+        "arx": {
+          "n": 194,
+          "meanScore": 0.08488811711396872,
+          "coverageByHorizon": [
+            0.6185567010309279,
+            0.5567010309278351,
+            0.5257731958762887
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 194,
+          "meanScore": 0.08640798811503653,
+          "coverageByHorizon": [
+            0.6649484536082474,
+            0.6030927835051546,
+            0.5567010309278351
+          ],
+          "meanNormalizedGain": -0.017904402320848646,
+          "firstHalfGain": -0.0336615453729131,
+          "lastHalfGain": -0.0021472592687841897
+        },
+        "conformal": {
+          "n": 194,
+          "meanScore": 0.08526113233036589,
+          "coverageByHorizon": [
+            0.5103092783505154,
+            0.5051546391752577,
+            0.4948453608247423
+          ],
+          "meanNormalizedGain": -0.004394198258589645,
+          "firstHalfGain": 0.000704178694175131,
+          "lastHalfGain": -0.009492575211354423
+        }
+      },
+      "adwinEvents": []
+    },
+    {
+      "symbol": "OTC_N225",
+      "timeframe": "H1",
+      "variants": {
+        "arx": {
+          "n": 49,
+          "meanScore": 0.1811756265352487,
+          "coverageByHorizon": [
+            0.5510204081632653,
+            0.3877551020408163,
+            0.42857142857142855
+          ],
+          "meanNormalizedGain": 0.0,
+          "firstHalfGain": 0.0,
+          "lastHalfGain": 0.0
+        },
+        "garch": {
+          "n": 49,
+          "meanScore": 0.18328339263602045,
+          "coverageByHorizon": [
+            0.5510204081632653,
+            0.4489795918367347,
+            0.4897959183673469
+          ],
+          "meanNormalizedGain": -0.011633828131741668,
+          "firstHalfGain": -0.016103952766677487,
+          "lastHalfGain": -0.007342508482203282
+        },
+        "conformal": {
+          "n": 49,
+          "meanScore": 0.18572417971047403,
+          "coverageByHorizon": [
+            0.5714285714285714,
+            0.40816326530612246,
+            0.46938775510204084
+          ],
+          "meanNormalizedGain": -0.025105767603570833,
+          "firstHalfGain": -0.03315559322188863,
+          "lastHalfGain": -0.01737793500998575
+        }
+      },
+      "adwinEvents": []
+    }
+  ]
+}

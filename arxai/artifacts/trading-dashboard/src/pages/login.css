@@ -1,0 +1,18 @@
+.arx-sign-in, .arx-sign-in-dialog {
+  color: hsl(var(--foreground));
+}
+.arx-sign-in {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 5vw, 60px);
+  background: hsl(var(--background));
+}
+.arx-sign-in-card, .arx-sign-in-dialog {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+}
+.arx-sign-in-card { width: min(100%, 460px); padding: clamp(24px, 4vw, 44px); }
+.arx-sign-in-brand { font: 600 23px/1 Georgia, serif; letter-spacing: -.065em; color: hsl(var(--primary)); }
+.arx-sign-in h1 { margin-top: 30px; font: 500 45px/1.1 "Iowan Old Style", Georgia, serif; letter-spacing: -.05em; }
